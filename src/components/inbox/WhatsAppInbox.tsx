@@ -109,6 +109,7 @@ export function WhatsAppInbox() {
   const [editedName, setEditedName] = useState('');
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [editedEmail, setEditedEmail] = useState('');
+  const [editedMonthlyIncome, setEditedMonthlyIncome] = useState<string>('');
   const [editedDownPayment, setEditedDownPayment] = useState<string>('');
   const [editedMaxBudget, setEditedMaxBudget] = useState<string>('');
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
@@ -128,10 +129,11 @@ export function WhatsAppInbox() {
     if (activeContact) {
       setEditedName(activeContact.name);
       setEditedEmail(activeContact.email || '');
+      setEditedMonthlyIncome(activeContact.monthlyIncome ? String(activeContact.monthlyIncome) : '');
       setEditedDownPayment(activeContact.downPaymentAvailable ? String(activeContact.downPaymentAvailable) : '');
       setEditedMaxBudget(activeContact.maxPropertyValue ? String(activeContact.maxPropertyValue) : '');
     }
-  }, [activeContact?.id, activeContact?.name, activeContact?.email, activeContact?.downPaymentAvailable, activeContact?.maxPropertyValue]);
+  }, [activeContact?.id, activeContact?.name, activeContact?.email, activeContact?.monthlyIncome, activeContact?.downPaymentAvailable, activeContact?.maxPropertyValue]);
 
   // Opção 1: Auto-Análise e Auto-Save Contínuo por IA
   React.useEffect(() => {
@@ -184,6 +186,10 @@ export function WhatsAppInbox() {
 
           // 2. Auto-preenchimento e atualização inteligente do Contato
           const updates: any = {};
+          if (analysis.extractedData?.monthlyIncome && (!activeContact.monthlyIncome || activeContact.monthlyIncome === 0)) {
+            updates.monthlyIncome = analysis.extractedData.monthlyIncome;
+            setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
+          }
           if (analysis.extractedData?.downPayment && (!activeContact.downPaymentAvailable || activeContact.downPaymentAvailable === 0)) {
             updates.downPaymentAvailable = analysis.extractedData.downPayment;
             setEditedDownPayment(String(analysis.extractedData.downPayment));
@@ -273,6 +279,10 @@ export function WhatsAppInbox() {
 
         // 2. Atualiza campos do Perfil 360
         const updates: any = {};
+        if (analysis.extractedData?.monthlyIncome) {
+          updates.monthlyIncome = analysis.extractedData.monthlyIncome;
+          setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
+        }
         if (analysis.extractedData?.downPayment) {
           updates.downPaymentAvailable = analysis.extractedData.downPayment;
           setEditedDownPayment(String(analysis.extractedData.downPayment));
@@ -1480,10 +1490,36 @@ export function WhatsAppInbox() {
                 <span className="text-[10px] text-slate-400 font-medium">Edição Rápida</span>
               </div>
 
-              {/* Grid Entrada e Orçamento */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
-                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Entrada (R$)</label>
+              {/* Grid Renda, Entrada e Orçamento */}
+              <div className="grid grid-cols-3 gap-1.5">
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Renda (R$)</label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={editedMonthlyIncome}
+                    onChange={(e) => setEditedMonthlyIncome(e.target.value)}
+                    onBlur={() => {
+                      const val = Number(editedMonthlyIncome) || 0;
+                      updateContact(activeContact.id, { monthlyIncome: val });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = Number(editedMonthlyIncome) || 0;
+                        updateContact(activeContact.id, { monthlyIncome: val });
+                      }
+                    }}
+                    className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
+                  />
+                  {Number(editedMonthlyIncome) > 0 && (
+                    <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
+                      R$ {Number(editedMonthlyIncome).toLocaleString('pt-BR')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Entrada (R$)</label>
                   <input
                     type="number"
                     placeholder="0"
@@ -1502,14 +1538,14 @@ export function WhatsAppInbox() {
                     className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
                   />
                   {Number(editedDownPayment) > 0 && (
-                    <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">
+                    <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
                       R$ {Number(editedDownPayment).toLocaleString('pt-BR')}
                     </span>
                   )}
                 </div>
 
-                <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
-                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Orçamento Max (R$)</label>
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Orçamento Max</label>
                   <input
                     type="number"
                     placeholder="0"
@@ -1528,7 +1564,7 @@ export function WhatsAppInbox() {
                     className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
                   />
                   {Number(editedMaxBudget) > 0 && (
-                    <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">
+                    <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
                       R$ {Number(editedMaxBudget).toLocaleString('pt-BR')}
                     </span>
                   )}

@@ -73,13 +73,16 @@ export class BedrockCopilotClient {
       intent = 'NEGOCIAR_VALOR';
     }
 
-    // 2. Extração de Entrada Financeira (Down Payment)
+    // 2. Extração de Renda Mensal / Familiar
+    const monthlyIncome = this.extractMoneyMonthlyIncome(lowerText);
+
+    // 3. Extração de Entrada Financeira (Down Payment)
     const downPayment = this.extractMoneyDownPayment(lowerText);
 
-    // 3. Extração de Orçamento / Valor Máximo do Imóvel (Max Budget)
+    // 4. Extração de Orçamento / Valor Máximo do Imóvel (Max Budget)
     const maxBudget = this.extractMoneyMaxBudget(lowerText);
 
-    // 4. Extração de Tipo de Imóvel
+    // 5. Extração de Tipo de Imóvel
     const propertyType = this.extractPropertyType(lowerText);
 
     // 5. Extração de Regiões e Bairros
@@ -186,6 +189,9 @@ export class BedrockCopilotClient {
     const summaryParts: string[] = [
       `Lead com interesse em ${propertyType} em ${preferredRegion}.`,
     ];
+    if (monthlyIncome) {
+      summaryParts.push(`Renda informada: R$ ${monthlyIncome.toLocaleString('pt-BR')}/mês.`);
+    }
     if (downPayment) {
       summaryParts.push(`Entrada informada: R$ ${downPayment.toLocaleString('pt-BR')}.`);
     }
@@ -199,6 +205,7 @@ export class BedrockCopilotClient {
     return {
       summary: summaryParts.join(' '),
       extractedData: {
+        monthlyIncome,
         downPayment,
         maxBudget,
         preferredRegion,
@@ -213,6 +220,37 @@ export class BedrockCopilotClient {
       suggestedResponse,
       confidenceScore: 96,
     };
+  }
+
+  /**
+   * Extração Numérica de Renda Mensal / Familiar
+   */
+  private extractMoneyMonthlyIncome(text: string): number | undefined {
+    // Padrão 1: "minha renda é de 25 mil", "renda mensal de 30.000", "renda familiar de 40k"
+    const p1 = /(?:minha\s+)?renda(?:\s+(?:mensal|familiar|bruta|l[íi]quida))?(?:\s+(?:é|de|em|seria|fica|em torno de|na faixa de|será))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
+    const m1 = text.match(p1);
+    if (m1) {
+      const val = this.parseMoney(m1[1], m1[2]);
+      if (val && val >= 1000) return val;
+    }
+
+    // Padrão 2: "ganho 20 mil por mês", "tiro 15k ao mês", "faturamento de 30k mensal"
+    const p2 = /(?:ganho|tiro|faturamento|recebo|retiro)\s*(?:por m[êe]s|ao m[êe]s|mensalmente|de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
+    const m2 = text.match(p2);
+    if (m2) {
+      const val = this.parseMoney(m2[1], m2[2]);
+      if (val && val >= 1000) return val;
+    }
+
+    // Padrão 3: "25 mil de renda", "30k por mês"
+    const p3 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:de renda|por m[êe]s|ao m[êe]s|mensais|mensal)/i;
+    const m3 = text.match(p3);
+    if (m3) {
+      const val = this.parseMoney(m3[1], m3[2]);
+      if (val && val >= 1000) return val;
+    }
+
+    return undefined;
   }
 
   /**

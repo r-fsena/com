@@ -15,16 +15,18 @@ import {
   ChevronDown,
   Sparkles,
   Bot,
-  Zap
+  Zap,
+  QrCode
 } from 'lucide-react';
 
 interface SidebarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
   onOpenZapiSimulator: () => void;
+  onOpenQrCodeModal?: () => void;
 }
 
-export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator }: SidebarProps) {
+export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpenQrCodeModal }: SidebarProps) {
   const { 
     currentTenant, 
     tenants, 
@@ -185,16 +187,24 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator }: Side
                 {isZapiConnected ? 'ONLINE' : 'OFFLINE'}
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 mb-2.5">
-              Simule mensagens em tempo real e teste o webhook do WhatsApp.
-            </p>
-            <button
-              onClick={onOpenZapiSimulator}
-              className="w-full flex items-center justify-center gap-1.5 bg-emerald-700/40 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 rounded-lg py-1.5 text-xs font-semibold transition"
-            >
-              <Bot className="w-3.5 h-3.5" />
-              <span>Simular Webhook</span>
-            </button>
+            <div className="space-y-1.5">
+              {onOpenQrCodeModal && (
+                <button
+                  onClick={onOpenQrCodeModal}
+                  className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-bold transition shadow-xs"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Vincular WhatsApp</span>
+                </button>
+              )}
+              <button
+                onClick={onOpenZapiSimulator}
+                className="w-full flex items-center justify-center gap-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg py-1.5 text-xs font-medium transition"
+              >
+                <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Simular Webhook</span>
+              </button>
+            </div>
           </div>
         </div>
       </nav>

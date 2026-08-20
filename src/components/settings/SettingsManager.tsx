@@ -17,7 +17,11 @@ import {
   Lock
 } from 'lucide-react';
 
-export function SettingsManager() {
+interface SettingsManagerProps {
+  onOpenQrCodeModal?: () => void;
+}
+
+export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const { currentTenant, instances, syncZapiInstance, users } = useCRM();
   const [activeTab, setActiveTab] = useState<'ZAPI' | 'SLA' | 'AI' | 'TENANT' | 'TEAM'>('ZAPI');
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -114,13 +118,24 @@ export function SettingsManager() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => syncZapiInstance(inst.id)}
-                    className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-700 bg-slate-50 hover:bg-emerald-50 border border-slate-200 rounded-xl px-3 py-1.5 transition font-semibold"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Testar Conexão</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {onOpenQrCodeModal && (
+                      <button
+                        onClick={onOpenQrCodeModal}
+                        className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl px-3.5 py-1.5 transition font-semibold shadow-xs"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Escanear QR Code</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => syncZapiInstance(inst.id)}
+                      className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-700 bg-slate-50 hover:bg-emerald-50 border border-slate-200 rounded-xl px-3 py-1.5 transition font-semibold"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Testar Conexão</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4 font-mono">

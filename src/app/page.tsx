@@ -13,12 +13,14 @@ import { SalesDashboard } from '@/components/dashboard/SalesDashboard';
 import { SettingsManager } from '@/components/settings/SettingsManager';
 import { AutomationManager } from '@/components/automations/AutomationManager';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
+import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
 import { AuthModal } from '@/components/auth/AuthModal';
 
 export default function CRMApp() {
   const [currentTab, setCurrentTab] = useState('inbox');
   const [isZapiSimulatorOpen, setIsZapiSimulatorOpen] = useState(false);
+  const [isQrCodeModalOpen, setIsQrCodeModalOpen] = useState(false);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
@@ -39,6 +41,7 @@ export default function CRMApp() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         onOpenZapiSimulator={() => setIsZapiSimulatorOpen(true)}
+        onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)}
       />
 
       {/* Área Principal de Trabalho */}
@@ -69,7 +72,9 @@ export default function CRMApp() {
           {currentTab === 'automations' && <AutomationManager />}
           {currentTab === 'campaigns' && <CampaignManager />}
           {currentTab === 'dashboard' && <SalesDashboard />}
-          {currentTab === 'settings' && <SettingsManager />}
+          {currentTab === 'settings' && (
+            <SettingsManager onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)} />
+          )}
         </main>
       </div>
 
@@ -77,6 +82,11 @@ export default function CRMApp() {
       <ZapiSimulatorModal
         isOpen={isZapiSimulatorOpen}
         onClose={() => setIsZapiSimulatorOpen(false)}
+      />
+
+      <ZapiQrCodeModal
+        isOpen={isQrCodeModalOpen}
+        onClose={() => setIsQrCodeModalOpen(false)}
       />
 
       <NewLeadModal

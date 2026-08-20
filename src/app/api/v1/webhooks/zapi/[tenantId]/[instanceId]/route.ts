@@ -27,6 +27,7 @@ export async function POST(
     }
 
     const senderName = body.senderName || body.chatName || body.pushName || body.name || `WhatsApp ${cleanPhone ? cleanPhone.slice(-4) : 'Cliente'}`;
+    const senderPhoto = body.photo || body.senderPhoto || body.avatar || '';
     const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);
     const messageId = body.messageId || body.id || body.zaapId || `zmsg-${Date.now()}`;
     
@@ -48,8 +49,8 @@ export async function POST(
       content = body.text.message;
     } else if (typeof body.text === 'string') {
       content = body.text;
-    } else if (body.image || body.photo || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image)) {
-      const imgObj = body.image || body.photo || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image);
+    } else if (body.image || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image)) {
+      const imgObj = body.image || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image);
       mediaType = 'image';
       mediaUrl = typeof imgObj === 'string' ? imgObj : (imgObj.imageUrl || imgObj.url || imgObj.link || imgObj.thumbnailUrl || '');
       content = imgObj.caption || (isViewOnce ? '📷 Foto (Visualização Única)' : '📷 Imagem');
@@ -94,6 +95,7 @@ export async function POST(
         instanceId: instanceId || '3F1B67FC8139425171C79ED390C0144C',
         phone: cleanPhone,
         senderName,
+        senderPhoto,
         content,
         mediaType,
         mediaUrl,

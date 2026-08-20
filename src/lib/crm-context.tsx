@@ -703,6 +703,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               if (existing) {
                 return prevContacts.map(c => c.id === existing.id ? {
                   ...c,
+                  avatarUrl: incoming.senderPhoto || c.avatarUrl,
                   lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 } : c);
@@ -713,7 +714,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 tenantId: currentTenant.id,
                 name: incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`,
                 phone: formattedPhone,
-                avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(incoming.senderName || 'Cliente')}&background=059669&color=fff`,
+                avatarUrl: incoming.senderPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(incoming.senderName || 'Cliente')}&background=059669&color=fff`,
                 source: 'WHATSAPP',
                 temperature: 'HOT',
                 aiPriorityScore: 85,

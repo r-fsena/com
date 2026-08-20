@@ -4,6 +4,7 @@ export interface LiveWebhookMessage {
   instanceId: string;
   phone: string;
   senderName: string;
+  senderPhoto?: string;
   content: string;
   mediaUrl?: string;
   mediaType?: 'text' | 'image' | 'audio' | 'document';

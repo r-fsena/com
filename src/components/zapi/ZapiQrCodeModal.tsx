@@ -35,15 +35,17 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
 
-  // Form de Credenciais
-  const [instanceId, setInstanceId] = useState(instances[0]?.zapiInstanceId || '');
-  const [instanceToken, setInstanceToken] = useState('');
+  // Form de Credenciais com as chaves reais
+  const [instanceId, setInstanceId] = useState(instances[0]?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C');
+  const [instanceToken, setInstanceToken] = useState('7A18BD2BADA4840FB0374499');
+  const [clientToken, setClientToken] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Função para buscar QR Code real da API
-  const fetchLiveQrCode = async (instId?: string, tok?: string) => {
+  const fetchLiveQrCode = async (instId?: string, tok?: string, cTok?: string) => {
     const id = instId || instanceId;
     const t = tok || instanceToken;
+    const ct = cTok !== undefined ? cTok : clientToken;
 
     if (!id || !t) {
       return;
@@ -52,7 +54,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     try {
       setIsLoading(true);
       setQrError(null);
-      const res = await fetch(`/api/v1/zapi/qr-code?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}`);
+      const url = `/api/v1/zapi/qr-code?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}${ct ? `&clientToken=${encodeURIComponent(ct)}` : ''}`;
+      const res = await fetch(url);
       const data = await res.json();
 
       if (data.success && data.qrCode) {
@@ -71,7 +74,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   useEffect(() => {
     if (isOpen && !isConnected) {
       if (instanceId && instanceToken) {
-        fetchLiveQrCode(instanceId, instanceToken);
+        fetchLiveQrCode(instanceId, instanceToken, clientToken);
       }
     }
   }, [isOpen, isConnected]);
@@ -129,13 +132,14 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         body: JSON.stringify({
           instanceId: instanceId.trim(),
           token: instanceToken.trim(),
+          clientToken: clientToken.trim(),
           tenantId: currentTenant.id,
         }),
       });
 
       setSavedSuccess(true);
       setActiveTab('QR');
-      fetchLiveQrCode(instanceId.trim(), instanceToken.trim());
+      fetchLiveQrCode(instanceId.trim(), instanceToken.trim(), clientToken.trim());
     } catch {
       setSavedSuccess(true);
       setActiveTab('QR');
@@ -395,9 +399,25 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                   type="password"
                   value={instanceToken}
                   onChange={(e) => setInstanceToken(e.target.value)}
-                  placeholder="Ex: A1B2C3D4E5F6789012345678"
+                  placeholder="Ex: 7A18BD2BADA4840FB0374499"
                   className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Client-Token (Token de Segurança da Conta)
+                  </label>
+                  <span className="text-[10px] text-slate-400">Opcional / Se ativado na Z-API</span>
+                </div>
+                <input
+                  type="password"
+                  value={clientToken}
+                  onChange={(e) => setClientToken(e.target.value)}
+                  placeholder="Ex: Token de segurança gerado na aba Segurança da Z-API"
+                  className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>
 

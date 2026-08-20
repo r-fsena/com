@@ -106,7 +106,7 @@ export const MOCK_INSTANCES: WhatsAppInstance[] = [
     tenantId: 'tenant-vanguard-01',
     name: 'WhatsApp Comercial Principal',
     phoneNumber: 'Aguardando pareamento via QR Code',
-    zapiInstanceId: '3C9B8A7F20D1',
+    zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C',
     status: 'DISCONNECTED',
     batteryLevel: 0,
     lastSyncAt: new Date().toISOString(),

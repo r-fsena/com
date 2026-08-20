@@ -3,9 +3,9 @@ import { ZApiClient } from '@/lib/zapi-client';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '3D8F2A1B4C5E6D7E8F9A0B1C';
-  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || 'A1B2C3D4E5F6789012345678';
-  const securityToken = process.env.ZAPI_WEBHOOK_SECRET;
+  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
+  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN;
 
   try {
     const client = new ZApiClient({

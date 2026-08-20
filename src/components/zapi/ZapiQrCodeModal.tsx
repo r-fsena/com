@@ -38,7 +38,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   // Form de Credenciais com as chaves reais
   const [instanceId, setInstanceId] = useState(instances[0]?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C');
   const [instanceToken, setInstanceToken] = useState('7A18BD2BADA4840FB0374499');
-  const [clientToken, setClientToken] = useState('');
+  const [clientToken, setClientToken] = useState('Fc78d61c833db4b50864816b70766aee8S');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Função para buscar QR Code real da API

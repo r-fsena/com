@@ -143,6 +143,59 @@ export class ZApiClient {
   }
 
   /**
+   * Configuração automática do Webhook de Recebimento na Z-API via API REST
+   */
+  async configureWebhookReceived(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-received', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
+  /**
+   * Configuração automática do Webhook de Status de Entrega na Z-API
+   */
+  async configureWebhookDelivery(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-delivery', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
+  /**
+   * Configuração automática do Webhook de Desconexão na Z-API
+   */
+  async configureWebhookDisconnected(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-disconnected', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
+  /**
+   * Configura automaticamente todas as URLs de webhook e token de segurança na Z-API (Zero-Config)
+   */
+  async configureAllWebhooks(webhookUrl: string): Promise<{ success: boolean; errors?: string[] }> {
+    const results = await Promise.allSettled([
+      this.configureWebhookReceived(webhookUrl),
+      this.configureWebhookDelivery(webhookUrl),
+      this.configureWebhookDisconnected(webhookUrl),
+    ]);
+
+    const errors: string[] = [];
+    results.forEach((r, idx) => {
+      if (r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success)) {
+        errors.push(`Erro ao configurar webhook ${idx}: ${r.status === 'rejected' ? r.reason : r.value.error}`);
+      }
+    });
+
+    return {
+      success: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+  }
+
+  /**
    * Validação de segurança do Webhook
    */
   verifyWebhookSecurity(clientTokenHeader?: string | null): boolean {

@@ -68,6 +68,7 @@ interface CRMContextType {
   setActiveConversationId: (id: string | null) => void;
   messages: Message[];
   sendMessage: (conversationId: string, content: string, isInternalNote?: boolean, aiSuggested?: boolean) => void;
+  markConversationAsRead: (conversationId: string) => void;
   assignConversation: (conversationId: string, userId?: string) => void;
   simulateIncomingMessage: (phone: string, name: string, content: string) => void;
 
@@ -358,13 +359,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setMessages(prev => [...prev, newMessage]);
 
     if (!isInternalNote) {
-      // Atualiza conversa localmente
+      // Atualiza conversa localmente (zera unreadCount e muda status para PENDING_CLIENT)
       setConversations(prev => prev.map(conv => {
         if (conv.id === conversationId) {
           return {
             ...conv,
             lastMessagePreview: content.trim(),
             lastMessageAt: new Date().toISOString(),
+            unreadCount: 0,
             status: 'PENDING_CLIENT',
             slaBreached: false,
           };
@@ -401,6 +403,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'DELIVERED' } : m));
       }, 1500);
     }
+  };
+
+  // Marca conversa como lida (remove contadores de pendência e badges)
+  const markConversationAsRead = (conversationId: string) => {
+    setConversations(prev => prev.map(conv => {
+      if (conv.id === conversationId && (conv.unreadCount > 0 || conv.status === 'PENDING_TEAM')) {
+        return {
+          ...conv,
+          unreadCount: 0,
+          status: conv.status === 'PENDING_TEAM' ? 'OPEN' : conv.status,
+        };
+      }
+      return conv;
+    }));
   };
 
   // Atribuição de Conversa
@@ -826,6 +842,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       setActiveConversationId,
       messages,
       sendMessage,
+      markConversationAsRead,
       assignConversation,
       simulateIncomingMessage,
       aiInsights,

@@ -49,6 +49,7 @@ export function WhatsAppInbox() {
     setActiveConversationId,
     messages, 
     sendMessage, 
+    markConversationAsRead,
     contacts, 
     users, 
     currentUser,
@@ -82,6 +83,13 @@ export function WhatsAppInbox() {
   const activeMessages = messages.filter(m => m.conversationId === activeConversation?.id);
   const activeInsight = activeConversation ? aiInsights[activeConversation.id] : null;
   const activeDeal = deals.find(d => d.contactId === activeContact?.id);
+
+  // Remove notificação de mensagens pendentes quando a conversa está aberta na tela
+  React.useEffect(() => {
+    if (activeConversation?.id && activeConversation.unreadCount > 0) {
+      markConversationAsRead(activeConversation.id);
+    }
+  }, [activeConversation?.id, activeConversation?.unreadCount, markConversationAsRead]);
 
   // Tags disponíveis para filtro
   const availableTags = ['Lead Quente', 'Investidor', 'Lançamento', 'Visita Agendada', 'Financiamento'];
@@ -350,7 +358,10 @@ export function WhatsAppInbox() {
               return (
                 <button
                   key={conv.id}
-                  onClick={() => setActiveConversationId(conv.id)}
+                  onClick={() => {
+                    setActiveConversationId(conv.id);
+                    markConversationAsRead(conv.id);
+                  }}
                   className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group ${
                     isSelected ? 'bg-emerald-50/70 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
                   }`}

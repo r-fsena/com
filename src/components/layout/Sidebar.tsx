@@ -212,41 +212,31 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
       </nav>
 
       {/* User Switcher / Profile Footer */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/40">
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <img
-              src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
-              alt={currentUser.name}
-              className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-700 flex-shrink-0"
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
-              <span className="inline-block text-[9px] font-medium text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/40">
-                {currentUser.role}
-              </span>
-            </div>
+      <div className="p-3 border-t border-slate-800 bg-slate-950/60 space-y-2.5">
+        <div className="flex items-center gap-2.5 px-1 py-1">
+          <img
+            src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
+            alt={currentUser.name}
+            className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-700 flex-shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
+            <span className="inline-block text-[9px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/40">
+              {currentUser.role}
+            </span>
           </div>
-
-          <button
-            onClick={() => logout()}
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800/60 rounded-lg transition"
-            title="Sair da Conta (Logout)"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
 
         {/* User Role Testing Switcher */}
-        <div className="mt-2 px-1">
+        <div className="px-0.5">
           <select
             value={currentUser.id}
             onChange={(e) => {
               const u = users.find(x => x.id === e.target.value);
               if (u) setCurrentUser(u);
             }}
-            className="w-full text-[11px] bg-slate-900 text-slate-400 border border-slate-800 rounded px-2 py-1 focus:outline-none cursor-pointer hover:text-slate-200"
-            title="Alternar usuário para testar papéis RBAC"
+            className="w-full text-[11px] bg-slate-900 text-slate-300 border border-slate-700/80 rounded-lg px-2 py-1.5 focus:outline-none cursor-pointer hover:text-white transition"
+            title="Alternar usuário logado"
           >
             {users.map(u => (
               <option key={u.id} value={u.id}>
@@ -255,6 +245,16 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
             ))}
           </select>
         </div>
+
+        {/* Botão de Logoff Destacado */}
+        <button
+          onClick={() => logout()}
+          className="w-full flex items-center justify-center gap-2 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-rose-100 border border-rose-800/50 rounded-xl py-2 text-xs font-bold transition shadow-xs active:scale-98"
+          title="Encerrar sessão e voltar para a tela de login"
+        >
+          <LogOut className="w-3.5 h-3.5 text-rose-400" />
+          <span>Sair da Conta (Logoff)</span>
+        </button>
       </div>
     </aside>
   );

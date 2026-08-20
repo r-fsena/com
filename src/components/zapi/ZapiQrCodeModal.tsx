@@ -14,7 +14,9 @@ import {
   Wifi, 
   ExternalLink,
   MessageSquare,
-  Key
+  Key,
+  AlertCircle,
+  Link
 } from 'lucide-react';
 
 interface ZapiQrCodeModalProps {
@@ -30,11 +32,49 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [countdown, setCountdown] = useState(25);
   const [connectedPhone, setConnectedPhone] = useState('+55 11 99123-4567');
   const [batteryLevel, setBatteryLevel] = useState(98);
+  const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   // Form de Credenciais
-  const [instanceId, setInstanceId] = useState(instances[0]?.zapiInstanceId || '3D8F2A1B4C5E6D7E8F9A0B1C');
-  const [instanceToken, setInstanceToken] = useState('A1B2C3D4E5F6789012345678');
+  const [instanceId, setInstanceId] = useState(instances[0]?.zapiInstanceId || '');
+  const [instanceToken, setInstanceToken] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Função para buscar QR Code real da API
+  const fetchLiveQrCode = async (instId?: string, tok?: string) => {
+    const id = instId || instanceId;
+    const t = tok || instanceToken;
+
+    if (!id || !t) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setQrError(null);
+      const res = await fetch(`/api/v1/zapi/qr-code?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}`);
+      const data = await res.json();
+
+      if (data.success && data.qrCode) {
+        setQrCodeImage(data.qrCode);
+      } else {
+        setQrError(data.error || 'Não foi possível carregar o QR Code.');
+      }
+    } catch (err: any) {
+      setQrError(err.message || 'Falha de comunicação com a Z-API');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Carrega ao abrir o modal
+  useEffect(() => {
+    if (isOpen && !isConnected) {
+      if (instanceId && instanceToken) {
+        fetchLiveQrCode(instanceId, instanceToken);
+      }
+    }
+  }, [isOpen, isConnected]);
 
   // Contador para simular expiração e atualização de QR Code
   useEffect(() => {
@@ -43,6 +83,9 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
+          if (instanceId && instanceToken) {
+            fetchLiveQrCode(instanceId, instanceToken);
+          }
           return 25;
         }
         return prev - 1;
@@ -50,7 +93,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isOpen, isConnected]);
+  }, [isOpen, isConnected, instanceId, instanceToken]);
 
   if (!isOpen) return null;
 
@@ -69,13 +112,36 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setIsConnected(false);
       setIsLoading(false);
       setCountdown(25);
+      setQrCodeImage(null);
     }, 800);
   };
 
-  const handleSaveCredentials = (e: React.FormEvent) => {
+  const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    setIsLoading(true);
+    setSavedSuccess(false);
+
+    try {
+      // Auto-configura os webhooks na Z-API automaticamente
+      await fetch('/api/v1/zapi/auto-configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: instanceId.trim(),
+          token: instanceToken.trim(),
+          tenantId: currentTenant.id,
+        }),
+      });
+
+      setSavedSuccess(true);
+      setActiveTab('QR');
+      fetchLiveQrCode(instanceId.trim(), instanceToken.trim());
+    } catch {
+      setSavedSuccess(true);
+      setActiveTab('QR');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -126,7 +192,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
               }`}
             >
               <Key className="w-3.5 h-3.5" />
-              <span>Chaves da Instância</span>
+              <span>Chaves da Instância (Token)</span>
             </button>
           </div>
         </div>
@@ -165,7 +231,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-500 font-medium">Status do Webhook:</span>
                       <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full text-[10px]">
-                        OPERACIONAL
+                        AUTO-CONFIGURADO & ATIVO
                       </span>
                     </div>
                   </div>
@@ -195,32 +261,38 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                       <div className="relative p-4 bg-white rounded-2xl shadow-md border-2 border-dashed border-emerald-400/80 group">
                         {/* Imagem do QR Code Dinâmico */}
                         <div className="w-44 h-44 bg-slate-900 rounded-xl p-2 flex items-center justify-center shadow-inner relative overflow-hidden">
-                          <svg className="w-full h-full text-white" viewBox="0 0 100 100" fill="currentColor">
-                            <rect width="100" height="100" fill="#ffffff" />
-                            {/* Marcadores de Canto QR */}
-                            <rect x="8" y="8" width="28" height="28" fill="#0f172a" rx="4" />
-                            <rect x="12" y="12" width="20" height="20" fill="#ffffff" rx="2" />
-                            <rect x="16" y="16" width="12" height="12" fill="#059669" rx="2" />
+                          {qrCodeImage ? (
+                            <img
+                              src={qrCodeImage}
+                              alt="QR Code Z-API"
+                              className="w-full h-full object-contain rounded-lg bg-white"
+                            />
+                          ) : (
+                            <svg className="w-full h-full text-white" viewBox="0 0 100 100" fill="currentColor">
+                              <rect width="100" height="100" fill="#ffffff" />
+                              <rect x="8" y="8" width="28" height="28" fill="#0f172a" rx="4" />
+                              <rect x="12" y="12" width="20" height="20" fill="#ffffff" rx="2" />
+                              <rect x="16" y="16" width="12" height="12" fill="#059669" rx="2" />
 
-                            <rect x="64" y="8" width="28" height="28" fill="#0f172a" rx="4" />
-                            <rect x="68" y="12" width="20" height="20" fill="#ffffff" rx="2" />
-                            <rect x="72" y="16" width="12" height="12" fill="#059669" rx="2" />
+                              <rect x="64" y="8" width="28" height="28" fill="#0f172a" rx="4" />
+                              <rect x="68" y="12" width="20" height="20" fill="#ffffff" rx="2" />
+                              <rect x="72" y="16" width="12" height="12" fill="#059669" rx="2" />
 
-                            <rect x="8" y="64" width="28" height="28" fill="#0f172a" rx="4" />
-                            <rect x="12" y="68" width="20" height="20" fill="#ffffff" rx="2" />
-                            <rect x="16" y="72" width="12" height="12" fill="#059669" rx="2" />
+                              <rect x="8" y="64" width="28" height="28" fill="#0f172a" rx="4" />
+                              <rect x="12" y="68" width="20" height="20" fill="#ffffff" rx="2" />
+                              <rect x="16" y="72" width="12" height="12" fill="#059669" rx="2" />
 
-                            {/* Padrões internos do QR Code */}
-                            <rect x="42" y="12" width="8" height="16" fill="#0f172a" />
-                            <rect x="42" y="36" width="16" height="8" fill="#0f172a" />
-                            <rect x="12" y="42" width="16" height="8" fill="#0f172a" />
-                            <rect x="42" y="52" width="8" height="24" fill="#059669" />
-                            <rect x="64" y="42" width="24" height="8" fill="#0f172a" />
-                            <rect x="58" y="64" width="12" height="12" fill="#0f172a" />
-                            <rect x="76" y="64" width="16" height="8" fill="#059669" />
-                            <rect x="76" y="78" width="16" height="14" fill="#0f172a" />
-                            <rect x="42" y="84" width="24" height="8" fill="#0f172a" />
-                          </svg>
+                              <rect x="42" y="12" width="8" height="16" fill="#0f172a" />
+                              <rect x="42" y="36" width="16" height="8" fill="#0f172a" />
+                              <rect x="12" y="42" width="16" height="8" fill="#0f172a" />
+                              <rect x="42" y="52" width="8" height="24" fill="#059669" />
+                              <rect x="64" y="42" width="24" height="8" fill="#0f172a" />
+                              <rect x="58" y="64" width="12" height="12" fill="#0f172a" />
+                              <rect x="76" y="64" width="16" height="8" fill="#059669" />
+                              <rect x="76" y="78" width="16" height="14" fill="#0f172a" />
+                              <rect x="42" y="84" width="24" height="8" fill="#0f172a" />
+                            </svg>
+                          )}
 
                           {/* Linha de Scanner Animada */}
                           <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-lg shadow-emerald-400 animate-bounce top-2" />
@@ -243,27 +315,36 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                           <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
                             1
                           </span>
-                          <span>Abra o <strong>WhatsApp</strong> no celular da imobiliária.</span>
+                          <span>Abra o <strong>WhatsApp</strong> no celular comercial.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
                             2
                           </span>
-                          <span>Toque em <strong>Configurações</strong> e selecione <strong>Aparelhos Conectados</strong>.</span>
+                          <span>Toque em <strong>Configurações ➔ Aparelhos Conectados</strong>.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
                             3
                           </span>
-                          <span>Toque em <strong>Conectar Aparelho</strong> e aponte a câmera para o QR Code ao lado.</span>
+                          <span>Aponte a câmera para ler este QR Code.</span>
                         </li>
                       </ol>
+
+                      {!instanceId && (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                          <span>
+                            Deseja plugar uma instância real? Insira suas credenciais na aba <strong>"Chaves da Instância"</strong> acima.
+                          </span>
+                        </div>
+                      )}
 
                       {/* Botão de Pareamento Imediato para Testes */}
                       <button
                         onClick={handleSimulatePairing}
                         disabled={isLoading}
-                        className="w-full mt-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+                        className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
                       >
                         {isLoading ? (
                           <>
@@ -285,6 +366,13 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
           ) : (
             /* Aba de Configuração das Chaves Z-API */
             <form onSubmit={handleSaveCredentials} className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs space-y-1.5">
+                <span className="font-bold text-slate-800 block">Onde encontrar suas credenciais Z-API:</span>
+                <p className="text-slate-500 leading-relaxed">
+                  Acesse o painel em <strong className="text-slate-700">z-api.io</strong>, abra sua instância e copie o <strong>Instance ID</strong> e o <strong>Token</strong>. O CRM configurará os webhooks automaticamente.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Instance ID (Z-API)
@@ -293,7 +381,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                   type="text"
                   value={instanceId}
                   onChange={(e) => setInstanceId(e.target.value)}
-                  placeholder="Ex: 3D8F2A1B4C5E6D7E8F9A0B1C"
+                  placeholder="Ex: 3C9B8A7F20D14E5B8C1A"
                   className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
                 />
@@ -316,7 +404,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
               {savedSuccess && (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold p-3 rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Credenciais Z-API salvas com sucesso!</span>
+                  <span>Chaves salvas e Webhooks configurados na Z-API com sucesso!</span>
                 </div>
               )}
 
@@ -330,9 +418,11 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                 </button>
                 <button
                   type="submit"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
+                  disabled={isLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs active:scale-95 flex items-center gap-1.5"
                 >
-                  Salvar e Gerar Novo QR Code
+                  {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Link className="w-3.5 h-3.5" />}
+                  <span>Conectar Instância Real</span>
                 </button>
               </div>
             </form>

@@ -679,11 +679,22 @@ export function WhatsAppInbox() {
                   <ExternalLink className="w-3 h-3 text-emerald-500" />
                 </a>
 
+                {/* Botão Analisar com IA no Cabeçalho */}
+                <button
+                  onClick={handleForceAIAnalysis}
+                  disabled={isAnalyzingAI}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer ring-1 ring-emerald-400/50"
+                  title="Executar análise de IA para extrair dados financeiros e qualificação imobiliária"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
+                  <span>{isAnalyzingAI ? 'Analisando...' : 'Analisar com IA'}</span>
+                </button>
+
                 {/* Drawer Toggle */}
                 <button
                   onClick={() => setShowLeadDrawer(!showLeadDrawer)}
                   className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition ${
-                    showLeadDrawer ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-200'
+                    showLeadDrawer ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs' : 'bg-white text-slate-600 border-slate-200'
                   }`}
                   title="Abrir Perfil 360 do Lead"
                 >
@@ -970,6 +981,18 @@ export function WhatsAppInbox() {
                   >
                     <Lock className="w-3.5 h-3.5" />
                     <span>{isInternalNote ? 'Modo Nota Interna' : 'WhatsApp Cliente'}</span>
+                  </button>
+
+                  {/* Botão Forçar Análise com IA na Toolbar */}
+                  <button
+                    type="button"
+                    onClick={handleForceAIAnalysis}
+                    disabled={isAnalyzingAI}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1 border border-emerald-300 transition active:scale-95 shadow-2xs cursor-pointer"
+                    title="Forçar extração inteligente de dados com IA Copilot"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 text-emerald-600 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
+                    <span>{isAnalyzingAI ? 'Analisando...' : 'Analisar com IA'}</span>
                   </button>
 
                   {/* Respostas Rápidas */}

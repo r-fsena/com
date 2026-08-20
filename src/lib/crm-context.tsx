@@ -147,15 +147,62 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
   };
 
-  const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS);
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_contacts');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_CONTACTS;
+  });
+
   const [pipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
   const [currentPipeline, setCurrentPipeline] = useState<Pipeline>(MOCK_PIPELINES[0]);
   const [deals, setDeals] = useState<Deal[]>(MOCK_DEALS);
 
   const [instances, setInstances] = useState<WhatsAppInstance[]>(MOCK_INSTANCES);
-  const [conversations, setConversations] = useState<Conversation[]>(MOCK_CONVERSATIONS);
+  
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_conversations');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_CONVERSATIONS;
+  });
+
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_messages');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_MESSAGES;
+  });
+
+  // Salva no localStorage quando o estado mudar
+  useEffect(() => {
+    try {
+      if (contacts.length > 0) localStorage.setItem('vanguard_crm_contacts', JSON.stringify(contacts));
+    } catch {}
+  }, [contacts]);
+
+  useEffect(() => {
+    try {
+      if (conversations.length > 0) localStorage.setItem('vanguard_crm_conversations', JSON.stringify(conversations));
+    } catch {}
+  }, [conversations]);
+
+  useEffect(() => {
+    try {
+      if (messages.length > 0) localStorage.setItem('vanguard_crm_messages', JSON.stringify(messages));
+    } catch {}
+  }, [messages]);
   
   const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(MOCK_AI_INSIGHTS);
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
@@ -502,11 +549,35 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
 
       if (data.success && Array.isArray(data.contacts) && data.contacts.length > 0) {
-        setContacts(data.contacts);
-        setConversations(data.conversations);
+        // 1. Merge de Contatos (preserva contatos existentes e adiciona novos)
+        setContacts(prev => {
+          const map = new Map(prev.map(c => [c.id, c]));
+          data.contacts.forEach((c: Contact) => {
+            const old = map.get(c.id);
+            map.set(c.id, old ? { ...c, ...old, avatarUrl: c.avatarUrl || old.avatarUrl, name: (c.name && !c.name.startsWith('WhatsApp')) ? c.name : old.name } : c);
+          });
+          return Array.from(map.values());
+        });
+
+        // 2. Merge de Conversas
+        setConversations(prev => {
+          const map = new Map(prev.map(c => [c.id, c]));
+          data.conversations.forEach((c: Conversation) => {
+            const old = map.get(c.id);
+            map.set(c.id, old ? { ...c, ...old, lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview } : c);
+          });
+          return Array.from(map.values());
+        });
+
+        // 3. Merge de Mensagens (NUNCA apaga mensagens enviadas pelo usuário!)
         if (data.messages && data.messages.length > 0) {
-          setMessages(data.messages);
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const newOnes = data.messages.filter((m: Message) => !existingIds.has(m.id));
+            return [...prev, ...newOnes];
+          });
         }
+
         if (!activeConversationId && data.conversations[0]?.id) {
           setActiveConversationId(data.conversations[0].id);
         }

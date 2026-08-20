@@ -1,0 +1,182 @@
+openapi: 3.0.3
+info:
+  title: Vanguard CRM Imobiliário - API de Produção
+  description: API REST para CRM Imobiliário Multi-tenant integrado ao WhatsApp (Z-API) e IA Copiloto (Amazon Bedrock).
+  version: 1.0.0
+servers:
+  - url: https://api.vanguardcrm.com.br
+    description: Servidor de Produção AWS API Gateway
+  - url: http://localhost:3000
+    description: Ambiente de Desenvolvimento Local
+
+paths:
+  /api/v1/webhooks/zapi/{tenantId}/{instanceId}:
+    post:
+      summary: Ingestão de Webhooks do WhatsApp via Z-API
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Client-Token
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event:
+                  type: string
+                  example: on-message-received
+                messageId:
+                  type: string
+                phone:
+                  type: string
+                  example: "5511999998888"
+                text:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+      responses:
+        '200':
+          description: Evento recebido e enfileirado com sucesso
+        '401':
+          description: Token de segurança Z-API inválido
+
+  /api/v1/conversations/{id}/messages:
+    post:
+      summary: Envio de mensagem WhatsApp ou registro de nota interna
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                isInternalNote:
+                  type: boolean
+                  default: false
+                idempotencyKey:
+                  type: string
+      responses:
+        '200':
+          description: Mensagem enviada ou nota registrada
+
+  /api/v1/contacts:
+    get:
+      summary: Listagem paginada de leads e clientes
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+        - name: temperature
+          in: query
+          schema:
+            type: string
+            enum: [ALL, HOT, WARM, COLD]
+        - name: q
+          in: query
+          description: Busca por nome, telefone ou tags
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de contatos retornada
+    post:
+      summary: Criação de novo lead com perfil financeiro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - phone
+              properties:
+                name:
+                  type: string
+                phone:
+                  type: string
+                temperature:
+                  type: string
+                  enum: [HOT, WARM, COLD]
+                downPaymentAvailable:
+                  type: number
+                maxPropertyValue:
+                  type: number
+      responses:
+        '201':
+          description: Lead cadastrado com sucesso
+
+  /api/v1/ai/copilot:
+    post:
+      summary: Inferência de IA Copiloto via Amazon Bedrock (Claude 3.5 Sonnet)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - chatHistory
+              properties:
+                chatHistory:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sender:
+                        type: string
+                        enum: [CLIENT, BROKER]
+                      text:
+                        type: string
+      responses:
+        '200':
+          description: Resumo, extração semântica e sugestão de resposta
+
+  /api/v1/uploads/presigned-url:
+    post:
+      summary: Geração de Presigned URL para upload direto no Amazon S3
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fileName
+                - fileType
+              properties:
+                tenantId:
+                  type: string
+                fileName:
+                  type: string
+                fileType:
+                  type: string
+      responses:
+        '200':
+          description: Presigned URL gerada com expiração de 15 minutos

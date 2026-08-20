@@ -15,7 +15,8 @@ import {
   DollarSign, 
   Flame, 
   Trash2, 
-  Edit
+  Edit,
+  Download
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -44,6 +45,31 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
     return true;
   });
 
+  const handleExportCSV = () => {
+    const headers = ['Nome', 'Telefone', 'Email', 'Temperatura', 'Origem', 'Entrada (R$)', 'Orcamento Max (R$)', 'Regioes', 'Tags', 'LGPD Opt-in'];
+    const rows = filtered.map(c => [
+      `"${c.name}"`,
+      `"${c.phone}"`,
+      `"${c.email || ''}"`,
+      `"${c.temperature}"`,
+      `"${c.source}"`,
+      `"${c.downPaymentAvailable || 0}"`,
+      `"${c.maxPropertyValue || 0}"`,
+      `"${c.targetRegions.join('; ')}"`,
+      `"${c.tags.join('; ')}"`,
+      `"${!c.hasOptedOut ? 'Sim' : 'Nao'}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `leads_vanguard_crm_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
       {/* Header */}
@@ -60,13 +86,24 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
           </p>
         </div>
 
-        <button
-          onClick={onOpenNewLead}
-          className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Cadastrar Lead</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-xs"
+            title="Baixar lista em arquivo CSV"
+          >
+            <Download className="w-4 h-4" />
+            <span>Exportar CSV</span>
+          </button>
+
+          <button
+            onClick={onOpenNewLead}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Cadastrar Lead</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters Bar */}

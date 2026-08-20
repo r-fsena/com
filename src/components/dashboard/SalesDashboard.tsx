@@ -55,13 +55,15 @@ export function SalesDashboard() {
     sourceCountMap[c.source] = (sourceCountMap[c.source] || 0) + 1;
   });
 
-  const sourceData = Object.entries(sourceCountMap).map(([source, count]) => ({
-    name: source === 'WHATSAPP' ? 'WhatsApp Direto' :
-          source === 'INSTAGRAM_ADS' ? 'Instagram Ads' :
-          source === 'FACEBOOK_ADS' ? 'Facebook Ads' :
-          source === 'PORTAL_ZAP' ? 'Portal ZAP' : 'Outros',
-    value: count,
-  }));
+  const sourceData = Object.entries(sourceCountMap).length > 0 
+    ? Object.entries(sourceCountMap).map(([source, count]) => ({
+        name: source === 'WHATSAPP' ? 'WhatsApp Direto' :
+              source === 'INSTAGRAM_ADS' ? 'Instagram Ads' :
+              source === 'FACEBOOK_ADS' ? 'Facebook Ads' :
+              source === 'PORTAL_ZAP' ? 'Portal ZAP' : 'Outros',
+        value: count,
+      }))
+    : [{ name: 'Aguardando Leads', value: 1 }];
 
   const COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6'];
 

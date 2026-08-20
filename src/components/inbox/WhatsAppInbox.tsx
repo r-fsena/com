@@ -24,7 +24,8 @@ import {
   AlertCircle,
   HelpCircle,
   Zap,
-  Bot
+  Bot,
+  MessageSquare
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -184,77 +185,91 @@ export function WhatsAppInbox() {
 
         {/* Lista de Chats */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          {filteredConversations.map((conv) => {
-            const contact = contacts.find(c => c.id === conv.contactId);
-            const isSelected = conv.id === activeConversation?.id;
-            const assignedUser = users.find(u => u.id === conv.assignedUserId);
+          {filteredConversations.length === 0 ? (
+            <div className="p-8 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-700">Nenhuma conversa no momento</p>
+                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                  As mensagens recebidas no WhatsApp aparecerão aqui automaticamente.
+                </p>
+              </div>
+            </div>
+          ) : (
+            filteredConversations.map((conv) => {
+              const contact = contacts.find(c => c.id === conv.contactId);
+              const isSelected = conv.id === activeConversation?.id;
+              const assignedUser = users.find(u => u.id === conv.assignedUserId);
 
-            return (
-              <button
-                key={conv.id}
-                onClick={() => setActiveConversationId(conv.id)}
-                className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group ${
-                  isSelected ? 'bg-emerald-50/70 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
-                }`}
-              >
-                {/* Avatar */}
-                <div className="relative flex-shrink-0">
-                  <img
-                    src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
-                    alt={contact?.name}
-                    className="w-11 h-11 rounded-full object-cover ring-1 ring-slate-200"
-                  />
-                  {contact?.temperature === 'HOT' && (
-                    <span className="absolute -bottom-1 -right-1 text-xs" title="Lead Quente">
-                      🔥
-                    </span>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-emerald-950' : 'text-slate-800'}`}>
-                      {contact?.name || 'Lead WhatsApp'}
-                    </h3>
-                    <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1">
-                      {format(new Date(conv.lastMessageAt), 'HH:mm', { locale: ptBR })}
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 truncate mb-1.5 leading-relaxed">
-                    {conv.lastMessagePreview}
-                  </p>
-
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="flex items-center gap-1 text-[10px]">
-                      {assignedUser ? (
-                        <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate max-w-[100px]">
-                          👤 {assignedUser.name.split(' ')[0]}
-                        </span>
-                      ) : (
-                        <span className="text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
-                          ⚠️ Não Atribuído
-                        </span>
-                      )}
-
-                      {contact?.aiPriorityScore && contact.aiPriorityScore >= 80 && (
-                        <span className="text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded font-bold">
-                          ★ {contact.aiPriorityScore}
-                        </span>
-                      )}
-                    </div>
-
-                    {conv.unreadCount > 0 && (
-                      <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
-                        {conv.unreadCount}
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => setActiveConversationId(conv.id)}
+                  className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group ${
+                    isSelected ? 'bg-emerald-50/70 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
+                  }`}
+                >
+                  {/* Avatar */}
+                  <div className="relative flex-shrink-0">
+                    <img
+                      src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
+                      alt={contact?.name}
+                      className="w-11 h-11 rounded-full object-cover ring-1 ring-slate-200"
+                    />
+                    {contact?.temperature === 'HOT' && (
+                      <span className="absolute -bottom-1 -right-1 text-xs" title="Lead Quente">
+                        🔥
                       </span>
                     )}
                   </div>
-                </div>
-              </button>
-            );
-          })}
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-emerald-950' : 'text-slate-800'}`}>
+                        {contact?.name || 'Lead WhatsApp'}
+                      </h3>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1">
+                        {format(new Date(conv.lastMessageAt), 'HH:mm', { locale: ptBR })}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 truncate mb-1.5 leading-relaxed">
+                      {conv.lastMessagePreview}
+                    </p>
+
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1 text-[10px]">
+                        {assignedUser ? (
+                          <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate max-w-[100px]">
+                            👤 {assignedUser.name.split(' ')[0]}
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
+                            ⚠️ Não Atribuído
+                          </span>
+                        )}
+
+                        {contact?.aiPriorityScore && contact.aiPriorityScore >= 80 && (
+                          <span className="text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded font-bold">
+                            ★ {contact.aiPriorityScore}
+                          </span>
+                        )}
+                      </div>
+
+                      {conv.unreadCount > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
+                          {conv.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -540,8 +555,16 @@ export function WhatsAppInbox() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-slate-400">
-            <p className="text-xs">Selecione uma conversa para iniciar o atendimento.</p>
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#efeae2]/60">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center mb-4 shadow-sm">
+              <MessageSquare className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">
+              Caixa de Entrada WhatsApp Pronta
+            </h3>
+            <p className="text-xs text-slate-500 max-w-sm mt-1 leading-relaxed">
+              Nenhuma conversa selecionada. Vincule seu WhatsApp através do QR Code para receber e responder mensagens em tempo real.
+            </p>
           </div>
         )}
       </div>

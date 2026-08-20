@@ -152,7 +152,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const [instances, setInstances] = useState<WhatsAppInstance[]>(MOCK_INSTANCES);
   const [conversations, setConversations] = useState<Conversation[]>(MOCK_CONVERSATIONS);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>('conv-01');
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
   
   const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(MOCK_AI_INSIGHTS);

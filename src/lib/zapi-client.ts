@@ -264,6 +264,30 @@ export class ZApiClient {
   }
 
   /**
+   * Modifica o status do chat no WhatsApp (archive, unarchive, clear, delete, pin, unpin, mute, unmute)
+   */
+  async modifyChat(phone: string, action: 'archive' | 'unarchive' | 'clear' | 'delete' | 'pin' | 'unpin' | 'mute' | 'unmute'): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request('modify-chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: cleanPhone,
+        action,
+      }),
+    });
+  }
+
+  /**
+   * Deleta uma mensagem individual do WhatsApp
+   */
+  async deleteMessage(phone: string, messageId: string, owner: boolean = true): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request(`messages?messageId=${messageId}&phone=${cleanPhone}&owner=${owner}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
    * Validação de segurança do Webhook
    */
   verifyWebhookSecurity(clientTokenHeader?: string | null): boolean {

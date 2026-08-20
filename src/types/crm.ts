@@ -169,6 +169,8 @@ export interface Conversation {
   unreadCount: number;
   slaBreached: boolean;
   slaBreachReason?: string;
+  isPinned?: boolean;
+  isArchived?: boolean;
 }
 
 export interface AIInsight {

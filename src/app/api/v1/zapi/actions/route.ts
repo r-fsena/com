@@ -58,9 +58,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(res);
     }
 
-    if (action === 'send-audio') {
-      const { audioUrl } = body;
-      const res = await zapi.sendAudio(cleanPhone, audioUrl);
+    if (action === 'archive' || action === 'unarchive' || action === 'clear' || action === 'delete' || action === 'pin' || action === 'unpin') {
+      const res = await zapi.modifyChat(cleanPhone, action);
+      return NextResponse.json(res);
+    }
+
+    if (action === 'delete-message') {
+      const { messageId, owner } = body;
+      const res = await zapi.deleteMessage(cleanPhone, messageId, owner ?? true);
       return NextResponse.json(res);
     }
 

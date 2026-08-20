@@ -69,6 +69,10 @@ interface CRMContextType {
   messages: Message[];
   sendMessage: (conversationId: string, content: string, isInternalNote?: boolean, aiSuggested?: boolean) => void;
   markConversationAsRead: (conversationId: string) => void;
+  clearChatMessages: (conversationId: string) => Promise<void>;
+  archiveConversation: (conversationId: string, archive?: boolean) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
+  pinConversation: (conversationId: string) => Promise<void>;
   assignConversation: (conversationId: string, userId?: string) => void;
   simulateIncomingMessage: (phone: string, name: string, content: string) => void;
 
@@ -425,6 +429,101 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
       return conv;
     }));
+  };
+
+  // Limpar histórico de mensagens da conversa (Z-API + Local)
+  const clearChatMessages = async (conversationId: string) => {
+    const conv = conversations.find(c => c.id === conversationId);
+    const contact = contacts.find(cnt => cnt.id === conv?.contactId);
+    const phone = contact?.phone || (conversationId.includes('zapi-') ? conversationId.split('zapi-')[1] : '');
+
+    // Limpa mensagens locais
+    setMessages(prev => prev.filter(m => m.conversationId !== conversationId));
+
+    if (phone) {
+      try {
+        await fetch('/api/v1/zapi/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'clear', phone }),
+        });
+      } catch (err) {
+        console.error('Erro ao limpar conversa na Z-API:', err);
+      }
+    }
+  };
+
+  // Arquivar ou Desarquivar conversa (Z-API + Local)
+  const archiveConversation = async (conversationId: string, archive = true) => {
+    const conv = conversations.find(c => c.id === conversationId);
+    const contact = contacts.find(cnt => cnt.id === conv?.contactId);
+    const phone = contact?.phone || (conversationId.includes('zapi-') ? conversationId.split('zapi-')[1] : '');
+
+    setConversations(prev => prev.map(c => c.id === conversationId ? { 
+      ...c, 
+      isArchived: archive, 
+      status: archive ? 'CLOSED' : 'OPEN' 
+    } : c));
+
+    if (phone) {
+      try {
+        await fetch('/api/v1/zapi/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: archive ? 'archive' : 'unarchive', phone }),
+        });
+      } catch (err) {
+        console.error('Erro ao arquivar conversa na Z-API:', err);
+      }
+    }
+  };
+
+  // Deletar conversa completamente (Z-API + Local)
+  const deleteConversation = async (conversationId: string) => {
+    const conv = conversations.find(c => c.id === conversationId);
+    const contact = contacts.find(cnt => cnt.id === conv?.contactId);
+    const phone = contact?.phone || (conversationId.includes('zapi-') ? conversationId.split('zapi-')[1] : '');
+
+    setConversations(prev => prev.filter(c => c.id !== conversationId));
+    setMessages(prev => prev.filter(m => m.conversationId !== conversationId));
+    
+    if (activeConversationId === conversationId) {
+      setActiveConversationId(null);
+    }
+
+    if (phone) {
+      try {
+        await fetch('/api/v1/zapi/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', phone }),
+        });
+      } catch (err) {
+        console.error('Erro ao deletar conversa na Z-API:', err);
+      }
+    }
+  };
+
+  // Fixar ou Desafixar conversa no topo (Z-API + Local)
+  const pinConversation = async (conversationId: string) => {
+    const conv = conversations.find(c => c.id === conversationId);
+    const contact = contacts.find(cnt => cnt.id === conv?.contactId);
+    const phone = contact?.phone || (conversationId.includes('zapi-') ? conversationId.split('zapi-')[1] : '');
+    const newPinned = !conv?.isPinned;
+
+    setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, isPinned: newPinned } : c));
+
+    if (phone) {
+      try {
+        await fetch('/api/v1/zapi/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: newPinned ? 'pin' : 'unpin', phone }),
+        });
+      } catch (err) {
+        console.error('Erro ao fixar conversa na Z-API:', err);
+      }
+    }
   };
 
   // Atribuição de Conversa
@@ -852,6 +951,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       messages,
       sendMessage,
       markConversationAsRead,
+      clearChatMessages,
+      archiveConversation,
+      deleteConversation,
+      pinConversation,
       assignConversation,
       simulateIncomingMessage,
       aiInsights,

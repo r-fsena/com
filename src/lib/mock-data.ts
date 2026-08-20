@@ -632,3 +632,92 @@ export const MOCK_CAMPAIGNS: Campaign[] = [
     createdAt: '2026-08-18T14:00:00Z',
   }
 ];
+
+export const MOCK_AUTOMATIONS = [
+  {
+    id: 'auto-01',
+    tenantId: 'tenant-vanguard-01',
+    name: 'Boas-vindas Instantânea para Novos Leads do WhatsApp',
+    description: 'Quando um lead novo entrar pela Z-API, atribui corretor via rodízio e agenda tarefa de 1º atendimento em 15 minutos.',
+    triggerType: 'LEAD_CREATED',
+    isActive: true,
+    conditions: [
+      { field: 'source', operator: 'EQUALS', value: 'WHATSAPP' }
+    ],
+    actions: [
+      { actionType: 'ASSIGN_BROKER_ROUND_ROBIN', config: {} },
+      { actionType: 'CREATE_TASK', config: { title: 'Primeiro Atendimento via WhatsApp', priority: 'HIGH', dueMinutes: 15 } },
+      { actionType: 'ADD_TAG', config: { tag: 'WhatsApp-Inbound' } }
+    ],
+    executionCount: 148,
+    lastExecutedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    createdAt: '2026-08-01T10:00:00Z',
+  },
+  {
+    id: 'auto-02',
+    tenantId: 'tenant-vanguard-01',
+    name: 'Lead Quente de Alta Renda -> Atribuição Gestor Sênior',
+    description: 'Se o orçamento do imóvel for maior que R$ 2.500.000, aplica tag VIP e notifica a gestão comercial imediatamente.',
+    triggerType: 'LEAD_CREATED',
+    isActive: true,
+    conditions: [
+      { field: 'temperature', operator: 'EQUALS', value: 'HOT' }
+    ],
+    actions: [
+      { actionType: 'ADD_TAG', config: { tag: 'Cliente-VIP' } },
+      { actionType: 'NOTIFY_TEAM', config: { message: 'Novo lead VIP acima de R$ 2.5M cadastrado!' } }
+    ],
+    executionCount: 29,
+    lastExecutedAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    createdAt: '2026-08-05T14:00:00Z',
+  },
+  {
+    id: 'auto-03',
+    tenantId: 'tenant-vanguard-01',
+    name: 'Alerta de Lead Inativo há mais de 48 Horas',
+    description: 'Quando um lead ficar 48h sem resposta da equipe, dispara alerta crítico no dashboard.',
+    triggerType: 'LEAD_INACTIVE',
+    isActive: true,
+    conditions: [],
+    actions: [
+      { actionType: 'CREATE_TASK', config: { title: 'Follow-up Urgente de Reativação', priority: 'HIGH', dueMinutes: 60 } }
+    ],
+    executionCount: 64,
+    lastExecutedAt: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+    createdAt: '2026-08-08T09:00:00Z',
+  }
+];
+
+export const MOCK_AUTOMATION_LOGS = [
+  {
+    id: 'log-01',
+    tenantId: 'tenant-vanguard-01',
+    ruleId: 'auto-01',
+    ruleName: 'Boas-vindas Instantânea para Novos Leads do WhatsApp',
+    contactName: 'Dr. Roberto Silveira',
+    status: 'SUCCESS',
+    reason: 'Corretor Lucas Brandão atribuído por rodízio + Tarefa criada com SLA de 15m.',
+    executedAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+  },
+  {
+    id: 'log-02',
+    tenantId: 'tenant-vanguard-01',
+    ruleId: 'auto-02',
+    ruleName: 'Lead Quente de Alta Renda -> Atribuição Gestor Sênior',
+    contactName: 'Fernanda Castanheira',
+    status: 'SUCCESS',
+    reason: 'Tag #Cliente-VIP adicionada + Gestor Camila Mendonça notificada.',
+    executedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+  },
+  {
+    id: 'log-03',
+    tenantId: 'tenant-vanguard-01',
+    ruleId: 'auto-01',
+    ruleName: 'Boas-vindas Instantânea para Novos Leads do WhatsApp',
+    contactName: 'Carlos Eduardo Nogueira',
+    status: 'SUCCESS',
+    reason: 'Regra executada com sucesso para origem PORTAL_ZAP.',
+    executedAt: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
+  }
+];
+

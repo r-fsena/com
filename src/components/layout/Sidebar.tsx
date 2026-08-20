@@ -14,7 +14,8 @@ import {
   Wifi, 
   ChevronDown,
   Sparkles,
-  Bot
+  Bot,
+  Zap
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -68,6 +69,12 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator }: Side
       icon: CheckSquare,
       badge: pendingTasksCount > 0 ? pendingTasksCount : null,
       badgeColor: 'bg-amber-500 text-white',
+    },
+    {
+      id: 'automations',
+      label: 'Automações & Regras',
+      icon: Zap,
+      badge: null,
     },
     {
       id: 'campaigns',

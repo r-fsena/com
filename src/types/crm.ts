@@ -19,9 +19,9 @@ export interface Tenant {
   primaryColor: string;
   timezone: string;
   businessHours: {
-    start: string; // e.g. "08:00"
-    end: string;   // e.g. "19:00"
-    workDays: number[]; // [1, 2, 3, 4, 5, 6]
+    start: string;
+    end: string;
+    workDays: number[];
   };
   settings: {
     slaFirstResponseMinutes: number;
@@ -52,12 +52,11 @@ export interface Contact {
   id: string;
   tenantId: string;
   name: string;
-  phone: string; // Formato E.164: +5511999999999
+  phone: string;
   email?: string;
   cpf?: string;
   avatarUrl?: string;
   
-  // Perfil Financeiro e Comercial Imobiliário
   monthlyIncome?: number;
   householdIncome?: number;
   downPaymentAvailable?: number;
@@ -65,7 +64,6 @@ export interface Contact {
   minPropertyValue?: number;
   maxPropertyValue?: number;
   
-  // Preferências
   preferredPropertyType?: PropertyType;
   purchasePurpose?: PurchasePurpose;
   targetRegions: string[];
@@ -73,20 +71,17 @@ export interface Contact {
   targetParkingSpots?: number;
   purchaseTimeline?: 'IMMEDIATE' | '1_TO_3_MONTHS' | '3_TO_6_MONTHS' | 'INVESTOR_OPPORTUNITY';
   
-  // Metadados de Gestão
   source: 'WHATSAPP' | 'INSTAGRAM_ADS' | 'FACEBOOK_ADS' | 'GOOGLE' | 'PORTAL_ZAP' | 'PORTAL_VIVAREAL' | 'INDICATION' | 'WEBSITE' | 'MANUAL';
   temperature: LeadTemperature;
-  aiPriorityScore: number; // 0 a 100
+  aiPriorityScore: number;
   assignedUserId?: string;
   tags: string[];
   notesCount: number;
   
-  // LGPD & Consentimento
   consentGiven: boolean;
   consentDate?: string;
   hasOptedOut: boolean;
   
-  // Datas e SLAs
   lastClientInteractionAt?: string;
   lastTeamInteractionAt?: string;
   createdAt: string;
@@ -119,10 +114,10 @@ export interface Deal {
   pipelineId: string;
   stageId: string;
   assignedUserId: string;
-  title: string; // Ex: "Apto 3 Quartos - Jardins (Residencial Horizon)"
+  title: string;
   expectedValue: number;
-  manualProbability: number; // 0 - 100%
-  aiProbabilityScore: number; // 0 - 100
+  manualProbability: number;
+  aiProbabilityScore: number;
   status: 'OPEN' | 'WON' | 'LOST';
   lossReason?: string;
   propertyInterest?: string;
@@ -141,14 +136,14 @@ export interface Attachment {
   fileName: string;
   fileSize: number;
   mimeType: string;
-  durationSeconds?: number; // Para áudios
+  durationSeconds?: number;
 }
 
 export interface Message {
   id: string;
   tenantId: string;
   conversationId: string;
-  externalId?: string; // Z-API ID
+  externalId?: string;
   senderType: MessageSenderType;
   senderUserId?: string;
   senderName?: string;
@@ -251,8 +246,58 @@ export interface Campaign {
 export interface QuickReplyTemplate {
   id: string;
   tenantId: string;
-  shortcut: string; // ex: "/apresentacao"
+  shortcut: string;
   title: string;
   content: string;
   category: 'GREETING' | 'QUALIFICATION' | 'PROPERTIES' | 'VISIT' | 'CLOSING';
+}
+
+// -------------------------------------------------------------
+// MOTOR DE AUTOMAÇÕES (WORKFLOW ENGINE)
+// -------------------------------------------------------------
+export type AutomationTriggerType = 
+  | 'LEAD_CREATED' 
+  | 'STAGE_CHANGED' 
+  | 'LEAD_INACTIVE' 
+  | 'TAG_ADDED' 
+  | 'MESSAGE_RECEIVED';
+
+export type AutomationActionType = 
+  | 'SEND_WHATSAPP_MESSAGE' 
+  | 'ASSIGN_BROKER_ROUND_ROBIN' 
+  | 'CREATE_TASK' 
+  | 'ADD_TAG' 
+  | 'MOVE_DEAL_STAGE' 
+  | 'NOTIFY_TEAM';
+
+export interface AutomationRule {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  triggerType: AutomationTriggerType;
+  isActive: boolean;
+  conditions: {
+    field: string;
+    operator: 'EQUALS' | 'GREATER_THAN' | 'CONTAINS' | 'IS_EMPTY';
+    value: string;
+  }[];
+  actions: {
+    actionType: AutomationActionType;
+    config: Record<string, any>;
+  }[];
+  executionCount: number;
+  lastExecutedAt?: string;
+  createdAt: string;
+}
+
+export interface AutomationExecutionLog {
+  id: string;
+  tenantId: string;
+  ruleId: string;
+  ruleName: string;
+  contactName: string;
+  status: 'SUCCESS' | 'SKIPPED' | 'FAILED';
+  reason: string;
+  executedAt: string;
 }

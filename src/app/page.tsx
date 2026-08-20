@@ -11,13 +11,16 @@ import { TasksManager } from '@/components/tasks/TasksManager';
 import { CampaignManager } from '@/components/campaigns/CampaignManager';
 import { SalesDashboard } from '@/components/dashboard/SalesDashboard';
 import { SettingsManager } from '@/components/settings/SettingsManager';
+import { AutomationManager } from '@/components/automations/AutomationManager';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
+import { AuthModal } from '@/components/auth/AuthModal';
 
 export default function CRMApp() {
   const [currentTab, setCurrentTab] = useState('inbox');
   const [isZapiSimulatorOpen, setIsZapiSimulatorOpen] = useState(false);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const { setActiveConversationId, conversations } = useCRM();
 
@@ -43,6 +46,7 @@ export default function CRMApp() {
         <Header
           onOpenNewLead={() => setIsNewLeadOpen(true)}
           onOpenZapiSimulator={() => setIsZapiSimulatorOpen(true)}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onSelectContact={handleOpenChatForContact}
         />
 
@@ -62,6 +66,7 @@ export default function CRMApp() {
             />
           )}
           {currentTab === 'tasks' && <TasksManager />}
+          {currentTab === 'automations' && <AutomationManager />}
           {currentTab === 'campaigns' && <CampaignManager />}
           {currentTab === 'dashboard' && <SalesDashboard />}
           {currentTab === 'settings' && <SettingsManager />}
@@ -77,6 +82,11 @@ export default function CRMApp() {
       <NewLeadModal
         isOpen={isNewLeadOpen}
         onClose={() => setIsNewLeadOpen(false)}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </div>
   );

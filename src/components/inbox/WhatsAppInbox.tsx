@@ -479,6 +479,25 @@ export function WhatsAppInbox() {
                     <Zap className="w-3.5 h-3.5 text-amber-500" />
                     <span>Modelos Rápidos</span>
                   </button>
+
+                  {/* Anexo de Arquivo S3 */}
+                  <label className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 cursor-pointer">
+                    <Paperclip className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Anexar (S3)</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file && activeConversation) {
+                          sendMessage(
+                            activeConversation.id,
+                            `📎 [Arquivo S3 Anexado]: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`
+                          );
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
 

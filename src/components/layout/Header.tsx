@@ -18,11 +18,12 @@ import {
 interface HeaderProps {
   onOpenNewLead: () => void;
   onOpenZapiSimulator: () => void;
+  onOpenAuthModal?: () => void;
   onSelectContact?: (contactId: string) => void;
 }
 
-export function Header({ onOpenNewLead, onOpenZapiSimulator, onSelectContact }: HeaderProps) {
-  const { alerts, dismissAlert, contacts, deals, setActiveConversationId, conversations } = useCRM();
+export function Header({ onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact }: HeaderProps) {
+  const { alerts, dismissAlert, contacts, deals, setActiveConversationId, conversations, currentUser } = useCRM();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAlertsPopover, setShowAlertsPopover] = useState(false);
 
@@ -92,6 +93,17 @@ export function Header({ onOpenNewLead, onOpenZapiSimulator, onSelectContact }: 
 
       {/* Action Buttons & Notifications */}
       <div className="flex items-center gap-3">
+        {/* Auth / User Login Button */}
+        {onOpenAuthModal && (
+          <button
+            onClick={onOpenAuthModal}
+            className="hidden sm:flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl transition"
+            title="Autenticação e Onboarding"
+          >
+            <UserPlus className="w-3.5 h-3.5 text-slate-500" />
+            <span>Acessos / Onboarding</span>
+          </button>
+        )}
         {/* Quick Webhook Simulator Button */}
         <button
           onClick={onOpenZapiSimulator}

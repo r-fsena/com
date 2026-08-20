@@ -138,28 +138,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 5. Mensagens iniciais + mensagens do buffer do webhook
-    const initialMessages = validChats.map((c: any) => {
-      const cleanPhone = (c.phone || '').replace(/\D/g, '');
-      const lastMsgDate = c.lastMessageTime 
-        ? new Date(Number(c.lastMessageTime)).toISOString() 
-        : new Date().toISOString();
-
-      return {
-        id: `msg-sync-${cleanPhone}`,
-        tenantId,
-        conversationId: `conv-zapi-${cleanPhone}`,
-        senderType: 'CONTACT' as const,
-        senderName: contactsNameMap.get(cleanPhone) || c.name || 'Cliente',
-        messageType: 'TEXT' as const,
-        content: 'Olá! Conversa sincronizada do WhatsApp.',
-        isInternalNote: false,
-        timestamp: lastMsgDate,
-        status: 'READ' as const,
-      };
-    });
-
-    // Inclui mensagens capturadas pelo webhook em tempo real
+    // 5. Mensagens capturadas pelo webhook em tempo real (sem placeholders falsos)
     const liveWebhookMessages = webhookStore.getAllMessages().map(m => {
       const rawPhone = m.phone.replace(/\D/g, '');
       return {
@@ -183,14 +162,12 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const allMessages = [...initialMessages, ...liveWebhookMessages];
-
     return NextResponse.json({
       success: true,
       count: validChats.length,
       contacts,
       conversations,
-      messages: allMessages,
+      messages: liveWebhookMessages,
     });
   } catch (err: any) {
     return NextResponse.json({

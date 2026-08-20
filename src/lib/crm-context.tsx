@@ -186,13 +186,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
-  // Função para remover mensagens duplicadas
+  // Função para remover mensagens duplicadas e limpar placeholders genéricos
   const deduplicateMessages = (msgs: Message[]): Message[] => {
     const seen = new Set<string>();
     return msgs.filter(m => {
-      const contentKey = (m.content || '').trim();
+      const content = (m.content || '').trim();
+      if (
+        content === 'Mensagem recebida pelo WhatsApp' ||
+        content === 'Olá! Conversa sincronizada do WhatsApp.' ||
+        content === 'Conversa sincronizada do WhatsApp.' ||
+        content === 'Conversa ativa no WhatsApp'
+      ) {
+        return false;
+      }
       const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
-      const key = `${m.conversationId}-${m.senderType}-${contentKey}-${timeKey}`;
+      const key = `${m.conversationId}-${m.senderType}-${content}-${timeKey}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

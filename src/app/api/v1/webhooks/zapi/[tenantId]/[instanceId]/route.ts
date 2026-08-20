@@ -83,8 +83,18 @@ export async function POST(
       content = typeof body.message === 'string' ? body.message : JSON.stringify(body.message);
     } else if (body.body) {
       content = String(body.body);
-    } else {
-      content = isViewOnce ? '📷 Foto de Visualização Única' : 'Mensagem recebida pelo WhatsApp';
+    } else if (isViewOnce) {
+      content = '📷 Foto (Visualização Única)';
+    }
+
+    // Se não há conteúdo real ou se for apenas evento de status/presença/entrega, não cria balão de mensagem
+    if (!content.trim()) {
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+        reason: 'Evento de status/presença sem texto de mensagem',
+        status: 'SUCCESS',
+      });
     }
 
     // Se temos um telefone e conteúdo válido, registra no buffer de eventos em tempo real

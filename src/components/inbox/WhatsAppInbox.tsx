@@ -520,6 +520,20 @@ export function WhatsAppInbox() {
 
             {/* Área de Mensagens (com background WhatsApp) */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 whatsapp-chat-bg">
+              {activeMessages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full min-h-[260px] text-center p-6 space-y-2.5">
+                  <div className="w-11 h-11 rounded-2xl bg-white/90 backdrop-blur-xs text-emerald-600 flex items-center justify-center shadow-xs border border-slate-200/80">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-800">Conversa Ativa no WhatsApp</h3>
+                    <p className="text-[11px] text-slate-500 max-w-xs mt-0.5 leading-relaxed">
+                      Digite abaixo para responder. Todas as mensagens trocadas a partir de agora ficarão salvas aqui.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {activeMessages.map((msg) => {
                 const isMe = msg.senderType === 'USER';
                 const isNote = msg.isInternalNote;

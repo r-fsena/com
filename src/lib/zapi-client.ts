@@ -196,6 +196,74 @@ export class ZApiClient {
   }
 
   /**
+   * Envio de Localização GPS do Imóvel ou Plantão
+   */
+  async sendLocation(phone: string, latitude: string, longitude: string, name: string, address: string): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request('send-location', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: cleanPhone,
+        latitude,
+        longitude,
+        name,
+        address,
+      }),
+    });
+  }
+
+  /**
+   * Envio de Cartão de Contato (vCard) do Corretor
+   */
+  async sendContact(phone: string, contactName: string, contactPhone: string): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request('send-contact', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: cleanPhone,
+        contactName,
+        contactPhone: contactPhone.replace(/\D/g, ''),
+      }),
+    });
+  }
+
+  /**
+   * Envio de Reação com Emoji em Mensagem
+   */
+  async sendReaction(phone: string, messageId: string, emoji: string): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request('send-reaction', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: cleanPhone,
+        messageId,
+        reaction: emoji,
+      }),
+    });
+  }
+
+  /**
+   * Disparo de Presença "Digitando..." ou "Gravando áudio..."
+   */
+  async sendPresence(phone: string, presence: 'composing' | 'recording' | 'available' = 'composing'): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request('send-presence', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: cleanPhone,
+        presence,
+      }),
+    });
+  }
+
+  /**
+   * Consulta Grupos de WhatsApp
+   */
+  async getGroups(): Promise<ZApiResponse<any[]>> {
+    return this.request('chats?page=1&pageSize=50');
+  }
+
+  /**
    * Validação de segurança do Webhook
    */
   verifyWebhookSecurity(clientTokenHeader?: string | null): boolean {

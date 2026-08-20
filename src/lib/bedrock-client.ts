@@ -53,43 +53,47 @@ export class BedrockCopilotClient {
 
   /**
    * Motor Semântico Avançado de Processamento de Linguagem Natural Imobiliário
+   * Prioriza estritamente as mensagens enviadas pelo CLIENTE sobre as mensagens do corretor
    */
   private enhancedSemanticAnalysis(
     chatHistory: Array<{ sender: 'CLIENT' | 'BROKER'; text: string }>,
     brokerName: string
   ): AICopilotAnalysis {
+    const clientMessages = chatHistory.filter(m => m.sender === 'CLIENT').map(m => m.text);
+    const clientText = clientMessages.join(' ').toLowerCase();
     const fullText = chatHistory.map(m => m.text).join(' ');
     const lowerText = fullText.toLowerCase();
 
-    // 1. Detecção de Intenção Comercial
+    // 1. Detecção de Intenção Comercial (Foco nas intenções do cliente)
     let intent: AICopilotAnalysis['intent'] = 'DUVIDA_GERAL';
-    if (/(visita|sábado|domingo|horário|agendar|conhecer|ir no local|ver o decorado|plantão|presencial)/i.test(lowerText)) {
+    const targetTextForIntent = clientText || lowerText;
+    if (/(visita|sábado|domingo|horário|agendar|conhecer|ir no local|ver o decorado|plantão|presencial)/i.test(targetTextForIntent)) {
       intent = 'AGENDAR_VISITA';
-    } else if (/(financiamento|entrada|caixa|santander|itau|itaú|bradesco|parcela|fgts|banco|simulação|simular|taxa|juros)/i.test(lowerText)) {
+    } else if (/(financiamento|entrada|caixa|santander|itau|itaú|bradesco|parcela|fgts|banco|simulação|simular|taxa|juros)/i.test(targetTextForIntent)) {
       intent = 'SIMULAR_FINANCIAMENTO';
-    } else if (/(foto|planta|vídeo|video|book|imagens|imagem|pdf|catálogo|apresentação|memorial|folder)/i.test(lowerText)) {
+    } else if (/(foto|planta|vídeo|video|book|imagens|imagem|pdf|catálogo|apresentação|memorial|folder)/i.test(targetTextForIntent)) {
       intent = 'PEDIR_FOTOS';
-    } else if (/(desconto|proposta|negociar|permuta|oferta|contraproposta|abate|fechar por)/i.test(lowerText)) {
+    } else if (/(desconto|proposta|negociar|permuta|oferta|contraproposta|abate|fechar por)/i.test(targetTextForIntent)) {
       intent = 'NEGOCIAR_VALOR';
     }
 
-    // 2. Extração de Renda Mensal / Familiar
-    const monthlyIncome = this.extractMoneyMonthlyIncome(lowerText);
+    // 2. Extração de Renda Mensal (Cliente primeiro, depois contexto geral)
+    const monthlyIncome = this.extractMoneyMonthlyIncome(clientText) || this.extractMoneyMonthlyIncome(lowerText);
 
     // 3. Extração de Entrada Financeira (Down Payment)
-    const downPayment = this.extractMoneyDownPayment(lowerText);
+    const downPayment = this.extractMoneyDownPayment(clientText) || this.extractMoneyDownPayment(lowerText);
 
     // 4. Extração de Orçamento / Valor Máximo do Imóvel (Max Budget)
-    const maxBudget = this.extractMoneyMaxBudget(lowerText);
+    const maxBudget = this.extractMoneyMaxBudget(clientText) || this.extractMoneyMaxBudget(lowerText);
 
-    // 5. Extração de Tipo de Imóvel
-    const propertyType = this.extractPropertyType(lowerText);
+    // 5. Extração de Tipo de Imóvel com Algoritmo de Votação Ponderada
+    const propertyType = this.extractPropertyType(clientText, lowerText);
 
-    // 5. Extração de Regiões e Bairros
-    const regions = this.extractRegions(lowerText, fullText);
+    // 6. Extração de Regiões e Bairros
+    const regions = this.extractRegions(clientText, fullText);
     const preferredRegion = regions.length > 0 ? regions.join(', ') : 'Região Central / Metropolitana';
 
-    // 6. Detecção Específica de Objeções
+    // 7. Detecção Específica de Objeções
     const detectedObjections: string[] = [];
     if (/(caro|preço alto|valor alto|muito dinheiro|fora do orçamento|desconto|abaixar o valor)/i.test(lowerText)) {
       detectedObjections.push('🏷️ Objeção de Preço / Relação Custo-Benefício');
@@ -110,23 +114,22 @@ export class BedrockCopilotClient {
       detectedObjections.push('📋 Dúvida sobre Custos Recorrentes de Condomínio e IPTU');
     }
 
-    // Se nenhuma objeção específica for dita, sugere atenção à qualificação
     if (detectedObjections.length === 0) {
       detectedObjections.push('🔍 Lead em fase de triagem e mapeamento de perfil');
     }
 
-    // 7. Urgência e Sentimento
+    // 8. Urgência e Sentimento
     let urgencyLevel: 'ALTA' | 'MEDIA' | 'BAIXA' = 'MEDIA';
-    if (/(urgente|este mês|fechar rápido|comprar agora|já vendi|aprovado|à vista|a vista|sinal hoje)/i.test(lowerText) || intent === 'AGENDAR_VISITA') {
+    if (/(urgente|este mês|fechar rápido|comprar agora|já vendi|aprovado|à vista|a vista|sinal hoje)/i.test(targetTextForIntent) || intent === 'AGENDAR_VISITA') {
       urgencyLevel = 'ALTA';
     }
 
     let sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' = 'POSITIVE';
-    if (/(não quero|sem interesse|desistir|cancelar|muito caro|fora do orçamento|não gostei)/i.test(lowerText)) {
+    if (/(não quero|sem interesse|desistir|cancelar|muito caro|fora do orçamento|não gostei)/i.test(targetTextForIntent)) {
       sentiment = 'NEGATIVE';
     }
 
-    // 8. Criação das 3 Opções de Respostas Táticas de Vendas
+    // 9. Criação das 3 Opções de Respostas Táticas de Vendas
     const responseOptions: AIResponseOption[] = [];
 
     // Opção 1: Quebra de Objeção / Argumento Persuasivo
@@ -136,7 +139,7 @@ export class BedrockCopilotClient {
         category: 'OBJECTION',
         badge: '🛡️ Quebra de Objeção',
         label: 'Contornar Objeção de Preço',
-        text: `Entendo perfeitamente sua preocupação com o valor. O grande diferencial deste projeto é o padrão de acabamento e a valorização acelerada na região. Além disso, temos flexibilidade de fluxo direto com a construtora para adequar as parcelas. O que acha de analisarmos uma proposta personalizada?`
+        text: `Entendo perfeitamente sua avaliação sobre o valor. O grande diferencial deste projeto é o padrão de acabamento e a valorização acelerada na região. Além disso, temos flexibilidade de fluxo direto com a construtora para adequar as parcelas. O que acha de analisarmos uma proposta personalizada?`
       });
     } else if (detectedObjections.some(o => o.includes('Financiamento') || o.includes('Juros'))) {
       responseOptions.push({
@@ -160,7 +163,7 @@ export class BedrockCopilotClient {
         category: 'OBJECTION',
         badge: '🎯 Qualificação Ativa',
         label: 'Apresentar Oportunidade Exclusiva',
-        text: `Temos unidades estratégicas nessa configuração com excelente potencial de valorização em ${preferredRegion}. Gostaria de conhecer as condições especiais que temos disponíveis para esta semana?`
+        text: `Temos unidades estratégicas de ${propertyType} nessa configuração com excelente potencial de valorização em ${preferredRegion}. Gostaria de conhecer as condições especiais que temos disponíveis para esta semana?`
       });
     }
 
@@ -170,7 +173,7 @@ export class BedrockCopilotClient {
       category: 'VISIT',
       badge: '📅 Agendamento',
       label: 'Convidar para Visita no Decorado',
-      text: `Excelente! Podemos organizar uma visita exclusiva ao imóvel decorado neste final de semana. Qual período fica melhor para você: sábado pela manhã ou à tarde?`
+      text: `Excelente! Podemos organizar uma visita exclusiva ao ${propertyType} decorado neste final de semana. Qual período fica melhor para você: sábado pela manhã ou à tarde?`
     });
 
     // Opção 3: Envio de Book Digital & Tabela de Unidades
@@ -179,13 +182,12 @@ export class BedrockCopilotClient {
       category: 'MATERIAL',
       badge: '📄 Material & Book',
       label: 'Enviar Book e Plantas em PDF',
-      text: `Já separei o book oficial em alta resolução com plantas humanizadas, memorial descritivo e tabela de valores atualizada. Deseja que eu envie o PDF completo aqui no WhatsApp?`
+      text: `Já separei o book oficial em alta resolução com plantas humanizadas do ${propertyType}, memorial descritivo e tabela de valores atualizada. Deseja que eu envie o PDF completo aqui no WhatsApp?`
     });
 
-    // Resposta Principal
     const suggestedResponse = responseOptions[0].text;
 
-    // 9. Resumo Sintético do Perfil 360º
+    // 10. Resumo Sintético do Perfil 360º
     const summaryParts: string[] = [
       `Lead com interesse em ${propertyType} em ${preferredRegion}.`,
     ];
@@ -223,10 +225,76 @@ export class BedrockCopilotClient {
   }
 
   /**
+   * Classificador de Tipo de Imóvel por Votação Ponderada
+   * Elimina falsos positivos (ex: "área de lazer" não classifica como Terreno)
+   */
+  private extractPropertyType(clientText: string, fullText: string): string {
+    const scores = {
+      Apartamento: 0,
+      Cobertura: 0,
+      'Casa em Condomínio': 0,
+      'Studio / Loft': 0,
+      Terreno: 0,
+      Comercial: 0,
+    };
+
+    const passes = [
+      { text: clientText, weight: 4 }, // Mensagens do cliente têm peso 4x
+      { text: fullText, weight: 1 },
+    ];
+
+    for (const { text, weight } of passes) {
+      if (!text) continue;
+
+      // Apartamento
+      if (/\b(apartamento|apartamentos|apto|aptos|ap\b|ap\.|\d+\s*quartos|\d+\s*dorms|\d+\s*su[íi]tes|edif[íi]cio|torre|andar|sacada|varanda gourmet)\b/i.test(text)) {
+        scores.Apartamento += 3 * weight;
+      }
+
+      // Cobertura
+      if (/\b(cobertura|coberturas|penthouse|duplex|triplex|rooftop|[úu]ltimo andar)\b/i.test(text)) {
+        scores.Cobertura += 4 * weight;
+      }
+
+      // Casa
+      if (/\b(casa em condom[íi]nio|casa de condom[íi]nio|condom[íi]nio fechado|casa t[ée]rrea|sobrado|mans[ãa]o|casa)\b/i.test(text)) {
+        scores['Casa em Condomínio'] += 3 * weight;
+      }
+
+      // Studio / Loft
+      if (/\b(studio|studios|loft|lofts|kitnet|kitnets|compacto|1 quarto|1 dorm|kitchenette|flat)\b/i.test(text)) {
+        scores['Studio / Loft'] += 3 * weight;
+      }
+
+      // Terreno (Exige palavras estritas e NUNCA a palavra "área" isolada)
+      if (/\b(terreno|terrenos|lote\b|lotes\b|loteamento|loteamentos|gleba|ch[áa]cara|terreno residencial|lote residencial)\b/i.test(text)) {
+        scores.Terreno += 3 * weight;
+      }
+
+      // Comercial
+      if (/\b(sala comercial|loja comercial|galp[ãa]o|laje corporativa|consult[óo]rio|escrit[óo]rio comercial)\b/i.test(text)) {
+        scores.Comercial += 3 * weight;
+      }
+    }
+
+    let maxType = 'Apartamento';
+    let maxScore = scores.Apartamento;
+
+    for (const [type, score] of Object.entries(scores)) {
+      if (score > maxScore) {
+        maxScore = score;
+        maxType = type;
+      }
+    }
+
+    return maxType;
+  }
+
+  /**
    * Extração Numérica de Renda Mensal / Familiar
    */
   private extractMoneyMonthlyIncome(text: string): number | undefined {
-    // Padrão 1: "minha renda é de 25 mil", "renda mensal de 30.000", "renda familiar de 40k"
+    if (!text) return undefined;
     const p1 = /(?:minha\s+)?renda(?:\s+(?:mensal|familiar|bruta|l[íi]quida))?(?:\s+(?:é|de|em|seria|fica|em torno de|na faixa de|será))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m1 = text.match(p1);
     if (m1) {
@@ -234,7 +302,6 @@ export class BedrockCopilotClient {
       if (val && val >= 1000) return val;
     }
 
-    // Padrão 2: "ganho 20 mil por mês", "tiro 15k ao mês", "faturamento de 30k mensal"
     const p2 = /(?:ganho|tiro|faturamento|recebo|retiro)\s*(?:por m[êe]s|ao m[êe]s|mensalmente|de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m2 = text.match(p2);
     if (m2) {
@@ -242,7 +309,6 @@ export class BedrockCopilotClient {
       if (val && val >= 1000) return val;
     }
 
-    // Padrão 3: "25 mil de renda", "30k por mês"
     const p3 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:de renda|por m[êe]s|ao m[êe]s|mensais|mensal)/i;
     const m3 = text.match(p3);
     if (m3) {
@@ -257,7 +323,7 @@ export class BedrockCopilotClient {
    * Extração Numérica de Entrada
    */
   private extractMoneyDownPayment(text: string): number | undefined {
-    // Padrão 1: "minha entrada é 200 mil", "entrada de 150k", "entrada: 300.000"
+    if (!text) return undefined;
     const p1 = /(?:minha\s+)?entrada(?:\s+(?:é|de|em|seria|fica|disponível|em torno de|por volta de|na faixa de|será))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m1 = text.match(p1);
     if (m1) {
@@ -265,7 +331,6 @@ export class BedrockCopilotClient {
       if (val && val >= 5000) return val;
     }
 
-    // Padrão 2: "posso dar 200k", "consigo dar 150 mil", "vou dar 300 mil de entrada"
     const p2 = /(?:posso|consigo|pretendo|quero|vou|tenho como|tenho pra|disponho de)\s+(?:dar|investir|pagar|colocar)\s*(?:de)?\s*(?:entrada)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m2 = text.match(p2);
     if (m2) {
@@ -273,7 +338,6 @@ export class BedrockCopilotClient {
       if (val && val >= 5000) return val;
     }
 
-    // Padrão 3: "tenho 200 mil em mãos / na mão / de sinal"
     const p3 = /(?:tenho|possuo|sinal de|recursos de)\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:de entrada|em mãos|na mão|disponíveis|de sinal)/i;
     const m3 = text.match(p3);
     if (m3) {
@@ -281,7 +345,6 @@ export class BedrockCopilotClient {
       if (val && val >= 5000) return val;
     }
 
-    // Padrão 4: "200k de entrada", "300 mil de entrada"
     const p4 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:de entrada|na entrada|de sinal)/i;
     const m4 = text.match(p4);
     if (m4) {
@@ -296,7 +359,7 @@ export class BedrockCopilotClient {
    * Extração Numérica de Orçamento / Teto Máximo
    */
   private extractMoneyMaxBudget(text: string): number | undefined {
-    // Padrão 1: "orçamento de 1.2 milhão", "budget de 900k", "teto de 2 milhões"
+    if (!text) return undefined;
     const p1 = /(?:or[çc]amento|budget|teto|limite|capacidade|valor m[áa]ximo|pre[çc]o m[áa]ximo|faixa de pre[çc]o|faixa de valor)(?:\s+(?:é|de|em|seria|fica|em torno de|por volta de|na faixa de|at[ée]))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m1 = text.match(p1);
     if (m1) {
@@ -304,7 +367,6 @@ export class BedrockCopilotClient {
       if (val && val >= 50000) return val;
     }
 
-    // Padrão 2: "até 1.5 milhão", "imóvel até 800 mil", "busco algo de 900k"
     const p2 = /(?:at[ée]|por at[ée]|no m[áa]ximo|valor de|im[óo]vel de|busco algo de|procuro algo de|na faixa de)\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)/i;
     const m2 = text.match(p2);
     if (m2) {
@@ -312,7 +374,6 @@ export class BedrockCopilotClient {
       if (val && val >= 50000) return val;
     }
 
-    // Padrão 3: "posso pagar até 1.200.000", "consigo financiar até 700 mil"
     const p3 = /(?:posso pagar|pretendo investir|quero gastar|consigo financiar|procuro im[óo]vel at[ée]|ap at[ée]|casa at[ée]|cobertura at[ée])\s*(?:at[ée])?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)/i;
     const m3 = text.match(p3);
     if (m3) {
@@ -320,7 +381,6 @@ export class BedrockCopilotClient {
       if (val && val >= 50000) return val;
     }
 
-    // Padrão 4: "1.5 milhão no total / no imóvel"
     const p4 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:no total|de valor|no imóvel|de orçamento)/i;
     const m4 = text.match(p4);
     if (m4) {
@@ -355,28 +415,6 @@ export class BedrockCopilotClient {
   }
 
   /**
-   * Extração de Tipo de Imóvel
-   */
-  private extractPropertyType(text: string): string {
-    if (/(cobertura|penthouse|duplex|triplex|rooftop|último andar)/i.test(text)) {
-      return 'Cobertura';
-    }
-    if (/(casa em condomínio|casa de condomínio|condomínio fechado|casa térrea|sobrado|mansão|casa)/i.test(text)) {
-      return 'Casa em Condomínio';
-    }
-    if (/(studio|loft|kitnet|compacto|1 quarto|1 dorm|kitchenette|flat)/i.test(text)) {
-      return 'Studio / Loft';
-    }
-    if (/(terreno|lote|loteamento|chácara|área)/i.test(text)) {
-      return 'Terreno';
-    }
-    if (/(comercial|sala comercial|consultório|laje corporativa|escritório|galpão|loja)/i.test(text)) {
-      return 'Comercial';
-    }
-    return 'Apartamento';
-  }
-
-  /**
    * Extração de Bairros e Regiões
    */
   private extractRegions(text: string, originalText: string): string[] {
@@ -399,13 +437,12 @@ export class BedrockCopilotClient {
       }
     });
 
-    // Extração dinâmica por preposição: "no / na / em [Nome do Bairro]"
     const dynamicRegex = /(?:em|no|na|bairro|regi[ãa]o|praia|praia de|perto de|pr[óo]ximo a|zona)\s+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)?)/g;
     let match;
     while ((match = dynamicRegex.exec(originalText)) !== null) {
       const candidate = match[1].trim();
       const lowerCand = candidate.toLowerCase();
-      if (!['um', 'uma', 'este', 'esta', 'outro', 'outra', 'algum', 'alguma', 'bom', 'boa', 'grande', 'whatsapp'].includes(lowerCand)) {
+      if (!['um', 'uma', 'este', 'esta', 'outro', 'outra', 'algum', 'alguma', 'bom', 'boa', 'grande', 'whatsapp', 'decorado', 'plantao', 'plantão'].includes(lowerCand)) {
         if (!found.some(f => f.toLowerCase() === lowerCand) && candidate.length > 2) {
           found.push(candidate);
         }

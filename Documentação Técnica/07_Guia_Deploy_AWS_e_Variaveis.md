@@ -74,7 +74,7 @@ Após a conclusão, o Terraform exibirá a **URL do API Gateway** e os **ARNs da
 2. Na aba **Webhooks**, selecione a opção **Ao Receber Mensagem (on-message-received)**.
 3. Cole a URL de Webhook fornecida pelo API Gateway:
    ```
-   https://api.vanguardcrm.com.br/v1/webhooks/zapi/{tenantId}/{instanceId}
+   https://crm.faithhubs.com/api/v1/webhooks/zapi/{tenantId}/{instanceId}
    ```
 4. No campo **Client-Token (Segurança)**, insira o mesmo token configurado em `ZAPI_WEBHOOK_SECRET`.
 5. Envie uma mensagem de teste no WhatsApp e valide a criação automática do lead no CRM.

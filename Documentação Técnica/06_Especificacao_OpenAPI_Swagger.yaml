@@ -4,8 +4,8 @@ info:
   description: API REST para CRM Imobiliário Multi-tenant integrado ao WhatsApp (Z-API) e IA Copiloto (Amazon Bedrock).
   version: 1.0.0
 servers:
-  - url: https://api.vanguardcrm.com.br
-    description: Servidor de Produção AWS API Gateway
+  - url: https://crm.faithhubs.com
+    description: Servidor de Produção AWS (crm.faithhubs.com)
   - url: http://localhost:3000
     description: Ambiente de Desenvolvimento Local
 

@@ -22,7 +22,7 @@ export function SettingsManager() {
   const [activeTab, setActiveTab] = useState<'ZAPI' | 'SLA' | 'AI' | 'TENANT' | 'TEAM'>('ZAPI');
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
-  const webhookUrl = `https://api.vanguardcrm.com.br/v1/webhooks/zapi/${currentTenant.id}/${instances[0]?.zapiInstanceId || 'instance-01'}`;
+  const webhookUrl = `https://crm.faithhubs.com/api/v1/webhooks/zapi/${currentTenant.id}/${instances[0]?.zapiInstanceId || 'instance-01'}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(webhookUrl);

@@ -114,6 +114,7 @@ export function WhatsAppInbox() {
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
   const [newRegionInput, setNewRegionInput] = useState('');
   const [brokerNote, setBrokerNote] = useState('');
+  const [selectedAIResponseIdx, setSelectedAIResponseIdx] = useState<number>(0);
 
   // Active Conversation & Contact
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
@@ -173,10 +174,12 @@ export function WhatsAppInbox() {
             contactId: activeContact.id,
             summary: analysis.summary,
             extractedData: analysis.extractedData,
+            detectedObjections: analysis.detectedObjections,
+            responseOptions: analysis.responseOptions,
             sentiment: analysis.sentiment,
             intent: analysis.intent,
             suggestedResponse: analysis.suggestedResponse,
-            confidenceScore: analysis.confidenceScore || 95,
+            confidenceScore: analysis.confidenceScore || 96,
           });
 
           // 2. Auto-preenchimento e atualização inteligente do Contato
@@ -260,10 +263,12 @@ export function WhatsAppInbox() {
           contactId: activeContact.id,
           summary: analysis.summary,
           extractedData: analysis.extractedData,
+          detectedObjections: analysis.detectedObjections,
+          responseOptions: analysis.responseOptions,
           sentiment: analysis.sentiment,
           intent: analysis.intent,
           suggestedResponse: analysis.suggestedResponse,
-          confidenceScore: analysis.confidenceScore || 95,
+          confidenceScore: analysis.confidenceScore || 96,
         });
 
         // 2. Atualiza campos do Perfil 360
@@ -951,40 +956,98 @@ export function WhatsAppInbox() {
             </div>
 
             {/* ---------------------------------------------------- */}
-            {/* IA COPILOTO: Sugestão de Resposta Inteligente        */}
+            {/* IA COPILOTO: Sugestões Táticas e Quebra de Objeções  */}
             {/* ---------------------------------------------------- */}
-            {activeInsight && activeInsight.suggestedResponse && (
-              <div className="bg-gradient-to-r from-emerald-900 to-teal-950 text-emerald-100 p-3 mx-4 mb-2 rounded-2xl shadow-xl border border-emerald-500/40 flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300">
-                  <Sparkles className="w-5 h-5 animate-pulse" />
-                </div>
-                <div className="flex-1 min-w-0 text-xs">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-emerald-300 text-[11px] flex items-center gap-1.5">
-                      <Bot className="w-3.5 h-3.5" />
-                      Sugestão IA Copiloto (Confiança: {activeInsight.confidenceScore}%)
+            {activeInsight && (activeInsight.suggestedResponse || (activeInsight.responseOptions && activeInsight.responseOptions.length > 0)) && (
+              <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-emerald-100 p-3.5 mx-4 mb-2 rounded-2xl shadow-xl border border-emerald-500/40">
+                {/* Header Copiloto */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <span className="font-bold text-emerald-300 text-xs">
+                      IA Copiloto de Vendas
                     </span>
-                    <span className="text-[10px] text-emerald-400 font-mono">
-                      Intenção: {activeInsight.intent}
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono">
+                      Confiança: {activeInsight.confidenceScore || 96}%
                     </span>
                   </div>
-                  <p className="text-slate-200 italic line-clamp-2 mb-2 bg-black/20 p-2 rounded-lg text-[11px]">
-                    "{activeInsight.suggestedResponse}"
+
+                  {/* Objeções Detectadas */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {(activeInsight.detectedObjections || []).map((obj, i) => (
+                      <span key={i} className="text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                        {obj}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Abas de Opções de Respostas Táticas */}
+                {activeInsight.responseOptions && activeInsight.responseOptions.length > 0 && (
+                  <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1">
+                    {activeInsight.responseOptions.map((opt, idx) => (
+                      <button
+                        key={opt.id || idx}
+                        type="button"
+                        onClick={() => setSelectedAIResponseIdx(idx)}
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition whitespace-nowrap flex items-center gap-1 cursor-pointer ${
+                          selectedAIResponseIdx === idx
+                            ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                            : 'bg-white/10 hover:bg-white/20 text-emerald-200'
+                        }`}
+                      >
+                        <span>{opt.badge}</span>
+                        <span>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Texto da Sugestão Selecionada */}
+                <div className="bg-black/30 backdrop-blur-xs p-2.5 rounded-xl border border-white/10 mb-2.5">
+                  <p className="text-xs text-slate-100 italic leading-relaxed">
+                    "{activeInsight.responseOptions?.[selectedAIResponseIdx]?.text || activeInsight.suggestedResponse}"
                   </p>
+                </div>
+
+                {/* Ações Rápidas */}
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleUseAISuggestion(activeInsight.suggestedResponse)}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-1 rounded-lg text-[11px] transition active:scale-95"
+                      type="button"
+                      onClick={() => handleUseAISuggestion(activeInsight.responseOptions?.[selectedAIResponseIdx]?.text || activeInsight.suggestedResponse)}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer"
                     >
-                      Inserir no Chat
+                      <Send className="w-3 h-3" />
+                      <span>Inserir no Chat</span>
                     </button>
+
                     <button
-                      onClick={() => recordAIFeedback(activeConversation.id, 'REJECTED')}
-                      className="text-emerald-300/70 hover:text-emerald-100 text-[11px]"
+                      type="button"
+                      onClick={() => {
+                        const text = activeInsight.responseOptions?.[selectedAIResponseIdx]?.text || activeInsight.suggestedResponse;
+                        if (text && activeConversation) {
+                          sendMessage(activeConversation.id, text, false, true);
+                          recordAIFeedback(activeConversation.id, 'ACCEPTED');
+                        }
+                      }}
+                      className="bg-white/15 hover:bg-white/25 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition active:scale-95 flex items-center gap-1 cursor-pointer"
+                      title="Enviar esta resposta diretamente pelo WhatsApp"
                     >
-                      Descartar Sugestão
+                      <Zap className="w-3 h-3 text-amber-300" />
+                      <span>Enviar Direto</span>
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => recordAIFeedback(activeConversation.id, 'REJECTED')}
+                    className="text-[11px] text-slate-400 hover:text-rose-300 transition cursor-pointer"
+                  >
+                    Descartar
+                  </button>
                 </div>
               </div>
             )}
@@ -1340,18 +1403,56 @@ export function WhatsAppInbox() {
                 {activeInsight?.summary || `A IA monitora a conversa e atualiza automaticamente a entrada, orçamento e preferências imobiliárias do cliente.`}
               </p>
 
-              {activeInsight?.suggestedResponse && (
-                <div className="bg-white/80 backdrop-blur-xs rounded-xl p-2 border border-emerald-200/80 mt-2">
-                  <span className="text-[10px] font-bold text-emerald-800 block mb-1">💡 Sugestão de Resposta da IA:</span>
-                  <p className="text-[11px] text-slate-700 italic">"{activeInsight.suggestedResponse}"</p>
-                  <button
-                    onClick={() => handleUseAISuggestion(activeInsight.suggestedResponse)}
-                    className="mt-1.5 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition"
-                  >
-                    <Send className="w-2.5 h-2.5" />
-                    <span>Usar esta resposta</span>
-                  </button>
+              {/* Objeções Detectadas */}
+              {(activeInsight?.detectedObjections || []).length > 0 && (
+                <div className="mt-2.5 pt-2 border-t border-emerald-200/60">
+                  <span className="text-[10px] font-bold text-emerald-950 block mb-1">🛡️ Objeções / Ponto de Atenção:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {activeInsight?.detectedObjections?.map((obj, i) => (
+                      <span key={i} className="text-[10px] bg-amber-100/90 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded-md">
+                        {obj}
+                      </span>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Sugestões Táticas de Resposta */}
+              {activeInsight?.responseOptions && activeInsight.responseOptions.length > 0 ? (
+                <div className="space-y-2 mt-2.5 pt-2 border-t border-emerald-200/60">
+                  <span className="text-[10px] font-bold text-emerald-950 block">💡 Sugestões Táticas de Resposta:</span>
+                  {activeInsight.responseOptions.map((opt, idx) => (
+                    <div key={opt.id || idx} className="bg-white/90 rounded-xl p-2.5 border border-emerald-200 shadow-2xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider">{opt.badge}</span>
+                        <span className="text-[9px] text-slate-500 font-medium">{opt.label}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-700 italic mb-2 leading-relaxed">"{opt.text}"</p>
+                      <button
+                        type="button"
+                        onClick={() => handleUseAISuggestion(opt.text)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1 px-2 rounded-lg transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-2xs"
+                      >
+                        <Send className="w-2.5 h-2.5" />
+                        <span>Usar esta resposta no chat</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                activeInsight?.suggestedResponse && (
+                  <div className="bg-white/80 backdrop-blur-xs rounded-xl p-2 border border-emerald-200/80 mt-2">
+                    <span className="text-[10px] font-bold text-emerald-800 block mb-1">💡 Sugestão de Resposta da IA:</span>
+                    <p className="text-[11px] text-slate-700 italic">"{activeInsight.suggestedResponse}"</p>
+                    <button
+                      onClick={() => handleUseAISuggestion(activeInsight.suggestedResponse)}
+                      className="mt-1.5 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition"
+                    >
+                      <Send className="w-2.5 h-2.5" />
+                      <span>Usar esta resposta</span>
+                    </button>
+                  </div>
+                )
               )}
 
               {/* Botão de Forçar Análise Manual */}

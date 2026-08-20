@@ -1,6 +1,6 @@
 /**
  * Adaptador de IA Copiloto (Amazon Bedrock / Claude 3.5 Sonnet + Motor Semântico NLP de Alta Precisão)
- * Responsável por extração de dados comerciais, resumo de conversas e sugestões de respostas imobiliárias.
+ * Responsável por extração de dados comerciais, resumo 360º, detecção de objeções e respostas táticas.
  */
 
 export interface LeadExtractionResult {
@@ -13,9 +13,19 @@ export interface LeadExtractionResult {
   detectedObjections: string[];
 }
 
+export interface AIResponseOption {
+  id: string;
+  category: 'OBJECTION' | 'VISIT' | 'FINANCE' | 'MATERIAL';
+  label: string;
+  badge: string;
+  text: string;
+}
+
 export interface AICopilotAnalysis {
   summary: string;
   extractedData: LeadExtractionResult;
+  detectedObjections: string[];
+  responseOptions: AIResponseOption[];
   sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
   intent: 'AGENDAR_VISITA' | 'SIMULAR_FINANCIAMENTO' | 'PEDIR_FOTOS' | 'NEGOCIAR_VALOR' | 'DUVIDA_GERAL' | 'DESINTERESSE';
   suggestedResponse: string;
@@ -76,7 +86,33 @@ export class BedrockCopilotClient {
     const regions = this.extractRegions(lowerText, fullText);
     const preferredRegion = regions.length > 0 ? regions.join(', ') : 'Região Central / Metropolitana';
 
-    // 6. Urgência e Sentimento
+    // 6. Detecção Específica de Objeções
+    const detectedObjections: string[] = [];
+    if (/(caro|preço alto|valor alto|muito dinheiro|fora do orçamento|desconto|abaixar o valor)/i.test(lowerText)) {
+      detectedObjections.push('🏷️ Objeção de Preço / Relação Custo-Benefício');
+    }
+    if (/(juros|taxa alta|parcela alta|financiamento difícil|aprovação|banco)/i.test(lowerText)) {
+      detectedObjections.push('🏦 Receio sobre Juros & Financiamento Bancário');
+    }
+    if (/(esposa|marido|família|sócio|pensar|vou ver|depois te falo|conversar em casa)/i.test(lowerText)) {
+      detectedObjections.push('👥 Decisão Compartilhada / Indecisão Familiar');
+    }
+    if (/(prazo|quando entrega|demora|obra atrasada|na planta|tempo de construção)/i.test(lowerText)) {
+      detectedObjections.push('🏗️ Incerteza sobre Prazo de Obra & Entrega');
+    }
+    if (/(permuta|troca|pega carro|pega imóvel|dação)/i.test(lowerText)) {
+      detectedObjections.push('🔄 Necessidade de Permuta / Veículo como Entrada');
+    }
+    if (/(condomínio|iptu|custo mensal|taxa de condomínio)/i.test(lowerText)) {
+      detectedObjections.push('📋 Dúvida sobre Custos Recorrentes de Condomínio e IPTU');
+    }
+
+    // Se nenhuma objeção específica for dita, sugere atenção à qualificação
+    if (detectedObjections.length === 0) {
+      detectedObjections.push('🔍 Lead em fase de triagem e mapeamento de perfil');
+    }
+
+    // 7. Urgência e Sentimento
     let urgencyLevel: 'ALTA' | 'MEDIA' | 'BAIXA' = 'MEDIA';
     if (/(urgente|este mês|fechar rápido|comprar agora|já vendi|aprovado|à vista|a vista|sinal hoje)/i.test(lowerText) || intent === 'AGENDAR_VISITA') {
       urgencyLevel = 'ALTA';
@@ -87,22 +123,66 @@ export class BedrockCopilotClient {
       sentiment = 'NEGATIVE';
     }
 
-    // 7. Sugestão Dinâmica de Resposta Comercial Humanizada
-    let suggestedResponse = `Olá! Que excelente momento para conversar. Temos unidades com perfil selecionado exatamente para essa busca. Gostaria de agendar uma visita presencial ou prefere que eu envie o material completo em PDF primeiro?`;
+    // 8. Criação das 3 Opções de Respostas Táticas de Vendas
+    const responseOptions: AIResponseOption[] = [];
 
-    if (intent === 'AGENDAR_VISITA') {
-      suggestedResponse = `Excelente! Podemos organizar uma visita exclusiva ao imóvel decorado neste final de semana. Qual período fica melhor para você: sábado pela manhã ou à tarde?`;
-    } else if (intent === 'SIMULAR_FINANCIAMENTO') {
-      suggestedResponse = downPayment
-        ? `Com essa entrada de R$ ${downPayment.toLocaleString('pt-BR')} conseguimos condições especiais de financiamento e tabela direta com a construtora. Posso gerar uma simulação detalhada para você agora?`
-        : `Consigo aprovação bancária rápida com as melhores taxas do mercado. Gostaria que eu rodasse uma simulação personalizada das parcelas?`;
-    } else if (intent === 'PEDIR_FOTOS') {
-      suggestedResponse = `Já separei o book digital em alta resolução com as plantas humanizadas, fotos do decorado e a tabela de unidades disponíveis. Deseja que eu envie aqui no WhatsApp?`;
-    } else if (intent === 'NEGOCIAR_VALOR') {
-      suggestedResponse = `Entendido! Vou levar sua proposta diretamente para a diretoria comercial para buscarmos a melhor condição de fechamento. Em breve te trago um retorno!`;
+    // Opção 1: Quebra de Objeção / Argumento Persuasivo
+    if (detectedObjections.some(o => o.includes('Preço'))) {
+      responseOptions.push({
+        id: 'opt-objection-price',
+        category: 'OBJECTION',
+        badge: '🛡️ Quebra de Objeção',
+        label: 'Contornar Objeção de Preço',
+        text: `Entendo perfeitamente sua preocupação com o valor. O grande diferencial deste projeto é o padrão de acabamento e a valorização acelerada na região. Além disso, temos flexibilidade de fluxo direto com a construtora para adequar as parcelas. O que acha de analisarmos uma proposta personalizada?`
+      });
+    } else if (detectedObjections.some(o => o.includes('Financiamento') || o.includes('Juros'))) {
+      responseOptions.push({
+        id: 'opt-objection-finance',
+        category: 'FINANCE',
+        badge: '🏦 Quebra de Objeção',
+        label: 'Contornar Financiamento & Juros',
+        text: `Excelente ponto! Temos correspondentes bancários credenciados que conseguem taxas bonificadas e parcelamento da entrada até a entrega das chaves. Quer que eu faça uma simulação comparativa sem compromisso para você ver as opções?`
+      });
+    } else if (detectedObjections.some(o => o.includes('Decisão') || o.includes('pensar'))) {
+      responseOptions.push({
+        id: 'opt-objection-decision',
+        category: 'OBJECTION',
+        badge: '👥 Quebra de Objeção',
+        label: 'Apoiar Decisão em Família',
+        text: `Com certeza, uma decisão como essa deve ser tomada com tranquilidade. O que acha de fazermos uma visita sem compromisso no decorado neste sábado? Assim vocês podem vivenciar juntos a luminosidade, espaço e acabamento real do imóvel.`
+      });
+    } else {
+      responseOptions.push({
+        id: 'opt-objection-general',
+        category: 'OBJECTION',
+        badge: '🎯 Qualificação Ativa',
+        label: 'Apresentar Oportunidade Exclusiva',
+        text: `Temos unidades estratégicas nessa configuração com excelente potencial de valorização em ${preferredRegion}. Gostaria de conhecer as condições especiais que temos disponíveis para esta semana?`
+      });
     }
 
-    // 8. Resumo Sintético do Lead
+    // Opção 2: Convite Tático para Visita Presencial
+    responseOptions.push({
+      id: 'opt-visit',
+      category: 'VISIT',
+      badge: '📅 Agendamento',
+      label: 'Convidar para Visita no Decorado',
+      text: `Excelente! Podemos organizar uma visita exclusiva ao imóvel decorado neste final de semana. Qual período fica melhor para você: sábado pela manhã ou à tarde?`
+    });
+
+    // Opção 3: Envio de Book Digital & Tabela de Unidades
+    responseOptions.push({
+      id: 'opt-material',
+      category: 'MATERIAL',
+      badge: '📄 Material & Book',
+      label: 'Enviar Book e Plantas em PDF',
+      text: `Já separei o book oficial em alta resolução com plantas humanizadas, memorial descritivo e tabela de valores atualizada. Deseja que eu envie o PDF completo aqui no WhatsApp?`
+    });
+
+    // Resposta Principal
+    const suggestedResponse = responseOptions[0].text;
+
+    // 9. Resumo Sintético do Perfil 360º
     const summaryParts: string[] = [
       `Lead com interesse em ${propertyType} em ${preferredRegion}.`,
     ];
@@ -124,10 +204,10 @@ export class BedrockCopilotClient {
         preferredRegion,
         propertyType,
         urgencyLevel,
-        detectedObjections: /(condomínio|iptu|reforma|prazo de entrega)/i.test(lowerText)
-          ? ['Verificar custos recorrentes e prazos de entrega']
-          : [],
+        detectedObjections,
       },
+      detectedObjections,
+      responseOptions,
       sentiment,
       intent,
       suggestedResponse,

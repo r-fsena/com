@@ -173,6 +173,14 @@ export interface Conversation {
   isArchived?: boolean;
 }
 
+export interface AIResponseOption {
+  id: string;
+  category: 'OBJECTION' | 'VISIT' | 'FINANCE' | 'MATERIAL';
+  label: string;
+  badge: string;
+  text: string;
+}
+
 export interface AIInsight {
   id: string;
   tenantId: string;
@@ -188,6 +196,8 @@ export interface AIInsight {
     urgencyLevel?: 'ALTA' | 'MEDIA' | 'BAIXA';
     detectedObjections?: string[];
   };
+  detectedObjections?: string[];
+  responseOptions?: AIResponseOption[];
   sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
   intent: 'AGENDAR_VISITA' | 'SIMULAR_FINANCIAMENTO' | 'PEDIR_FOTOS' | 'NEGOCIAR_VALOR' | 'DUVIDA_GERAL' | 'DESINTERESSE';
   suggestedResponse: string;

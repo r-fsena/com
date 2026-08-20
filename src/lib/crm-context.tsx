@@ -95,25 +95,53 @@ interface CRMContextType {
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [tenants] = useState<Tenant[]>(MOCK_TENANTS);
   const [currentTenant, setCurrentTenant] = useState<Tenant>(MOCK_TENANTS[0]);
   
   const [users] = useState<User[]>(MOCK_USERS);
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Rafael Sena (Admin)
 
+  // Checa se já existe sessão salva no navegador
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('vanguard_auth_session');
+      if (saved) {
+        const session = JSON.parse(saved);
+        if (session.userEmail) {
+          const u = users.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
+          if (u) setCurrentUser(u);
+          setIsAuthenticated(true);
+        }
+      }
+    } catch {
+      // Ignora erro de localStorage
+    }
+  }, [users]);
+
   const login = (email: string, role?: string) => {
+    let targetUser = currentUser;
     const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (foundUser) {
+      targetUser = foundUser;
       setCurrentUser(foundUser);
     } else if (role) {
       const roleUser = users.find(u => u.role === role);
-      if (roleUser) setCurrentUser(roleUser);
+      if (roleUser) {
+        targetUser = roleUser;
+        setCurrentUser(roleUser);
+      }
     }
+    try {
+      localStorage.setItem('vanguard_auth_session', JSON.stringify({ userEmail: targetUser.email, userId: targetUser.id }));
+    } catch {}
     setIsAuthenticated(true);
   };
 
   const logout = () => {
+    try {
+      localStorage.removeItem('vanguard_auth_session');
+    } catch {}
     setIsAuthenticated(false);
   };
 

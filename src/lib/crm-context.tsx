@@ -78,6 +78,7 @@ interface CRMContextType {
 
   // IA Copiloto
   aiInsights: Record<string, AIInsight>;
+  updateAIInsight: (conversationId: string, insight: Partial<AIInsight>) => void;
   applyAIExtractionToContact: (conversationId: string, contactId: string) => void;
   recordAIFeedback: (conversationId: string, feedback: 'ACCEPTED' | 'EDITED' | 'REJECTED') => void;
 
@@ -264,7 +265,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [activeConversationId]);
   
-  const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(MOCK_AI_INSIGHTS);
+  const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_ai_insights');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_AI_INSIGHTS;
+  });
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
   const [alerts, setAlerts] = useState<SLAAlert[]>(MOCK_ALERTS);
   const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
@@ -638,24 +647,65 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       temperature: 'HOT',
     });
 
-    setAiInsights(prev => ({
-      ...prev,
-      [conversationId]: {
-        ...prev[conversationId],
-        userFeedback: 'ACCEPTED'
-      }
-    }));
+    setAiInsights(prev => {
+      const next: Record<string, AIInsight> = {
+        ...prev,
+        [conversationId]: {
+          ...prev[conversationId],
+          userFeedback: 'ACCEPTED' as const
+        }
+      };
+      try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const updateAIInsight = (conversationId: string, insight: Partial<AIInsight>) => {
+    setAiInsights(prev => {
+      const existing = prev[conversationId] || {
+        id: `ai-${Date.now()}`,
+        tenantId: currentTenant.id,
+        conversationId,
+        contactId: '',
+        summary: '',
+        extractedData: { detectedObjections: [] },
+        sentiment: 'POSITIVE' as const,
+        intent: 'DUVIDA_GERAL' as const,
+        suggestedResponse: '',
+        confidenceScore: 92,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated: AIInsight = {
+        ...existing,
+        ...insight,
+        extractedData: {
+          ...existing.extractedData,
+          ...(insight.extractedData || {}),
+        },
+      };
+
+      const next = { ...prev, [conversationId]: updated };
+      try {
+        localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const recordAIFeedback = (conversationId: string, feedback: 'ACCEPTED' | 'EDITED' | 'REJECTED') => {
     if (aiInsights[conversationId]) {
-      setAiInsights(prev => ({
-        ...prev,
-        [conversationId]: {
-          ...prev[conversationId],
-          userFeedback: feedback
-        }
-      }));
+      setAiInsights(prev => {
+        const next = {
+          ...prev,
+          [conversationId]: {
+            ...prev[conversationId],
+            userFeedback: feedback
+          }
+        };
+        try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(next)); } catch {}
+        return next;
+      });
     }
   };
 
@@ -958,6 +1008,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       assignConversation,
       simulateIncomingMessage,
       aiInsights,
+      updateAIInsight,
       applyAIExtractionToContact,
       recordAIFeedback,
       tasks,

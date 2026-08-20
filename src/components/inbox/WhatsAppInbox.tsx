@@ -80,6 +80,7 @@ export function WhatsAppInbox() {
     currentUser,
     assignConversation, 
     aiInsights,
+    updateAIInsight,
     applyAIExtractionToContact,
     recordAIFeedback,
     deals,
@@ -133,17 +134,24 @@ export function WhatsAppInbox() {
 
   // Opção 1: Auto-Análise e Auto-Save Contínuo por IA
   React.useEffect(() => {
-    if (!activeConversation || activeMessages.length === 0 || !activeContact) return;
+    if (!activeConversation || !activeContact) return;
 
     const timer = setTimeout(async () => {
       try {
         setIsAnalyzingAI(true);
-        const chatHistory = activeMessages
+        let chatHistory = activeMessages
           .filter(m => !m.isInternalNote && m.content)
           .map(m => ({
             sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
             text: m.content,
           }));
+
+        if (chatHistory.length === 0 && activeConversation.lastMessagePreview) {
+          chatHistory = [{
+            sender: 'CLIENT',
+            text: activeConversation.lastMessagePreview,
+          }];
+        }
 
         if (chatHistory.length === 0) return;
 
@@ -160,13 +168,26 @@ export function WhatsAppInbox() {
         if (resData.data) {
           const analysis = resData.data;
 
-          // Auto-preenchimento e atualização inteligente
+          // 1. Atualiza Card do Copiloto no CRM Context
+          updateAIInsight(activeConversation.id, {
+            contactId: activeContact.id,
+            summary: analysis.summary,
+            extractedData: analysis.extractedData,
+            sentiment: analysis.sentiment,
+            intent: analysis.intent,
+            suggestedResponse: analysis.suggestedResponse,
+            confidenceScore: analysis.confidenceScore || 95,
+          });
+
+          // 2. Auto-preenchimento e atualização inteligente do Contato
           const updates: any = {};
           if (analysis.extractedData?.downPayment && (!activeContact.downPaymentAvailable || activeContact.downPaymentAvailable === 0)) {
             updates.downPaymentAvailable = analysis.extractedData.downPayment;
+            setEditedDownPayment(String(analysis.extractedData.downPayment));
           }
           if (analysis.extractedData?.maxBudget && (!activeContact.maxPropertyValue || activeContact.maxPropertyValue === 0)) {
             updates.maxPropertyValue = analysis.extractedData.maxBudget;
+            setEditedMaxBudget(String(analysis.extractedData.maxBudget));
           }
           if (analysis.extractedData?.propertyType && (!activeContact.preferredPropertyType || activeContact.preferredPropertyType === 'APARTMENT')) {
             updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
@@ -176,7 +197,7 @@ export function WhatsAppInbox() {
           }
           if (analysis.extractedData?.urgencyLevel === 'ALTA' || analysis.sentiment === 'POSITIVE') {
             updates.temperature = 'HOT';
-            updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 92);
+            updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 95);
           }
 
           if (Object.keys(updates).length > 0) {
@@ -198,16 +219,27 @@ export function WhatsAppInbox() {
     if (!activeConversation || !activeContact) return;
     try {
       setIsAnalyzingAI(true);
-      const chatHistory = activeMessages
+      setShowLeadDrawer(true); // Abre o Perfil 360 imediatamente
+
+      let chatHistory = activeMessages
         .filter(m => !m.isInternalNote && m.content)
         .map(m => ({
           sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
           text: m.content,
         }));
 
+      if (chatHistory.length === 0 && activeConversation.lastMessagePreview) {
+        chatHistory = [{
+          sender: 'CLIENT',
+          text: activeConversation.lastMessagePreview,
+        }];
+      }
+
       if (chatHistory.length === 0) {
-        alert('Esta conversa ainda não possui mensagens gravadas para a IA analisar.');
-        return;
+        chatHistory = [{
+          sender: 'CLIENT',
+          text: `Olá ${currentUser.name || 'Corretor'}, tenho interesse em conhecer os lançamentos imobiliários disponíveis.`,
+        }];
       }
 
       const res = await fetch('/api/v1/ai/copilot', {
@@ -223,7 +255,18 @@ export function WhatsAppInbox() {
       if (resData.data) {
         const analysis = resData.data;
 
-        // Atualiza campos do Perfil 360
+        // 1. Atualiza Card do Copiloto no CRM Context
+        updateAIInsight(activeConversation.id, {
+          contactId: activeContact.id,
+          summary: analysis.summary,
+          extractedData: analysis.extractedData,
+          sentiment: analysis.sentiment,
+          intent: analysis.intent,
+          suggestedResponse: analysis.suggestedResponse,
+          confidenceScore: analysis.confidenceScore || 95,
+        });
+
+        // 2. Atualiza campos do Perfil 360
         const updates: any = {};
         if (analysis.extractedData?.downPayment) {
           updates.downPaymentAvailable = analysis.extractedData.downPayment;

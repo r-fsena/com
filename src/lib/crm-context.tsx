@@ -185,6 +185,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
+  // Função para remover mensagens duplicadas
+  const deduplicateMessages = (msgs: Message[]): Message[] => {
+    const seen = new Set<string>();
+    return msgs.filter(m => {
+      const contentKey = (m.content || '').trim();
+      const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
+      const key = `${m.conversationId}-${m.senderType}-${contentKey}-${timeKey}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   // Hidrata dados salvos no localStorage no primeiro mount no navegador
   useEffect(() => {
     try {
@@ -203,7 +216,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const savedMsgs = localStorage.getItem('vanguard_crm_messages');
       if (savedMsgs) {
         const parsed = JSON.parse(savedMsgs);
-        if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(deduplicateMessages(parsed));
+        }
       }
 
       const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');
@@ -751,7 +766,27 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             };
 
             setMessages(prevMsgs => {
+              // 1. Evita duplicata se o ID for idêntico
               if (prevMsgs.some(m => m.id === newMsg.id)) return prevMsgs;
+
+              // 2. Se for mensagem enviada (fromMe = true), verifica se já enviamos no portal
+              if (incoming.fromMe) {
+                const isAlreadyPresent = prevMsgs.some(m =>
+                  m.conversationId === newMsg.conversationId &&
+                  m.senderType === 'USER' &&
+                  m.content.trim() === newMsg.content.trim()
+                );
+                if (isAlreadyPresent) return prevMsgs;
+              }
+
+              // 3. Evita duplicatas gerais de mesmo conteúdo na mesma conversa
+              const isDuplicateContent = prevMsgs.some(m =>
+                m.conversationId === newMsg.conversationId &&
+                m.senderType === newMsg.senderType &&
+                m.content.trim() === newMsg.content.trim()
+              );
+              if (isDuplicateContent) return prevMsgs;
+
               return [...prevMsgs, newMsg];
             });
           });

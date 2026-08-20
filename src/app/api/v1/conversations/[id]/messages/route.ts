@@ -71,18 +71,6 @@ export async function POST(
       } else if (!sendResult.success) {
         console.error('Falha ao enviar mensagem Z-API:', sendResult.error);
       }
-
-      // Registra mensagem enviada no buffer global do servidor
-      webhookStore.addMessage({
-        id: externalMessageId,
-        tenantId: 'tenant-vanguard-01',
-        instanceId,
-        phone: cleanPhone,
-        senderName: 'Corretor',
-        content,
-        fromMe: true,
-        timestamp: new Date().toISOString(),
-      });
     }
 
     return NextResponse.json({

@@ -185,6 +185,32 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
+  // Hidrata dados salvos no localStorage no primeiro mount no navegador
+  useEffect(() => {
+    try {
+      const savedContacts = localStorage.getItem('vanguard_crm_contacts');
+      if (savedContacts) {
+        const parsed = JSON.parse(savedContacts);
+        if (Array.isArray(parsed) && parsed.length > 0) setContacts(parsed);
+      }
+
+      const savedConvs = localStorage.getItem('vanguard_crm_conversations');
+      if (savedConvs) {
+        const parsed = JSON.parse(savedConvs);
+        if (Array.isArray(parsed) && parsed.length > 0) setConversations(parsed);
+      }
+
+      const savedMsgs = localStorage.getItem('vanguard_crm_messages');
+      if (savedMsgs) {
+        const parsed = JSON.parse(savedMsgs);
+        if (Array.isArray(parsed) && parsed.length > 0) setMessages(parsed);
+      }
+
+      const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');
+      if (savedActive) setActiveConversationId(savedActive);
+    } catch {}
+  }, []);
+
   // Salva no localStorage quando o estado mudar
   useEffect(() => {
     try {
@@ -203,6 +229,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (messages.length > 0) localStorage.setItem('vanguard_crm_messages', JSON.stringify(messages));
     } catch {}
   }, [messages]);
+
+  useEffect(() => {
+    try {
+      if (activeConversationId) localStorage.setItem('vanguard_crm_active_conv_id', activeConversationId);
+    } catch {}
+  }, [activeConversationId]);
   
   const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(MOCK_AI_INSIGHTS);
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
@@ -578,9 +610,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        if (!activeConversationId && data.conversations[0]?.id) {
-          setActiveConversationId(data.conversations[0].id);
-        }
+        setActiveConversationId(prev => prev ? prev : (data.conversations[0]?.id || null));
       }
     } catch (err) {
       console.error('Erro ao sincronizar conversas:', err);

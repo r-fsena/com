@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ZApiClient } from '@/lib/zapi-client';
+import { webhookStore } from '@/lib/webhook-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,10 +71,22 @@ export async function POST(
       } else if (!sendResult.success) {
         console.error('Falha ao enviar mensagem Z-API:', sendResult.error);
       }
+
+      // Registra mensagem enviada no buffer global do servidor
+      webhookStore.addMessage({
+        id: externalMessageId,
+        tenantId: 'tenant-vanguard-01',
+        instanceId,
+        phone: cleanPhone,
+        senderName: 'Corretor',
+        content,
+        fromMe: true,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return NextResponse.json({
-      id: `msg-${Date.now()}`,
+      id: externalMessageId,
       conversationId,
       externalId: externalMessageId,
       isInternalNote: false,

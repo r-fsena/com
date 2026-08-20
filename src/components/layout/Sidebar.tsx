@@ -16,7 +16,8 @@ import {
   Sparkles,
   Bot,
   Zap,
-  QrCode
+  QrCode,
+  LogOut
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,7 +38,8 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
     conversations,
     tasks,
     alerts,
-    instances
+    instances,
+    logout
   } = useCRM();
 
   const totalUnreadMessages = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
@@ -211,18 +213,28 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
 
       {/* User Switcher / Profile Footer */}
       <div className="p-3 border-t border-slate-800 bg-slate-950/40">
-        <div className="flex items-center gap-2.5 px-2 py-1.5">
-          <img
-            src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
-            alt={currentUser.name}
-            className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-700"
-          />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
-            <span className="inline-block text-[9px] font-medium text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/40">
-              {currentUser.role}
-            </span>
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img
+              src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
+              alt={currentUser.name}
+              className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-700 flex-shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
+              <span className="inline-block text-[9px] font-medium text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/40">
+                {currentUser.role}
+              </span>
+            </div>
           </div>
+
+          <button
+            onClick={() => logout()}
+            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800/60 rounded-lg transition"
+            title="Sair da Conta (Logout)"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
 
         {/* User Role Testing Switcher */}

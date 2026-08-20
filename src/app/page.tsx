@@ -16,6 +16,7 @@ import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
 import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { LoginScreen } from '@/components/auth/LoginScreen';
 
 export default function CRMApp() {
   const [currentTab, setCurrentTab] = useState('inbox');
@@ -24,7 +25,11 @@ export default function CRMApp() {
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const { setActiveConversationId, conversations } = useCRM();
+  const { setActiveConversationId, conversations, isAuthenticated } = useCRM();
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
 
   const handleOpenChatForContact = (contactId: string) => {
     const conv = conversations.find(c => c.contactId === contactId);

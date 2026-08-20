@@ -33,6 +33,11 @@ import {
 } from './mock-data';
 
 interface CRMContextType {
+  // Autenticação & Sessão Cognito
+  isAuthenticated: boolean;
+  login: (email: string, role?: string) => void;
+  logout: () => void;
+
   // Tenant e Usuário
   tenants: Tenant[];
   currentTenant: Tenant;
@@ -90,11 +95,27 @@ interface CRMContextType {
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [tenants] = useState<Tenant[]>(MOCK_TENANTS);
   const [currentTenant, setCurrentTenant] = useState<Tenant>(MOCK_TENANTS[0]);
   
   const [users] = useState<User[]>(MOCK_USERS);
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Rafael Sena (Admin)
+
+  const login = (email: string, role?: string) => {
+    const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (foundUser) {
+      setCurrentUser(foundUser);
+    } else if (role) {
+      const roleUser = users.find(u => u.role === role);
+      if (roleUser) setCurrentUser(roleUser);
+    }
+    setIsAuthenticated(true);
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+  };
 
   const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS);
   const [pipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
@@ -428,6 +449,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <CRMContext.Provider value={{
+      isAuthenticated,
+      login,
+      logout,
       tenants,
       currentTenant,
       setCurrentTenant,

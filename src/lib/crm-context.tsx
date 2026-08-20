@@ -281,14 +281,22 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       // Envia diretamente para a Z-API se for um contato real do WhatsApp
       const conv = conversations.find(c => c.id === conversationId);
       const contact = contacts.find(cnt => cnt.id === conv?.contactId);
-      if (contact && contact.phone) {
-        const cleanPhone = contact.phone.replace(/\D/g, '');
+
+      let targetPhone = contact?.phone ? contact.phone.replace(/\D/g, '') : '';
+      if (!targetPhone && conversationId.includes('zapi-')) {
+        targetPhone = conversationId.split('zapi-')[1]?.replace(/\D/g, '') || '';
+      }
+      if (!targetPhone && conv?.contactId?.includes('zapi-')) {
+        targetPhone = conv.contactId.split('zapi-')[1]?.replace(/\D/g, '') || '';
+      }
+
+      if (targetPhone) {
         fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             content: content.trim(),
-            phone: cleanPhone,
+            phone: targetPhone,
             senderUserId: currentUser.id,
           }),
         }).catch(err => console.error('Erro ao enviar mensagem via Z-API:', err));

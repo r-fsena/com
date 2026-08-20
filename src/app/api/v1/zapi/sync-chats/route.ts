@@ -52,8 +52,14 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 2. Filtra conversas válidas (ignora grupos ou phone 0)
-    const validChats = zapiChats.filter((c: any) => c.phone && c.phone !== '0' && !c.isGroup);
+    // 2. Filtra conversas válidas e ordena pela última mensagem mais recente no topo
+    const validChats = zapiChats
+      .filter((c: any) => c.phone && c.phone !== '0' && !c.isGroup)
+      .sort((a: any, b: any) => {
+        const timeA = Number(a.lastMessageTime || 0);
+        const timeB = Number(b.lastMessageTime || 0);
+        return timeB - timeA;
+      });
 
     // 3. Busca foto de perfil do WhatsApp para cada chat em paralelo com timeout
     const picturesMap = new Map<string, string>();

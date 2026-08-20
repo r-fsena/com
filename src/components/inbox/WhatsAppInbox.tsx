@@ -114,6 +114,10 @@ export function WhatsAppInbox() {
     if (filterTab === 'PENDING_TEAM') return c.status === 'PENDING_TEAM';
     if (filterTab === 'SLA_BREACHED') return c.slaBreached;
     return true;
+  }).sort((a, b) => {
+    const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+    const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+    return timeB - timeA; // Mais recente sempre no topo!
   });
 
   const handleSend = (e: React.FormEvent) => {

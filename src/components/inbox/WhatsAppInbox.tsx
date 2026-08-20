@@ -193,6 +193,68 @@ export function WhatsAppInbox() {
     return () => clearTimeout(timer);
   }, [activeConversation?.id, activeMessages.length]);
 
+  // Forçar Análise Manual por IA sob Demanda
+  const handleForceAIAnalysis = async () => {
+    if (!activeConversation || !activeContact) return;
+    try {
+      setIsAnalyzingAI(true);
+      const chatHistory = activeMessages
+        .filter(m => !m.isInternalNote && m.content)
+        .map(m => ({
+          sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
+          text: m.content,
+        }));
+
+      if (chatHistory.length === 0) {
+        alert('Esta conversa ainda não possui mensagens gravadas para a IA analisar.');
+        return;
+      }
+
+      const res = await fetch('/api/v1/ai/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatHistory,
+          brokerName: currentUser.name || 'Corretor',
+        }),
+      });
+
+      const resData = await res.json();
+      if (resData.data) {
+        const analysis = resData.data;
+
+        // Atualiza campos do Perfil 360
+        const updates: any = {};
+        if (analysis.extractedData?.downPayment) {
+          updates.downPaymentAvailable = analysis.extractedData.downPayment;
+          setEditedDownPayment(String(analysis.extractedData.downPayment));
+        }
+        if (analysis.extractedData?.maxBudget) {
+          updates.maxPropertyValue = analysis.extractedData.maxBudget;
+          setEditedMaxBudget(String(analysis.extractedData.maxBudget));
+        }
+        if (analysis.extractedData?.propertyType) {
+          updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
+        }
+        if (analysis.extractedData?.preferredRegion) {
+          updates.targetRegions = [analysis.extractedData.preferredRegion];
+        }
+        if (analysis.extractedData?.urgencyLevel === 'ALTA' || analysis.sentiment === 'POSITIVE') {
+          updates.temperature = 'HOT';
+          updates.aiPriorityScore = 95;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          updateContact(activeContact.id, updates);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao forçar análise por IA:', err);
+    } finally {
+      setIsAnalyzingAI(false);
+    }
+  };
+
   // Remove notificação de mensagens pendentes quando a conversa está aberta na tela
   React.useEffect(() => {
     if (activeConversation?.id && activeConversation.unreadCount > 0) {
@@ -644,6 +706,17 @@ export function WhatsAppInbox() {
                   {showChatOptionsDropdown && (
                     <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-slate-200/90 py-1.5 z-50 text-xs divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                       <div className="py-1">
+                        <button
+                          onClick={() => {
+                            handleForceAIAnalysis();
+                            setShowChatOptionsDropdown(false);
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-emerald-50 flex items-center gap-2.5 text-emerald-700 font-semibold transition"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Forçar Análise com IA</span>
+                        </button>
+
                         <button
                           onClick={() => {
                             pinConversation(activeConversation.id);
@@ -1214,6 +1287,20 @@ export function WhatsAppInbox() {
                   </button>
                 </div>
               )}
+
+              {/* Botão de Forçar Análise Manual */}
+              <div className="mt-2.5 pt-2 border-t border-emerald-200/60">
+                <button
+                  type="button"
+                  onClick={handleForceAIAnalysis}
+                  disabled={isAnalyzingAI}
+                  className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-[11px] font-bold py-1.5 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                  title="Executa a análise de IA em todo o histórico da conversa e atualiza o perfil"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
+                  <span>{isAnalyzingAI ? 'Analisando Histórico...' : '⚡ Forçar Análise da Conversa'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Qualificação Financeira & Imobiliária (Edição Inline com Salvamento Instantâneo) */}

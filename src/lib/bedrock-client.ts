@@ -58,57 +58,116 @@ Extraia dados financeiros (renda, entrada, orçamento), região, tipo de imóvel
     const lastClientMessage = [...chatHistory].reverse().find(m => m.sender === 'CLIENT')?.text || '';
     const fullText = chatHistory.map(m => m.text).join(' ').toLowerCase();
 
-    // Detecção heurística explicável
+    // 1. Detecção de Intenção
     let intent: AICopilotAnalysis['intent'] = 'DUVIDA_GERAL';
-    if (fullText.includes('visita') || fullText.includes('sábado') || fullText.includes('domingo') || fullText.includes('horário')) {
+    if (fullText.includes('visita') || fullText.includes('sábado') || fullText.includes('domingo') || fullText.includes('horário') || fullText.includes('agendar') || fullText.includes('conhecer')) {
       intent = 'AGENDAR_VISITA';
-    } else if (fullText.includes('financiamento') || fullText.includes('entrada') || fullText.includes('caixa') || fullText.includes('santander') || fullText.includes('parcela')) {
+    } else if (fullText.includes('financiamento') || fullText.includes('entrada') || fullText.includes('caixa') || fullText.includes('santander') || fullText.includes('itau') || fullText.includes('parcela') || fullText.includes('fgts')) {
       intent = 'SIMULAR_FINANCIAMENTO';
-    } else if (fullText.includes('foto') || fullText.includes('planta') || fullText.includes('vídeo') || fullText.includes('book')) {
+    } else if (fullText.includes('foto') || fullText.includes('planta') || fullText.includes('vídeo') || fullText.includes('book') || fullText.includes('imagens') || fullText.includes('pdf')) {
       intent = 'PEDIR_FOTOS';
+    } else if (fullText.includes('desconto') || fullText.includes('proposta') || fullText.includes('negociar') || fullText.includes('permuta')) {
+      intent = 'NEGOCIAR_VALOR';
     }
 
-    // Extração de valores numéricos
+    // 2. Extração de Entrada Financeira (Down Payment)
     let downPayment: number | undefined;
+    const downPaymentRegex = /(?:entrada|dar|disponho|tenho|possuo|sinal)\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil|k|milh[õo]es|m)?/i;
+    const dpMatch = fullText.match(downPaymentRegex);
+    if (dpMatch) {
+      let rawVal = parseFloat(dpMatch[1].replace(/\./g, '').replace(',', '.'));
+      const unit = (dpMatch[2] || '').toLowerCase();
+      if (unit.startsWith('mil') || unit === 'k') rawVal *= 1000;
+      else if (unit.startsWith('m')) rawVal *= 1000000;
+      if (rawVal > 1000) downPayment = rawVal;
+    }
+
+    // Fallbacks inteligentes de entrada
+    if (!downPayment) {
+      if (fullText.includes('100 mil') || fullText.includes('100k')) downPayment = 100000;
+      else if (fullText.includes('150 mil') || fullText.includes('150k')) downPayment = 150000;
+      else if (fullText.includes('200 mil') || fullText.includes('200k')) downPayment = 200000;
+      else if (fullText.includes('300 mil') || fullText.includes('300k')) downPayment = 300000;
+      else if (fullText.includes('500 mil') || fullText.includes('500k')) downPayment = 500000;
+      else if (fullText.includes('800 mil') || fullText.includes('800k')) downPayment = 800000;
+    }
+
+    // 3. Extração de Orçamento / Valor Máximo do Imóvel (Max Budget)
     let maxBudget: number | undefined;
+    const budgetRegex = /(?:at[ée]|or[çc]amento|valor|pre[çc]o|faixa|busco)\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil|k|milh[õo]es|m)?/i;
+    const bgMatch = fullText.match(budgetRegex);
+    if (bgMatch) {
+      let rawVal = parseFloat(bgMatch[1].replace(/\./g, '').replace(',', '.'));
+      const unit = (bgMatch[2] || '').toLowerCase();
+      if (unit.startsWith('mil') || unit === 'k') rawVal *= 1000;
+      else if (unit.startsWith('m')) rawVal *= 1000000;
+      if (rawVal > 50000) maxBudget = rawVal;
+    }
 
-    const moneyMatches = fullText.match(/r?\$?\s?(\d{1,3}(\.\d{3})*|\d+)\s?(mil|k|milhões|m|milhao)?/gi);
-    if (fullText.includes('800 mil') || fullText.includes('800k')) downPayment = 800000;
-    if (fullText.includes('900 mil') || fullText.includes('900k')) downPayment = 900000;
-    if (fullText.includes('500 mil') || fullText.includes('500k')) downPayment = 500000;
-    if (fullText.includes('400 mil') || fullText.includes('400k')) downPayment = 400000;
-    if (fullText.includes('2.85m') || fullText.includes('2.85 milhões') || fullText.includes('3 milhões') || fullText.includes('3m')) maxBudget = 3000000;
-    if (fullText.includes('1.8m') || fullText.includes('1.8 milhão')) maxBudget = 1800000;
-    if (fullText.includes('1.3m') || fullText.includes('1.3 milhão')) maxBudget = 1300000;
+    if (!maxBudget) {
+      if (fullText.includes('3 milhões') || fullText.includes('3m') || fullText.includes('3.000.000')) maxBudget = 3000000;
+      else if (fullText.includes('2.5 milhões') || fullText.includes('2.5m')) maxBudget = 2500000;
+      else if (fullText.includes('2 milhões') || fullText.includes('2m')) maxBudget = 2000000;
+      else if (fullText.includes('1.8 milhão') || fullText.includes('1.8m')) maxBudget = 1800000;
+      else if (fullText.includes('1.5 milhão') || fullText.includes('1.5m')) maxBudget = 1500000;
+      else if (fullText.includes('1.2 milhão') || fullText.includes('1.2m')) maxBudget = 1200000;
+      else if (fullText.includes('1 milhão') || fullText.includes('1m')) maxBudget = 1000000;
+      else if (fullText.includes('800 mil') || fullText.includes('800k')) maxBudget = 800000;
+      else if (fullText.includes('600 mil') || fullText.includes('600k')) maxBudget = 600000;
+      else if (fullText.includes('500 mil') || fullText.includes('500k')) maxBudget = 500000;
+    }
 
-    let preferredRegion = 'Jardins / Pinheiros';
-    if (fullText.includes('jardins')) preferredRegion = 'Jardins';
-    if (fullText.includes('pinheiros')) preferredRegion = 'Pinheiros';
-    if (fullText.includes('faria lima')) preferredRegion = 'Faria Lima / Itaim';
-    if (fullText.includes('moema')) preferredRegion = 'Moema';
+    // 4. Tipo de Imóvel
+    let propertyType = 'Apartamento';
+    if (fullText.includes('cobertura') || fullText.includes('penthouse')) propertyType = 'Cobertura';
+    else if (fullText.includes('casa') || fullText.includes('condomínio fechado')) propertyType = 'Casa em Condomínio';
+    else if (fullText.includes('studio') || fullText.includes('kitnet') || fullText.includes('loft')) propertyType = 'Studio / Loft';
+    else if (fullText.includes('terreno') || fullText.includes('lote')) propertyType = 'Terreno';
+    else if (fullText.includes('comercial') || fullText.includes('sala')) propertyType = 'Comercial';
 
+    // 5. Regiões e Bairros
+    const regions: string[] = [];
+    const regionKeywords = [
+      'centro', 'beira-mar', 'beira mar', 'agronômica', 'itacorubi', 'trindade', 'campeche', 'lagoa',
+      'estreito', 'coqueiros', 'jurerê', 'canasvieiras', 'ingleses', 'jardins', 'pinheiros', 'itaim',
+      'moema', 'perdizes', 'vila mariana', 'morumbi', 'barra da tijuca', 'leblon', 'ipanema', 'copacabana'
+    ];
+    regionKeywords.forEach(rk => {
+      if (fullText.includes(rk)) {
+        const capitalized = rk.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        regions.push(capitalized);
+      }
+    });
+
+    const preferredRegion = regions.length > 0 ? regions.join(', ') : 'Região Nobre / Metropolitana';
+
+    // 6. Sugestão Dinâmica de Resposta
     let suggestedResponse = `Olá! Que ótimo falar com você. Temos unidades exclusivas disponíveis nessa configuração e com excelente potencial de valorização. Gostaria de agendar uma visita presencial ou prefere que eu envie o tour virtual primeiro?`;
 
     if (intent === 'AGENDAR_VISITA') {
       suggestedResponse = `Perfeito! Deixarei a autorização prévia na portaria do condomínio em seu nome. O que acha de nos encontrarmos no sábado pela manhã para conhecermos o imóvel decorado?`;
     } else if (intent === 'SIMULAR_FINANCIAMENTO') {
       suggestedResponse = `Com essa entrada conseguimos aprovação rápida com taxas diferenciadas nos principais bancos. Se desejar, posso rodar uma simulação completa das parcelas para você agora mesmo!`;
+    } else if (intent === 'PEDIR_FOTOS') {
+      suggestedResponse = `Já estou separando as plantas humanizadas, memorial descritivo e o book completo em PDF para te encaminhar aqui. Deseja conferir também a tabela de valores atualizada?`;
     }
 
+    const sentiment = (fullText.includes('não') && fullText.includes('interesse')) || fullText.includes('cancelar') ? 'NEGATIVE' as const : 'POSITIVE' as const;
+
     return {
-      summary: `Lead com interesse ativo na região ${preferredRegion}. Mensagem recente: "${lastClientMessage.slice(0, 75)}...".`,
+      summary: `Lead com perfil de busca para ${propertyType} em ${preferredRegion}.${downPayment ? ` Entrada informada: R$ ${downPayment.toLocaleString('pt-BR')}.` : ''}${maxBudget ? ` Orçamento: R$ ${maxBudget.toLocaleString('pt-BR')}.` : ''}`,
       extractedData: {
         downPayment,
         maxBudget,
         preferredRegion,
-        propertyType: fullText.includes('cobertura') ? 'PENTHOUSE' : fullText.includes('studio') ? 'STUDIO' : 'APARTMENT',
+        propertyType,
         urgencyLevel: intent === 'AGENDAR_VISITA' ? 'ALTA' : 'MEDIA',
         detectedObjections: fullText.includes('condomínio') ? ['Verificar custos de condomínio e IPTU'] : [],
       },
-      sentiment: fullText.includes('não') && fullText.includes('interesse') ? 'NEGATIVE' : 'POSITIVE',
+      sentiment,
       intent,
       suggestedResponse,
-      confidenceScore: 94,
+      confidenceScore: 95,
     };
   }
 }

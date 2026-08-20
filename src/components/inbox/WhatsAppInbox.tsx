@@ -35,9 +35,26 @@ import {
   Pin,
   Trash2,
   Archive,
-  Eraser
+  Eraser,
+  Edit3,
+  Save,
+  DollarSign,
+  Building,
+  Notebook
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/date-utils';
+import { PropertyType } from '@/types/crm';
+
+const mapToPropertyType = (type?: string): PropertyType => {
+  if (!type) return 'APARTMENT';
+  const lower = type.toLowerCase();
+  if (lower.includes('cobertura') || lower.includes('penthouse')) return 'PENTHOUSE';
+  if (lower.includes('casa') || lower.includes('condomínio')) return 'HOUSE';
+  if (lower.includes('studio') || lower.includes('loft')) return 'STUDIO';
+  if (lower.includes('terreno') || lower.includes('lote')) return 'LAND';
+  if (lower.includes('comercial') || lower.includes('sala')) return 'COMMERCIAL';
+  return 'APARTMENT';
+};
 
 const formatDisplayPhone = (phone?: string | null): string => {
   if (!phone) return '';
@@ -86,12 +103,95 @@ export function WhatsAppInbox() {
   const [newTagInput, setNewTagInput] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  // Estados de Edição Inline do Perfil 360º
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [editedEmail, setEditedEmail] = useState('');
+  const [editedDownPayment, setEditedDownPayment] = useState<string>('');
+  const [editedMaxBudget, setEditedMaxBudget] = useState<string>('');
+  const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
+  const [newRegionInput, setNewRegionInput] = useState('');
+  const [brokerNote, setBrokerNote] = useState('');
+
   // Active Conversation & Contact
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
   const activeContact = contacts.find(c => c.id === activeConversation?.contactId);
   const activeMessages = messages.filter(m => m.conversationId === activeConversation?.id);
   const activeInsight = activeConversation ? aiInsights[activeConversation.id] : null;
   const activeDeal = deals.find(d => d.contactId === activeContact?.id);
+
+  // Sincroniza formulário com o contato selecionado
+  React.useEffect(() => {
+    if (activeContact) {
+      setEditedName(activeContact.name);
+      setEditedEmail(activeContact.email || '');
+      setEditedDownPayment(activeContact.downPaymentAvailable ? String(activeContact.downPaymentAvailable) : '');
+      setEditedMaxBudget(activeContact.maxPropertyValue ? String(activeContact.maxPropertyValue) : '');
+    }
+  }, [activeContact?.id, activeContact?.name, activeContact?.email, activeContact?.downPaymentAvailable, activeContact?.maxPropertyValue]);
+
+  // Opção 1: Auto-Análise e Auto-Save Contínuo por IA
+  React.useEffect(() => {
+    if (!activeConversation || activeMessages.length === 0 || !activeContact) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsAnalyzingAI(true);
+        const chatHistory = activeMessages
+          .filter(m => !m.isInternalNote && m.content)
+          .map(m => ({
+            sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
+            text: m.content,
+          }));
+
+        if (chatHistory.length === 0) return;
+
+        const res = await fetch('/api/v1/ai/copilot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatHistory,
+            brokerName: currentUser.name || 'Corretor',
+          }),
+        });
+
+        const resData = await res.json();
+        if (resData.data) {
+          const analysis = resData.data;
+
+          // Auto-preenchimento e atualização inteligente
+          const updates: any = {};
+          if (analysis.extractedData?.downPayment && (!activeContact.downPaymentAvailable || activeContact.downPaymentAvailable === 0)) {
+            updates.downPaymentAvailable = analysis.extractedData.downPayment;
+          }
+          if (analysis.extractedData?.maxBudget && (!activeContact.maxPropertyValue || activeContact.maxPropertyValue === 0)) {
+            updates.maxPropertyValue = analysis.extractedData.maxBudget;
+          }
+          if (analysis.extractedData?.propertyType && (!activeContact.preferredPropertyType || activeContact.preferredPropertyType === 'APARTMENT')) {
+            updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
+          }
+          if (analysis.extractedData?.preferredRegion && (!activeContact.targetRegions || activeContact.targetRegions.length === 0 || activeContact.targetRegions.includes('Geral'))) {
+            updates.targetRegions = [analysis.extractedData.preferredRegion];
+          }
+          if (analysis.extractedData?.urgencyLevel === 'ALTA' || analysis.sentiment === 'POSITIVE') {
+            updates.temperature = 'HOT';
+            updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 92);
+          }
+
+          if (Object.keys(updates).length > 0) {
+            updateContact(activeContact.id, updates);
+          }
+        }
+      } catch (err) {
+        console.error('Auto-análise IA:', err);
+      } finally {
+        setIsAnalyzingAI(false);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [activeConversation?.id, activeMessages.length]);
 
   // Remove notificação de mensagens pendentes quando a conversa está aberta na tela
   React.useEffect(() => {
@@ -928,75 +1028,340 @@ export function WhatsAppInbox() {
       {/* ---------------------------------------------------- */}
       {/* COLUNA 3: Perfil 360º do Lead & IA Insights          */}
       {/* ---------------------------------------------------- */}
+      {/* ---------------------------------------------------- */}
+      {/* COLUNA 3: Perfil 360º do Lead & IA Insights          */}
+      {/* ---------------------------------------------------- */}
       {showLeadDrawer && activeContact && (
         <div className="w-80 sm:w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 overflow-y-auto">
           {/* Header Lead 360 */}
-          <div className="p-4 border-b border-slate-100">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Perfil 360º do Lead
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-emerald-600" />
+                <span>Perfil 360º • IA + CRM</span>
               </span>
-              <span className="text-xs font-bold text-slate-600">
-                Score IA: {activeContact.aiPriorityScore}/100
+              <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                Score: {activeContact.aiPriorityScore || 85}/100
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-start gap-3">
               <img
                 src={activeContact.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(activeContact.name)}
                 alt={activeContact.name}
-                className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/30"
+                className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/30 flex-shrink-0 mt-0.5"
               />
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold text-slate-900 truncate">{activeContact.name}</h3>
-                <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
-                <p className="text-[11px] text-slate-400 truncate">{activeContact.email || 'E-mail não informado'}</p>
+              <div className="flex-1 min-w-0">
+                {/* Nome Editável */}
+                {isEditingName ? (
+                  <div className="flex items-center gap-1 mb-1">
+                    <input
+                      type="text"
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (editedName.trim()) {
+                            updateContact(activeContact.id, { name: editedName.trim() });
+                          }
+                          setIsEditingName(false);
+                        }
+                      }}
+                      className="text-xs font-bold text-slate-900 border border-emerald-500 rounded px-1.5 py-0.5 w-full bg-white focus:outline-none"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => {
+                        if (editedName.trim()) {
+                          updateContact(activeContact.id, { name: editedName.trim() });
+                        }
+                        setIsEditingName(false);
+                      }}
+                      className="p-1 text-emerald-600 hover:text-emerald-700 font-bold text-xs"
+                      title="Salvar Nome"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 group mb-0.5">
+                    <h3 className="text-sm font-bold text-slate-900 truncate">{activeContact.name}</h3>
+                    <button
+                      onClick={() => setIsEditingName(true)}
+                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-emerald-600 transition"
+                      title="Editar nome"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-500 font-mono flex items-center gap-1">
+                  <span>{formatDisplayPhone(activeContact.phone)}</span>
+                </p>
+
+                {/* E-mail Editável */}
+                {isEditingEmail ? (
+                  <div className="flex items-center gap-1 mt-1">
+                    <input
+                      type="email"
+                      placeholder="email@cliente.com"
+                      value={editedEmail}
+                      onChange={(e) => setEditedEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          updateContact(activeContact.id, { email: editedEmail.trim() || undefined });
+                          setIsEditingEmail(false);
+                        }
+                      }}
+                      className="text-[11px] border border-emerald-500 rounded px-1.5 py-0.5 w-full bg-white focus:outline-none"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => {
+                        updateContact(activeContact.id, { email: editedEmail.trim() || undefined });
+                        setIsEditingEmail(false);
+                      }}
+                      className="p-1 text-emerald-600 font-bold text-xs"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 group mt-0.5">
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {activeContact.email || 'Clique para adicionar e-mail'}
+                    </p>
+                    <button
+                      onClick={() => setIsEditingEmail(true)}
+                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-emerald-600 transition"
+                    >
+                      <Edit3 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Seletor de Temperatura de 1 Clique */}
+            <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between gap-1.5">
+              <span className="text-[10px] font-bold text-slate-500">Temperatura:</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => updateContact(activeContact.id, { temperature: 'HOT', aiPriorityScore: 95 })}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-0.5 ${
+                    activeContact.temperature === 'HOT'
+                      ? 'bg-rose-500 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-rose-50'
+                  }`}
+                >
+                  🔥 Quente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateContact(activeContact.id, { temperature: 'WARM', aiPriorityScore: 75 })}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-0.5 ${
+                    activeContact.temperature === 'WARM'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-amber-50'
+                  }`}
+                >
+                  ⚡ Morno
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateContact(activeContact.id, { temperature: 'COLD', aiPriorityScore: 50 })}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-0.5 ${
+                    activeContact.temperature === 'COLD'
+                      ? 'bg-blue-500 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-blue-50'
+                  }`}
+                >
+                  ❄️ Frio
+                </button>
               </div>
             </div>
           </div>
 
           <div className="p-4 space-y-4">
-            {/* IA Extracted Data Card (com 1-click aplicar) */}
-            {activeInsight && (
-              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Extração Inteligente de IA</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                    {activeInsight.sentiment}
-                  </span>
+            {/* IA Copilot Card em Tempo Real */}
+            <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-emerald-50/50 border border-emerald-200 rounded-2xl p-3.5 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                  <Sparkles className={`w-4 h-4 text-emerald-600 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
+                  <span>IA Copilot • Auto-Preenchimento</span>
                 </div>
-
-                <p className="text-[11px] text-emerald-950 mb-2 leading-relaxed font-medium">
-                  {activeInsight.summary}
-                </p>
-
-                <div className="space-y-1 text-[10px] text-emerald-900">
-                  {activeInsight.extractedData.downPayment && (
-                    <p>• <strong>Entrada Detectada:</strong> R$ {activeInsight.extractedData.downPayment.toLocaleString('pt-BR')}</p>
-                  )}
-                  {activeInsight.extractedData.preferredRegion && (
-                    <p>• <strong>Região de Interesse:</strong> {activeInsight.extractedData.preferredRegion}</p>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => applyAIExtractionToContact(activeInsight.conversationId, activeContact.id)}
-                  className="w-full mt-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold py-1.5 rounded-lg shadow-xs transition"
-                >
-                  ✓ Salvar Dados no Perfil do Lead
-                </button>
+                <span className="text-[9px] font-extrabold uppercase tracking-wide bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-2xs">
+                  {isAnalyzingAI ? 'Analisando...' : 'Ativo'}
+                </span>
               </div>
-            )}
+
+              <p className="text-[11px] text-emerald-900 mb-2 leading-relaxed">
+                {activeInsight?.summary || `A IA monitora a conversa e atualiza automaticamente a entrada, orçamento e preferências imobiliárias do cliente.`}
+              </p>
+
+              {activeInsight?.suggestedResponse && (
+                <div className="bg-white/80 backdrop-blur-xs rounded-xl p-2 border border-emerald-200/80 mt-2">
+                  <span className="text-[10px] font-bold text-emerald-800 block mb-1">💡 Sugestão de Resposta da IA:</span>
+                  <p className="text-[11px] text-slate-700 italic">"{activeInsight.suggestedResponse}"</p>
+                  <button
+                    onClick={() => handleUseAISuggestion(activeInsight.suggestedResponse)}
+                    className="mt-1.5 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition"
+                  >
+                    <Send className="w-2.5 h-2.5" />
+                    <span>Usar esta resposta</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Qualificação Financeira & Imobiliária (Edição Inline com Salvamento Instantâneo) */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Qualificação do Imóvel</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-medium">Edição Rápida</span>
+              </div>
+
+              {/* Grid Entrada e Orçamento */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Entrada (R$)</label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={editedDownPayment}
+                    onChange={(e) => setEditedDownPayment(e.target.value)}
+                    onBlur={() => {
+                      const val = Number(editedDownPayment) || 0;
+                      updateContact(activeContact.id, { downPaymentAvailable: val });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = Number(editedDownPayment) || 0;
+                        updateContact(activeContact.id, { downPaymentAvailable: val });
+                      }
+                    }}
+                    className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
+                  />
+                  {Number(editedDownPayment) > 0 && (
+                    <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">
+                      R$ {Number(editedDownPayment).toLocaleString('pt-BR')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Orçamento Max (R$)</label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={editedMaxBudget}
+                    onChange={(e) => setEditedMaxBudget(e.target.value)}
+                    onBlur={() => {
+                      const val = Number(editedMaxBudget) || 0;
+                      updateContact(activeContact.id, { maxPropertyValue: val });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = Number(editedMaxBudget) || 0;
+                        updateContact(activeContact.id, { maxPropertyValue: val });
+                      }
+                    }}
+                    className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
+                  />
+                  {Number(editedMaxBudget) > 0 && (
+                    <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">
+                      R$ {Number(editedMaxBudget).toLocaleString('pt-BR')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Tipo de Imóvel */}
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                <label className="text-[10px] font-bold text-slate-500 block mb-1 flex items-center gap-1">
+                  <Building className="w-3 h-3 text-slate-400" />
+                  <span>Tipo de Imóvel de Interesse</span>
+                </label>
+                <select
+                  value={activeContact.preferredPropertyType || 'APARTMENT'}
+                  onChange={(e) => updateContact(activeContact.id, { preferredPropertyType: e.target.value as PropertyType })}
+                  className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="APARTMENT">Apartamento (Padrão)</option>
+                  <option value="PENTHOUSE">Cobertura / Penthouse</option>
+                  <option value="HOUSE">Casa em Condomínio Fechado</option>
+                  <option value="STUDIO">Studio / Loft Compacto</option>
+                  <option value="LAND">Terreno / Lote Residencial</option>
+                  <option value="COMMERCIAL">Sala Comercial / Corporativa</option>
+                </select>
+              </div>
+
+              {/* Regiões de Interesse */}
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                <label className="text-[10px] font-bold text-slate-500 block mb-1 flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-slate-400" />
+                  <span>Bairros / Regiões de Busca</span>
+                </label>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {(activeContact.targetRegions || []).map((reg, idx) => (
+                    <span key={idx} className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium flex items-center gap-1">
+                      <span>{reg}</span>
+                      <button
+                        onClick={() => {
+                          const updated = (activeContact.targetRegions || []).filter(r => r !== reg);
+                          updateContact(activeContact.id, { targetRegions: updated });
+                        }}
+                        className="text-slate-400 hover:text-rose-500"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    placeholder="Adicionar bairro (ex: Centro)..."
+                    value={newRegionInput}
+                    onChange={(e) => setNewRegionInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newRegionInput.trim()) {
+                        e.preventDefault();
+                        const updated = [...(activeContact.targetRegions || []), newRegionInput.trim()];
+                        updateContact(activeContact.id, { targetRegions: updated });
+                        setNewRegionInput('');
+                      }
+                    }}
+                    className="flex-1 text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newRegionInput.trim()) {
+                        const updated = [...(activeContact.targetRegions || []), newRegionInput.trim()];
+                        updateContact(activeContact.id, { targetRegions: updated });
+                        setNewRegionInput('');
+                      }
+                    }}
+                    className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {/* Estágio Atual no Funil (Kanban) */}
             {activeDeal && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-slate-800">Negócio no Funil</span>
-                  <span className="text-xs font-bold text-emerald-600">
+                  <span className="text-xs font-bold text-emerald-600 font-mono">
                     R$ {activeDeal.expectedValue.toLocaleString('pt-BR')}
                   </span>
                 </div>
@@ -1010,7 +1375,7 @@ export function WhatsAppInbox() {
                 <select
                   value={activeDeal.stageId}
                   onChange={(e) => moveDealStage(activeDeal.id, e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg p-1.5 font-medium text-slate-700 focus:outline-none"
+                  className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-700 focus:outline-none cursor-pointer"
                 >
                   {currentPipeline.stages.map(st => (
                     <option key={st.id} value={st.id}>
@@ -1021,50 +1386,18 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Dados Financeiros & Qualificação */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-800">Qualificação Financeira</h4>
-              
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Entrada</span>
-                  <span className="font-bold text-slate-800 font-mono">
-                    R$ {(activeContact.downPaymentAvailable || 0).toLocaleString('pt-BR')}
-                  </span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Orçamento Max</span>
-                  <span className="font-bold text-slate-800 font-mono">
-                    R$ {(activeContact.maxPropertyValue || 0).toLocaleString('pt-BR')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100 space-y-1">
-                <p className="text-slate-600">
-                  <strong className="text-slate-800">Tipo:</strong> {activeContact.preferredPropertyType || 'Apartamento'}
-                </p>
-                <p className="text-slate-600">
-                  <strong className="text-slate-800">Regiões:</strong> {(activeContact.targetRegions || []).join(', ') || 'Todas as regiões'}
-                </p>
-                <p className="text-slate-600">
-                  <strong className="text-slate-800">Origem:</strong> {activeContact.source || 'WHATSAPP'}
-                </p>
-              </div>
-            </div>
-
             {/* Tags Comerciais */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                  <Tag className="w-3.5 h-3.5 text-slate-400" />
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-slate-500" />
                   <span>Tags Comerciais</span>
                 </h4>
                 <span className="text-[10px] text-slate-400 font-mono">{(activeContact.tags || []).length} tags</span>
               </div>
 
               {/* Tags List com botão de remover */}
-              <div className="flex flex-wrap gap-1.5 mb-2">
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
                 {(activeContact.tags || []).map((tag, idx) => (
                   <span
                     key={idx}
@@ -1095,16 +1428,47 @@ export function WhatsAppInbox() {
                       handleAddTag(newTagInput);
                     }
                   }}
-                  className="flex-1 text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="flex-1 text-[11px] bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
                 <button
                   type="button"
                   onClick={() => handleAddTag(newTagInput)}
-                  className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95"
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95"
                 >
-                  <Plus className="w-3 h-3" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
+            </div>
+
+            {/* Anotações do Corretor */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Notebook className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Anotações do Corretor</span>
+                </h4>
+              </div>
+
+              <textarea
+                rows={2}
+                placeholder="Observações internas sobre este cliente (ex: prefere visitas aos sábados de manhã)..."
+                value={brokerNote}
+                onChange={(e) => setBrokerNote(e.target.value)}
+                className="w-full text-[11px] bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none text-slate-800 placeholder-slate-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (brokerNote.trim() && activeConversation) {
+                    sendMessage(activeConversation.id, `📝 NOTA INTERNA: ${brokerNote.trim()}`, true);
+                    setBrokerNote('');
+                  }
+                }}
+                disabled={!brokerNote.trim()}
+                className="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white text-[11px] font-bold py-1.5 rounded-lg transition shadow-2xs"
+              >
+                Salvar Nota na Linha do Tempo
+              </button>
             </div>
 
             {/* LGPD & Consentimento */}

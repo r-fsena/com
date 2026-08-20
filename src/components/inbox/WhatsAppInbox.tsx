@@ -35,6 +35,13 @@ import {
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/date-utils';
 
+const formatDisplayPhone = (phone?: string | null): string => {
+  if (!phone) return '';
+  const clean = phone.replace(/@.*$/, '').replace(/[^\d+]/g, '');
+  if (!clean) return '';
+  return clean.startsWith('+') ? clean : `+${clean}`;
+};
+
 export function WhatsAppInbox() {
   const { 
     conversations, 
@@ -435,7 +442,7 @@ export function WhatsAppInbox() {
                       {activeContact.temperature === 'HOT' ? '🔥 Quente' : activeContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 font-mono">{activeContact.phone}</p>
+                  <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
                 </div>
               </div>
 
@@ -537,6 +544,41 @@ export function WhatsAppInbox() {
                         </p>
                       )}
                       
+                      {/* Imagem / Foto */}
+                      {msg.attachments?.[0]?.url && (msg.messageType === 'IMAGE' || msg.attachments[0].mimeType?.startsWith('image')) && (
+                        <div className="mb-2 rounded-xl overflow-hidden max-w-xs border border-slate-200/50 bg-black/5">
+                          <img
+                            src={msg.attachments[0].url}
+                            alt="Foto recebida"
+                            className="w-full h-auto max-h-64 object-cover hover:opacity-95 transition cursor-pointer"
+                            onClick={() => window.open(msg.attachments?.[0]?.url, '_blank')}
+                          />
+                        </div>
+                      )}
+
+                      {/* Badge para Foto ou Vídeo de Visualização Única */}
+                      {(msg.content.includes('Visualização Única') || msg.content.includes('Foto (Visualização Única)')) && (
+                        <div className="flex items-center gap-2 bg-slate-900/10 text-slate-800 px-3 py-2 rounded-xl mb-1.5 font-medium border border-slate-300/40">
+                          <span className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-[10px] flex-shrink-0">
+                            1
+                          </span>
+                          <div>
+                            <p className="font-bold text-[11px] text-slate-900">Foto de Visualização Única</p>
+                            <p className="text-[10px] text-slate-600">Por privacidade, fotos de visualização única são abertas exclusivamente no WhatsApp do celular.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Player de Áudio / Mensagem de Voz */}
+                      {msg.messageType === 'AUDIO' && msg.attachments?.[0]?.url && (
+                        <div className="mb-2 pt-1">
+                          <audio controls className="w-64 h-8">
+                            <source src={msg.attachments[0].url} />
+                            Seu navegador não suporta reprodução de áudio.
+                          </audio>
+                        </div>
+                      )}
+
                       <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
 
                       <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500">
@@ -785,7 +827,7 @@ export function WhatsAppInbox() {
               />
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900 truncate">{activeContact.name}</h3>
-                <p className="text-xs text-slate-500 font-mono">{activeContact.phone}</p>
+                <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
                 <p className="text-[11px] text-slate-400 truncate">{activeContact.email || 'E-mail não informado'}</p>
               </div>
             </div>

@@ -15,12 +15,30 @@ export async function POST(
   try {
     const body = await request.json();
 
-    // Extrai os campos flexivelmente de qualquer formato de evento da Z-API
-    const phone = body.phone || body.sender || body.from || body.chatId || (body.data && body.data.phone) || '';
-    const senderName = body.senderName || body.chatName || body.pushName || body.name || `WhatsApp ${phone.slice(-4)}`;
+    // Extrai o telefone de forma limpa (removendo @lid, @c.us, @s.whatsapp.net)
+    let rawPhone = body.senderPhone || body.phone || body.sender || body.from || body.chatId || (body.data && (body.data.senderPhone || body.data.phone)) || '';
+    
+    // Se o telefone vier no formato JID / LID (ex: 38247304564788@lid ou 55489999@c.us)
+    let cleanPhone = String(rawPhone).replace(/@.*$/, '').replace(/\D/g, '');
+    
+    // Se cleanPhone estiver vazio mas houver chatPhone
+    if (!cleanPhone && body.chatPhone) {
+      cleanPhone = String(body.chatPhone).replace(/\D/g, '');
+    }
+
+    const senderName = body.senderName || body.chatName || body.pushName || body.name || `WhatsApp ${cleanPhone ? cleanPhone.slice(-4) : 'Cliente'}`;
     const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);
     const messageId = body.messageId || body.id || body.zaapId || `zmsg-${Date.now()}`;
     
+    // Detecção de Visualização Única (View-Once)
+    const isViewOnce = Boolean(
+      body.isViewOnce || 
+      body.viewOnce || 
+      (body.image && body.image.viewOnce) || 
+      (body.video && body.video.viewOnce) ||
+      body.viewOnceMessage
+    );
+
     // Extrai o conteúdo do texto ou mídia
     let content = '';
     let mediaType: 'text' | 'image' | 'audio' | 'document' = 'text';
@@ -30,33 +48,51 @@ export async function POST(
       content = body.text.message;
     } else if (typeof body.text === 'string') {
       content = body.text;
-    } else if (body.image) {
+    } else if (body.image || body.photo || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image)) {
+      const imgObj = body.image || body.photo || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image);
       mediaType = 'image';
-      mediaUrl = body.image.imageUrl || body.image.url || '';
-      content = body.image.caption || '📷 Imagem recebida';
-    } else if (body.audio) {
-      mediaType = 'audio';
-      mediaUrl = body.audio.audioUrl || body.audio.url || '';
-      content = '🎵 Áudio gravado';
-    } else if (body.document) {
+      mediaUrl = typeof imgObj === 'string' ? imgObj : (imgObj.imageUrl || imgObj.url || imgObj.link || imgObj.thumbnailUrl || '');
+      content = imgObj.caption || (isViewOnce ? '📷 Foto (Visualização Única)' : '📷 Imagem');
+    } else if (body.video || body.viewOnceVideo || (body.viewOnceMessage && body.viewOnceMessage.video)) {
+      const vidObj = body.video || body.viewOnceVideo || (body.viewOnceMessage && body.viewOnceMessage.video);
       mediaType = 'document';
-      mediaUrl = body.document.documentUrl || body.document.url || '';
-      content = body.document.fileName || '📄 Documento recebido';
+      mediaUrl = typeof vidObj === 'string' ? vidObj : (vidObj.videoUrl || vidObj.url || vidObj.link || '');
+      content = vidObj.caption || (isViewOnce ? '🎥 Vídeo (Visualização Única)' : '🎥 Vídeo');
+    } else if (body.audio || body.voice || body.ptt) {
+      const audObj = body.audio || body.voice || body.ptt;
+      mediaType = 'audio';
+      mediaUrl = typeof audObj === 'string' ? audObj : (audObj.audioUrl || audObj.url || audObj.link || '');
+      content = '🎵 Mensagem de voz / Áudio';
+    } else if (body.location || body.liveLocation) {
+      const loc = body.location || body.liveLocation;
+      content = `📍 Localização compartilhada: ${loc.name || loc.address || `${loc.latitude}, ${loc.longitude}`}`;
+    } else if (body.contact || body.vcard || body.contacts) {
+      const cnt = body.contact || (body.contacts && body.contacts[0]) || {};
+      content = `📇 Contato: ${cnt.displayName || cnt.name || 'Contato recebido'}`;
+    } else if (body.document || body.file) {
+      const docObj = body.document || body.file;
+      mediaType = 'document';
+      mediaUrl = typeof docObj === 'string' ? docObj : (docObj.documentUrl || docObj.url || docObj.link || '');
+      content = docObj.fileName || docObj.title || '📄 Documento recebido';
+    } else if (body.sticker) {
+      mediaType = 'image';
+      mediaUrl = typeof body.sticker === 'string' ? body.sticker : (body.sticker.stickerUrl || body.sticker.url || '');
+      content = '🌟 Figurinha';
     } else if (body.message) {
       content = typeof body.message === 'string' ? body.message : JSON.stringify(body.message);
     } else if (body.body) {
       content = String(body.body);
     } else {
-      content = 'Mensagem recebida pelo WhatsApp';
+      content = isViewOnce ? '📷 Foto de Visualização Única' : 'Mensagem recebida pelo WhatsApp';
     }
 
     // Se temos um telefone e conteúdo válido, registra no buffer de eventos em tempo real
-    if (phone && phone !== '0') {
+    if (cleanPhone && cleanPhone !== '0') {
       webhookStore.addMessage({
         id: messageId,
         tenantId: tenantId || 'tenant-vanguard-01',
         instanceId: instanceId || '3F1B67FC8139425171C79ED390C0144C',
-        phone,
+        phone: cleanPhone,
         senderName,
         content,
         mediaType,
@@ -69,7 +105,7 @@ export async function POST(
     return NextResponse.json({
       received: true,
       messageId,
-      phone,
+      phone: cleanPhone,
       contentPreview: content.substring(0, 30),
       status: 'SUCCESS',
     });

@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
         temperature: 'WARM' as const,
         aiPriorityScore: 75,
         tags: ['WhatsApp Z-API', 'Importado'],
+        targetRegions: ['Geral'],
         notesCount: 0,
         consentGiven: true,
         consentDate: new Date().toISOString(),
@@ -75,7 +76,6 @@ export async function GET(req: NextRequest) {
         lastMessagePreview: 'Conversa sincronizada via WhatsApp Z-API',
         lastMessageAt: lastMsgDate,
         slaBreached: false,
-        aiSuggestedReply: 'Olá! Sou seu corretor da Vanguard. Como posso te auxiliar?',
       };
     });
 
@@ -83,8 +83,10 @@ export async function GET(req: NextRequest) {
       id: `msg-init-${c.phone}`,
       tenantId,
       conversationId: `conv-zapi-${c.phone}`,
-      senderType: 'CLIENT' as const,
+      senderType: 'CONTACT' as const,
+      messageType: 'TEXT' as const,
       content: 'Olá! Conversa ativa no WhatsApp.',
+      isInternalNote: false,
       timestamp: c.lastMessageTime ? new Date(Number(c.lastMessageTime)).toISOString() : new Date().toISOString(),
       status: 'READ' as const,
     }));

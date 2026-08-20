@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   Tenant, 
   User, 
@@ -264,7 +264,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setMessages(prev => [...prev, newMessage]);
 
     if (!isInternalNote) {
-      // Atualiza conversa
+      // Atualiza conversa localmente
       setConversations(prev => prev.map(conv => {
         if (conv.id === conversationId) {
           return {
@@ -278,10 +278,26 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return conv;
       }));
 
-      // Simula confirmação de leitura do WhatsApp após 2.5s
+      // Envia diretamente para a Z-API se for um contato real do WhatsApp
+      const conv = conversations.find(c => c.id === conversationId);
+      const contact = contacts.find(cnt => cnt.id === conv?.contactId);
+      if (contact && contact.phone) {
+        const cleanPhone = contact.phone.replace(/\D/g, '');
+        fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: content.trim(),
+            phone: cleanPhone,
+            senderUserId: currentUser.id,
+          }),
+        }).catch(err => console.error('Erro ao enviar mensagem via Z-API:', err));
+      }
+
+      // Confirmação de entrega
       setTimeout(() => {
-        setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'READ' } : m));
-      }, 2500);
+        setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'DELIVERED' } : m));
+      }, 1500);
     }
   };
 
@@ -524,6 +540,119 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     checkLiveZapiStatus();
   }, []);
+
+  // Polling contínuo de novos eventos e mensagens do Webhook Z-API em tempo real (a cada 2.5s)
+  const lastPollTimeRef = useRef<number>(Date.now() - 60000);
+
+  useEffect(() => {
+    const pollWebhookMessages = async () => {
+      try {
+        const res = await fetch(`/api/v1/webhooks/zapi/events?since=${lastPollTimeRef.current}`);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+          lastPollTimeRef.current = data.serverTime || Date.now();
+
+          data.messages.forEach((incoming: any) => {
+            const rawPhone = incoming.phone.replace(/\D/g, '');
+            const formattedPhone = incoming.phone.startsWith('+') ? incoming.phone : `+${incoming.phone}`;
+
+            // Verifica se o contato já existe
+            setContacts(prevContacts => {
+              const existing = prevContacts.find(c => c.phone.replace(/\D/g, '') === rawPhone);
+              if (existing) {
+                return prevContacts.map(c => c.id === existing.id ? {
+                  ...c,
+                  lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                } : c);
+              }
+
+              const newContact: Contact = {
+                id: `contact-zapi-${rawPhone}`,
+                tenantId: currentTenant.id,
+                name: incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`,
+                phone: formattedPhone,
+                avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(incoming.senderName || 'Cliente')}&background=059669&color=fff`,
+                source: 'WHATSAPP',
+                temperature: 'HOT',
+                aiPriorityScore: 85,
+                tags: ['Novo Lead WhatsApp', 'Z-API Live'],
+                targetRegions: ['Geral'],
+                notesCount: 0,
+                consentGiven: true,
+                hasOptedOut: false,
+                lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
+                lastTeamInteractionAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              return [newContact, ...prevContacts];
+            });
+
+            // Adiciona ou atualiza conversa
+            setConversations(prevConvs => {
+              const convId = `conv-zapi-${rawPhone}`;
+              const existingConv = prevConvs.find(c => c.id === convId || c.contactId === `contact-zapi-${rawPhone}`);
+
+              if (existingConv) {
+                return prevConvs.map(c => c.id === existingConv.id ? {
+                  ...c,
+                  lastMessagePreview: incoming.content,
+                  lastMessageAt: incoming.timestamp || new Date().toISOString(),
+                  status: 'PENDING_TEAM',
+                  unreadCount: (c.unreadCount || 0) + 1,
+                  slaBreached: false,
+                } : c);
+              }
+
+              const newConv: Conversation = {
+                id: convId,
+                tenantId: currentTenant.id,
+                instanceId: incoming.instanceId || instances[0]?.id || '3F1B67FC8139425171C79ED390C0144C',
+                contactId: `contact-zapi-${rawPhone}`,
+                status: 'PENDING_TEAM',
+                unreadCount: 1,
+                lastMessagePreview: incoming.content,
+                lastMessageAt: incoming.timestamp || new Date().toISOString(),
+                slaBreached: false,
+              };
+              return [newConv, ...prevConvs];
+            });
+
+            // Adiciona a nova mensagem à conversa
+            const newMsg: Message = {
+              id: incoming.id || `msg-${Date.now()}-${Math.random()}`,
+              tenantId: currentTenant.id,
+              conversationId: `conv-zapi-${rawPhone}`,
+              senderType: incoming.fromMe ? 'USER' : 'CONTACT',
+              senderName: incoming.fromMe ? 'Corretor' : incoming.senderName,
+              messageType: incoming.mediaType === 'audio' ? 'AUDIO' : incoming.mediaType === 'image' ? 'IMAGE' : incoming.mediaType === 'document' ? 'DOCUMENT' : 'TEXT',
+              attachments: incoming.mediaUrl ? [{
+                id: `att-${Date.now()}`,
+                url: incoming.mediaUrl,
+                fileName: incoming.mediaType === 'audio' ? 'Áudio' : incoming.mediaType === 'image' ? 'Imagem' : 'Documento',
+                fileSize: 1024,
+                mimeType: incoming.mediaType === 'image' ? 'image/jpeg' : 'application/octet-stream',
+              }] : undefined,
+              content: incoming.content,
+              status: 'DELIVERED',
+              isInternalNote: false,
+              timestamp: incoming.timestamp || new Date().toISOString(),
+            };
+
+            setMessages(prevMsgs => {
+              if (prevMsgs.some(m => m.id === newMsg.id)) return prevMsgs;
+              return [...prevMsgs, newMsg];
+            });
+          });
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(pollWebhookMessages, 2500);
+    return () => clearInterval(interval);
+  }, [currentTenant.id, instances]);
 
   return (
     <CRMContext.Provider value={{

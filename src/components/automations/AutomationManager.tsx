@@ -20,8 +20,7 @@ import {
 } from 'lucide-react';
 import { AutomationRule, AutomationTriggerType, AutomationActionType } from '@/types/crm';
 import { MOCK_AUTOMATIONS, MOCK_AUTOMATION_LOGS } from '@/lib/mock-data';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { safeFormatDate } from '@/lib/date-utils';
 
 export function AutomationManager() {
   const [automations, setAutomations] = useState<AutomationRule[]>(MOCK_AUTOMATIONS as any);
@@ -212,7 +211,7 @@ export function AutomationManager() {
                 </span>
                 {rule.lastExecutedAt && (
                   <span className="text-[11px] font-mono">
-                    Última execução: {format(new Date(rule.lastExecutedAt), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                    Última execução: {safeFormatDate(rule.lastExecutedAt, 'dd/MM/yyyy HH:mm')}
                   </span>
                 )}
               </div>
@@ -241,7 +240,7 @@ export function AutomationManager() {
                 </div>
 
                 <span className="text-[11px] text-slate-400 font-mono flex-shrink-0">
-                  {format(new Date(log.executedAt), 'HH:mm • dd/MM', { locale: ptBR })}
+                  {safeFormatDate(log.executedAt, 'HH:mm • dd/MM')}
                 </span>
               </div>
             ))}

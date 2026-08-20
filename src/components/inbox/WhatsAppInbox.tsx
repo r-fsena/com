@@ -28,8 +28,7 @@ import {
   MessageSquare,
   RefreshCw
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { safeFormatDate } from '@/lib/date-utils';
 
 export function WhatsAppInbox() {
   const { 
@@ -252,7 +251,7 @@ export function WhatsAppInbox() {
                         {contact?.name || 'Lead WhatsApp'}
                       </h3>
                       <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1">
-                        {format(new Date(conv.lastMessageAt), 'HH:mm', { locale: ptBR })}
+                        {safeFormatDate(conv.lastMessageAt, 'HH:mm')}
                       </span>
                     </div>
 
@@ -382,7 +381,7 @@ export function WhatsAppInbox() {
                         </div>
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                         <span className="block text-[10px] text-amber-600/80 text-right mt-1">
-                          {msg.senderName} • {format(new Date(msg.timestamp), 'HH:mm', { locale: ptBR })}
+                          {msg.senderName} • {safeFormatDate(msg.timestamp, 'HH:mm')}
                         </span>
                       </div>
                     </div>
@@ -410,7 +409,7 @@ export function WhatsAppInbox() {
                       <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
 
                       <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500">
-                        <span>{format(new Date(msg.timestamp), 'HH:mm', { locale: ptBR })}</span>
+                        <span>{safeFormatDate(msg.timestamp, 'HH:mm')}</span>
                         {isMe && (
                           <span>
                             {msg.status === 'READ' ? (
@@ -709,10 +708,10 @@ export function WhatsAppInbox() {
                   <strong className="text-slate-800">Tipo:</strong> {activeContact.preferredPropertyType || 'Apartamento'}
                 </p>
                 <p className="text-slate-600">
-                  <strong className="text-slate-800">Regiões:</strong> {activeContact.targetRegions.join(', ')}
+                  <strong className="text-slate-800">Regiões:</strong> {(activeContact.targetRegions || []).join(', ') || 'Todas as regiões'}
                 </p>
                 <p className="text-slate-600">
-                  <strong className="text-slate-800">Origem:</strong> {activeContact.source}
+                  <strong className="text-slate-800">Origem:</strong> {activeContact.source || 'WHATSAPP'}
                 </p>
               </div>
             </div>
@@ -724,7 +723,7 @@ export function WhatsAppInbox() {
                 <span>Tags Comerciais</span>
               </h4>
               <div className="flex flex-wrap gap-1.5">
-                {activeContact.tags.map((tag, idx) => (
+                {(activeContact.tags || []).map((tag, idx) => (
                   <span
                     key={idx}
                     className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200"

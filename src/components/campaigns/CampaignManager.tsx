@@ -15,8 +15,7 @@ import {
   BarChart2,
   Filter
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { safeFormatDate } from '@/lib/date-utils';
 
 export function CampaignManager() {
   const { campaigns, createCampaign, contacts, instances } = useCRM();
@@ -109,7 +108,7 @@ export function CampaignManager() {
                 </div>
 
                 <div className="text-right text-xs font-mono text-slate-500">
-                  {format(new Date(camp.createdAt), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                  {safeFormatDate(camp.createdAt, 'dd/MM/yyyy HH:mm')}
                 </div>
               </div>
 

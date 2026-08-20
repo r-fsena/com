@@ -15,8 +15,7 @@ import {
   Building,
   FileText
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { safeFormatDate } from '@/lib/date-utils';
 
 export function TasksManager() {
   const { tasks, toggleTask, createTask, contacts, users, currentUser } = useCRM();
@@ -177,7 +176,7 @@ export function TasksManager() {
 
                 <div className="text-right flex-shrink-0">
                   <span className={`text-xs font-bold font-mono block ${isLate ? 'text-rose-600' : 'text-slate-700'}`}>
-                    {format(new Date(task.dueDate), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                    {safeFormatDate(task.dueDate, 'dd/MM/yyyy HH:mm')}
                   </span>
                   {isLate && (
                     <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 inline-block mt-0.5">

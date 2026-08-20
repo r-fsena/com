@@ -237,6 +237,33 @@ export function WhatsAppInbox() {
           text: m.content,
         }));
 
+      // 1. Busca mensagens históricas adicionais diretamente na Z-API
+      try {
+        const histRes = await fetch('/api/v1/zapi/sync-chat-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: activeContact.phone,
+            conversationId: activeConversation.id,
+            tenantId: activeConversation.tenantId,
+          }),
+        });
+        const histData = await histRes.json();
+        if (histData.messages && histData.messages.length > 0) {
+          const zapiMsgs = histData.messages
+            .filter((m: any) => !m.isInternalNote && m.content)
+            .map((m: any) => ({
+              sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
+              text: m.content,
+            }));
+          if (zapiMsgs.length > chatHistory.length) {
+            chatHistory = zapiMsgs;
+          }
+        }
+      } catch (e) {
+        console.warn('Erro ao sincronizar histórico completo:', e);
+      }
+
       if (chatHistory.length === 0 && activeConversation.lastMessagePreview) {
         chatHistory = [{
           sender: 'CLIENT',

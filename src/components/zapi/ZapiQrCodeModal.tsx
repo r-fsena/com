@@ -70,33 +70,48 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     }
   };
 
-  // Carrega ao abrir o modal
+  // Função para verificar status de conexão em tempo real
+  const checkStatus = async () => {
+    try {
+      const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(instanceId)}&token=${encodeURIComponent(instanceToken)}&clientToken=${encodeURIComponent(clientToken)}`);
+      const data = await res.json();
+      if (data.success && data.connected) {
+        setIsConnected(true);
+        if (data.phone) setConnectedPhone(data.phone);
+        syncZapiInstance(instanceId, data.phone);
+      }
+    } catch {}
+  };
+
+  // Carrega ao abrir o modal e checa status
   useEffect(() => {
-    if (isOpen && !isConnected) {
-      if (instanceId && instanceToken) {
+    if (isOpen) {
+      checkStatus();
+      if (!isConnected && instanceId && instanceToken) {
         fetchLiveQrCode(instanceId, instanceToken, clientToken);
       }
     }
   }, [isOpen, isConnected]);
 
-  // Contador para simular expiração e atualização de QR Code
+  // Polling de status e contagem regressiva para QR Code
   useEffect(() => {
     if (!isOpen || isConnected) return;
 
     const timer = setInterval(() => {
+      checkStatus();
       setCountdown((prev) => {
         if (prev <= 1) {
           if (instanceId && instanceToken) {
-            fetchLiveQrCode(instanceId, instanceToken);
+            fetchLiveQrCode(instanceId, instanceToken, clientToken);
           }
           return 25;
         }
         return prev - 1;
       });
-    }, 1000);
+    }, 2000);
 
     return () => clearInterval(timer);
-  }, [isOpen, isConnected, instanceId, instanceToken]);
+  }, [isOpen, isConnected, instanceId, instanceToken, clientToken]);
 
   if (!isOpen) return null;
 

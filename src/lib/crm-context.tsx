@@ -88,8 +88,10 @@ interface CRMContextType {
   createCampaign: (campaign: Partial<Campaign>) => void;
   quickReplies: QuickReplyTemplate[];
 
-  // Z-API Simulator
-  syncZapiInstance: (instanceId: string) => void;
+  // Z-API Sincronização em Tempo Real
+  isSyncingWhatsApp: boolean;
+  syncWhatsAppChats: () => Promise<void>;
+  syncZapiInstance: (instanceId: string, phone?: string) => void;
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -467,13 +469,61 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setCampaigns(prev => [newCamp, ...prev]);
   };
 
-  const syncZapiInstance = (instanceId: string) => {
+  const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
+
+  const syncWhatsAppChats = async () => {
+    try {
+      setIsSyncingWhatsApp(true);
+      const res = await fetch('/api/v1/zapi/sync-chats');
+      const data = await res.json();
+
+      if (data.success && Array.isArray(data.contacts) && data.contacts.length > 0) {
+        setContacts(data.contacts);
+        setConversations(data.conversations);
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+        if (!activeConversationId && data.conversations[0]?.id) {
+          setActiveConversationId(data.conversations[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao sincronizar conversas:', err);
+    } finally {
+      setIsSyncingWhatsApp(false);
+    }
+  };
+
+  const syncZapiInstance = (instanceId: string, phone?: string) => {
     setInstances(prev => prev.map(i => i.id === instanceId ? {
       ...i,
       status: 'CONNECTED',
+      phoneNumber: phone || i.phoneNumber,
       lastSyncAt: new Date().toISOString()
     } : i));
+    syncWhatsAppChats();
   };
+
+  // Checa status de conexão da Z-API ao carregar
+  useEffect(() => {
+    const checkLiveZapiStatus = async () => {
+      try {
+        const res = await fetch('/api/v1/zapi/status');
+        const data = await res.json();
+        if (data.success && data.connected) {
+          setInstances(prev => prev.map(i => ({
+            ...i,
+            status: 'CONNECTED',
+            phoneNumber: data.phone || '+55 (48) 8877-4408',
+            lastSyncAt: new Date().toISOString()
+          })));
+          syncWhatsAppChats();
+        }
+      } catch {}
+    };
+
+    checkLiveZapiStatus();
+  }, []);
 
   return (
     <CRMContext.Provider value={{
@@ -516,6 +566,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       campaigns,
       createCampaign,
       quickReplies,
+      isSyncingWhatsApp,
+      syncWhatsAppChats,
       syncZapiInstance,
     }}>
       {children}

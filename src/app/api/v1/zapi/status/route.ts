@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
   const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN;
+  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
 
   try {
     const client = new ZApiClient({
@@ -16,23 +16,36 @@ export async function GET(req: NextRequest) {
 
     const statusResponse = await client.getStatus();
 
+    let connected = false;
+    let phone = 'Não conectado';
+    let name = 'WhatsApp Comercial';
+    let battery = 100;
+
     if (statusResponse.success && statusResponse.data) {
-      return NextResponse.json({
-        success: true,
-        instanceId,
-        connected: statusResponse.data.connected,
-        phone: statusResponse.data.smartphone?.phone || '+55 11 98765-4321',
-        battery: statusResponse.data.battery || 95,
-      });
+      connected = Boolean(statusResponse.data.connected || (statusResponse.data as any).smartphoneConnected);
+    }
+
+    if (connected) {
+      // Busca dados detalhados do aparelho conectado
+      try {
+        const deviceRes = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/device`, {
+          headers: { 'Client-Token': securityToken }
+        });
+        if (deviceRes.ok) {
+          const deviceData = await deviceRes.json();
+          phone = deviceData.phone ? `+55 (${deviceData.phone.substring(2, 4)}) ${deviceData.phone.substring(4)}` : phone;
+          name = deviceData.name || name;
+        }
+      } catch {}
     }
 
     return NextResponse.json({
       success: true,
       instanceId,
-      connected: true,
-      phone: '+55 11 99123-4567',
-      battery: 98,
-      isSimulated: true,
+      connected,
+      phone,
+      name,
+      battery,
     });
   } catch (error: any) {
     return NextResponse.json({

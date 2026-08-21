@@ -224,6 +224,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Hidrata dados salvos no localStorage no primeiro mount no navegador
+  const isHydratedRef = useRef(false);
+
   useEffect(() => {
     try {
       const savedContacts = localStorage.getItem('vanguard_crm_contacts');
@@ -252,37 +254,50 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      const savedInsights = localStorage.getItem('vanguard_crm_ai_insights');
+      if (savedInsights) {
+        const parsed = JSON.parse(savedInsights);
+        if (parsed && typeof parsed === 'object') setAiInsights(parsed);
+      }
+
       const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');
       if (savedActive) setActiveConversationId(savedActive);
-    } catch {}
+    } catch {} finally {
+      isHydratedRef.current = true;
+    }
   }, []);
 
-  // Salva no localStorage quando o estado mudar
+  // Salva no localStorage quando o estado mudar (somente APÓS hidratação para nunca sobrescrever)
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       if (contacts.length > 0) localStorage.setItem('vanguard_crm_contacts', JSON.stringify(contacts));
     } catch {}
   }, [contacts]);
 
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       if (deals.length > 0) localStorage.setItem('vanguard_crm_deals', JSON.stringify(deals));
     } catch {}
   }, [deals]);
 
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       if (conversations.length > 0) localStorage.setItem('vanguard_crm_conversations', JSON.stringify(conversations));
     } catch {}
   }, [conversations]);
 
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       if (messages.length > 0) localStorage.setItem('vanguard_crm_messages', JSON.stringify(messages));
     } catch {}
   }, [messages]);
 
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       if (activeConversationId) localStorage.setItem('vanguard_crm_active_conv_id', activeConversationId);
     } catch {}
@@ -299,6 +314,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       if (Object.keys(aiInsights).length > 0) localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(aiInsights));
     } catch {}
@@ -328,40 +344,57 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date().toISOString(),
       ...data,
     };
-    setContacts(prev => [newContact, ...prev]);
+    setContacts(prev => {
+      const updated = [newContact, ...prev];
+      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
     return newContact;
   };
 
   const updateContact = (id: string, updates: Partial<Contact>) => {
-    setContacts(prev => prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c));
+    setContacts(prev => {
+      const updated = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c);
+      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const deleteContact = (id: string) => {
-    setContacts(prev => prev.filter(c => c.id !== id));
+    setContacts(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   // Manipulação de Deals / Kanban
   const moveDealStage = (dealId: string, targetStageId: string) => {
     const stage = currentPipeline.stages.find(s => s.id === targetStageId);
-    setDeals(prev => prev.map(deal => {
-      if (deal.id === dealId) {
-        return {
-          ...deal,
-          stageId: targetStageId,
-          status: stage?.isWon ? 'WON' : stage?.isLost ? 'LOST' : 'OPEN',
-          closedAt: stage?.isWon || stage?.isLost ? new Date().toISOString() : undefined,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return deal;
-    }));
+    setDeals(prev => {
+      const updated = prev.map(deal => {
+        if (deal.id === dealId) {
+          return {
+            ...deal,
+            stageId: targetStageId,
+            status: (stage?.isWon ? 'WON' : stage?.isLost ? 'LOST' : 'OPEN') as any,
+            closedAt: stage?.isWon || stage?.isLost ? new Date().toISOString() : undefined,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return deal;
+      });
+      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const createDeal = (data: Partial<Deal>): Deal => {
+    const contactId = data.contactId || contacts[0]?.id || 'contact-01';
     const newDeal: Deal = {
       id: `deal-${Date.now()}`,
       tenantId: currentTenant.id,
-      contactId: data.contactId || contacts[0]?.id || 'contact-01',
+      contactId: contactId,
       pipelineId: currentPipeline.id,
       stageId: data.stageId || currentPipeline.stages[0].id,
       assignedUserId: data.assignedUserId || currentUser.id,
@@ -374,12 +407,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date().toISOString(),
       ...data,
     };
-    setDeals(prev => [newDeal, ...prev]);
+    setDeals(prev => {
+      const filtered = prev.filter(d => d.id !== newDeal.id);
+      const updated = [newDeal, ...filtered];
+      try {
+        localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
     return newDeal;
   };
 
   const updateDeal = (id: string, updates: Partial<Deal>) => {
-    setDeals(prev => prev.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d));
+    setDeals(prev => {
+      const updated = prev.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d);
+      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   // Envio de Mensagem WhatsApp / Nota Interna

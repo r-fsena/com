@@ -1577,6 +1577,33 @@ export function WhatsAppInbox() {
                 )}
               </div>
 
+              {/* Botão de Promoção Imediata para o Kanban */}
+              {!activeDeal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!activeContact) return;
+                    const val = activeContact.maxPropertyValue || (editedMaxBudget ? Number(editedMaxBudget) : 1200000);
+                    const propTypeName = activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa em Condomínio' : activeContact.preferredPropertyType === 'STUDIO' ? 'Studio' : activeContact.preferredPropertyType === 'LAND' ? 'Terreno' : 'Apartamento';
+                    createDeal({
+                      title: `${activeContact.name} - ${propTypeName}`,
+                      contactId: activeContact.id,
+                      expectedValue: val,
+                      stageId: currentPipeline.stages[0].id,
+                      assignedUserId: currentUser.id,
+                    });
+                  }}
+                  className={`w-full text-xs font-bold py-2 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                    isLeadQualified
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white ring-2 ring-emerald-400/50'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>{isLeadQualified ? '🚀 Promover a Lead Qualificado e Abrir no Kanban' : 'Lançar no Kanban'}</span>
+                </button>
+              )}
+
               {/* Botão de Forçar Análise */}
               <button
                 type="button"

@@ -90,6 +90,7 @@ export function WhatsAppInbox() {
     recordAIFeedback,
     deals,
     createDeal,
+    updateDeal,
     moveDealStage,
     currentPipeline,
     quickReplies,
@@ -106,7 +107,7 @@ export function WhatsAppInbox() {
   const [messageInput, setMessageInput] = useState('');
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
-  const [showLeadDrawer, setShowLeadDrawer] = useState(true);
+  const [showLeadDrawer, setShowLeadDrawer] = useState(false);
   const [showChatOptionsDropdown, setShowChatOptionsDropdown] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -732,9 +733,11 @@ export function WhatsAppInbox() {
             </div>
           ) : (
             filteredConversations.map((conv) => {
-              const contact = contacts.find(c => c.id === conv.contactId);
+              const contact = contacts.find(c => c.id === conv.contactId) || contacts.find(c => c.phone.replace(/\D/g, '') === conv.id.replace(/\D/g, ''));
               const isSelected = conv.id === activeConversation?.id;
-              const assignedUser = users.find(u => u.id === conv.assignedUserId);
+              const dealForContact = deals.find(d => d.contactId === contact?.id || (contact && d.contactId.includes(contact.phone.replace(/\D/g, ''))));
+              const effectiveUserId = conv.assignedUserId || contact?.assignedUserId || dealForContact?.assignedUserId;
+              const assignedUser = users.find(u => u.id === effectiveUserId);
 
               return (
                 <button
@@ -877,8 +880,17 @@ export function WhatsAppInbox() {
                 <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
                   <span className="text-slate-400 text-[11px]">Responsável:</span>
                   <select
-                    value={activeConversation.assignedUserId || ''}
-                    onChange={(e) => assignConversation(activeConversation.id, e.target.value || undefined)}
+                    value={activeConversation.assignedUserId || activeContact?.assignedUserId || activeDeal?.assignedUserId || ''}
+                    onChange={(e) => {
+                      const newUserId = e.target.value || undefined;
+                      assignConversation(activeConversation.id, newUserId);
+                      if (activeContact) {
+                        updateContact(activeContact.id, { assignedUserId: newUserId });
+                      }
+                      if (activeDeal) {
+                        updateDeal(activeDeal.id, { assignedUserId: newUserId || currentUser.id });
+                      }
+                    }}
                     className="bg-transparent font-semibold text-slate-700 focus:outline-none cursor-pointer text-xs"
                   >
                     <option value="">(Não Atribuído)</option>

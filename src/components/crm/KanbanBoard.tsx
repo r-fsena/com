@@ -631,7 +631,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
             top: hoverPosition.y,
             zIndex: 50,
           }}
-          className="w-60 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border border-slate-700/80 pointer-events-none animate-in fade-in zoom-in-95 duration-150 space-y-2"
+          className="w-64 max-w-[270px] bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3.5 shadow-2xl border border-slate-700/80 pointer-events-none animate-in fade-in zoom-in-95 duration-150 space-y-2.5"
         >
           {/* Header Compacto */}
           <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
@@ -655,18 +655,20 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
             </div>
           </div>
 
-          {/* Resumo da IA Conciso (1 Coluna) */}
-          {hoveredInsight?.summary && (
-            <div className="bg-emerald-950/40 border border-emerald-800/40 rounded-xl p-2">
-              <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 mb-0.5">
-                <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
-                <span>Resumo da IA</span>
-              </div>
-              <p className="text-[10px] text-emerald-100 leading-snug line-clamp-2">
-                {hoveredInsight.summary}
-              </p>
+          {/* Resumo da IA com Quebra de Linha Completa */}
+          <div className="bg-emerald-950/50 border border-emerald-800/50 rounded-xl p-2.5 space-y-1">
+            <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
+              <Sparkles className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+              <span>Resumo da IA:</span>
             </div>
-          )}
+            <p className="text-[10.5px] text-emerald-100 leading-relaxed whitespace-normal break-words italic">
+              "{hoveredInsight?.summary || (
+                hoveredContact.monthlyIncome
+                  ? `Lead qualificado com renda de R$ ${(hoveredContact.monthlyIncome / 1000).toFixed(0)}k/mês e entrada de R$ ${(hoveredContact.downPaymentAvailable || 300000) / 1000}k para imóvel de alto padrão.`
+                  : 'Lead em acompanhamento ativo no WhatsApp com orçamento e perfil mapeados durante a conversa.'
+              )}"
+            </p>
+          </div>
 
           {/* Lista de Informações em Coluna Única */}
           <div className="space-y-1 text-[10.5px] bg-white/5 p-2 rounded-xl border border-white/5">

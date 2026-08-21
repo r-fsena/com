@@ -93,30 +93,10 @@ export function Header({ onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, on
 
       {/* Action Buttons & Notifications */}
       <div className="flex items-center gap-3">
-        {/* Auth / User Login Button */}
-        {onOpenAuthModal && (
-          <button
-            onClick={onOpenAuthModal}
-            className="hidden sm:flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl transition"
-            title="Autenticação e Onboarding"
-          >
-            <UserPlus className="w-3.5 h-3.5 text-slate-500" />
-            <span>Acessos / Onboarding</span>
-          </button>
-        )}
-        {/* Quick Webhook Simulator Button */}
-        <button
-          onClick={onOpenZapiSimulator}
-          className="hidden sm:flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 border border-emerald-300/80 text-xs font-semibold px-3.5 py-2 rounded-xl transition shadow-xs"
-        >
-          <Bot className="w-4 h-4 text-emerald-600 animate-pulse-subtle" />
-          <span>Simular Entrada Z-API</span>
-        </button>
-
         {/* Create Lead Button */}
         <button
           onClick={onOpenNewLead}
-          className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm shadow-emerald-700/20 active:scale-95"
+          className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm shadow-emerald-700/20 active:scale-95 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Novo Lead</span>

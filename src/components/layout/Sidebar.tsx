@@ -193,19 +193,12 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
               {onOpenQrCodeModal && (
                 <button
                   onClick={onOpenQrCodeModal}
-                  className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-bold transition shadow-xs"
+                  className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-bold transition shadow-xs cursor-pointer"
                 >
                   <QrCode className="w-3.5 h-3.5" />
                   <span>Vincular WhatsApp</span>
                 </button>
               )}
-              <button
-                onClick={onOpenZapiSimulator}
-                className="w-full flex items-center justify-center gap-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg py-1.5 text-xs font-medium transition"
-              >
-                <Bot className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Simular Webhook</span>
-              </button>
             </div>
           </div>
         </div>

@@ -54,6 +54,11 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
       documentCnpj: documentCnpj || '00.000.000/0001-00',
       primaryColor: '#059669',
       timezone: 'America/Sao_Paulo',
+      status: 'ACTIVE' as const,
+      plan: 'PROFESSIONAL' as const,
+      monthlyFee: 890.00,
+      maxBrokers: 15,
+      maxInstances: 3,
       businessHours: { start: '08:30', end: '19:00', workDays: [1, 2, 3, 4, 5, 6] },
       settings: {
         slaFirstResponseMinutes: 15,

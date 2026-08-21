@@ -21,7 +21,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  DollarSign,
+  FileText
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -103,6 +105,18 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
       badge: null,
     },
     {
+      id: 'proposals',
+      label: 'Propostas Comerciais',
+      icon: FileText,
+      badge: null,
+    },
+    {
+      id: 'financial',
+      label: 'Financeiro & Asaas',
+      icon: DollarSign,
+      badge: null,
+    },
+    {
       id: 'tasks',
       label: 'Tarefas & SLAs',
       icon: CheckSquare,
@@ -134,6 +148,13 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
       badge: 'IA',
       badgeColor: 'bg-emerald-600 text-white',
     },
+    ...(currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN' || currentUser.role === 'MANAGER' ? [{
+      id: 'tenants',
+      label: 'Ambientes SaaS',
+      icon: Building2,
+      badge: 'SaaS',
+      badgeColor: 'bg-slate-800 text-emerald-400 border border-slate-700',
+    }] : []),
     {
       id: 'settings',
       label: 'Configurações',

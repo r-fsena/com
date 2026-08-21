@@ -13,6 +13,9 @@ import { SalesDashboard } from '@/components/dashboard/SalesDashboard';
 import { SettingsManager } from '@/components/settings/SettingsManager';
 import { AutomationManager } from '@/components/automations/AutomationManager';
 import { CopilotManager } from '@/components/copilot/CopilotManager';
+import { ProposalManager } from '@/components/proposals/ProposalManager';
+import { FinancialDashboard } from '@/components/financial/FinancialDashboard';
+import { TenantManager } from '@/components/tenants/TenantManager';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
 import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
@@ -71,11 +74,14 @@ export default function CRMApp() {
               onOpenChat={handleOpenChatForContact}
             />
           )}
+          {currentTab === 'proposals' && <ProposalManager />}
+          {currentTab === 'financial' && <FinancialDashboard />}
           {currentTab === 'tasks' && <TasksManager />}
           {currentTab === 'automations' && <AutomationManager />}
           {currentTab === 'campaigns' && <CampaignManager />}
           {currentTab === 'dashboard' && <SalesDashboard />}
           {currentTab === 'copilot' && <CopilotManager />}
+          {currentTab === 'tenants' && <TenantManager />}
           {currentTab === 'settings' && (
             <SettingsManager onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)} />
           )}

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   Tenant, 
+  TenantStatus,
   User, 
   WhatsAppInstance, 
   Contact, 
@@ -16,7 +17,10 @@ import {
   Task, 
   SLAAlert, 
   Campaign, 
-  QuickReplyTemplate 
+  QuickReplyTemplate,
+  Proposal,
+  FinancialTransaction,
+  TransactionStatus
 } from '@/types/crm';
 import { 
   MOCK_TENANTS, 
@@ -31,7 +35,9 @@ import {
   MOCK_TASKS, 
   MOCK_ALERTS, 
   MOCK_CAMPAIGNS, 
-  MOCK_QUICK_REPLIES 
+  MOCK_QUICK_REPLIES,
+  MOCK_PROPOSALS,
+  MOCK_FINANCIAL_TRANSACTIONS
 } from './mock-data';
 
 interface CRMContextType {
@@ -40,11 +46,14 @@ interface CRMContextType {
   login: (email: string, role?: string) => void;
   logout: () => void;
 
-  // Tenant e Usuário
+  // Gestão de Ambientes SaaS (SuperAdmin) & Tenant
   tenants: Tenant[];
   currentTenant: Tenant;
   setCurrentTenant: (tenant: Tenant) => void;
   updateTenant: (updates: Partial<Tenant>) => void;
+  createTenant: (tenantData: Partial<Tenant>) => Tenant;
+  updateTenantStatus: (tenantId: string, status: TenantStatus) => void;
+  deleteTenant: (tenantId: string) => void;
   users: User[];
   currentUser: User;
   setCurrentUser: (user: User) => void;
@@ -116,6 +125,20 @@ interface CRMContextType {
   createCampaign: (campaign: Partial<Campaign>) => void;
   quickReplies: QuickReplyTemplate[];
 
+  // Propostas Comerciais & Aceite Digital
+  proposals: Proposal[];
+  createProposal: (proposalData: Partial<Proposal>) => Promise<Proposal>;
+  updateProposal: (proposalId: string, updates: Partial<Proposal>) => void;
+  deleteProposal: (proposalId: string) => void;
+  acceptProposal: (proposalId: string, clientIp?: string) => Promise<Proposal>;
+
+  // Painel Financeiro & Integração Asaas
+  transactions: FinancialTransaction[];
+  createFinancialTransaction: (txData: Partial<FinancialTransaction>) => FinancialTransaction;
+  updateFinancialTransaction: (txId: string, updates: Partial<FinancialTransaction>) => void;
+  markTransactionPaid: (txId: string, paymentMethod?: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'TRANSFER') => void;
+  syncAsaasTransactions: () => Promise<void>;
+
   // Z-API Sincronização em Tempo Real
   isSyncingWhatsApp: boolean;
   syncWhatsAppChats: () => Promise<void>;
@@ -177,7 +200,19 @@ const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [tenants, setTenants] = useState<Tenant[]>(MOCK_TENANTS);
+  const [tenants, setTenants] = useState<Tenant[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_tenants');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_TENANTS;
+  });
+
   const [currentTenant, setCurrentTenant] = useState<Tenant>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -192,6 +227,66 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setCurrentTenant(prev => {
       const updated = { ...prev, ...updates };
       try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    setTenants(prev => {
+      const updatedList = prev.map(t => t.id === currentTenant.id ? { ...t, ...updates } : t);
+      try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updatedList)); } catch {}
+      return updatedList;
+    });
+  };
+
+  const createTenant = (tenantData: Partial<Tenant>): Tenant => {
+    const newTenant: Tenant = {
+      id: `tenant-${Date.now()}`,
+      name: tenantData.name || 'Nova Imobiliária',
+      slug: tenantData.slug || `empresa-${Date.now().toString(36)}`,
+      documentCnpj: tenantData.documentCnpj || '00.000.000/0001-00',
+      logoUrl: tenantData.logoUrl,
+      primaryColor: tenantData.primaryColor || '#059669',
+      timezone: tenantData.timezone || 'America/Sao_Paulo',
+      status: tenantData.status || 'TRIAL',
+      plan: tenantData.plan || 'PROFESSIONAL',
+      monthlyFee: tenantData.monthlyFee || 890.00,
+      maxBrokers: tenantData.maxBrokers || 15,
+      maxInstances: tenantData.maxInstances || 3,
+      businessHours: {
+        start: '08:30',
+        end: '19:00',
+        workDays: [1, 2, 3, 4, 5, 6],
+      },
+      settings: {
+        slaFirstResponseMinutes: 15,
+        slaInactivityHours: 24,
+        autoAssignRule: 'ROUND_ROBIN',
+        aiCopilotEnabled: true,
+        requireHumanApprovalForAI: true,
+      },
+      ...tenantData,
+    };
+    setTenants(prev => {
+      const updated = [...prev, newTenant];
+      try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newTenant;
+  };
+
+  const updateTenantStatus = (tenantId: string, status: TenantStatus) => {
+    setTenants(prev => {
+      const updated = prev.map(t => t.id === tenantId ? { ...t, status } : t);
+      try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    if (currentTenant.id === tenantId) {
+      setCurrentTenant(prev => ({ ...prev, status }));
+    }
+  };
+
+  const deleteTenant = (tenantId: string) => {
+    setTenants(prev => {
+      const updated = prev.filter(t => t.id !== tenantId);
+      try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updated)); } catch {}
       return updated;
     });
   };
@@ -1833,6 +1928,227 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [currentTenant.id, instances]);
 
+  // -------------------------------------------------------------
+  // PROPOSTAS COMERCIAIS & ACEITE DIGITAL
+  // -------------------------------------------------------------
+  const [proposals, setProposals] = useState<Proposal[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_proposals');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_PROPOSALS;
+  });
+
+  const createProposal = async (data: Partial<Proposal>): Promise<Proposal> => {
+    const total = data.totalValue || 1000000;
+    const commPercent = data.brokerCommissionPercent !== undefined ? data.brokerCommissionPercent : 50;
+    const totalCommission = total * 0.06; // Padrão 6% de corretagem
+    const brokerVal = (totalCommission * commPercent) / 100;
+    const agencyVal = totalCommission - brokerVal;
+
+    const propId = `prop-${Date.now()}`;
+    const asaasPayId = `pay_asaas_${Date.now().toString(36)}`;
+    const newProposal: Proposal = {
+      id: propId,
+      tenantId: currentTenant.id,
+      dealId: data.dealId,
+      contactId: data.contactId || 'contact-01',
+      contactName: data.contactName || 'Cliente Proposta',
+      contactPhone: data.contactPhone || '+55 11 99999-0000',
+      assignedUserId: data.assignedUserId || currentUser.id,
+      propertyName: data.propertyName || 'Empreendimento Exclusivo',
+      unit: data.unit || 'Unidade Principal',
+      propertyAddress: data.propertyAddress || 'Endereço Nobre',
+      totalValue: total,
+      downPayment: data.downPayment || total * 0.2,
+      downPaymentMethod: data.downPaymentMethod || 'PIX',
+      installmentCount: data.installmentCount || 36,
+      installmentValue: data.installmentValue || ((total * 0.5) / (data.installmentCount || 36)),
+      baloonValue: data.baloonValue || 0,
+      baloonCount: data.baloonCount || 0,
+      bankFinancingValue: data.bankFinancingValue || (total * 0.3),
+      brokerCommissionPercent: commPercent,
+      brokerCommissionValue: brokerVal,
+      agencyCommissionValue: agencyVal,
+      status: 'SENT',
+      notes: data.notes || '',
+      asaasPaymentId: asaasPayId,
+      asaasInvoiceUrl: `https://sandbox.asaas.com/i/${Date.now()}`,
+      asaasQrCode: `00020126580014br.gov.bcb.pix0136${Date.now()}5204000053039865409${(data.downPayment || 10000).toFixed(2)}5802BR5922${encodeURIComponent(currentTenant.name)}6009Sao Paulo62070503***6304ABCD`,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      ...data,
+    };
+
+    setProposals(prev => {
+      const updated = [newProposal, ...prev];
+      try { localStorage.setItem('vanguard_crm_proposals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    // Registra transação pendente do sinal de entrada no financeiro
+    if (newProposal.downPayment > 0) {
+      createFinancialTransaction({
+        proposalId: newProposal.id,
+        dealId: newProposal.dealId,
+        contactId: newProposal.contactId,
+        contactName: newProposal.contactName,
+        description: `Sinal de Entrada - ${newProposal.unit || ''} (${newProposal.propertyName})`,
+        amount: newProposal.downPayment,
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'PENDING',
+        type: 'PROPERTY_PAYMENT',
+        category: 'ENTRADA',
+        paymentMethod: newProposal.downPaymentMethod,
+        asaasPaymentId: asaasPayId,
+        asaasInvoiceUrl: newProposal.asaasInvoiceUrl,
+      });
+    }
+
+    return newProposal;
+  };
+
+  const updateProposal = (proposalId: string, updates: Partial<Proposal>) => {
+    setProposals(prev => {
+      const updated = prev.map(p => p.id === proposalId ? { ...p, ...updates } : p);
+      try { localStorage.setItem('vanguard_crm_proposals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteProposal = (proposalId: string) => {
+    setProposals(prev => {
+      const updated = prev.filter(p => p.id !== proposalId);
+      try { localStorage.setItem('vanguard_crm_proposals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const acceptProposal = async (proposalId: string, clientIp?: string): Promise<Proposal> => {
+    const prop = proposals.find(p => p.id === proposalId);
+    const acceptedAt = new Date().toISOString();
+    const updatedProp: Proposal = prop ? {
+      ...prop,
+      status: 'ACCEPTED',
+      clientAcceptedAt: acceptedAt,
+      clientIp: clientIp || '189.40.72.115',
+    } : ({} as Proposal);
+
+    setProposals(prev => {
+      const updated = prev.map(p => p.id === proposalId ? updatedProp : p);
+      try { localStorage.setItem('vanguard_crm_proposals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    // Baixa a transação de sinal no financeiro
+    setTransactions(prev => {
+      const updated = prev.map(tx => tx.proposalId === proposalId && tx.category === 'ENTRADA' ? {
+        ...tx,
+        status: 'PAID' as TransactionStatus,
+        paidAt: acceptedAt,
+      } : tx);
+      try { localStorage.setItem('vanguard_crm_transactions', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    // Lança comissão do corretor no financeiro
+    if (prop && prop.brokerCommissionValue > 0) {
+      const brokerUser = users.find(u => u.id === prop.assignedUserId);
+      createFinancialTransaction({
+        proposalId: prop.id,
+        dealId: prop.dealId,
+        contactId: prop.contactId,
+        contactName: prop.contactName,
+        description: `Comissão Corretor - ${brokerUser?.name || 'Corretor'} (${prop.brokerCommissionPercent}% de 6%)`,
+        amount: prop.brokerCommissionValue,
+        dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'PAID',
+        type: 'COMMISSION_PAYOUT',
+        category: 'COMISSAO_CORRETOR',
+        paymentMethod: 'PIX',
+        recipientUserId: prop.assignedUserId,
+        recipientName: brokerUser?.name,
+      });
+    }
+
+    // Se houver Deal vinculado, move para estágio 7 ou 8 (Contrato / Fechado)
+    if (prop?.dealId) {
+      moveDealStage(prop.dealId, 'stage-07');
+    }
+
+    return updatedProp;
+  };
+
+  // -------------------------------------------------------------
+  // GESTÃO FINANCEIRA & TRANSAÇÕES (INTEGRAÇÃO ASAAS)
+  // -------------------------------------------------------------
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_transactions');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_FINANCIAL_TRANSACTIONS;
+  });
+
+  const createFinancialTransaction = (txData: Partial<FinancialTransaction>): FinancialTransaction => {
+    const newTx: FinancialTransaction = {
+      id: `tx-${Date.now()}`,
+      tenantId: currentTenant.id,
+      description: txData.description || 'Lançamento Financeiro',
+      amount: txData.amount || 0,
+      dueDate: txData.dueDate || new Date().toISOString().split('T')[0],
+      status: txData.status || 'PENDING',
+      type: txData.type || 'PROPERTY_PAYMENT',
+      category: txData.category || 'PARCELA',
+      paymentMethod: txData.paymentMethod || 'PIX',
+      createdAt: new Date().toISOString(),
+      ...txData,
+    };
+
+    setTransactions(prev => {
+      const updated = [newTx, ...prev];
+      try { localStorage.setItem('vanguard_crm_transactions', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newTx;
+  };
+
+  const updateFinancialTransaction = (txId: string, updates: Partial<FinancialTransaction>) => {
+    setTransactions(prev => {
+      const updated = prev.map(t => t.id === txId ? { ...t, ...updates } : t);
+      try { localStorage.setItem('vanguard_crm_transactions', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const markTransactionPaid = (txId: string, paymentMethod?: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'TRANSFER') => {
+    const now = new Date().toISOString();
+    setTransactions(prev => {
+      const updated = prev.map(t => t.id === txId ? {
+        ...t,
+        status: 'PAID' as TransactionStatus,
+        paidAt: now,
+        paymentMethod: paymentMethod || t.paymentMethod,
+      } : t);
+      try { localStorage.setItem('vanguard_crm_transactions', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const syncAsaasTransactions = async () => {
+    await new Promise(r => setTimeout(r, 600));
+  };
+
   return (
     <CRMContext.Provider value={{
       isAuthenticated,
@@ -1842,6 +2158,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       currentTenant,
       setCurrentTenant,
       updateTenant,
+      createTenant,
+      updateTenantStatus,
+      deleteTenant,
       users,
       currentUser,
       setCurrentUser,
@@ -1900,6 +2219,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       campaigns,
       createCampaign,
       quickReplies,
+      proposals,
+      createProposal,
+      updateProposal,
+      deleteProposal,
+      acceptProposal,
+      transactions,
+      createFinancialTransaction,
+      updateFinancialTransaction,
+      markTransactionPaid,
+      syncAsaasTransactions,
       isSyncingWhatsApp,
       syncWhatsAppChats,
       syncZapiInstance,

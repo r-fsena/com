@@ -18,6 +18,9 @@ export interface User {
   aiModel?: string;
 }
 
+export type TenantStatus = 'ACTIVE' | 'TRIAL' | 'SUSPENDED' | 'INACTIVE';
+export type TenantPlan = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
+
 export interface Tenant {
   id: string;
   name: string;
@@ -26,6 +29,13 @@ export interface Tenant {
   logoUrl?: string;
   primaryColor: string;
   timezone: string;
+  status: TenantStatus;
+  plan: TenantPlan;
+  monthlyFee: number;
+  maxBrokers: number;
+  maxInstances: number;
+  asaasApiKey?: string;
+  asaasWalletId?: string;
   businessHours: {
     start: string;
     end: string;
@@ -347,4 +357,71 @@ export interface AutomationExecutionLog {
   status: 'SUCCESS' | 'SKIPPED' | 'FAILED';
   reason: string;
   executedAt: string;
+}
+
+// -------------------------------------------------------------
+// PROPOSTAS COMERCIAIS & ACEITE DIGITAL
+// -------------------------------------------------------------
+export type ProposalStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+
+export interface Proposal {
+  id: string;
+  tenantId: string;
+  dealId?: string;
+  contactId: string;
+  contactName: string;
+  contactPhone: string;
+  assignedUserId: string;
+  propertyName: string;
+  unit?: string;
+  propertyAddress?: string;
+  totalValue: number;
+  downPayment: number;
+  downPaymentMethod: 'PIX' | 'BOLETO' | 'TRANSFER' | 'CREDIT_CARD';
+  installmentCount: number;
+  installmentValue: number;
+  baloonValue?: number;
+  baloonCount?: number;
+  bankFinancingValue?: number;
+  brokerCommissionPercent: number;
+  brokerCommissionValue: number;
+  agencyCommissionValue: number;
+  status: ProposalStatus;
+  notes?: string;
+  clientAcceptedAt?: string;
+  clientIp?: string;
+  asaasPaymentId?: string;
+  asaasInvoiceUrl?: string;
+  asaasQrCode?: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+// -------------------------------------------------------------
+// GESTÃO FINANCEIRA & TRANSAÇÕES (INTEGRAÇÃO ASAAS)
+// -------------------------------------------------------------
+export type TransactionStatus = 'PAID' | 'PENDING' | 'OVERDUE' | 'CANCELLED';
+export type TransactionType = 'PROPERTY_PAYMENT' | 'COMMISSION_PAYOUT' | 'SAAS_SUBSCRIPTION';
+export type TransactionCategory = 'ENTRADA' | 'PARCELA' | 'BALAO' | 'COMISSAO_CORRETOR' | 'COMISSAO_IMOBILIARIA' | 'SAAS_FEE';
+
+export interface FinancialTransaction {
+  id: string;
+  tenantId: string;
+  proposalId?: string;
+  dealId?: string;
+  contactId?: string;
+  contactName?: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  paidAt?: string;
+  status: TransactionStatus;
+  type: TransactionType;
+  category: TransactionCategory;
+  paymentMethod: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'TRANSFER';
+  asaasPaymentId?: string;
+  asaasInvoiceUrl?: string;
+  recipientUserId?: string; // Para repasse de comissão do corretor
+  recipientName?: string;
+  createdAt: string;
 }

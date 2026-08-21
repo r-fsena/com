@@ -15,7 +15,10 @@ import {
   AutomationRule,
   AutomationExecutionLog,
   Proposal,
-  FinancialTransaction
+  FinancialTransaction,
+  SaaSPlan,
+  MasterUser,
+  SaaSApiConfig
 } from '@/types/crm';
 
 export const MOCK_TENANTS: Tenant[] = [
@@ -443,3 +446,138 @@ export const MOCK_FINANCIAL_TRANSACTIONS: FinancialTransaction[] = [
     createdAt: '2026-08-01T09:00:00Z',
   }
 ];
+
+export const MOCK_SAAS_PLANS: SaaSPlan[] = [
+  {
+    id: 'plan-starter',
+    name: 'Starter Imobiliário',
+    slug: 'starter',
+    monthlyPrice: 490.00,
+    annualPrice: 4900.00,
+    maxBrokers: 5,
+    maxInstances: 1,
+    aiCopilotEnabled: true,
+    features: [
+      'Até 5 Corretores',
+      '1 Linha WhatsApp Z-API Integrada',
+      'Inbox Central & Funil Kanban',
+      'IA Copiloto com sugestões básicas',
+      'Propostas com Aceite Digital',
+      'Suporte via Ticket'
+    ],
+    isActive: true,
+    isPopular: false
+  },
+  {
+    id: 'plan-pro',
+    name: 'Professional Boutique',
+    slug: 'professional',
+    monthlyPrice: 890.00,
+    annualPrice: 8900.00,
+    maxBrokers: 15,
+    maxInstances: 3,
+    aiCopilotEnabled: true,
+    features: [
+      'Até 15 Corretores',
+      '3 Linhas WhatsApp (Central + Corretores)',
+      'IA Copiloto com Personas Individuais',
+      'Split de Comissões & Gateway Asaas',
+      'Campanhas em Lote & Automações',
+      'Suporte Prioritário via WhatsApp'
+    ],
+    isActive: true,
+    isPopular: true
+  },
+  {
+    id: 'plan-enterprise',
+    name: 'Enterprise Corporate',
+    slug: 'enterprise',
+    monthlyPrice: 1490.00,
+    annualPrice: 14900.00,
+    maxBrokers: 50,
+    maxInstances: 10,
+    aiCopilotEnabled: true,
+    features: [
+      'Até 50 Corretores (Multi-equipes)',
+      '10 Linhas WhatsApp Z-API',
+      'IA Copilot Treinada com Empreendimentos',
+      'Integração Completa Gateway Asaas',
+      'Painel de SLAs Críticos em Tempo Real',
+      'Gerente de Contas Exclusivo 24/7'
+    ],
+    isActive: true,
+    isPopular: false
+  },
+  {
+    id: 'plan-custom',
+    name: 'Custom / Redes & Franquias',
+    slug: 'custom',
+    monthlyPrice: 2990.00,
+    annualPrice: 29900.00,
+    maxBrokers: 200,
+    maxInstances: 30,
+    aiCopilotEnabled: true,
+    features: [
+      'Corretores Ilimitados',
+      'Instâncias WhatsApp Ilimitadas',
+      'Ambiente Dedicado & Multi-filiais',
+      'Split Financeiro Automatizado',
+      'Modelos de IA Customizados no AWS Bedrock',
+      'SLA de 99.9% e Consultoria Mensal'
+    ],
+    isActive: true,
+    isPopular: false
+  }
+];
+
+export const MOCK_MASTER_USERS: MasterUser[] = [
+  {
+    id: 'master-01',
+    name: 'Rafael Sena',
+    email: 'rafael.sena@faithhubs.com',
+    phone: '+55 11 98877-6655',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    role: 'SUPERADMIN_GLOBAL',
+    permissions: ['ALL_PERMISSIONS', 'MANAGE_TENANTS', 'MANAGE_PLANS', 'MANAGE_APIS', 'MANAGE_MASTERS', 'VIEW_FINANCIALS'],
+    isActive: true,
+    lastLoginAt: '2026-08-21T02:00:00Z',
+    createdAt: '2026-01-01T00:00:00Z'
+  },
+  {
+    id: 'master-02',
+    name: 'Camila Mendonça',
+    email: 'camila.suporte@faithhubs.com',
+    phone: '+55 11 97766-5544',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    role: 'SUPPORT_LEAD',
+    permissions: ['MANAGE_TENANTS', 'IMPERSONATE_CRM', 'VIEW_FINANCIALS'],
+    isActive: true,
+    lastLoginAt: '2026-08-20T19:30:00Z',
+    createdAt: '2026-02-15T00:00:00Z'
+  },
+  {
+    id: 'master-03',
+    name: 'Bruno Carvalho',
+    email: 'bruno.financeiro@faithhubs.com',
+    phone: '+55 11 96655-4433',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    role: 'FINANCE_ADMIN',
+    permissions: ['VIEW_FINANCIALS', 'MANAGE_PLANS', 'MANAGE_APIS'],
+    isActive: true,
+    lastLoginAt: '2026-08-19T14:15:00Z',
+    createdAt: '2026-03-01T00:00:00Z'
+  }
+];
+
+export const MOCK_SAAS_API_CONFIG: SaaSApiConfig = {
+  zapiMasterKey: 'zapi_integrator_key_master_faithhubs_live',
+  zapiGlobalWebhook: 'https://crm.faithhubs.com/api/v1/webhooks/zapi/events',
+  asaasMasterApiKey: 'asaas_secret_key_master_faithhubs_production',
+  asaasMasterWalletId: 'wal_master_faithhubs_saas_01',
+  asaasWebhookUrl: 'https://crm.faithhubs.com/api/v1/asaas/webhook',
+  awsBedrockModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+  awsBedrockRegion: 'us-east-1',
+  openAiApiKey: 'sk-proj-master-faithhubs-ai-hub',
+  googleGeminiApiKey: 'AIzaSyMasterFaithHubsGeminiKey'
+};
+

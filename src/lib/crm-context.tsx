@@ -20,7 +20,10 @@ import {
   QuickReplyTemplate,
   Proposal,
   FinancialTransaction,
-  TransactionStatus
+  TransactionStatus,
+  SaaSPlan,
+  MasterUser,
+  SaaSApiConfig
 } from '@/types/crm';
 import { 
   MOCK_TENANTS, 
@@ -37,7 +40,10 @@ import {
   MOCK_CAMPAIGNS, 
   MOCK_QUICK_REPLIES,
   MOCK_PROPOSALS,
-  MOCK_FINANCIAL_TRANSACTIONS
+  MOCK_FINANCIAL_TRANSACTIONS,
+  MOCK_SAAS_PLANS,
+  MOCK_MASTER_USERS,
+  MOCK_SAAS_API_CONFIG
 } from './mock-data';
 
 interface CRMContextType {
@@ -138,6 +144,20 @@ interface CRMContextType {
   updateFinancialTransaction: (txId: string, updates: Partial<FinancialTransaction>) => void;
   markTransactionPaid: (txId: string, paymentMethod?: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'TRANSFER') => void;
   syncAsaasTransactions: () => Promise<void>;
+
+  // Portal SaaS Master (Gestão Global)
+  saasPlans: SaaSPlan[];
+  createSaaSPlan: (plan: Partial<SaaSPlan>) => SaaSPlan;
+  updateSaaSPlan: (planId: string, updates: Partial<SaaSPlan>) => void;
+  deleteSaaSPlan: (planId: string) => void;
+
+  masterUsers: MasterUser[];
+  createMasterUser: (userData: Partial<MasterUser>) => MasterUser;
+  updateMasterUser: (userId: string, updates: Partial<MasterUser>) => void;
+  deleteMasterUser: (userId: string) => void;
+
+  saasApiConfig: SaaSApiConfig;
+  updateSaaSApiConfig: (updates: Partial<SaaSApiConfig>) => void;
 
   // Z-API Sincronização em Tempo Real
   isSyncingWhatsApp: boolean;
@@ -2149,6 +2169,125 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     await new Promise(r => setTimeout(r, 600));
   };
 
+  // -------------------------------------------------------------
+  // PORTAL SAAS MASTER (GESTÃO GLOBAL)
+  // -------------------------------------------------------------
+  const [saasPlans, setSaasPlans] = useState<SaaSPlan[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_saas_plans');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_SAAS_PLANS;
+  });
+
+  const createSaaSPlan = (planData: Partial<SaaSPlan>): SaaSPlan => {
+    const newPlan: SaaSPlan = {
+      id: `plan-${Date.now()}`,
+      name: planData.name || 'Novo Plano SaaS',
+      slug: planData.slug || 'custom',
+      monthlyPrice: planData.monthlyPrice || 990.00,
+      annualPrice: planData.annualPrice || 9900.00,
+      maxBrokers: planData.maxBrokers || 10,
+      maxInstances: planData.maxInstances || 2,
+      aiCopilotEnabled: planData.aiCopilotEnabled ?? true,
+      features: planData.features || ['Recursos Essenciais'],
+      isActive: planData.isActive ?? true,
+      isPopular: planData.isPopular ?? false,
+      ...planData,
+    };
+
+    setSaasPlans(prev => {
+      const updated = [...prev, newPlan];
+      try { localStorage.setItem('vanguard_crm_saas_plans', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newPlan;
+  };
+
+  const updateSaaSPlan = (planId: string, updates: Partial<SaaSPlan>) => {
+    setSaasPlans(prev => {
+      const updated = prev.map(p => p.id === planId ? { ...p, ...updates } : p);
+      try { localStorage.setItem('vanguard_crm_saas_plans', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteSaaSPlan = (planId: string) => {
+    setSaasPlans(prev => {
+      const updated = prev.filter(p => p.id !== planId);
+      try { localStorage.setItem('vanguard_crm_saas_plans', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const [masterUsers, setMasterUsers] = useState<MasterUser[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_master_users');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_MASTER_USERS;
+  });
+
+  const createMasterUser = (userData: Partial<MasterUser>): MasterUser => {
+    const newUser: MasterUser = {
+      id: `master-${Date.now()}`,
+      name: userData.name || 'Novo Administrador Master',
+      email: userData.email || '',
+      phone: userData.phone || '',
+      avatarUrl: userData.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      role: userData.role || 'SUPERADMIN_GLOBAL',
+      permissions: userData.permissions || ['ALL_PERMISSIONS'],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      ...userData,
+    };
+
+    setMasterUsers(prev => {
+      const updated = [...prev, newUser];
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newUser;
+  };
+
+  const updateMasterUser = (userId: string, updates: Partial<MasterUser>) => {
+    setMasterUsers(prev => {
+      const updated = prev.map(u => u.id === userId ? { ...u, ...updates } : u);
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteMasterUser = (userId: string) => {
+    setMasterUsers(prev => {
+      const updated = prev.filter(u => u.id !== userId);
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const [saasApiConfig, setSaasApiConfig] = useState<SaaSApiConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_saas_api_config');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_SAAS_API_CONFIG;
+  });
+
+  const updateSaaSApiConfig = (updates: Partial<SaaSApiConfig>) => {
+    setSaasApiConfig(prev => {
+      const updated = { ...prev, ...updates };
+      try { localStorage.setItem('vanguard_crm_saas_api_config', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
   return (
     <CRMContext.Provider value={{
       isAuthenticated,
@@ -2229,6 +2368,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updateFinancialTransaction,
       markTransactionPaid,
       syncAsaasTransactions,
+      saasPlans,
+      createSaaSPlan,
+      updateSaaSPlan,
+      deleteSaaSPlan,
+      masterUsers,
+      createMasterUser,
+      updateMasterUser,
+      deleteMasterUser,
+      saasApiConfig,
+      updateSaaSApiConfig,
       isSyncingWhatsApp,
       syncWhatsAppChats,
       syncZapiInstance,

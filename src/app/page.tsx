@@ -16,6 +16,7 @@ import { CopilotManager } from '@/components/copilot/CopilotManager';
 import { ProposalManager } from '@/components/proposals/ProposalManager';
 import { FinancialDashboard } from '@/components/financial/FinancialDashboard';
 import { TenantManager } from '@/components/tenants/TenantManager';
+import { SaaSAdminHub } from '@/components/saas-master/SaaSAdminHub';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
 import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
@@ -27,7 +28,7 @@ export default function CRMApp() {
 
   const isMasterAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.role === 'ADMIN_MASTER';
 
-  const [viewMode, setViewMode] = useState<'SAAS_MASTER' | 'TENANT_CRM'>('TENANT_CRM');
+  const [viewMode, setViewMode] = useState<'SAAS_MASTER' | 'TENANT_CRM'>('SAAS_MASTER');
   const [currentTab, setCurrentTab] = useState('inbox');
   const [isZapiSimulatorOpen, setIsZapiSimulatorOpen] = useState(false);
   const [isQrCodeModalOpen, setIsQrCodeModalOpen] = useState(false);
@@ -46,51 +47,12 @@ export default function CRMApp() {
   // Se o Admin Master estiver no Portal Master SaaS
   if (isMasterAdmin && viewMode === 'SAAS_MASTER') {
     return (
-      <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 flex-col antialiased">
-        {/* Barra Superior Master */}
-        <div className="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg">
-              👑
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-black text-white tracking-tight">FaithHubs SaaS Master Hub</h1>
-                <span className="text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2 py-0.5 rounded-full">
-                  Admin Master Global
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Painel central de gestão de ambientes, imobiliárias, limites e faturamento
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs font-bold text-white">{currentUser.name}</p>
-              <p className="text-[10px] text-emerald-400 font-mono">Dono da Plataforma</p>
-            </div>
-
-            <button
-              onClick={() => logout()}
-              className="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 text-xs font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
-            >
-              Sair
-            </button>
-          </div>
-        </div>
-
-        {/* Painel de Gestão dos Ambientes */}
-        <div className="flex-1 overflow-hidden">
-          <TenantManager 
-            onEnterTenant={(tenant) => {
-              setCurrentTenant(tenant);
-              setViewMode('TENANT_CRM');
-            }} 
-          />
-        </div>
-      </div>
+      <SaaSAdminHub 
+        onEnterTenant={(tenant) => {
+          setCurrentTenant(tenant);
+          setViewMode('TENANT_CRM');
+        }}
+      />
     );
   }
 

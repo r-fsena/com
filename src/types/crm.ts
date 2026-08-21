@@ -425,3 +425,48 @@ export interface FinancialTransaction {
   recipientName?: string;
   createdAt: string;
 }
+
+// -------------------------------------------------------------
+// PORTAL SAAS MASTER (GESTÃO DO DONO DO CRM)
+// -------------------------------------------------------------
+export interface SaaSPlan {
+  id: string;
+  name: string;
+  slug: string;
+  monthlyPrice: number;
+  annualPrice: number;
+  maxBrokers: number;
+  maxInstances: number;
+  aiCopilotEnabled: boolean;
+  features: string[];
+  isActive: boolean;
+  isPopular?: boolean;
+}
+
+export type MasterUserRole = 'SUPERADMIN_GLOBAL' | 'SUPPORT_LEAD' | 'FINANCE_ADMIN';
+
+export interface MasterUser {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  avatarUrl?: string;
+  role: MasterUserRole;
+  permissions: string[];
+  isActive: boolean;
+  lastLoginAt?: string;
+  createdAt: string;
+}
+
+export interface SaaSApiConfig {
+  zapiMasterKey: string;
+  zapiGlobalWebhook: string;
+  asaasMasterApiKey: string;
+  asaasMasterWalletId: string;
+  asaasWebhookUrl: string;
+  awsBedrockModel: string;
+  awsBedrockRegion: string;
+  openAiApiKey?: string;
+  googleGeminiApiKey?: string;
+}
+

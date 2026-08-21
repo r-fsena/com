@@ -1465,7 +1465,7 @@ export function WhatsAppInbox() {
 
           <div className="p-4 space-y-4">
             {/* ---------------------------------------------------- */}
-            {/* JORNADA & STATUS DE QUALIFICAÇÃO DO LEAD (MQL -> SQL) */}
+            {/* 1. JORNADA & STATUS DE QUALIFICAÇÃO DO LEAD (MQL)     */}
             {/* ---------------------------------------------------- */}
             <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 shadow-xs space-y-3">
               {/* Header com Badge de Status */}
@@ -1544,118 +1544,47 @@ export function WhatsAppInbox() {
                 </div>
               </div>
 
-              {/* Botão de Ação Direta para o Kanban */}
-              {!activeDeal && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!activeContact) return;
-                    const val = activeContact.maxPropertyValue || (editedMaxBudget ? Number(editedMaxBudget) : 1200000);
-                    const propTypeName = activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa em Condomínio' : activeContact.preferredPropertyType === 'STUDIO' ? 'Studio' : activeContact.preferredPropertyType === 'LAND' ? 'Terreno' : 'Apartamento';
-                    createDeal({
-                      title: `${activeContact.name} - ${propTypeName}`,
-                      contactId: activeContact.id,
-                      expectedValue: val,
-                      stageId: currentPipeline.stages[0].id,
-                      assignedUserId: currentUser.id,
-                    });
-                  }}
-                  className={`w-full text-xs font-bold py-2 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
-                    isLeadQualified
-                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white ring-2 ring-emerald-400/50'
-                      : 'bg-slate-900 hover:bg-slate-800 text-white'
-                  }`}
-                >
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>{isLeadQualified ? '🚀 Promover a Lead Qualificado e Abrir no Kanban' : 'Lançar no Kanban'}</span>
-                </button>
-              )}
-            </div>
-
-            {/* IA Copilot Card em Tempo Real */}
-            <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-emerald-50/50 border border-emerald-200 rounded-2xl p-3.5 shadow-xs relative overflow-hidden">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
-                  <Sparkles className={`w-4 h-4 text-emerald-600 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-                  <span>IA Copilot • Auto-Preenchimento</span>
+              {/* Resumo da IA */}
+              <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-900 mb-1">
+                  <Sparkles className="w-3 h-3 text-emerald-600" />
+                  <span>Resumo do Perfil (IA Copilot):</span>
                 </div>
-                <span className="text-[9px] font-extrabold uppercase tracking-wide bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-2xs">
-                  {isAnalyzingAI ? 'Analisando...' : 'Ativo'}
-                </span>
-              </div>
+                <p className="text-[11px] text-emerald-950 leading-relaxed italic">
+                  "{activeInsight?.summary || `A IA monitora a conversa e atualiza automaticamente a renda, entrada, orçamento e preferências imobiliárias.`}"
+                </p>
 
-              <p className="text-[11px] text-emerald-900 mb-2 leading-relaxed">
-                {activeInsight?.summary || `A IA monitora a conversa e atualiza automaticamente a entrada, orçamento e preferências imobiliárias do cliente.`}
-              </p>
-
-              {/* Objeções Detectadas */}
-              {(activeInsight?.detectedObjections || []).length > 0 && (
-                <div className="mt-2.5 pt-2 border-t border-emerald-200/60">
-                  <span className="text-[10px] font-bold text-emerald-950 block mb-1">🛡️ Objeções / Ponto de Atenção:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {activeInsight?.detectedObjections?.map((obj, i) => (
-                      <span key={i} className="text-[10px] bg-amber-100/90 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded-md">
-                        {obj}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Sugestões Táticas de Resposta */}
-              {activeInsight?.responseOptions && activeInsight.responseOptions.length > 0 ? (
-                <div className="space-y-2 mt-2.5 pt-2 border-t border-emerald-200/60">
-                  <span className="text-[10px] font-bold text-emerald-950 block">💡 Sugestões Táticas de Resposta:</span>
-                  {activeInsight.responseOptions.map((opt, idx) => (
-                    <div key={opt.id || idx} className="bg-white/90 rounded-xl p-2.5 border border-emerald-200 shadow-2xs">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider">{opt.badge}</span>
-                        <span className="text-[9px] text-slate-500 font-medium">{opt.label}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-700 italic mb-2 leading-relaxed">"{opt.text}"</p>
-                      <button
-                        type="button"
-                        onClick={() => handleUseAISuggestion(opt.text)}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1 px-2 rounded-lg transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-2xs"
-                      >
-                        <Send className="w-2.5 h-2.5" />
-                        <span>Usar esta resposta no chat</span>
-                      </button>
+                {/* Objeções Detectadas */}
+                {(activeInsight?.detectedObjections || []).length > 0 && (
+                  <div className="mt-2 pt-1.5 border-t border-emerald-200/60">
+                    <span className="text-[9px] font-bold text-emerald-950 block mb-1">🛡️ Ponto de Atenção / Objeções:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {activeInsight?.detectedObjections?.map((obj, i) => (
+                        <span key={i} className="text-[9px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded-md">
+                          {obj}
+                        </span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                activeInsight?.suggestedResponse && (
-                  <div className="bg-white/80 backdrop-blur-xs rounded-xl p-2 border border-emerald-200/80 mt-2">
-                    <span className="text-[10px] font-bold text-emerald-800 block mb-1">💡 Sugestão de Resposta da IA:</span>
-                    <p className="text-[11px] text-slate-700 italic">"{activeInsight.suggestedResponse}"</p>
-                    <button
-                      onClick={() => handleUseAISuggestion(activeInsight.suggestedResponse)}
-                      className="mt-1.5 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition"
-                    >
-                      <Send className="w-2.5 h-2.5" />
-                      <span>Usar esta resposta</span>
-                    </button>
                   </div>
-                )
-              )}
-
-              {/* Botão de Forçar Análise Manual */}
-              <div className="mt-2.5 pt-2 border-t border-emerald-200/60">
-                <button
-                  type="button"
-                  onClick={handleForceAIAnalysis}
-                  disabled={isAnalyzingAI}
-                  className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-[11px] font-bold py-1.5 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-                  title="Executa a análise de IA em todo o histórico da conversa e atualiza o perfil"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-                  <span>{isAnalyzingAI ? 'Analisando Histórico...' : '⚡ Forçar Análise da Conversa'}</span>
-                </button>
+                )}
               </div>
+
+              {/* Botão de Forçar Análise */}
+              <button
+                type="button"
+                onClick={handleForceAIAnalysis}
+                disabled={isAnalyzingAI}
+                className="w-full bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-slate-700 hover:text-emerald-800 disabled:opacity-50 text-[11px] font-bold py-1.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                title="Executa a análise de IA em todo o histórico da conversa e atualiza o perfil"
+              >
+                <Sparkles className={`w-3.5 h-3.5 text-emerald-600 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
+                <span>{isAnalyzingAI ? 'Analisando Histórico...' : '⚡ Forçar Análise da Conversa'}</span>
+              </button>
             </div>
 
-            {/* Qualificação Financeira & Imobiliária (Edição Inline com Salvamento Instantâneo) */}
+            {/* ---------------------------------------------------- */}
+            {/* 2. QUALIFICAÇÃO DO IMÓVEL & FINANCEIRA (EDIÇÃO INLINE)*/}
+            {/* ---------------------------------------------------- */}
             <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -1821,7 +1750,98 @@ export function WhatsAppInbox() {
               </div>
             </div>
 
-            {/* Oportunidade no Funil de Vendas (Kanban) */}
+            {/* ---------------------------------------------------- */}
+            {/* 3. TAGS COMERCIAIS                                    */}
+            {/* ---------------------------------------------------- */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Tags Comerciais</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-mono">{(activeContact.tags || []).length} tags</span>
+              </div>
+
+              {/* Tags List com botão de remover */}
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                {(activeContact.tags || []).map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 group"
+                  >
+                    <span>#{tag}</span>
+                    <button
+                      onClick={() => handleRemoveTag(tag)}
+                      className="text-emerald-500 hover:text-rose-600 transition"
+                      title="Remover tag"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Input Adicionar Tag */}
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  placeholder="Nova tag... (ex: Investidor)"
+                  value={newTagInput}
+                  onChange={(e) => setNewTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddTag(newTagInput);
+                    }
+                  }}
+                  className="flex-1 text-[11px] bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddTag(newTagInput)}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* ---------------------------------------------------- */}
+            {/* 4. ANOTAÇÕES DO CORRETOR                              */}
+            {/* ---------------------------------------------------- */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Notebook className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Anotações do Corretor</span>
+                </h4>
+              </div>
+
+              <textarea
+                rows={2}
+                placeholder="Observações internas sobre este cliente (ex: prefere visitas aos sábados de manhã)..."
+                value={brokerNote}
+                onChange={(e) => setBrokerNote(e.target.value)}
+                className="w-full text-[11px] bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none text-slate-800 placeholder-slate-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (brokerNote.trim() && activeConversation) {
+                    sendMessage(activeConversation.id, `📝 NOTA INTERNA: ${brokerNote.trim()}`, true);
+                    setBrokerNote('');
+                  }
+                }}
+                disabled={!brokerNote.trim()}
+                className="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white text-[11px] font-bold py-1.5 rounded-lg transition shadow-2xs cursor-pointer"
+              >
+                Salvar Nota na Linha do Tempo
+              </button>
+            </div>
+
+            {/* ---------------------------------------------------- */}
+            {/* 5. OPORTUNIDADE NO FUNIL DE VENDAS (KANBAN)          */}
+            {/* ---------------------------------------------------- */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -1893,92 +1913,9 @@ export function WhatsAppInbox() {
               )}
             </div>
 
-            {/* Tags Comerciais */}
-            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Tags Comerciais</span>
-                </h4>
-                <span className="text-[10px] text-slate-400 font-mono">{(activeContact.tags || []).length} tags</span>
-              </div>
-
-              {/* Tags List com botão de remover */}
-              <div className="flex flex-wrap gap-1.5 mb-2.5">
-                {(activeContact.tags || []).map((tag, idx) => (
-                  <span
-                    key={idx}
-                    className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 group"
-                  >
-                    <span>#{tag}</span>
-                    <button
-                      onClick={() => handleRemoveTag(tag)}
-                      className="text-emerald-500 hover:text-rose-600 transition"
-                      title="Remover tag"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-
-              {/* Input Adicionar Tag */}
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  placeholder="Nova tag... (ex: Investidor)"
-                  value={newTagInput}
-                  onChange={(e) => setNewTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddTag(newTagInput);
-                    }
-                  }}
-                  className="flex-1 text-[11px] bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleAddTag(newTagInput)}
-                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Anotações do Corretor */}
-            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Notebook className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Anotações do Corretor</span>
-                </h4>
-              </div>
-
-              <textarea
-                rows={2}
-                placeholder="Observações internas sobre este cliente (ex: prefere visitas aos sábados de manhã)..."
-                value={brokerNote}
-                onChange={(e) => setBrokerNote(e.target.value)}
-                className="w-full text-[11px] bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none text-slate-800 placeholder-slate-400"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (brokerNote.trim() && activeConversation) {
-                    sendMessage(activeConversation.id, `📝 NOTA INTERNA: ${brokerNote.trim()}`, true);
-                    setBrokerNote('');
-                  }
-                }}
-                disabled={!brokerNote.trim()}
-                className="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white text-[11px] font-bold py-1.5 rounded-lg transition shadow-2xs"
-              >
-                Salvar Nota na Linha do Tempo
-              </button>
-            </div>
-
-            {/* LGPD & Consentimento */}
+            {/* ---------------------------------------------------- */}
+            {/* 6. LGPD & CONSENTIMENTO                               */}
+            {/* ---------------------------------------------------- */}
             <div className="pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5 text-slate-700">
@@ -1991,7 +1928,7 @@ export function WhatsAppInbox() {
               </div>
               <button
                 onClick={() => updateContact(activeContact.id, { hasOptedOut: !activeContact.hasOptedOut })}
-                className="mt-2 text-[10px] text-slate-500 hover:text-rose-600 underline"
+                className="mt-2 text-[10px] text-slate-500 hover:text-rose-600 underline cursor-pointer"
               >
                 {activeContact.hasOptedOut ? 'Reativar comunicações' : 'Registrar Opt-out (Solicitação do titular)'}
               </button>

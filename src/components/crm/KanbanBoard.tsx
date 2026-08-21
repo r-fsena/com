@@ -128,9 +128,10 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const handleMouseEnterCard = (e: React.MouseEvent<HTMLDivElement>, dealId: string) => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     const rect = e.currentTarget.getBoundingClientRect();
+    const isNearRightEdge = typeof window !== 'undefined' && rect.right + 260 > window.innerWidth;
     setHoverPosition({
-      x: rect.right + 12,
-      y: Math.max(80, rect.top - 20),
+      x: isNearRightEdge ? Math.max(12, rect.left - 250) : rect.right + 8,
+      y: Math.max(70, Math.min(rect.top - 10, typeof window !== 'undefined' ? window.innerHeight - 320 : 200)),
     });
     hoverTimeoutRef.current = setTimeout(() => {
       setHoveredDealId(dealId);
@@ -204,6 +205,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   // Helper para dados do hover
   const hoveredDeal = deals.find(d => d.id === hoveredDealId);
   const hoveredContact = hoveredDeal ? contacts.find(c => c.id === hoveredDeal.contactId) : null;
+  const hoveredBroker = hoveredDeal ? users.find(u => u.id === hoveredDeal.assignedUserId) : null;
   const hoveredConv = hoveredContact ? conversations.find(c => c.contactId === hoveredContact.id) : null;
   const hoveredInsight = hoveredConv ? aiInsights[hoveredConv.id] : null;
 
@@ -500,99 +502,101 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
       {/* ---------------------------------------------------- */}
       {/* ITEM 6: POPOVER FLUTUANTE 360º (HOVER RESUMO DO LEAD) */}
       {/* ---------------------------------------------------- */}
+      {/* ---------------------------------------------------- */}
+      {/* ITEM 6: MINI-CARD FLUTUANTE 360º (ÚNICA COLUNA COMPACTA) */}
+      {/* ---------------------------------------------------- */}
       {hoveredDeal && hoveredContact && hoverPosition && !selectedDealForModal && (
         <div
           style={{
             position: 'fixed',
-            left: Math.min(hoverPosition.x, typeof window !== 'undefined' ? window.innerWidth - 380 : 600),
-            top: Math.min(hoverPosition.y, typeof window !== 'undefined' ? window.innerHeight - 420 : 200),
-            zIndex: 40,
+            left: hoverPosition.x,
+            top: hoverPosition.y,
+            zIndex: 50,
           }}
-          className="w-84 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl border border-slate-700/80 pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+          className="w-60 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border border-slate-700/80 pointer-events-none animate-in fade-in zoom-in-95 duration-150 space-y-2"
         >
-          {/* Header do Popover */}
-          <div className="flex items-start gap-3 pb-3 border-b border-slate-700/80">
+          {/* Header Compacto */}
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
             <img
               src={hoveredContact.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(hoveredContact.name)}&background=059669&color=fff`}
               alt={hoveredContact.name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/50 flex-shrink-0"
+              className="w-7 h-7 rounded-full object-cover ring-1 ring-emerald-500/50 flex-shrink-0"
             />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1">
                 <h4 className="text-xs font-bold text-white truncate">{hoveredContact.name}</h4>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
                   hoveredContact.temperature === 'HOT' ? 'bg-rose-500/30 text-rose-300 border border-rose-500/40' :
                   hoveredContact.temperature === 'WARM' ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40' :
-                  'bg-slate-700 text-slate-300'
+                  'bg-slate-800 text-slate-300'
                 }`}>
                   {hoveredContact.temperature === 'HOT' ? '🔥 Quente' : hoveredContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-mono">{hoveredContact.phone}</p>
-              {hoveredContact.email && (
-                <p className="text-[10px] text-emerald-400 truncate">{hoveredContact.email}</p>
-              )}
             </div>
           </div>
 
-          {/* Resumo da IA */}
-          <div className="py-2.5 border-b border-slate-700/80">
-            <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 mb-1">
-              <Sparkles className="w-3 h-3 text-emerald-400" />
-              <span>Resumo Coletado pela IA:</span>
-            </div>
-            <p className="text-[11px] text-slate-200 leading-relaxed italic line-clamp-3">
-              "{hoveredInsight?.summary || 'Lead em acompanhamento. Dados de orçamento e perfil mapeados durante o atendimento no WhatsApp.'}"
-            </p>
-          </div>
-
-          {/* Dados Financeiros e Imobiliários */}
-          <div className="grid grid-cols-2 gap-2 py-2.5 text-[10px] border-b border-slate-700/80">
-            <div className="bg-white/5 p-2 rounded-xl border border-white/10">
-              <span className="text-slate-400 block text-[9px]">💰 Orçamento Máx</span>
-              <span className="font-bold text-emerald-400 font-mono text-[11px]">
-                {hoveredContact.maxPropertyValue ? `R$ ${(hoveredContact.maxPropertyValue / 1000).toFixed(0)}k` : 'Não definido'}
-              </span>
-            </div>
-
-            <div className="bg-white/5 p-2 rounded-xl border border-white/10">
-              <span className="text-slate-400 block text-[9px]">💵 Renda / Mês</span>
-              <span className="font-bold text-slate-200 font-mono text-[11px]">
-                {hoveredContact.monthlyIncome ? `R$ ${(hoveredContact.monthlyIncome / 1000).toFixed(0)}k` : 'Não informada'}
-              </span>
-            </div>
-
-            <div className="bg-white/5 p-2 rounded-xl border border-white/10">
-              <span className="text-slate-400 block text-[9px]">🏢 Preferência</span>
-              <span className="font-semibold text-slate-200 truncate block">
-                {hoveredContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : hoveredContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento'}
-              </span>
-            </div>
-
-            <div className="bg-white/5 p-2 rounded-xl border border-white/10">
-              <span className="text-slate-400 block text-[9px]">📍 Região Alvo</span>
-              <span className="font-semibold text-slate-200 truncate block">
-                {hoveredContact.targetRegions?.[0] || 'Central'}
-              </span>
-            </div>
-          </div>
-
-          {/* Objeções / Ponto de Atenção */}
-          {(hoveredInsight?.detectedObjections || []).length > 0 && (
-            <div className="pt-2">
-              <span className="text-[9px] font-bold text-amber-300 block mb-1">🛡️ Ponto de Atenção:</span>
-              <div className="flex flex-wrap gap-1">
-                {hoveredInsight?.detectedObjections?.map((obj, i) => (
-                  <span key={i} className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-medium">
-                    {obj}
-                  </span>
-                ))}
+          {/* Resumo da IA Conciso (1 Coluna) */}
+          {hoveredInsight?.summary && (
+            <div className="bg-emerald-950/40 border border-emerald-800/40 rounded-xl p-2">
+              <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 mb-0.5">
+                <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                <span>Resumo da IA</span>
               </div>
+              <p className="text-[10px] text-emerald-100 leading-snug line-clamp-2">
+                {hoveredInsight.summary}
+              </p>
             </div>
           )}
 
-          <p className="text-[9px] text-slate-500 text-center mt-2.5 italic">
-            Clique no card para abrir os detalhes completos do negócio
+          {/* Lista de Informações em Coluna Única */}
+          <div className="space-y-1 text-[10.5px] bg-white/5 p-2 rounded-xl border border-white/5">
+            <div className="flex items-center justify-between text-slate-300">
+              <span className="text-slate-400 text-[10px]">💰 Orçamento:</span>
+              <span className="font-bold text-emerald-400 font-mono">
+                {hoveredContact.maxPropertyValue ? `R$ ${(hoveredContact.maxPropertyValue / 1000).toFixed(0)}k` : 'R$ 1.2M'}
+              </span>
+            </div>
+
+            {hoveredContact.monthlyIncome && (
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400 text-[10px]">💵 Renda:</span>
+                <span className="font-semibold text-slate-200 font-mono">
+                  R$ {(hoveredContact.monthlyIncome / 1000).toFixed(0)}k/mês
+                </span>
+              </div>
+            )}
+
+            {hoveredContact.downPaymentAvailable && (
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400 text-[10px]">🏦 Entrada:</span>
+                <span className="font-semibold text-slate-200 font-mono">
+                  R$ {(hoveredContact.downPaymentAvailable / 1000).toFixed(0)}k
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-slate-300">
+              <span className="text-slate-400 text-[10px]">🏢 Imóvel:</span>
+              <span className="font-medium text-slate-200 truncate max-w-[120px]">
+                {hoveredContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : hoveredContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento'}
+                {hoveredContact.targetRegions?.[0] ? ` • ${hoveredContact.targetRegions[0]}` : ''}
+              </span>
+            </div>
+
+            {hoveredBroker && (
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400 text-[10px]">👤 Corretor:</span>
+                <span className="font-medium text-slate-300 truncate max-w-[120px]">
+                  {hoveredBroker.name.split(' ')[0]}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <p className="text-[8.5px] text-slate-500 text-center pt-0.5">
+            Clique no card para abrir detalhes
           </p>
         </div>
       )}

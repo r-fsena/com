@@ -122,9 +122,33 @@ export function WhatsAppInbox() {
   // Active Conversation & Contact
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
   const activeContact = contacts.find(c => c.id === activeConversation?.contactId);
-  const activeMessages = messages.filter(m => m.conversationId === activeConversation?.id);
+  const activeMessages = React.useMemo(() => {
+    return messages
+      .filter(m => m.conversationId === activeConversation?.id)
+      .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+  }, [messages, activeConversation?.id]);
   const activeInsight = activeConversation ? aiInsights[activeConversation.id] : null;
   const activeDeal = deals.find(d => d.contactId === activeContact?.id);
+
+  // Auto-scroll para a última mensagem
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const chatContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
+  };
+
+  React.useEffect(() => {
+    scrollToBottom('auto');
+    const timer1 = setTimeout(() => scrollToBottom('auto'), 60);
+    const timer2 = setTimeout(() => scrollToBottom('smooth'), 180);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [activeConversation?.id, activeMessages.length]);
 
   // Jornada e Prontidão de Qualificação do Lead (MQL -> SQL)
   const hasPropertyInterest = Boolean(activeContact?.preferredPropertyType);
@@ -929,7 +953,7 @@ export function WhatsAppInbox() {
             )}
 
             {/* Área de Mensagens (com background WhatsApp) */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 whatsapp-chat-bg">
+            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 whatsapp-chat-bg">
               {activeMessages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full min-h-[260px] text-center p-6 space-y-2.5">
                   <div className="w-11 h-11 rounded-2xl bg-white/90 backdrop-blur-xs text-emerald-600 flex items-center justify-center shadow-xs border border-slate-200/80">
@@ -1038,6 +1062,7 @@ export function WhatsAppInbox() {
                   </div>
                 );
               })}
+              <div ref={messagesEndRef} className="h-1" />
             </div>
 
             {/* ---------------------------------------------------- */}

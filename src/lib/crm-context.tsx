@@ -66,6 +66,7 @@ interface CRMContextType {
   conversations: Conversation[];
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
+  openChatForContact: (contactId: string) => string;
   messages: Message[];
   sendMessage: (conversationId: string, content: string, isInternalNote?: boolean, aiSuggested?: boolean) => void;
   markConversationAsRead: (conversationId: string) => void;
@@ -726,8 +727,54 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       setAiInsights(prev => ({ ...prev, [convId]: generatedInsight }));
     }, 1200);
+  };
 
-    setActiveConversationId(convId);
+  const openChatForContact = (contactId: string): string => {
+    // 1. Procura conversa direta pelo contactId
+    let targetConv = conversations.find(c => c.contactId === contactId);
+
+    // 2. Se não achou, procura se existe conversa para o telefone do contato
+    const contact = contacts.find(c => c.id === contactId);
+    if (!targetConv && contact?.phone) {
+      const cleanPhone = contact.phone.replace(/\D/g, '');
+      targetConv = conversations.find(c => {
+        const cnt = contacts.find(x => x.id === c.contactId);
+        return cnt?.phone?.replace(/\D/g, '') === cleanPhone;
+      });
+    }
+
+    // 3. Se ainda não existir conversa, cria e registra agora mesmo
+    if (!targetConv && contact) {
+      const newConv: Conversation = {
+        id: `conv-${contact.id}`,
+        tenantId: currentTenant.id,
+        instanceId: instances[0]?.id || 'instance-01',
+        contactId: contact.id,
+        assignedUserId: contact.assignedUserId || currentUser.id,
+        status: 'OPEN',
+        unreadCount: 0,
+        lastMessagePreview: 'Conversa iniciada pelo CRM',
+        lastMessageAt: new Date().toISOString(),
+        slaBreached: false,
+        isPinned: false,
+        isArchived: false,
+      };
+
+      setConversations(prev => {
+        const updated = [newConv, ...prev.filter(c => c.id !== newConv.id)];
+        try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      targetConv = newConv;
+    }
+
+    if (targetConv) {
+      setActiveConversationId(targetConv.id);
+      try { localStorage.setItem('vanguard_crm_active_conv_id', targetConv.id); } catch {}
+      return targetConv.id;
+    }
+
+    return '';
   };
 
   // Salvar Extrações de IA no Perfil do Lead
@@ -1100,6 +1147,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       conversations,
       activeConversationId,
       setActiveConversationId,
+      openChatForContact,
       messages,
       sendMessage,
       markConversationAsRead,

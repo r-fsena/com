@@ -25,17 +25,14 @@ export default function CRMApp() {
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const { setActiveConversationId, conversations, isAuthenticated } = useCRM();
+  const { openChatForContact, isAuthenticated } = useCRM();
 
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
 
   const handleOpenChatForContact = (contactId: string) => {
-    const conv = conversations.find(c => c.contactId === contactId);
-    if (conv) {
-      setActiveConversationId(conv.id);
-    }
+    openChatForContact(contactId);
     setCurrentTab('inbox');
   };
 

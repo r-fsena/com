@@ -1,4 +1,4 @@
-export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'MANAGER' | 'BROKER' | 'VIEWER';
+export type UserRole = 'SUPERADMIN' | 'ADMIN_MASTER' | 'ADMIN' | 'MANAGER' | 'BROKER' | 'VIEWER';
 
 export type AIPersonaTone = 'CONSULTATIVE' | 'PERSUASIVE' | 'FRIENDLY' | 'TECHNICAL';
 

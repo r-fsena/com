@@ -107,7 +107,7 @@ export const MOCK_USERS: User[] = [
     email: 'rafael.sena@vanguardprime.com.br',
     phone: '+55 11 98877-6655',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    role: 'ADMIN',
+    role: 'SUPERADMIN',
     isActive: true,
     aiPersonaPrompt: 'Você é o copiloto comercial de Rafael Sena, Diretor Imobiliário. Adote tom executivo, consultivo e focado em valorização patrimonial, ROI e discrição. Sempre enfatize liquidez e localização nobre.',
     aiTone: 'CONSULTATIVE',

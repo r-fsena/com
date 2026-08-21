@@ -27,7 +27,11 @@ import {
   Building
 } from 'lucide-react';
 
-export function TenantManager() {
+interface TenantManagerProps {
+  onEnterTenant?: (tenant: Tenant) => void;
+}
+
+export function TenantManager({ onEnterTenant }: TenantManagerProps) {
   const { 
     tenants, 
     currentTenant, 
@@ -361,21 +365,17 @@ export function TenantManager() {
                     )}
                   </div>
 
-                  {isCurrent ? (
-                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-100/60 px-3 py-1.5 rounded-xl">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Em Uso</span>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setCurrentTenant(tenant)}
-                      className="bg-slate-900 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 px-3 rounded-xl transition flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
-                    >
-                      <span>Acessar Ambiente</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentTenant(tenant);
+                      if (onEnterTenant) onEnterTenant(tenant);
+                    }}
+                    className="bg-slate-900 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 px-3 rounded-xl transition flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <span>Entrar no CRM</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );

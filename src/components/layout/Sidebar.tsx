@@ -23,7 +23,8 @@ import {
   ChevronLeft,
   ChevronRight,
   DollarSign,
-  FileText
+  FileText,
+  Crown
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -31,9 +32,10 @@ interface SidebarProps {
   setCurrentTab: (tab: string) => void;
   onOpenZapiSimulator: () => void;
   onOpenQrCodeModal?: () => void;
+  onGoToMasterPortal?: () => void;
 }
 
-export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpenQrCodeModal }: SidebarProps) {
+export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpenQrCodeModal, onGoToMasterPortal }: SidebarProps) {
   const { 
     currentTenant, 
     tenants, 
@@ -148,13 +150,6 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
       badge: 'IA',
       badgeColor: 'bg-emerald-600 text-white',
     },
-    ...(currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN' || currentUser.role === 'MANAGER' ? [{
-      id: 'tenants',
-      label: 'Ambientes SaaS',
-      icon: Building2,
-      badge: 'SaaS',
-      badgeColor: 'bg-slate-800 text-emerald-400 border border-slate-700',
-    }] : []),
     {
       id: 'settings',
       label: 'Configurações',
@@ -371,6 +366,26 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
                 </span>
               </div>
             </div>
+
+            {/* Botão de Retorno ao Portal Master SaaS (Exclusivo SuperAdmin / Dono do CRM) */}
+            {(currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN_MASTER') && onGoToMasterPortal && (
+              <div className="px-0.5">
+                <button
+                  type="button"
+                  onClick={onGoToMasterPortal}
+                  className="w-full bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-teal-500/20 hover:from-amber-500/30 hover:to-emerald-500/30 border border-amber-500/40 text-amber-300 rounded-xl p-2 flex items-center justify-between text-xs font-bold transition shadow-xs cursor-pointer group"
+                  title="Abrir o Portal Master de Gestão SaaS"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Crown className="w-4 h-4 text-amber-400 shrink-0 group-hover:rotate-12 transition-transform" />
+                    <span className="truncate text-[11px]">Portal Master SaaS</span>
+                  </div>
+                  <span className="text-[9px] bg-amber-400/20 text-amber-200 px-1.5 py-0.2 rounded font-mono shrink-0">
+                    HUB
+                  </span>
+                </button>
+              </div>
+            )}
 
             {/* Alternador Rápido de Usuário para Testes */}
             <div className="px-0.5">

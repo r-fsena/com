@@ -216,35 +216,54 @@ export const serverCRMStore = {
   },
 
   mergeContacts(oldList: Contact[], newList: Contact[]): Contact[] {
-    const map = new Map<string, Contact>();
-    oldList.forEach(c => {
-      const clean = c.phone.replace(/\D/g, '');
-      if (clean) map.set(clean, c);
-      map.set(c.id, c);
-    });
+    const normalizeKey = (phone?: string) => {
+      if (!phone) return '';
+      const digits = phone.replace(/\D/g, '');
+      if (digits.startsWith('55') && digits.length >= 12) return digits.slice(2);
+      return digits;
+    };
 
-    const result = [...oldList];
-    newList.forEach(c => {
-      const clean = c.phone.replace(/\D/g, '');
-      const existing = (clean ? map.get(clean) : null) || map.get(c.id);
+    const phoneMap = new Map<string, Contact>();
+    const idMap = new Map<string, Contact>();
+    const result: Contact[] = [];
+
+    const all = [...oldList, ...newList];
+    all.forEach(c => {
+      if (!c) return;
+      const pKey = normalizeKey(c.phone);
+      const existing = (pKey ? phoneMap.get(pKey) : null) || idMap.get(c.id);
+
       if (existing) {
         const merged: Contact = {
-          ...c,
           ...existing,
+          ...c,
+          id: existing.id,
+          name: (existing.name && !existing.name.startsWith('+') && !existing.name.startsWith('WhatsApp') && existing.name !== 'Lead WhatsApp' && existing.name !== 'Cliente')
+            ? existing.name
+            : (c.name || existing.name),
           monthlyIncome: c.monthlyIncome || existing.monthlyIncome,
           downPaymentAvailable: c.downPaymentAvailable || existing.downPaymentAvailable,
           maxPropertyValue: c.maxPropertyValue || existing.maxPropertyValue,
           preferredPropertyType: c.preferredPropertyType || existing.preferredPropertyType,
           email: c.email || existing.email,
           tags: Array.from(new Set([...(existing.tags || []), ...(c.tags || [])])),
+          targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(c.targetRegions || [])])),
+          assignedUserId: c.assignedUserId || existing.assignedUserId,
           updatedAt: new Date().toISOString(),
         };
+
+        if (pKey) phoneMap.set(pKey, merged);
+        idMap.set(merged.id, merged);
+
         const idx = result.findIndex(x => x.id === existing.id);
         if (idx >= 0) result[idx] = merged;
       } else {
+        if (pKey) phoneMap.set(pKey, c);
+        idMap.set(c.id, c);
         result.push(c);
       }
     });
+
     return result;
   },
 

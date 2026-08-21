@@ -107,6 +107,57 @@ interface CRMContextType {
   syncZapiInstance: (instanceId: string, phone?: string) => void;
 }
 
+export function normalizePhoneKey(phone: string | undefined): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('55') && digits.length >= 12) {
+    return digits.slice(2); // Normaliza para DDD + Número (ex: 4891079478)
+  }
+  return digits;
+}
+
+export function deduplicateContactList(list: Contact[]): Contact[] {
+  const phoneMap = new Map<string, Contact>();
+  const idMap = new Map<string, Contact>();
+  const result: Contact[] = [];
+
+  list.forEach(contact => {
+    if (!contact) return;
+    const pKey = normalizePhoneKey(contact.phone);
+    const existing = (pKey ? phoneMap.get(pKey) : null) || idMap.get(contact.id);
+
+    if (existing) {
+      const merged: Contact = {
+        ...existing,
+        ...contact,
+        id: existing.id,
+        name: (existing.name && !existing.name.startsWith('+') && !existing.name.startsWith('WhatsApp') && existing.name !== 'Lead WhatsApp' && existing.name !== 'Cliente')
+          ? existing.name
+          : (contact.name || existing.name),
+        monthlyIncome: existing.monthlyIncome || contact.monthlyIncome,
+        downPaymentAvailable: existing.downPaymentAvailable || contact.downPaymentAvailable,
+        maxPropertyValue: existing.maxPropertyValue || contact.maxPropertyValue,
+        preferredPropertyType: existing.preferredPropertyType || contact.preferredPropertyType,
+        targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(contact.targetRegions || [])])),
+        tags: Array.from(new Set([...(existing.tags || []), ...(contact.tags || [])])),
+        email: existing.email || contact.email,
+        assignedUserId: existing.assignedUserId || contact.assignedUserId,
+      };
+      if (pKey) phoneMap.set(pKey, merged);
+      idMap.set(merged.id, merged);
+
+      const idx = result.findIndex(c => c.id === existing.id);
+      if (idx >= 0) result[idx] = merged;
+    } else {
+      if (pKey) phoneMap.set(pKey, contact);
+      idMap.set(contact.id, contact);
+      result.push(contact);
+    }
+  });
+
+  return result;
+}
+
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
@@ -164,10 +215,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('vanguard_crm_contacts');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return deduplicateContactList(parsed);
+          }
+        }
       } catch {}
     }
-    return MOCK_CONTACTS;
+    return deduplicateContactList(MOCK_CONTACTS);
   });
 
   const [pipelines, setPipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
@@ -272,37 +328,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const savedInsights = localStorage.getItem('vanguard_crm_ai_insights');
         const parsedLocalInsights = savedInsights ? JSON.parse(savedInsights) : null;
 
-        // Mescla ou carrega contatos
+        // Mescla ou carrega contatos com deduplicação estrita
         if (serverData && Array.isArray(serverData.contacts) && serverData.contacts.length > 0) {
           setContacts(prev => {
             const list = parsedLocalContacts || prev;
-            const map = new Map<string, Contact>();
-            list.forEach((c: Contact) => {
-              const clean = c.phone.replace(/\D/g, '');
-              if (clean) map.set(clean, c);
-              map.set(c.id, c);
-            });
-            serverData.contacts.forEach((sc: Contact) => {
-              const clean = sc.phone.replace(/\D/g, '');
-              const existing = (clean ? map.get(clean) : null) || map.get(sc.id);
-              if (existing) {
-                map.set(existing.id, {
-                  ...sc,
-                  ...existing,
-                  monthlyIncome: existing.monthlyIncome || sc.monthlyIncome,
-                  downPaymentAvailable: existing.downPaymentAvailable || sc.downPaymentAvailable,
-                  maxPropertyValue: existing.maxPropertyValue || sc.maxPropertyValue,
-                  preferredPropertyType: existing.preferredPropertyType || sc.preferredPropertyType,
-                  email: existing.email || sc.email,
-                });
-              } else {
-                map.set(sc.id, sc);
-              }
-            });
-            return Array.from(map.values());
+            const combined = [...list, ...serverData.contacts];
+            const deduped = deduplicateContactList(combined);
+            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped)); } catch {}
+            return deduped;
           });
         } else if (parsedLocalContacts && parsedLocalContacts.length > 0) {
-          setContacts(parsedLocalContacts);
+          const deduped = deduplicateContactList(parsedLocalContacts);
+          setContacts(deduped);
+          try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped)); } catch {}
         }
 
         // Deals
@@ -425,54 +463,112 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   // Manipulação de Contatos
   const addContact = (data: Partial<Contact>): Contact => {
-    const newContact: Contact = {
-      id: `contact-${Date.now()}`,
-      tenantId: currentTenant.id,
-      name: data.name || 'Lead WhatsApp',
-      phone: data.phone || '+5511900000000',
-      email: data.email,
-      source: data.source || 'WHATSAPP',
-      temperature: data.temperature || 'WARM',
-      aiPriorityScore: data.aiPriorityScore || 70,
-      tags: data.tags || ['Novo Lead'],
-      targetRegions: data.targetRegions || ['São Paulo'],
-      notesCount: 0,
-      consentGiven: true,
-      hasOptedOut: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      ...data,
-    };
+    const phone = data.phone || '+5511900000000';
+    const pKey = normalizePhoneKey(phone);
+
+    let resultContact: Contact;
+
     setContacts(prev => {
-      const updated = [newContact, ...prev];
-      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      // 1. Verifica se já existe contato com o mesmo telefone ou ID
+      const existingIndex = prev.findIndex(c => 
+        (pKey && normalizePhoneKey(c.phone) === pKey) || 
+        (data.id && c.id === data.id)
+      );
+
+      if (existingIndex >= 0) {
+        const existing = prev[existingIndex];
+        resultContact = {
+          ...existing,
+          ...data,
+          id: existing.id,
+          name: (data.name && data.name !== 'Lead WhatsApp' && !data.name.startsWith('+')) ? data.name : existing.name,
+          monthlyIncome: data.monthlyIncome || existing.monthlyIncome,
+          downPaymentAvailable: data.downPaymentAvailable || existing.downPaymentAvailable,
+          maxPropertyValue: data.maxPropertyValue || existing.maxPropertyValue,
+          preferredPropertyType: data.preferredPropertyType || existing.preferredPropertyType,
+          targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(data.targetRegions || [])])),
+          tags: Array.from(new Set([...(existing.tags || []), ...(data.tags || [])])),
+          email: data.email || existing.email,
+          assignedUserId: data.assignedUserId || existing.assignedUserId,
+          updatedAt: new Date().toISOString(),
+        };
+
+        const updated = [...prev];
+        updated[existingIndex] = resultContact;
+        const deduped = deduplicateContactList(updated);
+
+        try {
+          localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped));
+          fetch('/api/v1/crm/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contacts: deduped }),
+          }).catch(() => {});
+        } catch {}
+        return deduped;
+      }
+
+      // 2. Se for novo contato
+      resultContact = {
+        id: data.id || `contact-${Date.now()}`,
+        tenantId: currentTenant.id,
+        name: data.name || 'Lead WhatsApp',
+        phone: phone,
+        email: data.email,
+        source: data.source || 'WHATSAPP',
+        temperature: data.temperature || 'WARM',
+        aiPriorityScore: data.aiPriorityScore || 70,
+        tags: data.tags || ['Novo Lead'],
+        targetRegions: data.targetRegions || ['São Paulo'],
+        notesCount: 0,
+        consentGiven: true,
+        hasOptedOut: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...data,
+      };
+
+      const updated = deduplicateContactList([resultContact, ...prev]);
+      try {
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: updated }),
+        }).catch(() => {});
+      } catch {}
       return updated;
     });
 
-    // Cria automaticamente a conversa no Inbox WhatsApp
-    const newConv: Conversation = {
-      id: `conv-${newContact.id}`,
-      tenantId: currentTenant.id,
-      instanceId: instances[0]?.id || 'instance-01',
-      contactId: newContact.id,
-      assignedUserId: newContact.assignedUserId || currentUser.id,
-      status: 'OPEN',
-      unreadCount: 0,
-      lastMessagePreview: 'Lead cadastrado no CRM',
-      lastMessageAt: new Date().toISOString(),
-      slaBreached: false,
-      isPinned: false,
-      isArchived: false,
-    };
-    setConversations(prev => {
-      const exists = prev.some(c => c.contactId === newContact.id || c.id === newConv.id);
-      if (exists) return prev;
-      const updated = [newConv, ...prev];
-      try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+    // Cria/garante conversa no Inbox WhatsApp
+    if (resultContact!) {
+      const contactToUse = resultContact;
+      setConversations(prev => {
+        const exists = prev.some(c => c.contactId === contactToUse.id);
+        if (exists) return prev;
 
-    return newContact;
+        const newConv: Conversation = {
+          id: `conv-${contactToUse.id}`,
+          tenantId: currentTenant.id,
+          instanceId: instances[0]?.id || 'instance-01',
+          contactId: contactToUse.id,
+          assignedUserId: contactToUse.assignedUserId || currentUser.id,
+          status: 'OPEN',
+          unreadCount: 0,
+          lastMessagePreview: 'Lead cadastrado no CRM',
+          lastMessageAt: new Date().toISOString(),
+          slaBreached: false,
+          isPinned: false,
+          isArchived: false,
+        };
+
+        const updated = [newConv, ...prev];
+        try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
+
+    return resultContact!;
   };
 
   const updateContact = (id: string, updates: Partial<Contact>) => {

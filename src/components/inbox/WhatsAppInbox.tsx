@@ -40,7 +40,8 @@ import {
   Save,
   DollarSign,
   Building,
-  Notebook
+  Notebook,
+  TrendingUp
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/date-utils';
 import { PropertyType } from '@/types/crm';
@@ -84,6 +85,7 @@ export function WhatsAppInbox() {
     applyAIExtractionToContact,
     recordAIFeedback,
     deals,
+    createDeal,
     moveDealStage,
     currentPipeline,
     quickReplies,
@@ -1673,35 +1675,77 @@ export function WhatsAppInbox() {
               </div>
             </div>
 
-            {/* Estágio Atual no Funil (Kanban) */}
-            {activeDeal && (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-800">Negócio no Funil</span>
-                  <span className="text-xs font-bold text-emerald-600 font-mono">
-                    R$ {activeDeal.expectedValue.toLocaleString('pt-BR')}
+            {/* Oportunidade no Funil de Vendas (Kanban) */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Funil de Vendas (Kanban)</span>
+                </h4>
+                {activeDeal ? (
+                  <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                    Ativo no Funil
                   </span>
-                </div>
-                <p className="text-[11px] font-medium text-slate-600 mb-2 truncate">
-                  {activeDeal.title}
-                </p>
-
-                <label className="block text-[10px] text-slate-500 mb-1 font-semibold">
-                  Mover Etapa do Funil:
-                </label>
-                <select
-                  value={activeDeal.stageId}
-                  onChange={(e) => moveDealStage(activeDeal.id, e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-700 focus:outline-none cursor-pointer"
-                >
-                  {currentPipeline.stages.map(st => (
-                    <option key={st.id} value={st.id}>
-                      {st.name}
-                    </option>
-                  ))}
-                </select>
+                ) : (
+                  <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                    Não Criado
+                  </span>
+                )}
               </div>
-            )}
+
+              {activeDeal ? (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[11px] font-semibold text-slate-700 truncate">
+                      {activeDeal.title}
+                    </p>
+                    <span className="text-xs font-bold text-emerald-600 font-mono">
+                      R$ {activeDeal.expectedValue.toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+
+                  <label className="block text-[10px] text-slate-500 mb-1 font-semibold">
+                    Etapa Atual no Kanban:
+                  </label>
+                  <select
+                    value={activeDeal.stageId}
+                    onChange={(e) => moveDealStage(activeDeal.id, e.target.value)}
+                    className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-700 focus:outline-none cursor-pointer"
+                  >
+                    {currentPipeline.stages.map(st => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Este contato ainda não possui um card de oportunidade no Kanban.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeContact) return;
+                      const val = activeContact.maxPropertyValue || (editedMaxBudget ? Number(editedMaxBudget) : 1200000);
+                      const propTypeName = activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa em Condomínio' : activeContact.preferredPropertyType === 'STUDIO' ? 'Studio' : activeContact.preferredPropertyType === 'LAND' ? 'Terreno' : 'Apartamento';
+                      createDeal({
+                        title: `${activeContact.name} - ${propTypeName}`,
+                        contactId: activeContact.id,
+                        expectedValue: val,
+                        stageId: currentPipeline.stages[0].id,
+                        assignedUserId: currentUser.id,
+                      });
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Lançar Oportunidade no Kanban</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Tags Comerciais */}
             <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5">

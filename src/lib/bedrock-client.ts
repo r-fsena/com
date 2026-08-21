@@ -397,7 +397,33 @@ export class BedrockCopilotClient {
   private parseMoney(numStr: string, unitStr?: string): number | undefined {
     if (!numStr) return undefined;
     let clean = numStr.trim().replace(/^r\$\s*/i, '');
-    clean = clean.replace(/\./g, '').replace(',', '.');
+
+    // Se tem vírgula e ponto (ex: 1.250.000,00 ou 1,250,000.50)
+    if (clean.includes('.') && clean.includes(',')) {
+      if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+        clean = clean.replace(/\./g, '').replace(',', '.');
+      } else {
+        clean = clean.replace(/,/g, '');
+      }
+    } else if (clean.includes('.')) {
+      // Se tem apenas ponto:
+      const parts = clean.split('.');
+      const lastPart = parts[parts.length - 1];
+      // Caso 1: Milhares com ponto (ex: 1.200.000 ou 350.000) -> mais de 1 ponto ou 3 dígitos após o ponto sem unidade decimal
+      if (parts.length > 2 || (parts.length === 2 && lastPart.length === 3 && (!unitStr || !unitStr.toLowerCase().includes('milh')))) {
+        clean = clean.replace(/\./g, '');
+      }
+      // Caso 2: Decimal (ex: 1.2 milhão ou 1.5 mi) -> mantém o ponto!
+    } else if (clean.includes(',')) {
+      const parts = clean.split(',');
+      const lastPart = parts[parts.length - 1];
+      if (parts.length > 2 || (parts.length === 2 && lastPart.length === 3 && !unitStr)) {
+        clean = clean.replace(/,/g, '');
+      } else {
+        clean = clean.replace(',', '.'); // ex: 1,2 -> 1.2
+      }
+    }
+
     let num = parseFloat(clean);
     if (isNaN(num)) return undefined;
 
@@ -406,8 +432,8 @@ export class BedrockCopilotClient {
       num *= 1000000;
     } else if (unit.startsWith('mil') || unit === 'k') {
       num *= 1000;
-    } else if (num < 1000) {
-      if (num <= 50) num *= 1000000; // ex: 1.5 -> 1.500.000
+    } else if (!unitStr) {
+      if (num > 0 && num <= 50) num *= 1000000; // ex: 1.2 -> 1.200.000
       else if (num < 1000) num *= 1000; // ex: 350 -> 350.000
     }
 

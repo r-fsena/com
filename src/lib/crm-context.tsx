@@ -68,6 +68,7 @@ interface CRMContextType {
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
   openChatForContact: (contactId: string) => string;
+  loadChatHistory: (phone: string, conversationId: string) => Promise<void>;
   messages: Message[];
   sendMessage: (conversationId: string, content: string, isInternalNote?: boolean, aiSuggested?: boolean) => void;
   markConversationAsRead: (conversationId: string) => void;
@@ -918,6 +919,44 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setCampaigns(prev => [newCamp, ...prev]);
   };
 
+  const loadChatHistory = async (phone: string, conversationId: string) => {
+    try {
+      const cleanPhone = phone.replace(/\D/g, '');
+      const res = await fetch('/api/v1/zapi/sync-chat-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          conversationId,
+          tenantId: currentTenant.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const existingKeys = new Set(prev.map(m => `${m.conversationId}-${m.senderType}-${(m.content || '').trim()}`));
+
+          const newOnes = data.messages.filter((m: Message) => {
+            if (existingIds.has(m.id)) return false;
+            const key = `${m.conversationId}-${m.senderType}-${(m.content || '').trim()}`;
+            if (existingKeys.has(key)) return false;
+            return true;
+          });
+
+          if (newOnes.length === 0) return prev;
+          const merged = deduplicateMessages([...prev, ...newOnes]);
+          try {
+            localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar histórico Z-API:', err);
+    }
+  };
+
   const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
 
   const syncWhatsAppChats = async () => {
@@ -927,32 +966,92 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
 
       if (data.success && Array.isArray(data.contacts) && data.contacts.length > 0) {
-        // 1. Merge de Contatos (preserva contatos existentes e adiciona novos)
+        // 1. Merge de Contatos (Preserva 100% dos dados qualificados e históricos de cada contato)
         setContacts(prev => {
-          const map = new Map(prev.map(c => [c.id, c]));
-          data.contacts.forEach((c: Contact) => {
-            const old = map.get(c.id);
-            map.set(c.id, old ? { ...c, ...old, avatarUrl: c.avatarUrl || old.avatarUrl, name: (c.name && !c.name.startsWith('WhatsApp')) ? c.name : old.name } : c);
+          const mapByPhone = new Map<string, Contact>();
+          const mapById = new Map<string, Contact>();
+          prev.forEach(c => {
+            const clean = c.phone.replace(/\D/g, '');
+            if (clean) mapByPhone.set(clean, c);
+            mapById.set(c.id, c);
           });
-          return Array.from(map.values());
+
+          const result: Contact[] = [...prev];
+
+          data.contacts.forEach((newC: Contact) => {
+            const clean = newC.phone.replace(/\D/g, '');
+            const existing = (clean ? mapByPhone.get(clean) : null) || mapById.get(newC.id);
+
+            if (existing) {
+              const merged: Contact = {
+                ...newC,
+                ...existing,
+                id: existing.id,
+                name: (existing.name && !existing.name.startsWith('WhatsApp')) ? existing.name : (newC.name || existing.name),
+                avatarUrl: newC.avatarUrl || existing.avatarUrl,
+                monthlyIncome: existing.monthlyIncome || newC.monthlyIncome,
+                downPaymentAvailable: existing.downPaymentAvailable || newC.downPaymentAvailable,
+                maxPropertyValue: existing.maxPropertyValue || newC.maxPropertyValue,
+                preferredPropertyType: existing.preferredPropertyType || newC.preferredPropertyType,
+                targetRegions: (existing.targetRegions && existing.targetRegions.length > 0 && !existing.targetRegions.includes('Geral')) ? existing.targetRegions : (newC.targetRegions || existing.targetRegions),
+                email: existing.email || newC.email,
+                temperature: existing.temperature || newC.temperature,
+                tags: Array.from(new Set([...(existing.tags || []), ...(newC.tags || [])])),
+                aiPriorityScore: Math.max(existing.aiPriorityScore || 70, newC.aiPriorityScore || 70),
+                updatedAt: new Date().toISOString(),
+              };
+
+              const idx = result.findIndex(x => x.id === existing.id);
+              if (idx >= 0) result[idx] = merged;
+              if (clean) mapByPhone.set(clean, merged);
+              mapById.set(existing.id, merged);
+            } else {
+              result.push(newC);
+              if (clean) mapByPhone.set(clean, newC);
+              mapById.set(newC.id, newC);
+            }
+          });
+
+          try {
+            localStorage.setItem('vanguard_crm_contacts', JSON.stringify(result));
+          } catch {}
+
+          return result;
         });
 
         // 2. Merge de Conversas
         setConversations(prev => {
           const map = new Map(prev.map(c => [c.id, c]));
           data.conversations.forEach((c: Conversation) => {
-            const old = map.get(c.id);
-            map.set(c.id, old ? { ...c, ...old, lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview } : c);
+            const old = map.get(c.id) || prev.find(x => x.contactId === c.contactId);
+            if (old) {
+              map.set(old.id, {
+                ...c,
+                ...old,
+                lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview,
+                lastMessageAt: old.lastMessageAt || c.lastMessageAt,
+              });
+            } else {
+              map.set(c.id, c);
+            }
           });
-          return Array.from(map.values());
+          const result = Array.from(map.values());
+          try {
+            localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result));
+          } catch {}
+          return result;
         });
 
-        // 3. Merge de Mensagens (NUNCA apaga mensagens enviadas pelo usuário!)
+        // 3. Merge de Mensagens (NUNCA apaga mensagens!)
         if (data.messages && data.messages.length > 0) {
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
             const newOnes = data.messages.filter((m: Message) => !existingIds.has(m.id));
-            return [...prev, ...newOnes];
+            const merged = deduplicateMessages([...prev, ...newOnes]);
+            try {
+              localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged));
+            } catch {}
+            return merged;
           });
         }
 
@@ -1158,6 +1257,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       activeConversationId,
       setActiveConversationId,
       openChatForContact,
+      loadChatHistory,
       messages,
       sendMessage,
       markConversationAsRead,

@@ -96,7 +96,8 @@ export function WhatsAppInbox() {
     updateContact,
     instances,
     syncWhatsAppChats,
-    isSyncingWhatsApp
+    isSyncingWhatsApp,
+    loadChatHistory
   } = useCRM();
 
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED'>('ALL');
@@ -178,6 +179,13 @@ export function WhatsAppInbox() {
       setEditedMaxBudget(activeContact.maxPropertyValue ? String(activeContact.maxPropertyValue) : '');
     }
   }, [activeContact?.id, activeContact?.name, activeContact?.email, activeContact?.monthlyIncome, activeContact?.downPaymentAvailable, activeContact?.maxPropertyValue]);
+
+  // Sincroniza e carrega histórico completo do WhatsApp ao selecionar conversa
+  React.useEffect(() => {
+    if (activeContact?.phone && activeConversation?.id) {
+      loadChatHistory(activeContact.phone, activeConversation.id);
+    }
+  }, [activeConversation?.id, activeContact?.phone]);
 
   // Opção 1: Auto-Análise e Auto-Save Contínuo por IA
   React.useEffect(() => {

@@ -16,10 +16,14 @@ import {
   Flame, 
   Trash2, 
   Edit,
-  Download
+  Download,
+  Upload,
+  FileSpreadsheet,
+  Sparkles
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { ImportLeadsModal } from './ImportLeadsModal';
 
 interface ContactsListProps {
   onOpenNewLead: () => void;
@@ -31,6 +35,13 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
   const [search, setSearch] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState('ALL');
   const [sourceFilter, setSourceFilter] = useState('ALL');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
   const filtered = contacts.filter(c => {
     const matchesSearch = !search.trim() || 
@@ -71,7 +82,15 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
+    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50 relative">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="absolute top-4 right-6 z-50 bg-slate-900/95 backdrop-blur-md text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+          <Sparkles className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div>
@@ -82,23 +101,35 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Base de dados unificada com perfil financeiro 360º e consentimento LGPD
+            Base de dados unificada com perfil financeiro 360º, consentimento LGPD e importação de planilhas
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Botão Importar Planilha */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-2xs cursor-pointer active:scale-95"
+            title="Importar leads de planilha CSV ou migrar de outro CRM"
+          >
+            <Upload className="w-4 h-4 text-emerald-600" />
+            <span>Importar Planilha (.CSV)</span>
+          </button>
+
+          {/* Botão Exportar CSV */}
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-xs"
-            title="Baixar lista em arquivo CSV"
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-xs cursor-pointer"
+            title="Baixar lista atual em arquivo CSV"
           >
             <Download className="w-4 h-4" />
             <span>Exportar CSV</span>
           </button>
 
+          {/* Botão Cadastrar Lead */}
           <button
             onClick={onOpenNewLead}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs active:scale-95"
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Cadastrar Lead</span>
@@ -287,6 +318,13 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
           </table>
         </div>
       </div>
+
+      {/* Modal de Importação de Leads */}
+      <ImportLeadsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={(count) => showToast(`🎉 ${count} leads importados com sucesso para o CRM!`)}
+      />
     </div>
   );
 }

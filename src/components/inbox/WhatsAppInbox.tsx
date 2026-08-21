@@ -200,6 +200,10 @@ export function WhatsAppInbox() {
 
           // 2. Auto-preenchimento e atualização inteligente do Contato
           const updates: any = {};
+          if (analysis.extractedData?.email && (!activeContact.email || activeContact.email === '')) {
+            updates.email = analysis.extractedData.email;
+            setEditedEmail(analysis.extractedData.email);
+          }
           if (analysis.extractedData?.monthlyIncome && (!activeContact.monthlyIncome || activeContact.monthlyIncome === 0)) {
             updates.monthlyIncome = analysis.extractedData.monthlyIncome;
             setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
@@ -320,6 +324,10 @@ export function WhatsAppInbox() {
 
         // 2. Atualiza campos do Perfil 360
         const updates: any = {};
+        if (analysis.extractedData?.email) {
+          updates.email = analysis.extractedData.email;
+          setEditedEmail(analysis.extractedData.email);
+        }
         if (analysis.extractedData?.monthlyIncome) {
           updates.monthlyIncome = analysis.extractedData.monthlyIncome;
           setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));

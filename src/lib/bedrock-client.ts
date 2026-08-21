@@ -4,6 +4,7 @@
  */
 
 export interface LeadExtractionResult {
+  email?: string;
   monthlyIncome?: number;
   downPayment?: number;
   maxBudget?: number;
@@ -93,7 +94,10 @@ export class BedrockCopilotClient {
     const regions = this.extractRegions(clientText, fullText);
     const preferredRegion = regions.length > 0 ? regions.join(', ') : 'Região Central / Metropolitana';
 
-    // 7. Detecção Específica de Objeções
+    // 7. Extração de E-mail do Cliente
+    const email = this.extractEmail(clientText, fullText);
+
+    // 8. Detecção Específica de Objeções
     const detectedObjections: string[] = [];
     if (/(caro|preço alto|valor alto|muito dinheiro|fora do orçamento|desconto|abaixar o valor)/i.test(lowerText)) {
       detectedObjections.push('🏷️ Objeção de Preço / Relação Custo-Benefício');
@@ -118,7 +122,7 @@ export class BedrockCopilotClient {
       detectedObjections.push('🔍 Lead em fase de triagem e mapeamento de perfil');
     }
 
-    // 8. Urgência e Sentimento
+    // 9. Urgência e Sentimento
     let urgencyLevel: 'ALTA' | 'MEDIA' | 'BAIXA' = 'MEDIA';
     if (/(urgente|este mês|fechar rápido|comprar agora|já vendi|aprovado|à vista|a vista|sinal hoje)/i.test(targetTextForIntent) || intent === 'AGENDAR_VISITA') {
       urgencyLevel = 'ALTA';
@@ -129,7 +133,7 @@ export class BedrockCopilotClient {
       sentiment = 'NEGATIVE';
     }
 
-    // 9. Criação das 3 Opções de Respostas Táticas de Vendas
+    // 10. Criação das 3 Opções de Respostas Táticas de Vendas
     const responseOptions: AIResponseOption[] = [];
 
     // Opção 1: Quebra de Objeção / Argumento Persuasivo
@@ -187,10 +191,13 @@ export class BedrockCopilotClient {
 
     const suggestedResponse = responseOptions[0].text;
 
-    // 10. Resumo Sintético do Perfil 360º
+    // 11. Resumo Sintético do Perfil 360º
     const summaryParts: string[] = [
       `Lead com interesse em ${propertyType} em ${preferredRegion}.`,
     ];
+    if (email) {
+      summaryParts.push(`E-mail identificado: ${email}.`);
+    }
     if (monthlyIncome) {
       summaryParts.push(`Renda informada: R$ ${monthlyIncome.toLocaleString('pt-BR')}/mês.`);
     }
@@ -207,6 +214,7 @@ export class BedrockCopilotClient {
     return {
       summary: summaryParts.join(' '),
       extractedData: {
+        email,
         monthlyIncome,
         downPayment,
         maxBudget,
@@ -493,5 +501,30 @@ export class BedrockCopilotClient {
     }
 
     return found;
+  }
+
+  /**
+   * Extração de E-mail de Contato
+   */
+  private extractEmail(clientText: string, fullText: string): string | undefined {
+    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i;
+
+    // 1. Procura prioritariamente nas mensagens enviadas pelo cliente
+    const clientMatch = clientText.match(emailRegex);
+    if (clientMatch) {
+      const email = clientMatch[1].trim().toLowerCase().replace(/[\.\,\;\:\!\?]+$/, '');
+      if (email.includes('@') && email.includes('.')) return email;
+    }
+
+    // 2. Procura no histórico completo
+    const fullMatch = fullText.match(emailRegex);
+    if (fullMatch) {
+      const email = fullMatch[1].trim().toLowerCase().replace(/[\.\,\;\:\!\?]+$/, '');
+      if (email.includes('@') && email.includes('.') && !email.includes('exemplo') && !email.includes('teste')) {
+        return email;
+      }
+    }
+
+    return undefined;
   }
 }

@@ -126,16 +126,69 @@ export function WhatsAppInbox() {
   const [isCopilotExpanded, setIsCopilotExpanded] = useState<boolean>(false);
   const [isCopilotDismissed, setIsCopilotDismissed] = useState<boolean>(false);
 
-  // Active Conversation & Contact
+  // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
-  const activeContact = contacts.find(c => c.id === activeConversation?.contactId);
+  
+  const activeContact = React.useMemo(() => {
+    if (!activeConversation) return contacts[0] || null;
+    
+    // 1. Match direto por contactId
+    const byId = contacts.find(c => c.id === activeConversation.contactId);
+    if (byId) return byId;
+
+    // 2. Match por telefone limpo na conversa
+    const convDigits = activeConversation.id.replace(/\D/g, '') || activeConversation.contactId.replace(/\D/g, '');
+    if (convDigits) {
+      const byPhone = contacts.find(c => {
+        const cDigits = c.phone.replace(/\D/g, '');
+        return cDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits));
+      });
+      if (byPhone) return byPhone;
+    }
+
+    return contacts[0] || null;
+  }, [contacts, activeConversation]);
+
   const activeMessages = React.useMemo(() => {
+    if (!activeConversation) return [];
+    const convId = activeConversation.id;
+    const cleanPhone = activeContact?.phone ? activeContact.phone.replace(/\D/g, '') : convId.replace(/\D/g, '');
+
     return messages
-      .filter(m => m.conversationId === activeConversation?.id)
+      .filter(m => {
+        if (m.conversationId === convId) return true;
+        if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
+        if (cleanPhone && cleanPhone.length >= 8 && m.conversationId.includes(cleanPhone)) return true;
+        return false;
+      })
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
-  }, [messages, activeConversation?.id]);
-  const activeInsight = activeConversation ? aiInsights[activeConversation.id] : null;
-  const activeDeal = deals.find(d => d.contactId === activeContact?.id);
+  }, [messages, activeConversation, activeContact]);
+
+  const activeInsight = React.useMemo(() => {
+    if (activeConversation && aiInsights[activeConversation.id]) return aiInsights[activeConversation.id];
+    if (activeContact) {
+      if (aiInsights[activeContact.id]) return aiInsights[activeContact.id];
+      if (aiInsights[`conv-${activeContact.id}`]) return aiInsights[`conv-${activeContact.id}`];
+      const cleanPhone = activeContact.phone.replace(/\D/g, '');
+      if (cleanPhone && aiInsights[`conv-zapi-${cleanPhone}`]) return aiInsights[`conv-zapi-${cleanPhone}`];
+    }
+    const firstKey = Object.keys(aiInsights)[0];
+    return firstKey ? aiInsights[firstKey] : null;
+  }, [aiInsights, activeConversation, activeContact]);
+
+  const activeDeal = React.useMemo(() => {
+    if (!activeContact) return null;
+    const byContactId = deals.find(d => d.contactId === activeContact.id);
+    if (byContactId) return byContactId;
+    const cleanPhone = activeContact.phone.replace(/\D/g, '');
+    if (cleanPhone) {
+      return deals.find(d => {
+        const contact = contacts.find(c => c.id === d.contactId);
+        return contact && contact.phone.replace(/\D/g, '') === cleanPhone;
+      }) || null;
+    }
+    return null;
+  }, [deals, activeContact, contacts]);
 
   // Auto-scroll para a última mensagem
   const messagesEndRef = React.useRef<HTMLDivElement>(null);

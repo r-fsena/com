@@ -33,9 +33,19 @@ interface SidebarProps {
   onOpenZapiSimulator: () => void;
   onOpenQrCodeModal?: () => void;
   onGoToMasterPortal?: () => void;
+  isOpenOnMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
-export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpenQrCodeModal, onGoToMasterPortal }: SidebarProps) {
+export function Sidebar({ 
+  currentTab, 
+  setCurrentTab, 
+  onOpenZapiSimulator, 
+  onOpenQrCodeModal, 
+  onGoToMasterPortal,
+  isOpenOnMobile,
+  onCloseMobile
+}: SidebarProps) {
   const { 
     currentTenant, 
     tenants, 
@@ -160,82 +170,106 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
   ];
 
   return (
-    <aside 
-      className={`${
-        isCollapsed ? 'w-20' : 'w-64'
-      } bg-slate-950 text-slate-300 flex flex-col flex-shrink-0 border-r border-slate-800 select-none transition-all duration-200 ease-in-out relative`}
-    >
-      {/* Header com Tenant e Botão de Recolher/Expandir */}
-      <div className="p-3 border-b border-slate-800/80">
-        {isCollapsed ? (
-          <div className="flex flex-col items-center gap-2 w-full">
-            {/* Logo Centralizado no modo reduzido */}
-            <div 
-              className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30"
-              title={`${currentTenant.name} (SaaS Multi-tenant)`}
-            >
-              <Building2 className="w-5 h-5" />
-            </div>
+    <>
+      {/* Backdrop Overlay no Mobile */}
+      {isOpenOnMobile && (
+        <div 
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-2xs z-40 md:hidden animate-fadeIn"
+          onClick={onCloseMobile}
+        />
+      )}
 
-            {/* Botão de Expandir Centralizado e Separado */}
-            <button
-              onClick={toggleCollapsed}
-              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-400 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition cursor-pointer shadow-2xs"
-              title="Expandir menu lateral"
-            >
-              <PanelLeftOpen className="w-4 h-4 text-emerald-400" />
-            </button>
-          </div>
-        ) : (
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              {/* Logo & Marca */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30 flex-shrink-0">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 truncate">
-                    SaaS Multi-tenant
+      <aside 
+        className={`${
+          isCollapsed ? 'w-20' : 'w-64'
+        } bg-slate-950 text-slate-300 flex flex-col flex-shrink-0 border-r border-slate-800 select-none transition-all duration-200 ease-in-out fixed md:static inset-y-0 left-0 z-50 md:z-auto ${
+          isOpenOnMobile ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Header com Tenant e Botão de Recolher/Expandir */}
+        <div className="p-3 border-b border-slate-800/80">
+          {isCollapsed ? (
+            <div className="flex flex-col items-center gap-2 w-full">
+              {/* Logo Centralizado no modo reduzido */}
+              <div 
+                className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30"
+                title={`${currentTenant.name} (SaaS Multi-tenant)`}
+              >
+                <Building2 className="w-5 h-5" />
+              </div>
+
+              {/* Botão de Expandir Centralizado e Separado */}
+              <button
+                onClick={toggleCollapsed}
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-400 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition cursor-pointer shadow-2xs"
+                title="Expandir menu lateral"
+              >
+                <PanelLeftOpen className="w-4 h-4 text-emerald-400" />
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                {/* Logo & Marca */}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30 flex-shrink-0">
+                    <Building2 className="w-5 h-5" />
                   </div>
-                  <h2 className="text-xs font-bold text-white tracking-tight truncate">
-                    {currentTenant.name}
-                  </h2>
+                  
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 truncate">
+                      SaaS Multi-tenant
+                    </div>
+                    <h2 className="text-xs font-bold text-white tracking-tight truncate">
+                      {currentTenant.name}
+                    </h2>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {/* Botão de Recolher no Desktop */}
+                  <button
+                    onClick={toggleCollapsed}
+                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer flex-shrink-0 hidden md:block"
+                    title="Reduzir menu lateral (apenas ícones)"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </button>
+
+                  {/* Botão Fechar no Mobile Drawer */}
+                  {onCloseMobile && (
+                    <button
+                      onClick={onCloseMobile}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer flex-shrink-0 md:hidden"
+                      title="Fechar menu lateral"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Botão de Recolher */}
-              <button
-                onClick={toggleCollapsed}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer flex-shrink-0"
-                title="Reduzir menu lateral (apenas ícones)"
-              >
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
+              {/* Tenant Switcher */}
+              <div className="relative mt-2.5">
+                <select
+                  value={currentTenant.id}
+                  onChange={(e) => {
+                    const selected = tenants.find(t => t.id === e.target.value);
+                    if (selected) setCurrentTenant(selected);
+                  }}
+                  className="w-full text-xs font-medium bg-slate-900 text-slate-200 border border-slate-800 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none appearance-none cursor-pointer hover:bg-slate-850 transition"
+                >
+                  {tenants.map(t => (
+                    <option key={t.id} value={t.id}>
+                      🏢 {t.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+              </div>
             </div>
-
-            {/* Tenant Switcher */}
-            <div className="relative mt-2.5">
-              <select
-                value={currentTenant.id}
-                onChange={(e) => {
-                  const selected = tenants.find(t => t.id === e.target.value);
-                  if (selected) setCurrentTenant(selected);
-                }}
-                className="w-full text-xs font-medium bg-slate-900 text-slate-200 border border-slate-800 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none appearance-none cursor-pointer hover:bg-slate-850 transition"
-              >
-                {tenants.map(t => (
-                  <option key={t.id} value={t.id}>
-                    🏢 {t.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
       {/* Navigation List */}
       <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto">
@@ -252,7 +286,10 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
           return (
             <button
               key={item.id}
-              onClick={() => setCurrentTab(item.id)}
+              onClick={() => {
+                setCurrentTab(item.id);
+                onCloseMobile?.();
+              }}
               className={`w-full flex items-center ${
                 isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
               } py-2.5 rounded-xl text-xs font-medium transition-all duration-150 group relative cursor-pointer ${
@@ -419,5 +456,6 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
         )}
       </div>
     </aside>
+  </>
   );
 }

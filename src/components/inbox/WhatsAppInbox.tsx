@@ -44,6 +44,7 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
   Minimize2,
   Maximize2
 } from 'lucide-react';
@@ -702,7 +703,9 @@ export function WhatsAppInbox() {
       {/* ---------------------------------------------------- */}
       {/* COLUNA 1: Lista de Conversas & Filtros              */}
       {/* ---------------------------------------------------- */}
-      <div className="w-80 sm:w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+      <div className={`w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 min-w-0 ${
+        activeConversation ? 'hidden md:flex' : 'flex'
+      }`}>
         {/* Header & Filtros Rápidos */}
         <div className="p-3.5 border-b border-slate-100 space-y-2.5">
           <div className="flex items-center justify-between">
@@ -995,17 +998,27 @@ export function WhatsAppInbox() {
         {activeConversation && activeContact ? (
           <>
             {/* Header do Chat */}
-            <div className="h-16 bg-white border-b border-slate-200 px-5 flex items-center justify-between z-10 shadow-xs">
-              <div className="flex items-center gap-3 min-w-0">
+            <div className="h-16 bg-white border-b border-slate-200 px-4 sm:px-5 flex items-center justify-between z-10 shadow-xs gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* Botão Voltar no Mobile */}
+                <button
+                  type="button"
+                  onClick={() => setActiveConversationId(null)}
+                  className="md:hidden p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-0.5 shrink-0"
+                  title="Voltar para lista de conversas"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
                 <img
                   src={activeContact.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(activeContact.name)}
                   alt={activeContact.name}
-                  className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200"
+                  className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
                 />
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-sm font-bold text-slate-800 truncate">{activeContact.name}</h2>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                       activeContact.temperature === 'HOT' ? 'bg-rose-100 text-rose-700' :
                       activeContact.temperature === 'WARM' ? 'bg-amber-100 text-amber-700' :
                       'bg-slate-100 text-slate-700'
@@ -1014,17 +1027,17 @@ export function WhatsAppInbox() {
                     </span>
 
                     {activeDeal ? (
-                      <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="hidden sm:flex text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full items-center gap-1 shrink-0">
                         <TrendingUp className="w-2.5 h-2.5 text-blue-600" />
                         <span>Funil: {currentPipeline.stages.find(s => s.id === activeDeal.stageId)?.name || 'Ativo'}</span>
                       </span>
                     ) : isLeadQualified ? (
-                      <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                      <span className="hidden sm:flex text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full items-center gap-1 animate-pulse shrink-0">
                         <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
                         <span>Lead Qualificado</span>
                       </span>
                     ) : (
-                      <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                      <span className="hidden sm:inline-block text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full shrink-0">
                         Em Triagem
                       </span>
                     )}
@@ -1034,7 +1047,21 @@ export function WhatsAppInbox() {
               </div>
 
               {/* Ações do Header */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Botão Perfil 360 / Drawer Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowLeadDrawer(!showLeadDrawer)}
+                  className={`p-2 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                    showLeadDrawer
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Abrir / Ocultar Perfil 360º e IA Insights"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="hidden lg:inline">Perfil 360º</span>
+                </button>
                 {/* Linha Ativa no Chat & Botão de Migração */}
                 {(() => {
                   const currentInst = instances.find(i => i.id === activeConversation.instanceId) || instances[0];
@@ -1734,18 +1761,38 @@ export function WhatsAppInbox() {
       {/* COLUNA 3: Perfil 360º do Lead & IA Insights          */}
       {/* ---------------------------------------------------- */}
       {showLeadDrawer && activeContact && (
-        <div className="w-80 sm:w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 overflow-y-auto">
-          {/* Header Lead 360 */}
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-emerald-600" />
-                <span>Perfil 360º • IA + CRM</span>
-              </span>
-              <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs">
-                Score: {activeContact.aiPriorityScore || 85}/100
-              </span>
-            </div>
+        <>
+          {/* Backdrop Overlay no Mobile/Tablet */}
+          <div 
+            className="fixed inset-0 bg-slate-950/50 z-40 xl:hidden animate-fadeIn backdrop-blur-2xs"
+            onClick={() => setShowLeadDrawer(false)}
+          />
+
+          <div className="fixed xl:static inset-y-0 right-0 z-50 xl:z-auto w-full max-w-sm sm:w-96 bg-white xl:border-l border-slate-200 shadow-2xl xl:shadow-none flex flex-col flex-shrink-0 overflow-y-auto animate-in slide-in-from-right duration-200">
+            {/* Header Lead 360 */}
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-emerald-600" />
+                  <span>Perfil 360º • IA + CRM</span>
+                </span>
+                
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                    Score: {activeContact.aiPriorityScore || 85}/100
+                  </span>
+                  
+                  {/* Botão de Fechar no Drawer Overlay */}
+                  <button
+                    type="button"
+                    onClick={() => setShowLeadDrawer(false)}
+                    className="xl:hidden p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                    title="Fechar painel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
 
             <div className="flex items-start gap-3">
               <img
@@ -2645,6 +2692,7 @@ export function WhatsAppInbox() {
             </div>
           </div>
         </div>
+      </>
       )}
     </div>
   );

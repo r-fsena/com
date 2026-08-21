@@ -154,16 +154,16 @@ export function SalesDashboard() {
       </div>
 
       {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
         {/* Funil de Vendas Bar Chart */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-200 shadow-xs min-w-0 overflow-hidden">
           <h3 className="text-sm font-bold text-slate-900 mb-1">
             Distribuição de Negócios por Etapa do Funil
           </h3>
           <p className="text-xs text-slate-500 mb-4">Volume de negociações em cada estágio</p>
 
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-72 w-full min-w-0 relative">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100} debounce={50}>
               <BarChart data={funnelData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
@@ -189,14 +189,14 @@ export function SalesDashboard() {
         </div>
 
         {/* Origem dos Leads Pie Chart */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs min-w-0 overflow-hidden">
           <h3 className="text-sm font-bold text-slate-900 mb-1">
             Origem dos Leads
           </h3>
           <p className="text-xs text-slate-500 mb-4">Canais de captação de maior conversão</p>
 
-          <div className="h-72 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-72 w-full min-w-0 relative flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100} debounce={50}>
               <PieChart>
                 <Pie
                   data={sourceData}

@@ -21,7 +21,9 @@ import {
   Sparkles,
   ChevronRight,
   TrendingUp,
-  FileText
+  FileText,
+  Menu,
+  X
 } from 'lucide-react';
 
 interface SaaSAdminHubProps {
@@ -30,6 +32,7 @@ interface SaaSAdminHubProps {
 
 export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
   const { currentUser, logout, tenants } = useCRM();
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [activeTab, setActiveTabState] = useState<'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis'>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -93,24 +96,67 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
   ];
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased select-none">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased select-none flex-col md:flex-row relative">
+      {/* Topbar no Mobile */}
+      <div className="md:hidden h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+            className="p-2 text-slate-300 hover:text-white bg-slate-800 rounded-xl transition cursor-pointer"
+            title="Menu do Portal Master"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-1.5">
+            <Crown className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-bold text-white">FaithHubs Master</span>
+          </div>
+        </div>
+
+        <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
+          SaaS Hub
+        </span>
+      </div>
+
+      {/* Backdrop no Mobile */}
+      {isMobileNavOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-2xs z-40 md:hidden animate-fadeIn"
+          onClick={() => setIsMobileNavOpen(false)}
+        />
+      )}
+
       {/* Sidebar Dedicada do Portal SaaS Master */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800/80 flex flex-col flex-shrink-0 justify-between relative z-10">
+      <aside className={`w-64 bg-slate-900 border-r border-slate-800/80 flex flex-col flex-shrink-0 justify-between fixed md:static inset-y-0 left-0 z-50 md:z-10 transition-transform duration-200 ease-in-out ${
+        isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+      }`}>
         <div>
           {/* Header da Sidebar */}
-          <div className="p-4 border-b border-slate-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950/50">
-              <Crown className="w-5 h-5 text-slate-950 fill-amber-300" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-sm font-black text-white tracking-tight">FaithHubs Master</h1>
-                <span className="text-[9px] bg-amber-400/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.2 rounded font-mono font-bold">
-                  SaaS Hub
-                </span>
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950/50">
+                <Crown className="w-5 h-5 text-slate-950 fill-amber-300" />
               </div>
-              <p className="text-[10.5px] text-slate-400">Portal do Dono do CRM</p>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-sm font-black text-white tracking-tight">FaithHubs Master</h1>
+                  <span className="text-[9px] bg-amber-400/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.2 rounded font-mono font-bold">
+                    SaaS Hub
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-slate-400">Portal do Dono do CRM</p>
+              </div>
             </div>
+
+            {/* Fechar no Mobile */}
+            <button
+              type="button"
+              onClick={() => setIsMobileNavOpen(false)}
+              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800/60"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Menus de Navegação */}
@@ -127,7 +173,10 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveTab(item.id as any)}
+                  onClick={() => {
+                    setActiveTab(item.id as any);
+                    setIsMobileNavOpen(false);
+                  }}
                   className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition cursor-pointer group ${
                     isActive 
                       ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40' 

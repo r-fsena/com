@@ -126,6 +126,18 @@ export function WhatsAppInbox() {
   const activeInsight = activeConversation ? aiInsights[activeConversation.id] : null;
   const activeDeal = deals.find(d => d.contactId === activeContact?.id);
 
+  // Jornada e Prontidão de Qualificação do Lead (MQL -> SQL)
+  const hasPropertyInterest = Boolean(activeContact?.preferredPropertyType);
+  const hasFinancialData = Boolean((activeContact?.maxPropertyValue && activeContact.maxPropertyValue > 0) || (activeContact?.downPaymentAvailable && activeContact.downPaymentAvailable > 0) || (activeContact?.monthlyIncome && activeContact.monthlyIncome > 0));
+  const hasEngagement = Boolean(activeContact?.temperature === 'HOT' || (activeContact?.aiPriorityScore && activeContact.aiPriorityScore >= 80));
+
+  let qualificationScore = 25; // Base por ter contato
+  if (hasPropertyInterest) qualificationScore += 25;
+  if (hasFinancialData) qualificationScore += 35;
+  if (hasEngagement) qualificationScore += 15;
+
+  const isLeadQualified = qualificationScore >= 75 || Boolean(activeDeal);
+
   // Sincroniza formulário com o contato selecionado
   React.useEffect(() => {
     if (activeContact) {
@@ -689,6 +701,16 @@ export function WhatsAppInbox() {
                             ★ {contact.aiPriorityScore}
                           </span>
                         )}
+
+                        {deals.some(d => d.contactId === contact?.id) ? (
+                          <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            💎 Funil
+                          </span>
+                        ) : (contact?.maxPropertyValue && contact.maxPropertyValue > 0) ? (
+                          <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            ✨ Qualificado
+                          </span>
+                        ) : null}
                       </div>
 
                       {conv.unreadCount > 0 && (
@@ -729,6 +751,22 @@ export function WhatsAppInbox() {
                     }`}>
                       {activeContact.temperature === 'HOT' ? '🔥 Quente' : activeContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
                     </span>
+
+                    {activeDeal ? (
+                      <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <TrendingUp className="w-2.5 h-2.5 text-blue-600" />
+                        <span>Funil: {currentPipeline.stages.find(s => s.id === activeDeal.stageId)?.name || 'Ativo'}</span>
+                      </span>
+                    ) : isLeadQualified ? (
+                      <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                        <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>Lead Qualificado</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                        Em Triagem
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
                 </div>
@@ -1426,6 +1464,114 @@ export function WhatsAppInbox() {
           </div>
 
           <div className="p-4 space-y-4">
+            {/* ---------------------------------------------------- */}
+            {/* JORNADA & STATUS DE QUALIFICAÇÃO DO LEAD (MQL -> SQL) */}
+            {/* ---------------------------------------------------- */}
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 shadow-xs space-y-3">
+              {/* Header com Badge de Status */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <div className={`p-1.5 rounded-lg ${isLeadQualified ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">Jornada de Qualificação</h4>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      {activeDeal ? 'Oportunidade Ativa no Funil' : isLeadQualified ? 'Lead Qualificado (MQL)' : 'Em Triagem Inicial'}
+                    </span>
+                  </div>
+                </div>
+
+                <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-2xs ${
+                  activeDeal
+                    ? 'bg-blue-600 text-white'
+                    : isLeadQualified
+                    ? 'bg-emerald-600 text-white animate-pulse'
+                    : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {activeDeal ? 'No Kanban' : isLeadQualified ? '✨ Qualificado' : `${qualificationScore}% Coletado`}
+                </span>
+              </div>
+
+              {/* Barra de Progresso da Qualificação */}
+              <div>
+                <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
+                  <span>Maturidade do Lead</span>
+                  <span className="font-mono text-emerald-600">{qualificationScore}%</span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-500 rounded-full ${
+                      qualificationScore >= 75
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                        : qualificationScore >= 50
+                        ? 'bg-gradient-to-r from-amber-400 to-emerald-400'
+                        : 'bg-slate-300'
+                    }`}
+                    style={{ width: `${Math.min(qualificationScore, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Checklist Visual dos 4 Pilares */}
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                  hasPropertyInterest ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>
+                  <span>{hasPropertyInterest ? '✓' : '○'}</span>
+                  <span className="truncate">🏢 {activeContact.preferredPropertyType ? (activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento') : 'Imóvel'}</span>
+                </div>
+
+                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                  hasFinancialData ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>
+                  <span>{hasFinancialData ? '✓' : '○'}</span>
+                  <span className="truncate">💰 {activeContact.maxPropertyValue ? `R$ ${(activeContact.maxPropertyValue / 1000).toFixed(0)}k` : (activeContact.downPaymentAvailable ? `Entrada ${(activeContact.downPaymentAvailable/1000).toFixed(0)}k` : 'Orçamento')}</span>
+                </div>
+
+                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                  (activeContact.targetRegions || []).length > 0 ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>
+                  <span>{(activeContact.targetRegions || []).length > 0 ? '✓' : '○'}</span>
+                  <span className="truncate">📍 {activeContact.targetRegions?.[0] || 'Região'}</span>
+                </div>
+
+                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                  hasEngagement ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>
+                  <span>{hasEngagement ? '✓' : '○'}</span>
+                  <span className="truncate">{activeContact.temperature === 'HOT' ? '🔥 Quente' : 'Engajamento'}</span>
+                </div>
+              </div>
+
+              {/* Botão de Ação Direta para o Kanban */}
+              {!activeDeal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!activeContact) return;
+                    const val = activeContact.maxPropertyValue || (editedMaxBudget ? Number(editedMaxBudget) : 1200000);
+                    const propTypeName = activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa em Condomínio' : activeContact.preferredPropertyType === 'STUDIO' ? 'Studio' : activeContact.preferredPropertyType === 'LAND' ? 'Terreno' : 'Apartamento';
+                    createDeal({
+                      title: `${activeContact.name} - ${propTypeName}`,
+                      contactId: activeContact.id,
+                      expectedValue: val,
+                      stageId: currentPipeline.stages[0].id,
+                      assignedUserId: currentUser.id,
+                    });
+                  }}
+                  className={`w-full text-xs font-bold py-2 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                    isLeadQualified
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white ring-2 ring-emerald-400/50'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>{isLeadQualified ? '🚀 Promover a Lead Qualificado e Abrir no Kanban' : 'Lançar no Kanban'}</span>
+                </button>
+              )}
+            </div>
+
             {/* IA Copilot Card em Tempo Real */}
             <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-emerald-50/50 border border-emerald-200 rounded-2xl p-3.5 shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between mb-2">

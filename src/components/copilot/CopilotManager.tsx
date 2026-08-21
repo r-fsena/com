@@ -81,10 +81,14 @@ const PROMPT_TEMPLATES = [
 export function CopilotManager() {
   const { users, currentUser, updateUserAIPersona, currentTenant } = useCRM();
 
+  // Controle de Acesso: Apenas Administradores e Gestores podem alternar entre os corretores
+  const isManagerOrAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'SUPERADMIN' || currentUser.role === 'MANAGER';
+
   const [activeTab, setActiveTab] = useState<'PERSONA' | 'SIMULATOR' | 'GLOBAL_SETTINGS'>('PERSONA');
   const [selectedUserId, setSelectedUserId] = useState<string>(currentUser.id);
   
-  const selectedUser = users.find(u => u.id === selectedUserId) || currentUser;
+  const effectiveUserId = isManagerOrAdmin ? selectedUserId : currentUser.id;
+  const selectedUser = users.find(u => u.id === effectiveUserId) || currentUser;
 
   // Estados locais da persona
   const [promptText, setPromptText] = useState<string>(selectedUser.aiPersonaPrompt || PROMPT_TEMPLATES[0].prompt);
@@ -129,7 +133,7 @@ export function CopilotManager() {
   };
 
   const handleSavePersona = () => {
-    updateUserAIPersona(selectedUserId, {
+    updateUserAIPersona(effectiveUserId, {
       aiPersonaPrompt: promptText,
       aiTone: tone,
       aiDirectives: directives,
@@ -205,7 +209,9 @@ export function CopilotManager() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Configure o estilo de atendimento, tom de voz e prompts personalizados para cada corretor da equipe
+            {isManagerOrAdmin 
+              ? 'Configure o estilo de atendimento, tom de voz e prompts personalizados para cada corretor da equipe'
+              : 'Personalize o estilo de atendimento, tom de voz e instruções do seu Copiloto de IA exclusivo'}
           </p>
         </div>
 
@@ -233,7 +239,7 @@ export function CopilotManager() {
           }`}
         >
           <UserIcon className="w-4 h-4" />
-          <span>Persona & Prompt por Corretor</span>
+          <span>{isManagerOrAdmin ? 'Personas da Equipe' : 'Meu Copiloto de IA'}</span>
         </button>
 
         <button
@@ -248,17 +254,19 @@ export function CopilotManager() {
           <span>Simulador & Testador em Tempo Real</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('GLOBAL_SETTINGS')}
-          className={`py-3.5 border-b-2 transition flex items-center gap-2 cursor-pointer ${
-            activeTab === 'GLOBAL_SETTINGS'
-              ? 'border-emerald-600 text-emerald-700 font-bold'
-              : 'border-transparent hover:text-slate-800'
-          }`}
-        >
-          <Sliders className="w-4 h-4" />
-          <span>Modelos LLM & Conexão de API</span>
-        </button>
+        {isManagerOrAdmin && (
+          <button
+            onClick={() => setActiveTab('GLOBAL_SETTINGS')}
+            className={`py-3.5 border-b-2 transition flex items-center gap-2 cursor-pointer ${
+              activeTab === 'GLOBAL_SETTINGS'
+                ? 'border-emerald-600 text-emerald-700 font-bold'
+                : 'border-transparent hover:text-slate-800'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            <span>Modelos LLM & Conexão de API</span>
+          </button>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -268,37 +276,61 @@ export function CopilotManager() {
         {/* ==================================================== */}
         {activeTab === 'PERSONA' && (
           <div className="space-y-6">
-            {/* Seletor de Corretor */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
-              <label className="text-xs font-bold text-slate-800 block mb-2">
-                1. Selecione o Corretor / Agente para Configurar a Persona:
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                {users.map(u => (
-                  <button
-                    key={u.id}
-                    onClick={() => setSelectedUserId(u.id)}
-                    className={`p-3 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
-                      selectedUserId === u.id
-                        ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
-                        : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
-                    }`}
-                  >
-                    <img
-                      src={u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=059669&color=fff`}
-                      alt={u.name}
-                      className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-300 flex-shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-900 truncate">{u.name}</p>
-                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/60 px-1.5 py-0.2 rounded">
-                        {u.role}
+            {/* Seletor de Corretor (Visível apenas para Gestores/Admins) */}
+            {isManagerOrAdmin ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                <label className="text-xs font-bold text-slate-800 block mb-2">
+                  1. Selecione o Corretor / Agente para Auditar ou Configurar a Persona:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  {users.map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => setSelectedUserId(u.id)}
+                      className={`p-3 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                        effectiveUserId === u.id
+                          ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                          : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
+                      }`}
+                    >
+                      <img
+                        src={u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=059669&color=fff`}
+                        alt={u.name}
+                        className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-300 flex-shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-900 truncate">{u.name}</p>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/60 px-1.5 py-0.2 rounded">
+                          {u.role}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Banner de Persona Pessoal Exclusiva para o Corretor */
+              <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-emerald-950 text-white rounded-2xl p-5 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center gap-3.5">
+                  <img
+                    src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=059669&color=fff`}
+                    alt={currentUser.name}
+                    className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-400/50 shadow-md"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white">{currentUser.name}</h3>
+                      <span className="text-[10px] font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full">
+                        Seu Copiloto Pessoal Exclusivo
                       </span>
                     </div>
-                  </button>
-                ))}
+                    <p className="text-xs text-emerald-100/70 mt-0.5">
+                      Configure o tom de voz e regras para que a IA gere respostas de WhatsApp no seu estilo próprio de vendas.
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Painel Principal de Configuração da Persona */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5">

@@ -237,24 +237,53 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createUser = (userData: Partial<User>): User => {
+    const brokerName = userData.name?.trim() || 'Novo Corretor';
+    const brokerPhone = userData.phone?.trim() || '+55 11 99999-0000';
+
     const newUser: User = {
       id: `user-${Date.now()}`,
-      name: userData.name || 'Novo Corretor',
-      email: userData.email || `corretor${Date.now()}@vanguardprime.com.br`,
-      phone: userData.phone || '+55 11 99999-0000',
+      name: brokerName,
+      email: userData.email?.trim() || `corretor${Date.now()}@vanguardprime.com.br`,
+      phone: brokerPhone,
       role: userData.role || 'BROKER',
       isActive: true,
-      aiPersonaPrompt: userData.aiPersonaPrompt || `Você é o copiloto comercial de ${userData.name || 'Corretor'}. Seja consultivo, cordial e busque agendamento de visitas.`,
+      aiPersonaPrompt: userData.aiPersonaPrompt || `Você é o copiloto comercial de ${brokerName}, especialista imobiliário na ${currentTenant.name}. Adote tom consultivo, polido e empático. Tire dúvidas sobre o imóvel com clareza, esclareça condições de pagamento e conduza o cliente para agendamento de visita presencial ou reunião com o corretor.`,
       aiTone: userData.aiTone || 'CONSULTATIVE',
-      aiDirectives: userData.aiDirectives || ['Convidar para reunião presencial ou café', 'Destacar acabamento e localização'],
+      aiDirectives: userData.aiDirectives || [
+        'Sempre propor um café executivo ou agendamento de visita ao imóvel',
+        'Destacar acabamento, localização nobre e segurança do condomínio',
+        'Manter tom profissional, prestativo e cordial'
+      ],
       aiModel: userData.aiModel || 'anthropic.claude-3-5-sonnet',
       ...userData,
     };
+
     setUsers(prev => {
       const updated = [...prev, newUser];
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
       return updated;
     });
+
+    // Cria automaticamente a linha direta de WhatsApp para o novo corretor
+    const newDirectInst: WhatsAppInstance = {
+      id: `inst-${newUser.id}`,
+      tenantId: currentTenant.id,
+      name: `${brokerName} (Linha Direta Corretor)`,
+      phoneNumber: brokerPhone,
+      zapiInstanceId: `INST-${Date.now().toString(36).toUpperCase()}`,
+      status: 'CONNECTED',
+      type: 'BROKER_DIRECT',
+      assignedUserId: newUser.id,
+      batteryLevel: 95,
+      lastSyncAt: new Date().toISOString(),
+    };
+
+    setInstances(prev => {
+      const updatedInst = [...prev, newDirectInst];
+      try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updatedInst)); } catch {}
+      return updatedInst;
+    });
+
     return newUser;
   };
 

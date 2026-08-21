@@ -40,6 +40,8 @@ export interface Tenant {
   };
 }
 
+export type InstanceType = 'COMPANY_CENTRAL' | 'BROKER_DIRECT';
+
 export interface WhatsAppInstance {
   id: string;
   tenantId: string;
@@ -50,6 +52,9 @@ export interface WhatsAppInstance {
   batteryLevel?: number;
   lastSyncAt: string;
   qrCodeUrl?: string;
+  type: InstanceType;
+  assignedUserId?: string; // Corretor associado à linha direta
+  isDefault?: boolean;
 }
 
 export type LeadTemperature = 'HOT' | 'WARM' | 'COLD';

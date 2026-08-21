@@ -131,12 +131,17 @@ export function WhatsAppInbox() {
     removePresentedProperty,
     createTask,
     instances,
+    activeInstanceId,
+    setActiveInstanceId,
+    transferConversationInstance,
     syncWhatsAppChats,
     isSyncingWhatsApp,
     loadChatHistory
   } = useCRM();
 
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED'>('ALL');
+  const [instanceFilter, setInstanceFilter] = useState<'ALL' | 'CENTRAL' | 'DIRECT'>('ALL');
+  const [sendingInstanceId, setSendingInstanceId] = useState<string>(activeInstanceId);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [messageInput, setMessageInput] = useState('');
@@ -550,6 +555,15 @@ export function WhatsAppInbox() {
     // Oculta conversas arquivadas
     if (c.isArchived) return false;
 
+    // Filtro por Linha (Central vs Linha Direta)
+    if (instanceFilter === 'CENTRAL') {
+      const inst = instances.find(i => i.id === (c.instanceId || 'inst-central'));
+      if (inst && inst.type !== 'COMPANY_CENTRAL') return false;
+    } else if (instanceFilter === 'DIRECT') {
+      const inst = instances.find(i => i.id === c.instanceId);
+      if (inst && inst.type !== 'BROKER_DIRECT') return false;
+    }
+
     const contact = contacts.find(cnt => cnt.id === c.contactId);
     const matchesSearch = !searchFilter.trim() || 
       (contact?.name.toLowerCase().includes(searchFilter.toLowerCase())) ||
@@ -727,6 +741,43 @@ export function WhatsAppInbox() {
             />
           </div>
 
+          {/* Seletor de Linha WhatsApp: Todas vs Central vs Linhas Diretas */}
+          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/90 rounded-xl text-[10.5px] font-bold text-slate-600">
+            <button
+              type="button"
+              onClick={() => setInstanceFilter('ALL')}
+              className={`py-1 px-1.5 rounded-lg text-center transition cursor-pointer ${
+                instanceFilter === 'ALL'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'hover:text-slate-900'
+              }`}
+            >
+              Todas Linhas
+            </button>
+            <button
+              type="button"
+              onClick={() => setInstanceFilter('CENTRAL')}
+              className={`py-1 px-1.5 rounded-lg text-center transition flex items-center justify-center gap-1 cursor-pointer ${
+                instanceFilter === 'CENTRAL'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'hover:text-blue-700'
+              }`}
+            >
+              🏢 Central
+            </button>
+            <button
+              type="button"
+              onClick={() => setInstanceFilter('DIRECT')}
+              className={`py-1 px-1.5 rounded-lg text-center transition flex items-center justify-center gap-1 cursor-pointer ${
+                instanceFilter === 'DIRECT'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'hover:text-emerald-700'
+              }`}
+            >
+              👤 Linha Direta
+            </button>
+          </div>
+
           {/* Filter Pills */}
           <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] font-medium text-slate-600 no-scrollbar">
             <button
@@ -868,14 +919,27 @@ export function WhatsAppInbox() {
                     </p>
 
                     <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1 text-[10px]">
+                      <div className="flex items-center gap-1 text-[10px] flex-wrap">
+                        {/* Linha de WhatsApp */}
+                        {(() => {
+                          const inst = instances.find(i => i.id === conv.instanceId) || instances[0];
+                          const isCentral = inst?.type === 'COMPANY_CENTRAL';
+                          return (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5 ${
+                              isCentral ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}>
+                              {isCentral ? '🏢 Central' : '👤 Direto'}
+                            </span>
+                          );
+                        })()}
+
                         {assignedUser ? (
-                          <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate max-w-[100px]">
-                            👤 {assignedUser.name.split(' ')[0]}
+                          <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate max-w-[90px]">
+                            {assignedUser.name.split(' ')[0]}
                           </span>
                         ) : (
                           <span className="text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
-                            ⚠️ Não Atribuído
+                            ⚠️ Sem Dono
                           </span>
                         )}
 
@@ -956,7 +1020,42 @@ export function WhatsAppInbox() {
               </div>
 
               {/* Ações do Header */}
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                {/* Linha Ativa no Chat & Botão de Migração */}
+                {(() => {
+                  const currentInst = instances.find(i => i.id === activeConversation.instanceId) || instances[0];
+                  const isCentral = currentInst?.type === 'COMPANY_CENTRAL';
+                  const myDirectInst = instances.find(i => i.type === 'BROKER_DIRECT' && i.assignedUserId === currentUser.id);
+
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <span className={`hidden lg:flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-xl border ${
+                        isCentral 
+                          ? 'bg-blue-50 text-blue-800 border-blue-200' 
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      }`}>
+                        <span>{isCentral ? '🏢 Empresa:' : '👤 Direto:'}</span>
+                        <strong className="font-mono">{currentInst?.phoneNumber}</strong>
+                      </span>
+
+                      {isCentral && myDirectInst && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Deseja migrar este atendimento para o seu WhatsApp Direto (${myDirectInst.phoneNumber})? O cliente receberá uma mensagem automática de cortesia informando a transição.`)) {
+                              transferConversationInstance(activeConversation.id, myDirectInst.id, true);
+                            }
+                          }}
+                          className="px-2.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl transition shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
+                          title="Assumir este lead no seu WhatsApp Pessoal/Direto com mensagem de transição"
+                        >
+                          <span>🔀 Migrar p/ Meu WhatsApp</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Atribuição de Corretor */}
                 <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
                   <span className="text-slate-400 text-[11px]">Responsável:</span>
@@ -1441,8 +1540,27 @@ export function WhatsAppInbox() {
               )}
 
               {/* Botões de Ação da Barra de Digitação */}
-              <div className="flex items-center justify-between pb-2">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between pb-2 flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Seletor de Linha de Saída */}
+                  {!isInternalNote && (
+                    <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
+                      <span className="text-[10.5px] text-slate-500 font-bold uppercase">Disparar via:</span>
+                      <select
+                        value={sendingInstanceId}
+                        onChange={(e) => setSendingInstanceId(e.target.value)}
+                        className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
+                      >
+                        {instances.map(inst => (
+                          <option key={inst.id} value={inst.id}>
+                            {inst.type === 'COMPANY_CENTRAL' ? '🏢 Central: ' : '👤 Direto: '}
+                            {inst.name} ({inst.phoneNumber})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {/* Alternador Nota Interna */}
                   <button
                     type="button"
@@ -1454,7 +1572,7 @@ export function WhatsAppInbox() {
                     }`}
                   >
                     <Lock className="w-3.5 h-3.5" />
-                    <span>{isInternalNote ? 'Modo Nota Interna' : 'WhatsApp Cliente'}</span>
+                    <span>{isInternalNote ? 'Modo Nota Interna' : 'WhatsApp'}</span>
                   </button>
 
                   {/* Botão Forçar Análise com IA na Toolbar */}

@@ -75,6 +75,12 @@ interface CRMContextType {
 
   // WhatsApp e Mensagens
   instances: WhatsAppInstance[];
+  activeInstanceId: string;
+  setActiveInstanceId: (id: string) => void;
+  createInstance: (data: Partial<WhatsAppInstance>) => WhatsAppInstance;
+  updateInstance: (instanceId: string, updates: Partial<WhatsAppInstance>) => void;
+  deleteInstance: (instanceId: string) => void;
+  transferConversationInstance: (conversationId: string, targetInstanceId: string, sendTransitionMessage?: boolean) => void;
   conversations: Conversation[];
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
@@ -348,7 +354,86 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_DEALS;
   });
 
-  const [instances, setInstances] = useState<WhatsAppInstance[]>(MOCK_INSTANCES);
+  const [instances, setInstances] = useState<WhatsAppInstance[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_instances');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_INSTANCES;
+  });
+
+  const [activeInstanceId, setActiveInstanceId] = useState<string>(() => {
+    return MOCK_INSTANCES[0]?.id || 'inst-central';
+  });
+
+  const createInstance = (data: Partial<WhatsAppInstance>): WhatsAppInstance => {
+    const newInst: WhatsAppInstance = {
+      id: `inst-${Date.now()}`,
+      tenantId: currentTenant.id,
+      name: data.name || 'Nova Linha WhatsApp',
+      phoneNumber: data.phoneNumber || 'Aguardando pareamento',
+      zapiInstanceId: data.zapiInstanceId || `INST-${Date.now().toString(36).toUpperCase()}`,
+      status: data.status || 'CONNECTED',
+      type: data.type || 'BROKER_DIRECT',
+      assignedUserId: data.assignedUserId,
+      batteryLevel: 100,
+      lastSyncAt: new Date().toISOString(),
+      ...data,
+    };
+    setInstances(prev => {
+      const updated = [...prev, newInst];
+      try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newInst;
+  };
+
+  const updateInstance = (instanceId: string, updates: Partial<WhatsAppInstance>) => {
+    setInstances(prev => {
+      const updated = prev.map(inst => inst.id === instanceId ? { ...inst, ...updates } : inst);
+      try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteInstance = (instanceId: string) => {
+    setInstances(prev => {
+      const updated = prev.filter(inst => inst.id !== instanceId);
+      try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const transferConversationInstance = (conversationId: string, targetInstanceId: string, sendTransitionMessage = true) => {
+    const targetInst = instances.find(i => i.id === targetInstanceId);
+    if (!targetInst) return;
+
+    setConversations(prev => {
+      const updated = prev.map(c => {
+        if (c.id === conversationId) {
+          return {
+            ...c,
+            instanceId: targetInstanceId,
+            assignedUserId: targetInst.assignedUserId || c.assignedUserId,
+          };
+        }
+        return c;
+      });
+      try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    if (sendTransitionMessage) {
+      const broker = users.find(u => u.id === targetInst.assignedUserId) || currentUser;
+      const text = `Olá! Sou o(a) ${broker.name}, seu corretor exclusivo na ${currentTenant.name}. A partir de agora vamos conversar diretamente por este meu número pessoal (${targetInst.phoneNumber}) para um atendimento mais ágil e personalizado!`;
+      sendMessage(conversationId, text, false, false);
+    }
+  };
   
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     if (typeof window !== 'undefined') {
@@ -1752,6 +1837,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       deleteDeal,
       updatePipelineStages,
       instances,
+      activeInstanceId,
+      setActiveInstanceId,
+      createInstance,
+      updateInstance,
+      deleteInstance,
+      transferConversationInstance,
       conversations,
       activeConversationId,
       setActiveConversationId,

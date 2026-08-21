@@ -41,6 +41,18 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [clientToken, setClientToken] = useState('Fc78d61c833db4b50864816b70766aee8S');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-central');
+
+  const selectedInst = instances.find(i => i.id === selectedInstId) || instances[0];
+
+  useEffect(() => {
+    if (selectedInst) {
+      setInstanceId(selectedInst.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C');
+      setIsConnected(selectedInst.status === 'CONNECTED');
+      if (selectedInst.phoneNumber) setConnectedPhone(selectedInst.phoneNumber);
+    }
+  }, [selectedInstId, instances]);
+
   // Função para buscar QR Code real da API
   const fetchLiveQrCode = async (instId?: string, tok?: string, cTok?: string) => {
     const id = instId || instanceId;
@@ -91,26 +103,30 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         fetchLiveQrCode(instanceId, instanceToken, clientToken);
       }
     }
-  }, [isOpen, isConnected]);
+  }, [isOpen, isConnected, selectedInstId]);
 
   // Polling de status e contagem regressiva para QR Code
   useEffect(() => {
     if (!isOpen || isConnected) return;
 
     const timer = setInterval(() => {
-      checkStatus();
-      setCountdown((prev) => {
+      setCountdown(prev => {
         if (prev <= 1) {
-          if (instanceId && instanceToken) {
-            fetchLiveQrCode(instanceId, instanceToken, clientToken);
-          }
+          fetchLiveQrCode(instanceId, instanceToken, clientToken);
           return 25;
         }
         return prev - 1;
       });
-    }, 2000);
+    }, 1000);
 
-    return () => clearInterval(timer);
+    const statusTimer = setInterval(() => {
+      checkStatus();
+    }, 3500);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(statusTimer);
+    };
   }, [isOpen, isConnected, instanceId, instanceToken, clientToken]);
 
   if (!isOpen) return null;
@@ -170,7 +186,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         <div className="bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-700 p-6 text-white relative">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-black/20 hover:bg-black/40 transition text-emerald-100"
+            className="absolute top-4 right-4 p-2 rounded-full bg-black/20 hover:bg-black/40 transition text-emerald-100 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -180,21 +196,39 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
               <QrCode className="w-4 h-4 text-emerald-100" />
             </div>
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-200">
-              Conexão WhatsApp Z-API
+              Conexão WhatsApp Z-API Multi-Linhas
             </span>
           </div>
           <h2 className="text-xl font-bold text-white tracking-tight">
-            Vincular WhatsApp da Imobiliária
+            {selectedInst?.name || 'Parear Linha WhatsApp'}
           </h2>
           <p className="text-xs text-emerald-100/90 mt-1">
             Empresa: <strong className="text-white">{currentTenant.name}</strong>
           </p>
 
+          {/* Seletor de Linha da Empresa vs Linhas Diretas de Corretores */}
+          <div className="mt-3 p-1.5 bg-black/20 backdrop-blur-xs rounded-xl flex items-center gap-1 overflow-x-auto no-scrollbar">
+            {instances.map(inst => (
+              <button
+                key={inst.id}
+                type="button"
+                onClick={() => setSelectedInstId(inst.id)}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition whitespace-nowrap cursor-pointer ${
+                  selectedInstId === inst.id
+                    ? 'bg-white text-emerald-900 shadow-sm'
+                    : 'text-emerald-100 hover:bg-white/10'
+                }`}
+              >
+                {inst.type === 'COMPANY_CENTRAL' ? '🏢 Linha Central' : `👤 ${inst.name.split(' ')[0]}`}
+              </button>
+            ))}
+          </div>
+
           {/* Abas */}
-          <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/10">
+          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-white/10">
             <button
               onClick={() => setActiveTab('QR')}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ${
                 activeTab === 'QR'
                   ? 'bg-white text-emerald-900 shadow-sm'
                   : 'bg-white/10 text-emerald-100 hover:bg-white/20'
@@ -204,7 +238,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
             </button>
             <button
               onClick={() => setActiveTab('CREDENTIALS')}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'CREDENTIALS'
                   ? 'bg-white text-emerald-900 shadow-sm'
                   : 'bg-white/10 text-emerald-100 hover:bg-white/20'

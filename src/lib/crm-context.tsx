@@ -60,6 +60,7 @@ interface CRMContextType {
   moveDealStage: (dealId: string, targetStageId: string) => void;
   createDeal: (deal: Partial<Deal>) => Deal;
   updateDeal: (id: string, updates: Partial<Deal>) => void;
+  deleteDeal: (id: string) => void;
 
   // WhatsApp e Mensagens
   instances: WhatsAppInstance[];
@@ -446,6 +447,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const updateDeal = (id: string, updates: Partial<Deal>) => {
     setDeals(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d);
+      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteDeal = (id: string) => {
+    setDeals(prev => {
+      const updated = prev.filter(d => d.id !== id);
       try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
       return updated;
     });
@@ -1143,6 +1152,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       moveDealStage,
       createDeal,
       updateDeal,
+      deleteDeal,
       instances,
       conversations,
       activeConversationId,

@@ -30,10 +30,15 @@ import {
   Mail,
   Calendar,
   Building,
-  Check
+  Check,
+  Settings,
+  ArrowUp,
+  ArrowDown,
+  Palette,
+  RotateCcw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Deal, Contact } from '@/types/crm';
+import { Deal, Contact, PipelineStage } from '@/types/crm';
 
 interface KanbanBoardProps {
   onOpenLeadModal: () => void;
@@ -47,6 +52,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     moveDealStage, 
     updateDeal,
     deleteDeal,
+    updatePipelineStages,
     contacts, 
     users, 
     conversations,
@@ -57,6 +63,10 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBroker, setSelectedBroker] = useState<string>('ALL');
   const [selectedTemperature, setSelectedTemperature] = useState<string>('ALL');
+
+  // Estado do Modal de Configuração do Funil
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [editingStages, setEditingStages] = useState<PipelineStage[]>([]);
 
   // Estado de Hover Card (Item 6 - Popover de Resumo 360º)
   const [hoveredDealId, setHoveredDealId] = useState<string | null>(null);
@@ -202,6 +212,104 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     setSelectedDealForModal(null);
   };
 
+  // Funções de Configuração do Funil
+  const handleOpenConfigModal = () => {
+    setEditingStages(JSON.parse(JSON.stringify(currentPipeline.stages)));
+    setIsConfigModalOpen(true);
+  };
+
+  const handleUpdateStageField = (index: number, field: keyof PipelineStage, value: any) => {
+    setEditingStages(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const handleMoveStageUp = (index: number) => {
+    if (index === 0) return;
+    setEditingStages(prev => {
+      const updated = [...prev];
+      const temp = updated[index - 1];
+      updated[index - 1] = updated[index];
+      updated[index] = temp;
+      return updated;
+    });
+  };
+
+  const handleMoveStageDown = (index: number) => {
+    if (index === editingStages.length - 1) return;
+    setEditingStages(prev => {
+      const updated = [...prev];
+      const temp = updated[index + 1];
+      updated[index + 1] = updated[index];
+      updated[index] = temp;
+      return updated;
+    });
+  };
+
+  const handleAddStage = () => {
+    const defaultColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#059669', '#ec4899', '#06b6d4', '#6366f1', '#14b8a6'];
+    const color = defaultColors[editingStages.length % defaultColors.length];
+    const newStage: PipelineStage = {
+      id: `stage-${Date.now()}`,
+      pipelineId: currentPipeline.id,
+      name: `Nova Etapa ${editingStages.length + 1}`,
+      order: editingStages.length + 1,
+      slaHours: 24,
+      colorHex: color,
+      isWon: false,
+      isLost: false,
+    };
+    setEditingStages(prev => [...prev, newStage]);
+  };
+
+  const handleRemoveStage = (index: number) => {
+    if (editingStages.length <= 1) {
+      alert('O funil deve conter pelo menos uma etapa.');
+      return;
+    }
+    const stageToRemove = editingStages[index];
+    const dealsInStage = deals.filter(d => d.stageId === stageToRemove.id);
+
+    if (dealsInStage.length > 0) {
+      if (!confirm(`Esta etapa possui ${dealsInStage.length} negócio(s). Ao remover, eles serão transferidos para a primeira etapa do funil. Deseja continuar?`)) {
+        return;
+      }
+      const fallbackStage = editingStages.find((_, i) => i !== index);
+      if (fallbackStage) {
+        dealsInStage.forEach(deal => {
+          updateDeal(deal.id, { stageId: fallbackStage.id });
+        });
+      }
+    }
+
+    setEditingStages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleResetStagesToDefault = () => {
+    if (confirm('Deseja restaurar as etapas padrão do funil?')) {
+      const defaultStages: PipelineStage[] = [
+        { id: 'stage-1', pipelineId: currentPipeline.id, name: '1. Novo Lead', order: 1, slaHours: 4, colorHex: '#3b82f6' },
+        { id: 'stage-2', pipelineId: currentPipeline.id, name: '2. Qualificação', order: 2, slaHours: 24, colorHex: '#8b5cf6' },
+        { id: 'stage-3', pipelineId: currentPipeline.id, name: '3. Visita Agendada', order: 3, slaHours: 48, colorHex: '#f59e0b' },
+        { id: 'stage-4', pipelineId: currentPipeline.id, name: '4. Negociação / Proposta', order: 4, slaHours: 72, colorHex: '#059669', isWon: false },
+        { id: 'stage-5', pipelineId: currentPipeline.id, name: '5. Contrato Fechado', order: 5, slaHours: 0, colorHex: '#10b981', isWon: true },
+      ];
+      setEditingStages(defaultStages);
+    }
+  };
+
+  const handleSavePipelineConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingStages.length === 0) {
+      alert('O funil deve conter pelo menos uma etapa.');
+      return;
+    }
+    updatePipelineStages(editingStages);
+    setIsConfigModalOpen(false);
+  };
+
   // Helper para dados do hover
   const hoveredDeal = deals.find(d => d.id === hoveredDealId);
   const hoveredContact = hoveredDeal ? contacts.find(c => c.id === hoveredDeal.contactId) : null;
@@ -292,6 +400,16 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
               ))}
             </select>
           </div>
+
+          {/* Configurar Funil */}
+          <button
+            onClick={handleOpenConfigModal}
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200/80 transition shadow-2xs active:scale-95 cursor-pointer"
+            title="Configurar etapas, nomes, cores e SLAs do Kanban"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-600" />
+            <span>Configurar Funil</span>
+          </button>
 
           {/* Novo Negócio */}
           <button
@@ -797,6 +915,205 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   >
                     <Check className="w-4 h-4" />
                     <span>Salvar Alterações</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL: CONFIGURAR ETAPAS DO FUNIL (KANBAN SETTINGS)  */}
+      {/* ---------------------------------------------------- */}
+      {isConfigModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            {/* Header do Modal */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Configuração do Funil & Etapas</h3>
+                  <p className="text-xs text-slate-500">
+                    Personalize os nomes, cores, SLA em horas e a ordem da jornada de vendas.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsConfigModalOpen(false)}
+                className="w-8 h-8 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Conteúdo com Lista de Etapas */}
+            <form onSubmit={handleSavePipelineConfig} className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="space-y-3">
+                {editingStages.map((stage, idx) => (
+                  <div
+                    key={stage.id}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-emerald-300 hover:shadow-xs transition duration-150 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {/* Indicador de Ordem */}
+                        <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                          {idx + 1}
+                        </span>
+
+                        {/* Seletor de Cor da Etapa */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <input
+                            type="color"
+                            value={stage.colorHex}
+                            onChange={(e) => handleUpdateStageField(idx, 'colorHex', e.target.value)}
+                            className="w-7 h-7 rounded-lg border border-slate-300 cursor-pointer p-0.5 bg-white"
+                            title="Escolher cor da etapa"
+                          />
+                        </div>
+
+                        {/* Nome da Etapa */}
+                        <input
+                          type="text"
+                          value={stage.name}
+                          onChange={(e) => handleUpdateStageField(idx, 'name', e.target.value)}
+                          placeholder="Nome da etapa (ex: Visita Agendada)"
+                          required
+                          className="flex-1 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                        />
+                      </div>
+
+                      {/* Botões de Ação da Etapa */}
+                      <div className="flex items-center gap-1">
+                        {/* Subir */}
+                        <button
+                          type="button"
+                          onClick={() => handleMoveStageUp(idx)}
+                          disabled={idx === 0}
+                          className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-200/60 disabled:opacity-30 rounded-lg transition cursor-pointer"
+                          title="Subir posição da etapa"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Descer */}
+                        <button
+                          type="button"
+                          onClick={() => handleMoveStageDown(idx)}
+                          disabled={idx === editingStages.length - 1}
+                          className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-200/60 disabled:opacity-30 rounded-lg transition cursor-pointer"
+                          title="Descer posição da etapa"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Remover */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveStage(idx)}
+                          disabled={editingStages.length <= 1}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 rounded-lg transition cursor-pointer ml-1"
+                          title="Excluir etapa"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Linha Inferior: SLA e Tipo de Etapa */}
+                    <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200/60 flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          SLA Máximo:
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="720"
+                            value={stage.slaHours}
+                            onChange={(e) => handleUpdateStageField(idx, 'slaHours', Number(e.target.value) || 0)}
+                            className="w-16 text-xs text-center font-bold bg-white border border-slate-200 rounded-lg py-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                          <span className="text-[11px] text-slate-400">horas</span>
+                        </div>
+                      </div>
+
+                      {/* Tipo de Desfecho */}
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={!!stage.isWon}
+                            onChange={(e) => {
+                              handleUpdateStageField(idx, 'isWon', e.target.checked);
+                              if (e.target.checked) handleUpdateStageField(idx, 'isLost', false);
+                            }}
+                            className="rounded text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>🏆 Etapa de Ganho (WON)</span>
+                        </label>
+
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={!!stage.isLost}
+                            onChange={(e) => {
+                              handleUpdateStageField(idx, 'isLost', e.target.checked);
+                              if (e.target.checked) handleUpdateStageField(idx, 'isWon', false);
+                            }}
+                            className="rounded text-rose-600 focus:ring-rose-500"
+                          />
+                          <span>❌ Etapa de Perda (LOST)</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Botão Adicionar Nova Etapa */}
+              <button
+                type="button"
+                onClick={handleAddStage}
+                className="w-full py-2.5 border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/50 rounded-xl text-slate-600 hover:text-emerald-700 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Adicionar Nova Etapa ao Funil</span>
+              </button>
+
+              {/* Rodapé de Ações */}
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetStagesToDefault}
+                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-3 py-2 rounded-xl transition cursor-pointer font-medium"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restaurar Padrão</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsConfigModalOpen(false)}
+                    className="px-3.5 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold text-xs transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Salvar Funil</span>
                   </button>
                 </div>
               </div>

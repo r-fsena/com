@@ -7,6 +7,7 @@ import {
   WhatsAppInstance, 
   Contact, 
   Pipeline, 
+  PipelineStage,
   Deal, 
   Conversation, 
   Message, 
@@ -61,6 +62,7 @@ interface CRMContextType {
   createDeal: (deal: Partial<Deal>) => Deal;
   updateDeal: (id: string, updates: Partial<Deal>) => void;
   deleteDeal: (id: string) => void;
+  updatePipelineStages: (stages: PipelineStage[]) => void;
 
   // WhatsApp e Mensagens
   instances: WhatsAppInstance[];
@@ -166,8 +168,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_CONTACTS;
   });
 
-  const [pipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
-  const [currentPipeline, setCurrentPipeline] = useState<Pipeline>(MOCK_PIPELINES[0]);
+  const [pipelines, setPipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
+  const [currentPipeline, setCurrentPipeline] = useState<Pipeline>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_current_pipeline');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_PIPELINES[0];
+  });
   const [deals, setDeals] = useState<Deal[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -555,6 +568,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
       return updated;
     });
+  };
+
+  const updatePipelineStages = (newStages: PipelineStage[]) => {
+    const ordered = newStages.map((s, idx) => ({ ...s, order: idx + 1 }));
+    const updatedPipeline: Pipeline = {
+      ...currentPipeline,
+      stages: ordered,
+    };
+    setCurrentPipeline(updatedPipeline);
+    setPipelines(prev => prev.map(p => p.id === updatedPipeline.id ? updatedPipeline : p));
+    try {
+      localStorage.setItem('vanguard_crm_current_pipeline', JSON.stringify(updatedPipeline));
+    } catch {}
   };
 
   // Envio de Mensagem WhatsApp / Nota Interna
@@ -1348,6 +1374,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       createDeal,
       updateDeal,
       deleteDeal,
+      updatePipelineStages,
       instances,
       conversations,
       activeConversationId,

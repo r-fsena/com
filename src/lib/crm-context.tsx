@@ -349,6 +349,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
       return updated;
     });
+
+    // Cria automaticamente a conversa no Inbox WhatsApp
+    const newConv: Conversation = {
+      id: `conv-${newContact.id}`,
+      tenantId: currentTenant.id,
+      instanceId: instances[0]?.id || 'instance-01',
+      contactId: newContact.id,
+      assignedUserId: newContact.assignedUserId || currentUser.id,
+      status: 'OPEN',
+      unreadCount: 0,
+      lastMessagePreview: 'Lead cadastrado no CRM',
+      lastMessageAt: new Date().toISOString(),
+      slaBreached: false,
+      isPinned: false,
+      isArchived: false,
+    };
+    setConversations(prev => {
+      const exists = prev.some(c => c.contactId === newContact.id || c.id === newConv.id);
+      if (exists) return prev;
+      const updated = [newConv, ...prev];
+      try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
     return newContact;
   };
 

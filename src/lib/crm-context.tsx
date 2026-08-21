@@ -165,7 +165,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const [pipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
   const [currentPipeline, setCurrentPipeline] = useState<Pipeline>(MOCK_PIPELINES[0]);
-  const [deals, setDeals] = useState<Deal[]>(MOCK_DEALS);
+  const [deals, setDeals] = useState<Deal[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_deals');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_DEALS;
+  });
 
   const [instances, setInstances] = useState<WhatsAppInstance[]>(MOCK_INSTANCES);
   
@@ -221,6 +232,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(parsed) && parsed.length > 0) setContacts(parsed);
       }
 
+      const savedDeals = localStorage.getItem('vanguard_crm_deals');
+      if (savedDeals) {
+        const parsed = JSON.parse(savedDeals);
+        if (Array.isArray(parsed) && parsed.length > 0) setDeals(parsed);
+      }
+
       const savedConvs = localStorage.getItem('vanguard_crm_conversations');
       if (savedConvs) {
         const parsed = JSON.parse(savedConvs);
@@ -249,6 +266,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
+      if (deals.length > 0) localStorage.setItem('vanguard_crm_deals', JSON.stringify(deals));
+    } catch {}
+  }, [deals]);
+
+  useEffect(() => {
+    try {
       if (conversations.length > 0) localStorage.setItem('vanguard_crm_conversations', JSON.stringify(conversations));
     } catch {}
   }, [conversations]);
@@ -274,6 +297,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
     return MOCK_AI_INSIGHTS;
   });
+
+  useEffect(() => {
+    try {
+      if (Object.keys(aiInsights).length > 0) localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(aiInsights));
+    } catch {}
+  }, [aiInsights]);
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
   const [alerts, setAlerts] = useState<SLAAlert[]>(MOCK_ALERTS);
   const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);

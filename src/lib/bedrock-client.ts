@@ -298,21 +298,28 @@ export class BedrockCopilotClient {
     const p1 = /(?:minha\s+)?renda(?:\s+(?:mensal|familiar|bruta|l[íi]quida))?(?:\s+(?:é|de|em|seria|fica|em torno de|na faixa de|será))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m1 = text.match(p1);
     if (m1) {
-      const val = this.parseMoney(m1[1], m1[2]);
+      const val = this.parseMoney(m1[1], m1[2], 'income');
       if (val && val >= 1000) return val;
     }
 
     const p2 = /(?:ganho|tiro|faturamento|recebo|retiro)\s*(?:por m[êe]s|ao m[êe]s|mensalmente|de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m2 = text.match(p2);
     if (m2) {
-      const val = this.parseMoney(m2[1], m2[2]);
+      const val = this.parseMoney(m2[1], m2[2], 'income');
       if (val && val >= 1000) return val;
     }
 
-    const p3 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:de renda|por m[êe]s|ao m[êe]s|mensais|mensal)/i;
+    const p3 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)\s*(?:de renda|de faturamento|por m[êe]s|ao m[êe]s|mensais|mensal)/i;
     const m3 = text.match(p3);
     if (m3) {
-      const val = this.parseMoney(m3[1], m3[2]);
+      const val = this.parseMoney(m3[1], m3[2], 'income');
+      if (val && val >= 1000) return val;
+    }
+
+    const p4 = /(?:r\$)?\s*([\d\.\,]+)\s*(mil|k)\s*(?:reais)?\s*(?:de renda|por m[êe]s)/i;
+    const m4 = text.match(p4);
+    if (m4) {
+      const val = this.parseMoney(m4[1], m4[2], 'income');
       if (val && val >= 1000) return val;
     }
 
@@ -394,7 +401,7 @@ export class BedrockCopilotClient {
   /**
    * Converte strings numéricas em Reais (com suporte a k, mil, mi, milhões)
    */
-  private parseMoney(numStr: string, unitStr?: string): number | undefined {
+  private parseMoney(numStr: string, unitStr?: string, defaultContext: 'income' | 'downpayment' | 'budget' = 'budget'): number | undefined {
     if (!numStr) return undefined;
     let clean = numStr.trim().replace(/^r\$\s*/i, '');
 
@@ -428,13 +435,23 @@ export class BedrockCopilotClient {
     if (isNaN(num)) return undefined;
 
     const unit = (unitStr || '').toLowerCase().trim();
-    if (unit.startsWith('mi') || unit === 'm' || unit.includes('milh')) {
+
+    // Milhões: 'milhão', 'milhões', 'milhoes', 'milhao', 'mi', 'm' (NÃO 'mil'!)
+    // 'mil' e 'k' são estritamente milhares (x1.000)
+    const isMillion = unit.includes('milh') || unit === 'mi' || unit === 'milhoes' || unit === 'milhao' || unit === 'milhões' || unit === 'milhão';
+    const isThousand = unit === 'mil' || unit === 'k' || unit.startsWith('k') || (unit.startsWith('mil') && !unit.includes('milh'));
+
+    if (isMillion) {
       num *= 1000000;
-    } else if (unit.startsWith('mil') || unit === 'k') {
+    } else if (isThousand) {
       num *= 1000;
     } else if (!unitStr) {
-      if (num > 0 && num <= 50) num *= 1000000; // ex: 1.2 -> 1.200.000
-      else if (num < 1000) num *= 1000; // ex: 350 -> 350.000
+      if (defaultContext === 'income') {
+        if (num > 0 && num < 150) num *= 1000; // ex: renda '45' -> 45.000
+      } else {
+        if (num > 0 && num <= 50) num *= 1000000; // ex: orçamento '1.2' -> 1.200.000
+        else if (num < 1000) num *= 1000; // ex: 350 -> 350.000
+      }
     }
 
     return num > 0 ? Math.round(num) : undefined;

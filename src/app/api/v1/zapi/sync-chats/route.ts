@@ -125,6 +125,8 @@ export async function GET(req: NextRequest) {
         ? new Date(Number(c.lastMessageTime)).toISOString() 
         : new Date().toISOString();
 
+      const lastMessageText = typeof c.lastMessage === 'string' ? c.lastMessage : (c.lastMessage?.message || c.message || 'Conversa ativa no WhatsApp');
+
       return {
         id: `conv-zapi-${cleanPhone}`,
         tenantId,
@@ -132,7 +134,7 @@ export async function GET(req: NextRequest) {
         contactId: `contact-zapi-${cleanPhone}`,
         status: unread > 0 ? ('PENDING_TEAM' as const) : ('OPEN' as const),
         unreadCount: unread,
-        lastMessagePreview: 'Conversa ativa no WhatsApp',
+        lastMessagePreview: lastMessageText,
         lastMessageAt: lastMsgDate,
         slaBreached: false,
       };

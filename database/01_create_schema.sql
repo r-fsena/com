@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     assigned_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     tags JSONB DEFAULT '["#Lead Quente"]'::jsonb,
     notes_count INTEGER NOT NULL DEFAULT 0,
+    presented_properties JSONB DEFAULT '[]'::jsonb, -- Empreendimentos e unidades apresentadas
     
     -- LGPD & Auditoria
     consent_given BOOLEAN NOT NULL DEFAULT TRUE,

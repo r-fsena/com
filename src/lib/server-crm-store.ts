@@ -28,6 +28,30 @@ const INITIAL_CONTACTS: Contact[] = [
     assignedUserId: 'user-lucas-corretor',
     tags: ['#Lead Quente', '#Apartamento', 'Z-API Live'],
     notesCount: 1,
+    presentedProperties: [
+      {
+        id: 'prop-01',
+        name: 'Edifício Lumina Batel',
+        unit: 'Apto 1402 - Torre A',
+        address: 'Av. Visconde de Guarapuava, 4200 - Batel, Curitiba - PR',
+        price: 1450000,
+        propertyType: 'APARTMENT',
+        status: 'PRESENTED',
+        presentedAt: new Date(Date.now() - 3600000 * 20).toISOString(),
+        notes: 'Cliente gostou da planta com 3 suítes e varanda gourmet.'
+      },
+      {
+        id: 'prop-02',
+        name: 'Cobertura Duplex Ecoville',
+        unit: 'Cobertura 2201',
+        address: 'Rua Prof. Pedro Viriato Parigot de Souza, 3500 - Ecoville',
+        price: 2400000,
+        propertyType: 'PENTHOUSE',
+        status: 'VISITING',
+        presentedAt: new Date(Date.now() - 3600000 * 12).toISOString(),
+        notes: 'Visita agendada para sábado às 15h.'
+      }
+    ],
     consentGiven: true,
     hasOptedOut: false,
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
@@ -248,6 +272,7 @@ export const serverCRMStore = {
           email: c.email || existing.email,
           tags: Array.from(new Set([...(existing.tags || []), ...(c.tags || [])])),
           targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(c.targetRegions || [])])),
+          presentedProperties: c.presentedProperties || existing.presentedProperties,
           assignedUserId: c.assignedUserId || existing.assignedUserId,
           updatedAt: new Date().toISOString(),
         };

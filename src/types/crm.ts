@@ -48,6 +48,18 @@ export type LeadTemperature = 'HOT' | 'WARM' | 'COLD';
 export type PropertyType = 'APARTMENT' | 'HOUSE' | 'PENTHOUSE' | 'LAND' | 'COMMERCIAL' | 'STUDIO';
 export type PurchasePurpose = 'LIVING' | 'INVESTMENT';
 
+export interface PresentedProperty {
+  id: string;
+  name: string; // Ex: Edifício Lumina Batel
+  unit?: string; // Ex: Apto 1402 - Torre A
+  address?: string; // Ex: Av. Visconde de Guarapuava, 4200 - Batel
+  price?: number; // Ex: 1450000
+  propertyType?: PropertyType;
+  status: 'PRESENTED' | 'VISITING' | 'PROPOSAL' | 'DISCARDED'; // Apresentado, Visita Marcada, Proposta, Descartado
+  presentedAt: string;
+  notes?: string;
+}
+
 export interface Contact {
   id: string;
   tenantId: string;
@@ -71,6 +83,9 @@ export interface Contact {
   targetParkingSpots?: number;
   purchaseTimeline?: 'IMMEDIATE' | '1_TO_3_MONTHS' | '3_TO_6_MONTHS' | 'INVESTOR_OPPORTUNITY';
   
+  // Imóveis / Unidades apresentadas ou em negociação
+  presentedProperties?: PresentedProperty[];
+
   source: 'WHATSAPP' | 'INSTAGRAM_ADS' | 'FACEBOOK_ADS' | 'GOOGLE' | 'PORTAL_ZAP' | 'PORTAL_VIVAREAL' | 'INDICATION' | 'WEBSITE' | 'MANUAL';
   temperature: LeadTemperature;
   aiPriorityScore: number;
@@ -121,6 +136,7 @@ export interface Deal {
   status: 'OPEN' | 'WON' | 'LOST';
   lossReason?: string;
   propertyInterest?: string;
+  presentedProperties?: PresentedProperty[];
   createdAt: string;
   updatedAt: string;
   closedAt?: string;

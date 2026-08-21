@@ -48,7 +48,38 @@ import {
   Maximize2
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/date-utils';
-import { PropertyType } from '@/types/crm';
+import { PropertyType, PresentedProperty } from '@/types/crm';
+
+const MOCK_CATALOG_PROPERTIES = [
+  {
+    name: 'Edifício Lumina Batel',
+    defaultUnit: 'Apto 1402 (185m² • 3 Suítes)',
+    address: 'Av. Visconde de Guarapuava, 4200 - Batel, Curitiba',
+    price: 1450000,
+    type: 'APARTMENT' as PropertyType,
+  },
+  {
+    name: 'Cobertura Duplex Ecoville',
+    defaultUnit: 'Cobertura 2201 (320m² • 4 Suítes • Piscina)',
+    address: 'Rua Prof. Pedro Viriato Parigot de Souza, 3500 - Ecoville, Curitiba',
+    price: 2800000,
+    type: 'PENTHOUSE' as PropertyType,
+  },
+  {
+    name: 'Residencial Vista Parque',
+    defaultUnit: 'Apto 604 - Torre Jardim (120m² • 2 Suítes)',
+    address: 'Rua Jacarezinho, 890 - Mercês, Curitiba',
+    price: 980000,
+    type: 'APARTMENT' as PropertyType,
+  },
+  {
+    name: 'Mansão Alphaville Graciosa',
+    defaultUnit: 'Casa 18 - Alameda dos Ipês (450m²)',
+    address: 'Estrada da Graciosa, 2000 - Alphaville Graciosa, Pinhais',
+    price: 4200000,
+    type: 'HOUSE' as PropertyType,
+  }
+];
 
 const mapToPropertyType = (type?: string): PropertyType => {
   if (!type) return 'APARTMENT';
@@ -95,6 +126,10 @@ export function WhatsAppInbox() {
     currentPipeline,
     quickReplies,
     updateContact,
+    addPresentedProperty,
+    updatePresentedProperty,
+    removePresentedProperty,
+    createTask,
     instances,
     syncWhatsAppChats,
     isSyncingWhatsApp,
@@ -126,6 +161,16 @@ export function WhatsAppInbox() {
   const [selectedAIResponseIdx, setSelectedAIResponseIdx] = useState<number>(0);
   const [isCopilotExpanded, setIsCopilotExpanded] = useState<boolean>(false);
   const [isCopilotDismissed, setIsCopilotDismissed] = useState<boolean>(false);
+
+  // Estados do Módulo de Imóveis Apresentados
+  const [isAddingProp, setIsAddingProp] = useState(false);
+  const [propName, setPropName] = useState('');
+  const [propUnit, setPropUnit] = useState('');
+  const [propAddress, setPropAddress] = useState('');
+  const [propPrice, setPropPrice] = useState('');
+  const [propType, setPropType] = useState<PropertyType>('APARTMENT');
+  const [propStatus, setPropStatus] = useState<'PRESENTED' | 'VISITING' | 'PROPOSAL' | 'DISCARDED'>('PRESENTED');
+  const [propNotes, setPropNotes] = useState('');
 
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
@@ -223,16 +268,52 @@ export function WhatsAppInbox() {
 
   const isLeadQualified = qualificationScore >= 75 || Boolean(activeDeal);
 
-  // Sincroniza formulário com o contato selecionado
-  React.useEffect(() => {
-    if (activeContact) {
-      setEditedName(activeContact.name);
-      setEditedEmail(activeContact.email || '');
-      setEditedMonthlyIncome(activeContact.monthlyIncome ? String(activeContact.monthlyIncome) : '');
-      setEditedDownPayment(activeContact.downPaymentAvailable ? String(activeContact.downPaymentAvailable) : '');
-      setEditedMaxBudget(activeContact.maxPropertyValue ? String(activeContact.maxPropertyValue) : '');
-    }
-  }, [activeContact?.id, activeContact?.name, activeContact?.email, activeContact?.monthlyIncome, activeContact?.downPaymentAvailable, activeContact?.maxPropertyValue]);
+  // Handlers do Módulo de Imóveis Apresentados
+  const handleSavePresentedProperty = () => {
+    if (!activeContact || !propName.trim()) return;
+    addPresentedProperty(activeContact.id, {
+      name: propName.trim(),
+      unit: propUnit.trim() || undefined,
+      address: propAddress.trim() || undefined,
+      price: propPrice ? Number(propPrice) : undefined,
+      propertyType: propType,
+      status: propStatus,
+      notes: propNotes.trim() || undefined,
+    });
+    setPropName('');
+    setPropUnit('');
+    setPropAddress('');
+    setPropPrice('');
+    setPropNotes('');
+    setIsAddingProp(false);
+  };
+
+  const handleSendPropertyBriefToChat = (prop: PresentedProperty) => {
+    const priceFormatted = prop.price ? `R$ ${Number(prop.price).toLocaleString('pt-BR')}` : 'Sob consulta';
+    const text = `🏢 *${prop.name}*\n${prop.unit ? `📐 *Unidade:* ${prop.unit}\n` : ''}${prop.address ? `📍 *Localização:* ${prop.address}\n` : ''}💰 *Valor:* ${priceFormatted}\n\nEstou à disposição para tirarmos dúvidas ou agendarmos uma visita!`;
+    setMessageInput(text);
+    setIsInternalNote(false);
+  };
+
+  const handleScheduleVisitForProperty = (prop: PresentedProperty) => {
+    if (!activeContact) return;
+    const nextDay = new Date(Date.now() + 24 * 3600 * 1000);
+    nextDay.setHours(15, 0, 0, 0);
+
+    createTask({
+      title: `Visita: ${prop.name}${prop.unit ? ` (${prop.unit})` : ''}`,
+      contactId: activeContact.id,
+      assignedUserId: currentUser.id,
+      taskType: 'VISIT',
+      priority: 'HIGH',
+      dueDate: nextDay.toISOString(),
+      location: prop.address || 'No empreendimento',
+      description: `Visita ao imóvel ${prop.name} ${prop.unit || ''} com o cliente ${activeContact.name}.`,
+    });
+
+    updatePresentedProperty(activeContact.id, prop.id, { status: 'VISITING' });
+    alert(`📅 Visita agendada com sucesso para ${prop.name}! Ela já está visível no seu Calendário e Módulo de Tarefas.`);
+  };
 
   // Sincroniza e carrega histórico completo do WhatsApp ao selecionar conversa
   React.useEffect(() => {
@@ -1820,7 +1901,267 @@ export function WhatsAppInbox() {
             </div>
 
             {/* ---------------------------------------------------- */}
-            {/* 2. QUALIFICAÇÃO DO IMÓVEL & FINANCEIRA (EDIÇÃO INLINE)*/}
+            {/* 2. IMÓVEIS & UNIDADES APRESENTADAS (NOVO MÓDULO)     */}
+            {/* ---------------------------------------------------- */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Imóveis Apresentados</span>
+                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded-full border border-emerald-300/60">
+                    {(activeContact.presentedProperties || []).length}
+                  </span>
+                </h4>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddingProp(!isAddingProp)}
+                  className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{isAddingProp ? 'Cancelar' : '+ Vincular Imóvel'}</span>
+                </button>
+              </div>
+
+              {/* Formulário Rápido de Inserção de Imóvel */}
+              {isAddingProp && (
+                <div className="bg-white border border-emerald-300 rounded-xl p-3 shadow-xs space-y-2.5">
+                  <div className="text-[10px] font-bold text-emerald-900 flex items-center justify-between">
+                    <span>Cadastrar Empreendimento / Unidade</span>
+                    <span className="text-[9px] text-slate-400 font-normal">Preenchimento rápido</span>
+                  </div>
+
+                  {/* Sugestões Rápidas do Catálogo */}
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-500 block mb-1">Catálogo (Sugestões Rápidas):</label>
+                    <div className="flex flex-wrap gap-1">
+                      {MOCK_CATALOG_PROPERTIES.map((cat, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setPropName(cat.name);
+                            setPropAddress(cat.address);
+                            setPropPrice(String(cat.price));
+                            setPropType(cat.type);
+                            setPropUnit(cat.defaultUnit);
+                          }}
+                          className="text-[9.5px] bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-md px-2 py-0.5 font-medium transition cursor-pointer text-slate-700 truncate max-w-full"
+                        >
+                          🏢 {cat.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Empreendimento / Edifício *</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Edifício Lumina Batel"
+                        value={propName}
+                        onChange={(e) => setPropName(e.target.value)}
+                        className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Unidade / Torre</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Apto 1402"
+                          value={propUnit}
+                          onChange={(e) => setPropUnit(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Valor (R$)</label>
+                        <input
+                          type="number"
+                          placeholder="Ex: 1450000"
+                          value={propPrice}
+                          onChange={(e) => setPropPrice(e.target.value)}
+                          className="w-full text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Endereço / Localização</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Av. Visconde de Guarapuava, 4200 - Batel"
+                        value={propAddress}
+                        onChange={(e) => setPropAddress(e.target.value)}
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Tipo</label>
+                        <select
+                          value={propType}
+                          onChange={(e) => setPropType(e.target.value as any)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:bg-white focus:outline-none cursor-pointer"
+                        >
+                          <option value="APARTMENT">Apartamento</option>
+                          <option value="PENTHOUSE">Cobertura</option>
+                          <option value="HOUSE">Casa em Condomínio</option>
+                          <option value="STUDIO">Studio</option>
+                          <option value="LAND">Terreno</option>
+                          <option value="COMMERCIAL">Comercial</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Status Inicial</label>
+                        <select
+                          value={propStatus}
+                          onChange={(e) => setPropStatus(e.target.value as any)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:bg-white focus:outline-none cursor-pointer"
+                        >
+                          <option value="PRESENTED">👁️ Apresentado</option>
+                          <option value="VISITING">📅 Visita Marcada</option>
+                          <option value="PROPOSAL">💼 Proposta Enviada</option>
+                          <option value="DISCARDED">✖️ Descartado</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Observações (opcional)</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Gostou da vista para o parque..."
+                        value={propNotes}
+                        onChange={(e) => setPropNotes(e.target.value)}
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSavePresentedProperty}
+                    disabled={!propName.trim()}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Salvar Imóvel Apresentado</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Lista de Imóveis Apresentados */}
+              <div className="space-y-2">
+                {(activeContact.presentedProperties || []).length === 0 ? (
+                  <div className="bg-white/60 border border-dashed border-slate-300 rounded-xl p-3 text-center">
+                    <Building className="w-5 h-5 text-slate-400 mx-auto mb-1 opacity-60" />
+                    <p className="text-xs font-medium text-slate-600">Nenhum imóvel vinculado ainda</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Cadastre os empreendimentos apresentados para acompanhar o interesse e agendar visitas com 1 clique.
+                    </p>
+                  </div>
+                ) : (
+                  (activeContact.presentedProperties || []).map((prop) => (
+                    <div key={prop.id} className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-2xs space-y-2 hover:border-slate-300 transition">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-slate-900 truncate">{prop.name}</span>
+                          </div>
+                          {prop.unit && (
+                            <div className="text-[10.5px] font-semibold text-emerald-700">
+                              📍 {prop.unit}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Dropdown de Status */}
+                        <select
+                          value={prop.status}
+                          onChange={(e) => updatePresentedProperty(activeContact.id, prop.id, { status: e.target.value as any })}
+                          className={`text-[9.5px] font-bold rounded-lg px-2 py-0.5 border cursor-pointer focus:outline-none ${
+                            prop.status === 'PROPOSAL'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : prop.status === 'VISITING'
+                              ? 'bg-amber-100 text-amber-900 border-amber-300'
+                              : prop.status === 'DISCARDED'
+                              ? 'bg-slate-100 text-slate-600 border-slate-300'
+                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                          }`}
+                        >
+                          <option value="PRESENTED">👁️ Apresentado</option>
+                          <option value="VISITING">📅 Visita Marcada</option>
+                          <option value="PROPOSAL">💼 Proposta</option>
+                          <option value="DISCARDED">✖️ Descartado</option>
+                        </select>
+                      </div>
+
+                      {/* Endereço & Valor */}
+                      <div className="text-[10.5px] text-slate-600 space-y-0.5">
+                        {prop.address && (
+                          <div className="flex items-center gap-1 text-slate-500 truncate">
+                            <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                            <span className="truncate">{prop.address}</span>
+                          </div>
+                        )}
+                        {prop.price && (
+                          <div className="font-mono font-bold text-slate-900">
+                            💰 R$ {Number(prop.price).toLocaleString('pt-BR')}
+                          </div>
+                        )}
+                        {prop.notes && (
+                          <p className="text-[10px] text-slate-500 italic bg-slate-50 p-1.5 rounded-md border border-slate-100">
+                            "{prop.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Botões de Ação de 1-Clique */}
+                      <div className="pt-1 border-t border-slate-100 flex items-center justify-between gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSendPropertyBriefToChat(prop)}
+                          className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold py-1 px-2 rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
+                          title="Inserir ficha técnica do imóvel formatada no WhatsApp"
+                        >
+                          <Send className="w-3 h-3" />
+                          <span>Enviar Ficha no Chat</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleScheduleVisitForProperty(prop)}
+                          className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold py-1 px-2 rounded-lg transition flex items-center justify-center gap-1 cursor-pointer"
+                          title="Agendar visita para este imóvel com convite .ICS"
+                        >
+                          <Calendar className="w-3 h-3" />
+                          <span>Agendar Visita</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => removePresentedProperty(activeContact.id, prop.id)}
+                          className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="Remover este imóvel"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* ---------------------------------------------------- */}
+            {/* 3. QUALIFICAÇÃO DO IMÓVEL & FINANCEIRA (EDIÇÃO INLINE)*/}
             {/* ---------------------------------------------------- */}
             <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
               <div className="flex items-center justify-between">

@@ -525,10 +525,24 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                         </h4>
 
                         {/* Informações do Cliente */}
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2.5">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2">
                           <span className="truncate font-medium text-slate-700">{contact?.name || 'Cliente'}</span>
                           <span className="font-mono text-[10px] text-slate-400">{contact?.phone}</span>
                         </div>
+
+                        {/* Empreendimento / Unidade Apresentada */}
+                        {((contact?.presentedProperties && contact.presentedProperties.length > 0) || (deal.presentedProperties && deal.presentedProperties.length > 0)) && (
+                          <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-lg px-2 py-1 mb-2.5 flex items-center justify-between text-[10.5px]">
+                            <span className="font-bold text-emerald-900 truncate">
+                              🏢 {(contact?.presentedProperties?.[0] || deal.presentedProperties?.[0])?.name}
+                            </span>
+                            {(contact?.presentedProperties?.[0] || deal.presentedProperties?.[0])?.unit && (
+                              <span className="font-semibold text-emerald-800 bg-white px-1.5 py-0.2 rounded border border-emerald-200 text-[9.5px] truncate max-w-[90px]">
+                                {(contact?.presentedProperties?.[0] || deal.presentedProperties?.[0])?.unit}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Tags de Perfil Rápido */}
                         {(contact?.preferredPropertyType || (contact?.targetRegions && contact.targetRegions.length > 0)) && (
@@ -697,13 +711,22 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="text-slate-400 text-[10px]">🏢 Imóvel:</span>
-              <span className="font-medium text-slate-200 truncate max-w-[120px]">
-                {hoveredContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : hoveredContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento'}
-                {hoveredContact.targetRegions?.[0] ? ` • ${hoveredContact.targetRegions[0]}` : ''}
-              </span>
-            </div>
+            {hoveredContact.presentedProperties && hoveredContact.presentedProperties.length > 0 ? (
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-emerald-400 text-[10px]">🏢 Empreend.:</span>
+                <span className="font-bold text-emerald-300 truncate max-w-[130px]">
+                  {hoveredContact.presentedProperties[0].name}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-slate-300">
+                <span className="text-slate-400 text-[10px]">🏢 Imóvel:</span>
+                <span className="font-medium text-slate-200 truncate max-w-[120px]">
+                  {hoveredContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : hoveredContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento'}
+                  {hoveredContact.targetRegions?.[0] ? ` • ${hoveredContact.targetRegions[0]}` : ''}
+                </span>
+              </div>
+            )}
 
             {hoveredBroker && (
               <div className="flex items-center justify-between text-slate-300">

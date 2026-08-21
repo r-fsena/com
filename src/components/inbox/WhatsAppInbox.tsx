@@ -555,13 +555,17 @@ export function WhatsAppInbox() {
     // Oculta conversas arquivadas
     if (c.isArchived) return false;
 
-    // Filtro por Linha (Central vs Linha Direta)
-    if (instanceFilter === 'CENTRAL') {
-      const inst = instances.find(i => i.id === (c.instanceId || 'inst-central'));
-      if (inst && inst.type !== 'COMPANY_CENTRAL') return false;
-    } else if (instanceFilter === 'DIRECT') {
-      const inst = instances.find(i => i.id === c.instanceId);
-      if (inst && inst.type !== 'BROKER_DIRECT') return false;
+    // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
+    const convInstance = instances.find(i => i.id === c.instanceId);
+    const isDirectLine = Boolean(convInstance && convInstance.type === 'BROKER_DIRECT');
+    const isCentralLine = !isDirectLine; // Toda conversa padrão ou sem instância direta pertence à Central
+
+    if (instanceFilter === 'CENTRAL' && !isCentralLine) {
+      return false;
+    }
+
+    if (instanceFilter === 'DIRECT' && !isDirectLine) {
+      return false;
     }
 
     const contact = contacts.find(cnt => cnt.id === c.contactId);
@@ -857,9 +861,19 @@ export function WhatsAppInbox() {
                 <MessageSquare className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-xs font-bold text-slate-700">Nenhuma conversa no momento</p>
+                <p className="text-xs font-bold text-slate-700">
+                  {instanceFilter === 'DIRECT' 
+                    ? 'Nenhuma conversa na Linha Direta'
+                    : instanceFilter === 'CENTRAL'
+                    ? 'Nenhuma conversa na Central'
+                    : 'Nenhuma conversa no momento'}
+                </p>
                 <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                  As mensagens recebidas no WhatsApp aparecerão aqui automaticamente.
+                  {instanceFilter === 'DIRECT'
+                    ? 'Leads atendidos diretamente pelo WhatsApp pessoal do corretor ou migrados da Central aparecerão aqui.'
+                    : instanceFilter === 'CENTRAL'
+                    ? 'Todas as conversas que chegarem no número principal da empresa aparecerão aqui.'
+                    : 'As mensagens recebidas no WhatsApp aparecerão aqui automaticamente.'}
                 </p>
               </div>
             </div>

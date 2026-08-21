@@ -216,9 +216,15 @@ export interface Task {
   description?: string;
   taskType: 'CALL' | 'WHATSAPP' | 'VISIT' | 'PROPOSAL' | 'FINANCING_SIMULATION' | 'FOLLOW_UP';
   dueDate: string;
+  durationMinutes?: number;
+  location?: string;
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
   isCompleted: boolean;
   completedAt?: string;
+  inviteSentViaWhatsApp?: boolean;
+  inviteSentViaWhatsAppAt?: string;
+  inviteSentViaEmail?: boolean;
+  inviteSentViaEmailAt?: string;
 }
 
 export interface SLAAlert {

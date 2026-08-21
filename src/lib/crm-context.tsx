@@ -91,6 +91,8 @@ interface CRMContextType {
   tasks: Task[];
   toggleTask: (taskId: string) => void;
   createTask: (task: Partial<Task>) => void;
+  updateTask: (taskId: string, updates: Partial<Task>) => void;
+  deleteTask: (taskId: string) => void;
   alerts: SLAAlert[];
   dismissAlert: (alertId: string) => void;
 
@@ -405,7 +407,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (Object.keys(aiInsights).length > 0) localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(aiInsights));
     } catch {}
   }, [aiInsights]);
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_tasks');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_TASKS;
+  });
   const [alerts, setAlerts] = useState<SLAAlert[]>(MOCK_ALERTS);
   const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
   const [quickReplies] = useState<QuickReplyTemplate[]>(MOCK_QUICK_REPLIES);
@@ -992,11 +1005,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   // Tarefas e Alertas
   const toggleTask = (taskId: string) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? {
-      ...t,
-      isCompleted: !t.isCompleted,
-      completedAt: !t.isCompleted ? new Date().toISOString() : undefined
-    } : t));
+    setTasks(prev => {
+      const updated = prev.map(t => t.id === taskId ? {
+        ...t,
+        isCompleted: !t.isCompleted,
+        completedAt: !t.isCompleted ? new Date().toISOString() : undefined
+      } : t);
+      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const createTask = (data: Partial<Task>) => {
@@ -1012,7 +1029,27 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       isCompleted: false,
       ...data,
     };
-    setTasks(prev => [newTask, ...prev]);
+    setTasks(prev => {
+      const updated = [newTask, ...prev];
+      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const updateTask = (taskId: string, updates: Partial<Task>) => {
+    setTasks(prev => {
+      const updated = prev.map(t => t.id === taskId ? { ...t, ...updates } : t);
+      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteTask = (taskId: string) => {
+    setTasks(prev => {
+      const updated = prev.filter(t => t.id !== taskId);
+      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const dismissAlert = (alertId: string) => {
@@ -1397,6 +1434,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       tasks,
       toggleTask,
       createTask,
+      updateTask,
+      deleteTask,
       alerts,
       dismissAlert,
       campaigns,

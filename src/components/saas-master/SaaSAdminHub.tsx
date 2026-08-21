@@ -30,7 +30,24 @@ interface SaaSAdminHubProps {
 
 export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
   const { currentUser, logout, tenants } = useCRM();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis'>('dashboard');
+  const [activeTab, setActiveTabState] = useState<'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('faithhubs_master_active_tab') as any;
+        if (saved && ['dashboard', 'new-tenant', 'tenants', 'plans', 'master-users', 'apis'].includes(saved)) {
+          return saved;
+        }
+      } catch {}
+    }
+    return 'dashboard';
+  });
+
+  const setActiveTab = (tab: 'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis') => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem('faithhubs_master_active_tab', tab);
+    } catch {}
+  };
 
   const navItems = [
     {

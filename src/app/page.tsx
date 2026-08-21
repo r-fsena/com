@@ -28,8 +28,42 @@ export default function CRMApp() {
 
   const isMasterAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.role === 'ADMIN_MASTER';
 
-  const [viewMode, setViewMode] = useState<'SAAS_MASTER' | 'TENANT_CRM'>('SAAS_MASTER');
-  const [currentTab, setCurrentTab] = useState('inbox');
+  const [viewMode, setViewMode] = useState<'SAAS_MASTER' | 'TENANT_CRM'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('faithhubs_view_mode');
+        if (saved === 'SAAS_MASTER' || saved === 'TENANT_CRM') {
+          return saved;
+        }
+      } catch {}
+    }
+    return 'SAAS_MASTER';
+  });
+
+  const [currentTab, setCurrentTabState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_current_tab');
+        if (saved) return saved;
+      } catch {}
+    }
+    return 'inbox';
+  });
+
+  const setCurrentTab = (tab: string) => {
+    setCurrentTabState(tab);
+    try {
+      localStorage.setItem('vanguard_crm_current_tab', tab);
+    } catch {}
+  };
+
+  const handleSetViewMode = (mode: 'SAAS_MASTER' | 'TENANT_CRM') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('faithhubs_view_mode', mode);
+    } catch {}
+  };
+
   const [isZapiSimulatorOpen, setIsZapiSimulatorOpen] = useState(false);
   const [isQrCodeModalOpen, setIsQrCodeModalOpen] = useState(false);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
@@ -50,7 +84,7 @@ export default function CRMApp() {
       <SaaSAdminHub 
         onEnterTenant={(tenant) => {
           setCurrentTenant(tenant);
-          setViewMode('TENANT_CRM');
+          handleSetViewMode('TENANT_CRM');
         }}
       />
     );
@@ -72,7 +106,7 @@ export default function CRMApp() {
 
           <button
             type="button"
-            onClick={() => setViewMode('SAAS_MASTER')}
+            onClick={() => handleSetViewMode('SAAS_MASTER')}
             className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3.5 py-1 rounded-lg text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
           >
             <span>↩ Voltar ao Portal Master SaaS</span>
@@ -88,7 +122,7 @@ export default function CRMApp() {
           setCurrentTab={setCurrentTab}
           onOpenZapiSimulator={() => setIsZapiSimulatorOpen(true)}
           onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)}
-          onGoToMasterPortal={() => setViewMode('SAAS_MASTER')}
+          onGoToMasterPortal={() => handleSetViewMode('SAAS_MASTER')}
         />
 
         {/* Área Principal de Trabalho */}

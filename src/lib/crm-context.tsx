@@ -44,9 +44,14 @@ interface CRMContextType {
   tenants: Tenant[];
   currentTenant: Tenant;
   setCurrentTenant: (tenant: Tenant) => void;
+  updateTenant: (updates: Partial<Tenant>) => void;
   users: User[];
   currentUser: User;
   setCurrentUser: (user: User) => void;
+  updateUser: (userId: string, updates: Partial<User>) => void;
+  createUser: (userData: Partial<User>) => User;
+  deleteUser: (userId: string) => void;
+  updateUserAIPersona: (userId: string, data: { aiPersonaPrompt?: string; aiTone?: any; aiDirectives?: string[]; aiModel?: string }) => void;
 
   // CRM Leads e Contatos
   contacts: Contact[];
@@ -166,11 +171,98 @@ const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [tenants] = useState<Tenant[]>(MOCK_TENANTS);
-  const [currentTenant, setCurrentTenant] = useState<Tenant>(MOCK_TENANTS[0]);
+  const [tenants, setTenants] = useState<Tenant[]>(MOCK_TENANTS);
+  const [currentTenant, setCurrentTenant] = useState<Tenant>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_current_tenant');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return MOCK_TENANTS[0];
+  });
+
+  const updateTenant = (updates: Partial<Tenant>) => {
+    setCurrentTenant(prev => {
+      const updated = { ...prev, ...updates };
+      try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
   
-  const [users] = useState<User[]>(MOCK_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Rafael Sena (Admin)
+  const [users, setUsers] = useState<User[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_users');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_USERS;
+  });
+
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_auth_session');
+        if (saved) {
+          const session = JSON.parse(saved);
+          if (session.userEmail) {
+            const found = MOCK_USERS.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
+            if (found) return found;
+          }
+        }
+      } catch {}
+    }
+    return MOCK_USERS[0];
+  });
+
+  const updateUser = (userId: string, updates: Partial<User>) => {
+    setUsers(prev => {
+      const updated = prev.map(u => u.id === userId ? { ...u, ...updates } : u);
+      try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    if (currentUser.id === userId) {
+      setCurrentUser(prev => ({ ...prev, ...updates }));
+    }
+  };
+
+  const createUser = (userData: Partial<User>): User => {
+    const newUser: User = {
+      id: `user-${Date.now()}`,
+      name: userData.name || 'Novo Corretor',
+      email: userData.email || `corretor${Date.now()}@vanguardprime.com.br`,
+      phone: userData.phone || '+55 11 99999-0000',
+      role: userData.role || 'BROKER',
+      isActive: true,
+      aiPersonaPrompt: userData.aiPersonaPrompt || `Você é o copiloto comercial de ${userData.name || 'Corretor'}. Seja consultivo, cordial e busque agendamento de visitas.`,
+      aiTone: userData.aiTone || 'CONSULTATIVE',
+      aiDirectives: userData.aiDirectives || ['Convidar para reunião presencial ou café', 'Destacar acabamento e localização'],
+      aiModel: userData.aiModel || 'anthropic.claude-3-5-sonnet',
+      ...userData,
+    };
+    setUsers(prev => {
+      const updated = [...prev, newUser];
+      try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newUser;
+  };
+
+  const deleteUser = (userId: string) => {
+    setUsers(prev => {
+      const updated = prev.filter(u => u.id !== userId);
+      try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const updateUserAIPersona = (userId: string, data: { aiPersonaPrompt?: string; aiTone?: any; aiDirectives?: string[]; aiModel?: string }) => {
+    updateUser(userId, data);
+  };
 
   // Checa se já existe sessão salva no navegador
   useEffect(() => {
@@ -1635,9 +1727,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       tenants,
       currentTenant,
       setCurrentTenant,
+      updateTenant,
       users,
       currentUser,
       setCurrentUser,
+      updateUser,
+      createUser,
+      deleteUser,
+      updateUserAIPersona,
       contacts,
       addContact,
       updateContact,

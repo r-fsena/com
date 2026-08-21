@@ -12,6 +12,7 @@ import { CampaignManager } from '@/components/campaigns/CampaignManager';
 import { SalesDashboard } from '@/components/dashboard/SalesDashboard';
 import { SettingsManager } from '@/components/settings/SettingsManager';
 import { AutomationManager } from '@/components/automations/AutomationManager';
+import { CopilotManager } from '@/components/copilot/CopilotManager';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
 import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
@@ -74,6 +75,7 @@ export default function CRMApp() {
           {currentTab === 'automations' && <AutomationManager />}
           {currentTab === 'campaigns' && <CampaignManager />}
           {currentTab === 'dashboard' && <SalesDashboard />}
+          {currentTab === 'copilot' && <CopilotManager />}
           {currentTab === 'settings' && (
             <SettingsManager onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)} />
           )}

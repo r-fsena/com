@@ -1,5 +1,7 @@
 export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'MANAGER' | 'BROKER' | 'VIEWER';
 
+export type AIPersonaTone = 'CONSULTATIVE' | 'PERSUASIVE' | 'FRIENDLY' | 'TECHNICAL';
+
 export interface User {
   id: string;
   name: string;
@@ -8,6 +10,12 @@ export interface User {
   avatarUrl?: string;
   role: UserRole;
   isActive: boolean;
+  
+  // Configurações do IA Copiloto por Corretor
+  aiPersonaPrompt?: string;
+  aiTone?: AIPersonaTone;
+  aiDirectives?: string[];
+  aiModel?: string;
 }
 
 export interface Tenant {

@@ -128,8 +128,15 @@ export function Sidebar({ currentTab, setCurrentTab, onOpenZapiSimulator, onOpen
       badge: null,
     },
     {
+      id: 'copilot',
+      label: 'IA Copiloto',
+      icon: Bot,
+      badge: 'IA',
+      badgeColor: 'bg-emerald-600 text-white',
+    },
+    {
       id: 'settings',
-      label: 'Configurações & Z-API',
+      label: 'Configurações',
       icon: Settings,
       badge: criticalAlertsCount > 0 ? criticalAlertsCount : null,
       badgeColor: 'bg-rose-500 text-white',

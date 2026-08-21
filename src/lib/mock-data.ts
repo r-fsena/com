@@ -70,6 +70,14 @@ export const MOCK_USERS: User[] = [
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     role: 'ADMIN',
     isActive: true,
+    aiPersonaPrompt: 'Você é o copiloto comercial de Rafael Sena, Diretor Imobiliário. Adote tom executivo, consultivo e focado em valorização patrimonial, ROI e discrição. Sempre enfatize liquidez e localização nobre.',
+    aiTone: 'CONSULTATIVE',
+    aiDirectives: [
+      'Sempre convidar para uma reunião estratégica de alinhamento ou café executivo',
+      'Destacar o potencial de valorização do metro quadrado e liquidez',
+      'Nunca usar gírias ou mensagens prolixas'
+    ],
+    aiModel: 'anthropic.claude-3-5-sonnet'
   },
   {
     id: 'user-camila-gestora',
@@ -79,6 +87,14 @@ export const MOCK_USERS: User[] = [
     avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
     role: 'MANAGER',
     isActive: true,
+    aiPersonaPrompt: 'Você é o copiloto de Camila Mendonça, Gestora de Vendas. Adote tom motivador, ágil e resolutivo. Priorize rapidez nas respostas e transição de leads mornos para visitas presenciais.',
+    aiTone: 'PERSUASIVE',
+    aiDirectives: [
+      'Priorizar agendamento de visita no mesmo dia ou no dia seguinte',
+      'Tirar dúvidas sobre fluxo de pagamento e parcelamento direto com a construtora',
+      'Criar senso de urgência com base na tabela de preços atual'
+    ],
+    aiModel: 'anthropic.claude-3-5-sonnet'
   },
   {
     id: 'user-lucas-corretor',
@@ -88,6 +104,14 @@ export const MOCK_USERS: User[] = [
     avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     role: 'BROKER',
     isActive: true,
+    aiPersonaPrompt: 'Você é o copiloto de Lucas Brandão, corretor especialista em Alto Padrão no Batel e Ecoville. Seja extremamente polido, cordial e atento a detalhes de arquitetura, varanda gourmet e vagas de garagem.',
+    aiTone: 'CONSULTATIVE',
+    aiDirectives: [
+      'Mencionar a privacidade e segurança do condomínio fechado',
+      'Propor envio de vídeo exclusivo do imóvel antes da visita',
+      'Sugerir horários no sábado pela manhã para visita sem pressa'
+    ],
+    aiModel: 'anthropic.claude-3-5-sonnet'
   },
   {
     id: 'user-juliana-corretora',
@@ -97,6 +121,14 @@ export const MOCK_USERS: User[] = [
     avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
     role: 'BROKER',
     isActive: true,
+    aiPersonaPrompt: 'Você é a copiloto de Juliana Paes, especialista em primeiros imóveis e famílias. Seja acolhedora, empática e simplifique termos financeiros para transmitir total segurança aos compradores.',
+    aiTone: 'FRIENDLY',
+    aiDirectives: [
+      'Explicar como funciona o uso do FGTS e composição de renda familiar',
+      'Destacar as áreas de lazer para crianças e proximidade de escolas e parques',
+      'Oferecer simulação gratuita de financiamento pelo WhatsApp'
+    ],
+    aiModel: 'anthropic.claude-3-5-sonnet'
   }
 ];
 

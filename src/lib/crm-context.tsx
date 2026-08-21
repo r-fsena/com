@@ -226,48 +226,118 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // Hidrata dados salvos no localStorage no primeiro mount no navegador
+  // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima e novos dispositivos)
   const isHydratedRef = useRef(false);
 
   useEffect(() => {
-    try {
-      const savedContacts = localStorage.getItem('vanguard_crm_contacts');
-      if (savedContacts) {
-        const parsed = JSON.parse(savedContacts);
-        if (Array.isArray(parsed) && parsed.length > 0) setContacts(parsed);
-      }
+    const initializeCRMState = async () => {
+      try {
+        // 1. Busca estado inicial do servidor (persistência cross-device e aba anônima)
+        let serverData: any = null;
+        try {
+          const res = await fetch('/api/v1/crm/state');
+          if (res.ok) {
+            serverData = await res.json();
+          }
+        } catch {}
 
-      const savedDeals = localStorage.getItem('vanguard_crm_deals');
-      if (savedDeals) {
-        const parsed = JSON.parse(savedDeals);
-        if (Array.isArray(parsed) && parsed.length > 0) setDeals(parsed);
-      }
+        // 2. Lê localStorage
+        const savedContacts = localStorage.getItem('vanguard_crm_contacts');
+        const parsedLocalContacts = savedContacts ? JSON.parse(savedContacts) : null;
 
-      const savedConvs = localStorage.getItem('vanguard_crm_conversations');
-      if (savedConvs) {
-        const parsed = JSON.parse(savedConvs);
-        if (Array.isArray(parsed) && parsed.length > 0) setConversations(parsed);
-      }
+        const savedDeals = localStorage.getItem('vanguard_crm_deals');
+        const parsedLocalDeals = savedDeals ? JSON.parse(savedDeals) : null;
 
-      const savedMsgs = localStorage.getItem('vanguard_crm_messages');
-      if (savedMsgs) {
-        const parsed = JSON.parse(savedMsgs);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(deduplicateMessages(parsed));
+        const savedConvs = localStorage.getItem('vanguard_crm_conversations');
+        const parsedLocalConvs = savedConvs ? JSON.parse(savedConvs) : null;
+
+        const savedMsgs = localStorage.getItem('vanguard_crm_messages');
+        const parsedLocalMsgs = savedMsgs ? JSON.parse(savedMsgs) : null;
+
+        const savedInsights = localStorage.getItem('vanguard_crm_ai_insights');
+        const parsedLocalInsights = savedInsights ? JSON.parse(savedInsights) : null;
+
+        // Mescla ou carrega contatos
+        if (serverData && Array.isArray(serverData.contacts) && serverData.contacts.length > 0) {
+          setContacts(prev => {
+            const list = parsedLocalContacts || prev;
+            const map = new Map<string, Contact>();
+            list.forEach((c: Contact) => {
+              const clean = c.phone.replace(/\D/g, '');
+              if (clean) map.set(clean, c);
+              map.set(c.id, c);
+            });
+            serverData.contacts.forEach((sc: Contact) => {
+              const clean = sc.phone.replace(/\D/g, '');
+              const existing = (clean ? map.get(clean) : null) || map.get(sc.id);
+              if (existing) {
+                map.set(existing.id, {
+                  ...sc,
+                  ...existing,
+                  monthlyIncome: existing.monthlyIncome || sc.monthlyIncome,
+                  downPaymentAvailable: existing.downPaymentAvailable || sc.downPaymentAvailable,
+                  maxPropertyValue: existing.maxPropertyValue || sc.maxPropertyValue,
+                  preferredPropertyType: existing.preferredPropertyType || sc.preferredPropertyType,
+                  email: existing.email || sc.email,
+                });
+              } else {
+                map.set(sc.id, sc);
+              }
+            });
+            return Array.from(map.values());
+          });
+        } else if (parsedLocalContacts && parsedLocalContacts.length > 0) {
+          setContacts(parsedLocalContacts);
         }
-      }
 
-      const savedInsights = localStorage.getItem('vanguard_crm_ai_insights');
-      if (savedInsights) {
-        const parsed = JSON.parse(savedInsights);
-        if (parsed && typeof parsed === 'object') setAiInsights(parsed);
-      }
+        // Deals
+        if (parsedLocalDeals && parsedLocalDeals.length > 0) {
+          setDeals(parsedLocalDeals);
+        } else if (serverData && Array.isArray(serverData.deals) && serverData.deals.length > 0) {
+          setDeals(serverData.deals);
+        }
 
-      const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');
-      if (savedActive) setActiveConversationId(savedActive);
-    } catch {} finally {
-      isHydratedRef.current = true;
-    }
+        // Conversas
+        if (parsedLocalConvs && parsedLocalConvs.length > 0) {
+          setConversations(parsedLocalConvs);
+        } else if (serverData && Array.isArray(serverData.conversations) && serverData.conversations.length > 0) {
+          setConversations(serverData.conversations);
+        }
+
+        // Mensagens
+        const mergedMsgs = deduplicateMessages([
+          ...(parsedLocalMsgs || []),
+          ...(serverData?.messages || [])
+        ]);
+        if (mergedMsgs.length > 0) {
+          setMessages(mergedMsgs);
+        }
+
+        // Insights
+        if (serverData?.aiInsights) {
+          setAiInsights(prev => ({
+            ...prev,
+            ...(parsedLocalInsights || {}),
+            ...serverData.aiInsights,
+          }));
+        } else if (parsedLocalInsights) {
+          setAiInsights(parsedLocalInsights);
+        }
+
+        const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');
+        if (savedActive) {
+          setActiveConversationId(savedActive);
+        } else if (serverData?.conversations?.[0]?.id) {
+          setActiveConversationId(serverData.conversations[0].id);
+        }
+      } catch (err) {
+        console.error('Erro na hidratação do CRM:', err);
+      } finally {
+        isHydratedRef.current = true;
+      }
+    };
+
+    initializeCRMState();
   }, []);
 
   // Salva no localStorage quando o estado mudar (somente APÓS hidratação para nunca sobrescrever)
@@ -382,7 +452,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const updateContact = (id: string, updates: Partial<Contact>) => {
     setContacts(prev => {
       const updated = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c);
-      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      try {
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: updated }),
+        }).catch(() => {});
+      } catch {}
       return updated;
     });
   };
@@ -411,7 +488,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
         return deal;
       });
-      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      try {
+        localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deals: updated }),
+        }).catch(() => {});
+      } catch {}
       return updated;
     });
   };
@@ -439,6 +523,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const updated = [newDeal, ...filtered];
       try {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deals: updated }),
+        }).catch(() => {});
       } catch {}
       return updated;
     });
@@ -448,7 +537,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const updateDeal = (id: string, updates: Partial<Deal>) => {
     setDeals(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d);
-      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      try {
+        localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deals: updated }),
+        }).catch(() => {});
+      } catch {}
       return updated;
     });
   };

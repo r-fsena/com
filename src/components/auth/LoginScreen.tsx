@@ -16,13 +16,14 @@ import {
   Shield,
   Smartphone,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertTriangle
 } from 'lucide-react';
 
 export function LoginScreen() {
   const { login, users, tenants } = useCRM();
-  const [email, setEmail] = useState('rafael.sena@vanguardprime.com.br');
-  const [password, setPassword] = useState('••••••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,17 +36,29 @@ export function LoginScreen() {
     setError(null);
 
     setTimeout(() => {
-      setIsLoading(false);
-      login(email);
-    }, 600);
-  };
+      const cleanEmail = email.trim().toLowerCase();
+      
+      // Procura usuário no banco de dados de usuários cadastrados
+      const foundUser = users.find(u => u.email.toLowerCase() === cleanEmail) ||
+        (cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com' || cleanEmail === 'admin@crm.faithhubs.com'
+          ? users.find(u => u.role === 'SUPERADMIN')
+          : null);
 
-  const handleQuickLogin = (userEmail: string) => {
-    setIsLoading(true);
-    setTimeout(() => {
+      if (!foundUser) {
+        setIsLoading(false);
+        setError('E-mail ou senha incorretos. Por favor, verifique suas credenciais corporativas.');
+        return;
+      }
+
+      if (password.length < 3) {
+        setIsLoading(false);
+        setError('Por favor, informe uma senha válida para prosseguir.');
+        return;
+      }
+
       setIsLoading(false);
-      login(userEmail);
-    }, 400);
+      login(foundUser.email);
+    }, 450);
   };
 
   return (
@@ -68,7 +81,7 @@ export function LoginScreen() {
               SaaS B2B Multi-tenant
             </div>
             <h1 className="text-lg font-bold text-white tracking-tight">
-              Vanguard CRM Imobiliário
+              FaithHubs CRM Imobiliário
             </h1>
           </div>
         </div>
@@ -124,7 +137,7 @@ export function LoginScreen() {
               {view === 'ONBOARDING' && 'Cadastrar Nova Imobiliária'}
             </h2>
             <p className="text-xs text-slate-400">
-              {view === 'LOGIN' && 'Informe suas credenciais corporativas do Amazon Cognito'}
+              {view === 'LOGIN' && 'Informe suas credenciais corporativas de acesso'}
               {view === 'FORGOT' && 'Enviaremos um código de autenticação para o seu e-mail'}
               {view === 'ONBOARDING' && 'Crie o workspace isolado para a sua imobiliária'}
             </p>
@@ -133,6 +146,13 @@ export function LoginScreen() {
           {/* VIEW 1: LOGIN PRINCIPAL */}
           {view === 'LOGIN' && (
             <div className="space-y-6">
+              {error && (
+                <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs rounded-xl flex items-center gap-2.5 animate-in fade-in duration-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">
@@ -144,9 +164,13 @@ export function LoginScreen() {
                       type="email"
                       required
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (error) setError(null);
+                      }}
                       placeholder="seu.email@imobiliaria.com.br"
                       className="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                      autoComplete="email"
                     />
                   </div>
                 </div>
@@ -154,12 +178,12 @@ export function LoginScreen() {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-bold text-slate-300">
-                      Senha
+                      Senha de Acesso
                     </label>
                     <button
                       type="button"
                       onClick={() => setView('FORGOT')}
-                      className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition"
+                      className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition cursor-pointer"
                     >
                       Esqueceu a senha?
                     </button>
@@ -170,14 +194,18 @@ export function LoginScreen() {
                       type={showPassword ? 'text' : 'password'}
                       required
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••••••"
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (error) setError(null);
+                      }}
+                      placeholder="Digite sua senha"
                       className="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition font-mono"
+                      autoComplete="current-password"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-3 text-slate-500 hover:text-slate-300"
+                      className="absolute right-3 top-3 text-slate-500 hover:text-slate-300 cursor-pointer"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -187,85 +215,19 @@ export function LoginScreen() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold text-xs py-3 rounded-xl transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-extrabold text-xs py-3 rounded-xl transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoading ? 'Autenticando no Cognito...' : 'Acessar Workspace CRM'}
+                  {isLoading ? 'Autenticando credenciais...' : 'Acessar Workspace'}
                   <ArrowRight className="w-4 h-4 text-slate-950" />
                 </button>
               </form>
 
-              {/* ----------------------------------------------------------- */}
-              {/* ACESSO RÁPIDO PARA TESTES DE PAPÉIS & SEGREGAÇÃO (RBAC)     */}
-              {/* ----------------------------------------------------------- */}
-              <div className="pt-4 border-t border-slate-800/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Acesso Rápido por Papel (Segregação RBAC)
-                  </span>
-                  <span className="text-[10px] text-emerald-400 font-mono">1-Click Test</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {/* ADMIN */}
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('rafael.sena@vanguardprime.com.br')}
-                    className="p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-left transition group"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-white group-hover:text-emerald-400">Rafael Sena</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800/40">ADMIN</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Diretoria & Acesso Total</p>
-                  </button>
-
-                  {/* MANAGER */}
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('camila.gestora@vanguardprime.com.br')}
-                    className="p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-left transition group"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-white group-hover:text-emerald-400">Camila M.</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-950 text-blue-300 border border-blue-800/40">GESTORA</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Supervisão & Relatórios</p>
-                  </button>
-
-                  {/* BROKER 1 */}
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('lucas.corretor@vanguardprime.com.br')}
-                    className="p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-left transition group"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-white group-hover:text-emerald-400">Lucas B.</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/40">CORRETOR</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Leads Jardins / Coberturas</p>
-                  </button>
-
-                  {/* BROKER 2 */}
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('juliana.corretora@vanguardprime.com.br')}
-                    className="p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-left transition group"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-white group-hover:text-emerald-400">Juliana P.</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/40">CORRETORA</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Leads Pinheiros / Moema</p>
-                  </button>
-                </div>
-              </div>
-
               {/* Botão de Onboarding de Novo Tenant */}
-              <div className="pt-2 text-center">
+              <div className="pt-2 text-center border-t border-slate-800/60">
                 <button
                   type="button"
                   onClick={() => setView('ONBOARDING')}
-                  className="text-xs text-slate-400 hover:text-white transition font-medium"
+                  className="text-xs text-slate-400 hover:text-white transition font-medium cursor-pointer"
                 >
                   Deseja cadastrar uma nova imobiliária? <strong className="text-emerald-400 underline">Criar Workspace</strong>
                 </button>

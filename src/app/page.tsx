@@ -71,6 +71,13 @@ export default function CRMApp() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Garante que SuperAdmin sempre tenha acesso ao SaaS Master e que usuários comuns fiquem no CRM
+  React.useEffect(() => {
+    if (!isMasterAdmin) {
+      setViewMode('TENANT_CRM');
+    }
+  }, [isMasterAdmin]);
+
   if (!isAuthenticated) {
     return <LoginScreen />;
   }

@@ -2412,8 +2412,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const scopedUsers = useMemo(() => {
     return users.filter(u => 
-      u.role === 'SUPERADMIN' || 
-      u.role === 'ADMIN_MASTER' || 
+      u.role !== 'SUPERADMIN' && 
+      u.role !== 'ADMIN_MASTER' && 
       (u.tenantId ? u.tenantId === currentTenant.id : (currentTenant.id === 'tenant-vanguard-01'))
     );
   }, [users, currentTenant.id]);

@@ -25,33 +25,52 @@ interface ZapiQrCodeModalProps {
 }
 
 export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
-  const { currentTenant, instances, syncZapiInstance } = useCRM();
+  const { currentTenant, instances, createInstance, updateInstance, deleteInstance, syncZapiInstance } = useCRM();
   const [activeTab, setActiveTab] = useState<'QR' | 'CREDENTIALS'>('QR');
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(instances[0]?.status === 'CONNECTED');
+  
+  // Verifica se o tenant atual já possui alguma linha conectada
+  const currentConnectedInst = instances.find(i => i.status === 'CONNECTED');
+  const [isConnected, setIsConnected] = useState(Boolean(currentConnectedInst));
   const [countdown, setCountdown] = useState(25);
-  const [connectedPhone, setConnectedPhone] = useState('+55 11 99123-4567');
+  const [connectedPhone, setConnectedPhone] = useState(currentConnectedInst?.phoneNumber || '');
   const [batteryLevel, setBatteryLevel] = useState(98);
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
 
-  // Form de Credenciais com as chaves reais
-  const [instanceId, setInstanceId] = useState(instances[0]?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C');
-  const [instanceToken, setInstanceToken] = useState('7A18BD2BADA4840FB0374499');
-  const [clientToken, setClientToken] = useState('Fc78d61c833db4b50864816b70766aee8S');
+  // Form de Credenciais da Instância
+  const [instanceId, setInstanceId] = useState(
+    instances[0]?.zapiInstanceId || 
+    (currentTenant.id === 'tenant-vanguard-01' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`)
+  );
+  const [instanceToken, setInstanceToken] = useState(
+    currentTenant.id === 'tenant-vanguard-01' ? '7A18BD2BADA4840FB0374499' : ''
+  );
+  const [clientToken, setClientToken] = useState(
+    currentTenant.id === 'tenant-vanguard-01' ? 'Fc78d61c833db4b50864816b70766aee8S' : ''
+  );
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-central');
-
   const selectedInst = instances.find(i => i.id === selectedInstId) || instances[0];
 
+  // Sincroniza estado quando o modal abre ou quando o tenant muda
   useEffect(() => {
-    if (selectedInst) {
-      setInstanceId(selectedInst.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C');
-      setIsConnected(selectedInst.status === 'CONNECTED');
-      if (selectedInst.phoneNumber) setConnectedPhone(selectedInst.phoneNumber);
+    if (isOpen) {
+      const activeInst = instances.find(i => i.id === selectedInstId) || instances[0];
+      if (activeInst) {
+        setInstanceId(activeInst.zapiInstanceId);
+        setIsConnected(activeInst.status === 'CONNECTED');
+        setConnectedPhone(activeInst.phoneNumber || '');
+      } else {
+        setIsConnected(false);
+        setConnectedPhone('');
+        setQrCodeImage(null);
+        setInstanceId(currentTenant.id === 'tenant-vanguard-01' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`);
+        setInstanceToken(currentTenant.id === 'tenant-vanguard-01' ? '7A18BD2BADA4840FB0374499' : '');
+      }
     }
-  }, [selectedInstId, instances]);
+  }, [isOpen, currentTenant.id, instances, selectedInstId]);
 
   // Função para buscar QR Code real da API
   const fetchLiveQrCode = async (instId?: string, tok?: string, cTok?: string) => {
@@ -82,8 +101,10 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     }
   };
 
-  // Função para verificar status de conexão em tempo real
+  // Função para verificar status de conexão em tempo real (apenas se credenciais estiverem preenchidas)
   const checkStatus = async () => {
+    if (!instanceId || !instanceToken) return;
+
     try {
       const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(instanceId)}&token=${encodeURIComponent(instanceToken)}&clientToken=${encodeURIComponent(clientToken)}`);
       const data = await res.json();
@@ -98,16 +119,18 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   // Carrega ao abrir o modal e checa status
   useEffect(() => {
     if (isOpen) {
-      checkStatus();
-      if (!isConnected && instanceId && instanceToken) {
-        fetchLiveQrCode(instanceId, instanceToken, clientToken);
+      if (instanceId && instanceToken) {
+        checkStatus();
+        if (!isConnected) {
+          fetchLiveQrCode(instanceId, instanceToken, clientToken);
+        }
       }
     }
-  }, [isOpen, isConnected, selectedInstId]);
+  }, [isOpen, isConnected, instanceId, instanceToken]);
 
   // Polling de status e contagem regressiva para QR Code
   useEffect(() => {
-    if (!isOpen || isConnected) return;
+    if (!isOpen || isConnected || !instanceId || !instanceToken) return;
 
     const timer = setInterval(() => {
       setCountdown(prev => {
@@ -121,7 +144,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
     const statusTimer = setInterval(() => {
       checkStatus();
-    }, 3500);
+    }, 4000);
 
     return () => {
       clearInterval(timer);
@@ -134,20 +157,36 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const handleSimulatePairing = () => {
     setIsLoading(true);
     setTimeout(() => {
+      const simulatedPhone = '+55 11 9' + Math.floor(10000000 + Math.random() * 90000000);
+      const newInstId = instanceId || `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`;
+
+      createInstance({
+        name: `Central WhatsApp (${currentTenant.name})`,
+        phoneNumber: simulatedPhone,
+        zapiInstanceId: newInstId,
+        status: 'CONNECTED',
+        type: 'COMPANY_CENTRAL',
+        isDefault: true,
+      });
+
       setIsConnected(true);
+      setConnectedPhone(simulatedPhone);
       setIsLoading(false);
-      syncZapiInstance(instances[0]?.id || 'inst-1');
-    }, 1200);
+    }, 1000);
   };
 
   const handleDisconnect = () => {
     setIsLoading(true);
     setTimeout(() => {
+      if (instances.length > 0) {
+        instances.forEach(i => deleteInstance(i.id));
+      }
       setIsConnected(false);
+      setConnectedPhone('');
+      setQrCodeImage(null);
       setIsLoading(false);
       setCountdown(25);
-      setQrCodeImage(null);
-    }, 800);
+    }, 600);
   };
 
   const handleSaveCredentials = async (e: React.FormEvent) => {
@@ -207,22 +246,28 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
           </p>
 
           {/* Seletor de Linha da Empresa vs Linhas Diretas de Corretores */}
-          <div className="mt-3 p-1.5 bg-black/20 backdrop-blur-xs rounded-xl flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {instances.map(inst => (
-              <button
-                key={inst.id}
-                type="button"
-                onClick={() => setSelectedInstId(inst.id)}
-                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition whitespace-nowrap cursor-pointer ${
-                  selectedInstId === inst.id
-                    ? 'bg-white text-emerald-900 shadow-sm'
-                    : 'text-emerald-100 hover:bg-white/10'
-                }`}
-              >
-                {inst.type === 'COMPANY_CENTRAL' ? '🏢 Linha Central' : `👤 ${inst.name.split(' ')[0]}`}
-              </button>
-            ))}
-          </div>
+          {instances.length > 0 ? (
+            <div className="mt-3 p-1.5 bg-black/20 backdrop-blur-xs rounded-xl flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {instances.map(inst => (
+                <button
+                  key={inst.id}
+                  type="button"
+                  onClick={() => setSelectedInstId(inst.id)}
+                  className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition whitespace-nowrap cursor-pointer ${
+                    selectedInstId === inst.id
+                      ? 'bg-white text-emerald-900 shadow-sm'
+                      : 'text-emerald-100 hover:bg-white/10'
+                  }`}
+                >
+                  {inst.type === 'COMPANY_CENTRAL' ? '🏢 Linha Central' : `👤 ${inst.name.split(' ')[0]}`}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-black/20 backdrop-blur-xs rounded-xl text-[11px] font-semibold text-emerald-100">
+              <span>🏢 Linha Central da Empresa (Captação WhatsApp)</span>
+            </div>
+          )}
 
           {/* Abas */}
           <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-white/10">

@@ -754,104 +754,128 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
             </div>
 
             {/* Card da Instância com Ações */}
-            {instances.map(inst => (
-              <div key={inst.id} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200 font-bold">
-                      WA
+            {instances.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
+                  <Smartphone className="w-8 h-8" />
+                </div>
+                <div className="max-w-md mx-auto">
+                  <h3 className="text-sm font-bold text-slate-900">Nenhuma Linha WhatsApp Conectada</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Conecte o WhatsApp Oficial de Captação da <strong>{currentTenant.name}</strong> para receber leads automaticamente e habilitar o atendimento da equipe comercial.
+                  </p>
+                </div>
+                {onOpenQrCodeModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenQrCodeModal}
+                    className="inline-flex items-center gap-2 text-xs text-white bg-emerald-600 hover:bg-emerald-700 font-bold px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer active:scale-95"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Conectar WhatsApp via QR Code</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              instances.map(inst => (
+                <div key={inst.id} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200 font-bold">
+                        WA
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-slate-900">{inst.name}</h3>
+                          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                            ● Conectado
+                          </span>
+                        </div>
+                        <p className="text-xs font-mono text-slate-500">{inst.phoneNumber}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {onOpenQrCodeModal && (
+                        <button
+                          onClick={onOpenQrCodeModal}
+                          className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl px-4 py-2 transition font-bold shadow-xs active:scale-95 cursor-pointer"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Abrir QR Code / Reconectar</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => syncZapiInstance(inst.id)}
+                        className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-700 bg-slate-50 hover:bg-emerald-50 border border-slate-200 rounded-xl px-3 py-2 transition font-semibold cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Testar Conexão</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chaves de Acesso */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono">
+                    <div>
+                      <span className="text-slate-400 text-[10px] block uppercase font-bold">Instance ID</span>
+                      <span className="font-bold text-slate-800">{inst.zapiInstanceId}</span>
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-slate-900">{inst.name}</h3>
-                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                          ● Conectado
-                        </span>
-                      </div>
-                      <p className="text-xs font-mono text-slate-500">{inst.phoneNumber}</p>
+                      <span className="text-slate-400 text-[10px] block uppercase font-bold">Token de Segurança</span>
+                      <span className="text-emerald-700 font-bold flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> AWS Secrets Manager (Encriptado)
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {onOpenQrCodeModal && (
+                  {/* Webhook Endpoint */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      URL de Webhook (Configure no painel Z-API em "Ao Receber Mensagem")
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={webhookUrl}
+                        className="flex-1 text-xs bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-700 focus:outline-none"
+                      />
                       <button
-                        onClick={onOpenQrCodeModal}
-                        className="flex items-center gap-1.5 text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl px-4 py-2 transition font-bold shadow-xs active:scale-95 cursor-pointer"
+                        onClick={handleCopyWebhook}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs cursor-pointer"
                       >
-                        <QrCode className="w-3.5 h-3.5" />
-                        <span>Abrir QR Code / Reconectar</span>
+                        {copiedWebhook ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                        <span>{copiedWebhook ? 'Copiado!' : 'Copiar'}</span>
                       </button>
-                    )}
-                    <button
-                      onClick={() => syncZapiInstance(inst.id)}
-                      className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-700 bg-slate-50 hover:bg-emerald-50 border border-slate-200 rounded-xl px-3 py-2 transition font-semibold cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Testar Conexão</span>
-                    </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Chaves de Acesso */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono">
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase font-bold">Instance ID</span>
-                    <span className="font-bold text-slate-800">{inst.zapiInstanceId}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[10px] block uppercase font-bold">Token de Segurança</span>
-                    <span className="text-emerald-700 font-bold flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> AWS Secrets Manager (Encriptado)
-                    </span>
-                  </div>
+                  {/* Formulário de Envio de Teste */}
+                  <form onSubmit={handleSendTestMessage} className="pt-2 border-t border-slate-100">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Disparar Mensagem de Teste Direto
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={testPhone}
+                        onChange={(e) => setTestPhone(e.target.value)}
+                        placeholder="+55 11 90000-0000"
+                        className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono"
+                      />
+                      <button
+                        type="submit"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{testSent ? 'Enviado!' : 'Enviar Teste'}</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
-
-                {/* Webhook Endpoint */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    URL de Webhook (Configure no painel Z-API em "Ao Receber Mensagem")
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={webhookUrl}
-                      className="flex-1 text-xs bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2.5 font-mono text-slate-700 focus:outline-none"
-                    />
-                    <button
-                      onClick={handleCopyWebhook}
-                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs cursor-pointer"
-                    >
-                      {copiedWebhook ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                      <span>{copiedWebhook ? 'Copiado!' : 'Copiar'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Formulário de Envio de Teste */}
-                <form onSubmit={handleSendTestMessage} className="pt-2 border-t border-slate-100">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Disparar Mensagem de Teste Direto
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={testPhone}
-                      onChange={(e) => setTestPhone(e.target.value)}
-                      placeholder="+55 11 90000-0000"
-                      className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono"
-                    />
-                    <button
-                      type="submit"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{testSent ? 'Enviado!' : 'Enviar Teste'}</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 

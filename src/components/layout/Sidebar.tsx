@@ -398,8 +398,12 @@ export function Sidebar({
               />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
-                <span className="inline-block text-[9px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/40">
-                  {currentUser.role}
+                <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                  currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN_MASTER'
+                    ? 'text-amber-300 bg-amber-950/80 border-amber-800/50'
+                    : 'text-emerald-400 bg-emerald-950/80 border-emerald-800/40'
+                }`}>
+                  {currentUser.role === 'SUPERADMIN' ? '👑 SUPERADMIN' : currentUser.role === 'ADMIN_MASTER' ? '🛡️ ADMIN MASTER' : currentUser.role}
                 </span>
               </div>
             </div>
@@ -423,25 +427,6 @@ export function Sidebar({
                 </button>
               </div>
             )}
-
-            {/* Alternador Rápido de Usuário para Testes */}
-            <div className="px-0.5">
-              <select
-                value={currentUser.id}
-                onChange={(e) => {
-                  const u = users.find(x => x.id === e.target.value);
-                  if (u) setCurrentUser(u);
-                }}
-                className="w-full text-[10.5px] bg-slate-900 text-slate-300 border border-slate-800 rounded-lg px-2 py-1.5 focus:outline-none cursor-pointer hover:text-white transition"
-                title="Alternar usuário logado"
-              >
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>
-                    👤 {u.name} ({u.role})
-                  </option>
-                ))}
-              </select>
-            </div>
 
             {/* Botão de Logoff */}
             <button

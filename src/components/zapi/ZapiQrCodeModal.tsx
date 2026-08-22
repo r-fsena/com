@@ -403,38 +403,70 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                       </div>
                     </div>
 
-                    {/* Instruções Passo a Passo */}
+                    {/* Instruções Passo a Passo e Configuração Rápida */}
                     <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
-                        Como Conectar:
-                      </h3>
-                      <ol className="space-y-2.5 text-xs text-slate-700">
-                        <li className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
-                            1
-                          </span>
-                          <span>Abra o <strong>WhatsApp</strong> no celular comercial.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
-                            2
-                          </span>
-                          <span>Toque em <strong>Configurações ➔ Aparelhos Conectados</strong>.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
-                            3
-                          </span>
-                          <span>Aponte a câmera para ler este QR Code.</span>
-                        </li>
-                      </ol>
+                      {!instanceToken ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
+                          <div className="flex items-center gap-2">
+                            <Key className="w-4 h-4 text-emerald-600" />
+                            <h4 className="text-xs font-bold text-slate-800">Conectar WhatsApp Oficial Z-API</h4>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Crie sua instância em <a href="https://app.z-api.io" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold underline inline-flex items-center gap-0.5">app.z-api.io <ExternalLink className="w-2.5 h-2.5" /></a> e cole as chaves abaixo para gerar o QR Code oficial ao vivo:
+                          </p>
 
-                      {!instanceId && (
-                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                          <span>
-                            Deseja plugar uma instância real? Insira suas credenciais na aba <strong>"Chaves da Instância"</strong> acima.
-                          </span>
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              placeholder="Instance ID (Ex: 3F1B67...)"
+                              value={instanceId}
+                              onChange={(e) => setInstanceId(e.target.value)}
+                              className="w-full text-xs font-mono bg-white border border-slate-200 rounded-xl px-3 py-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                            />
+                            <input
+                              type="password"
+                              placeholder="Instance Token (Ex: 7A18BD...)"
+                              value={instanceToken}
+                              onChange={(e) => setInstanceToken(e.target.value)}
+                              className="w-full text-xs font-mono bg-white border border-slate-200 rounded-xl px-3 py-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleSaveCredentials(e)}
+                            disabled={!instanceId.trim() || !instanceToken.trim() || isLoading}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                          >
+                            {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
+                            <span>Gerar QR Code Oficial Z-API</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                            Como Conectar:
+                          </h3>
+                          <ol className="space-y-2 text-xs text-slate-700">
+                            <li className="flex items-start gap-2">
+                              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
+                                1
+                              </span>
+                              <span>Abra o <strong>WhatsApp</strong> no celular comercial.</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
+                                2
+                              </span>
+                              <span>Toque em <strong>Configurações ➔ Aparelhos Conectados</strong>.</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
+                                3
+                              </span>
+                              <span>Aponte a câmera para ler este QR Code oficial.</span>
+                            </li>
+                          </ol>
                         </div>
                       )}
 
@@ -442,7 +474,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                       <button
                         onClick={handleSimulatePairing}
                         disabled={isLoading}
-                        className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl transition shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+                        className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 rounded-xl transition shadow-xs active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         {isLoading ? (
                           <>
@@ -451,8 +483,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                           </>
                         ) : (
                           <>
-                            <Zap className="w-3.5 h-3.5" />
-                            <span>Simular Leitura do QR Code</span>
+                            <Zap className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Simular Leitura (Modo Demonstração)</span>
                           </>
                         )}
                       </button>

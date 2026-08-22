@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Tenant, 
   TenantStatus,
@@ -257,8 +257,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createTenant = (tenantData: Partial<Tenant>): Tenant => {
+    const newTenantId = `tenant-${Date.now()}`;
     const newTenant: Tenant = {
-      id: `tenant-${Date.now()}`,
+      id: newTenantId,
       name: tenantData.name || 'Nova Imobiliária',
       slug: tenantData.slug || `empresa-${Date.now().toString(36)}`,
       documentCnpj: tenantData.documentCnpj || '00.000.000/0001-00',
@@ -284,6 +285,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       },
       ...tenantData,
     };
+
+    // Cria funil de vendas inicial exclusivo deste novo tenant
+    const newTenantPipeline: Pipeline = {
+      id: `pipe-${newTenant.id}-default`,
+      tenantId: newTenant.id,
+      name: 'Funil Geral de Vendas',
+      isDefault: true,
+      stages: [
+        { id: `stage-${newTenant.id}-1`, pipelineId: `pipe-${newTenant.id}-default`, name: '1. Novo Lead WhatsApp', order: 1, slaHours: 2, colorHex: '#3b82f6' },
+        { id: `stage-${newTenant.id}-2`, pipelineId: `pipe-${newTenant.id}-default`, name: '2. Primeiro Contato', order: 2, slaHours: 12, colorHex: '#6366f1' },
+        { id: `stage-${newTenant.id}-3`, pipelineId: `pipe-${newTenant.id}-default`, name: '3. Em Qualificação', order: 3, slaHours: 24, colorHex: '#8b5cf6' },
+        { id: `stage-${newTenant.id}-4`, pipelineId: `pipe-${newTenant.id}-default`, name: '4. Visita Agendada', order: 4, slaHours: 48, colorHex: '#d97706' },
+        { id: `stage-${newTenant.id}-5`, pipelineId: `pipe-${newTenant.id}-default`, name: '5. Proposta em Mesa', order: 5, slaHours: 48, colorHex: '#f59e0b' },
+        { id: `stage-${newTenant.id}-6`, pipelineId: `pipe-${newTenant.id}-default`, name: '6. Contrato Fechado', order: 6, slaHours: 0, colorHex: '#059669', isWon: true },
+        { id: `stage-${newTenant.id}-7`, pipelineId: `pipe-${newTenant.id}-default`, name: 'Perdido / Descarte', order: 7, slaHours: 0, colorHex: '#ef4444', isLost: true },
+      ]
+    };
+
+    setPipelines(prev => {
+      const updated = [...prev, newTenantPipeline];
+      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
     setTenants(prev => {
       const updated = [...prev, newTenant];
       try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updated)); } catch {}
@@ -2299,6 +2324,100 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // -------------------------------------------------------------
+  // ISOLAMENTO MULTI-TENANCY SEGURO (SEGREGAÇÃO TOTAL POR IMOBILIÁRIA)
+  // -------------------------------------------------------------
+  const scopedContacts = useMemo(() => {
+    return contacts.filter(c => c.tenantId === currentTenant.id);
+  }, [contacts, currentTenant.id]);
+
+  const scopedConversations = useMemo(() => {
+    return conversations.filter(c => c.tenantId === currentTenant.id);
+  }, [conversations, currentTenant.id]);
+
+  const scopedInstances = useMemo(() => {
+    return instances.filter(i => i.tenantId === currentTenant.id);
+  }, [instances, currentTenant.id]);
+
+  const effectiveActiveInstanceId = useMemo(() => {
+    if (activeInstanceId && scopedInstances.some(i => i.id === activeInstanceId)) {
+      return activeInstanceId;
+    }
+    return scopedInstances[0]?.id || '';
+  }, [scopedInstances, activeInstanceId]);
+
+  const effectiveActiveConversationId = useMemo(() => {
+    if (activeConversationId && scopedConversations.some(c => c.id === activeConversationId)) {
+      return activeConversationId;
+    }
+    return scopedConversations[0]?.id || null;
+  }, [scopedConversations, activeConversationId]);
+
+  const scopedDeals = useMemo(() => {
+    return deals.filter(d => d.tenantId === currentTenant.id);
+  }, [deals, currentTenant.id]);
+
+  const scopedPipelines = useMemo(() => {
+    const pipes = pipelines.filter(p => p.tenantId === currentTenant.id);
+    if (pipes.length > 0) return pipes;
+
+    const defaultP: Pipeline = {
+      id: `pipe-${currentTenant.id}-default`,
+      tenantId: currentTenant.id,
+      name: 'Funil Geral de Vendas',
+      isDefault: true,
+      stages: [
+        { id: `stage-${currentTenant.id}-1`, pipelineId: `pipe-${currentTenant.id}-default`, name: '1. Novo Lead WhatsApp', order: 1, slaHours: 2, colorHex: '#3b82f6' },
+        { id: `stage-${currentTenant.id}-2`, pipelineId: `pipe-${currentTenant.id}-default`, name: '2. Primeiro Contato', order: 2, slaHours: 12, colorHex: '#6366f1' },
+        { id: `stage-${currentTenant.id}-3`, pipelineId: `pipe-${currentTenant.id}-default`, name: '3. Em Qualificação', order: 3, slaHours: 24, colorHex: '#8b5cf6' },
+        { id: `stage-${currentTenant.id}-4`, pipelineId: `pipe-${currentTenant.id}-default`, name: '4. Visita Agendada', order: 4, slaHours: 48, colorHex: '#d97706' },
+        { id: `stage-${currentTenant.id}-5`, pipelineId: `pipe-${currentTenant.id}-default`, name: '5. Proposta em Mesa', order: 5, slaHours: 48, colorHex: '#f59e0b' },
+        { id: `stage-${currentTenant.id}-6`, pipelineId: `pipe-${currentTenant.id}-default`, name: '6. Contrato Fechado', order: 6, slaHours: 0, colorHex: '#059669', isWon: true },
+        { id: `stage-${currentTenant.id}-7`, pipelineId: `pipe-${currentTenant.id}-default`, name: 'Perdido / Descarte', order: 7, slaHours: 0, colorHex: '#ef4444', isLost: true },
+      ]
+    };
+    return [defaultP];
+  }, [pipelines, currentTenant.id]);
+
+  const effectiveCurrentPipeline = useMemo(() => {
+    if (currentPipeline && currentPipeline.tenantId === currentTenant.id) {
+      return currentPipeline;
+    }
+    return scopedPipelines[0];
+  }, [currentPipeline, scopedPipelines, currentTenant.id]);
+
+  const scopedTasks = useMemo(() => {
+    return tasks.filter(t => t.tenantId === currentTenant.id);
+  }, [tasks, currentTenant.id]);
+
+  const scopedProposals = useMemo(() => {
+    return proposals.filter(p => p.tenantId === currentTenant.id);
+  }, [proposals, currentTenant.id]);
+
+  const scopedTransactions = useMemo(() => {
+    return transactions.filter(t => t.tenantId === currentTenant.id);
+  }, [transactions, currentTenant.id]);
+
+  const scopedCampaigns = useMemo(() => {
+    return campaigns.filter(c => c.tenantId === currentTenant.id);
+  }, [campaigns, currentTenant.id]);
+
+  const scopedAlerts = useMemo(() => {
+    return alerts.filter(a => a.tenantId === currentTenant.id);
+  }, [alerts, currentTenant.id]);
+
+  const scopedQuickReplies = useMemo(() => {
+    return quickReplies.filter(q => q.tenantId === currentTenant.id);
+  }, [quickReplies, currentTenant.id]);
+
+  const scopedUsers = useMemo(() => {
+    return users.filter(u => 
+      u.role === 'SUPERADMIN' || 
+      u.role === 'ADMIN_MASTER' || 
+      (u.tenantId ? u.tenantId === currentTenant.id : (currentTenant.id === 'tenant-vanguard-01'))
+    );
+  }, [users, currentTenant.id]);
+
   return (
     <CRMContext.Provider value={{
       isAuthenticated,
@@ -2311,38 +2430,38 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       createTenant,
       updateTenantStatus,
       deleteTenant,
-      users,
+      users: scopedUsers,
       currentUser,
       setCurrentUser,
       updateUser,
       createUser,
       deleteUser,
       updateUserAIPersona,
-      contacts,
+      contacts: scopedContacts,
       addContact,
       updateContact,
       deleteContact,
       addPresentedProperty,
       updatePresentedProperty,
       removePresentedProperty,
-      pipelines,
-      currentPipeline,
+      pipelines: scopedPipelines,
+      currentPipeline: effectiveCurrentPipeline,
       setCurrentPipeline,
-      deals,
+      deals: scopedDeals,
       moveDealStage,
       createDeal,
       updateDeal,
       deleteDeal,
       updatePipelineStages,
-      instances,
-      activeInstanceId,
+      instances: scopedInstances,
+      activeInstanceId: effectiveActiveInstanceId,
       setActiveInstanceId,
       createInstance,
       updateInstance,
       deleteInstance,
       transferConversationInstance,
-      conversations,
-      activeConversationId,
+      conversations: scopedConversations,
+      activeConversationId: effectiveActiveConversationId,
       setActiveConversationId,
       openChatForContact,
       loadChatHistory,
@@ -2359,22 +2478,22 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updateAIInsight,
       applyAIExtractionToContact,
       recordAIFeedback,
-      tasks,
+      tasks: scopedTasks,
       toggleTask,
       createTask,
       updateTask,
       deleteTask,
-      alerts,
+      alerts: scopedAlerts,
       dismissAlert,
-      campaigns,
+      campaigns: scopedCampaigns,
       createCampaign,
-      quickReplies,
-      proposals,
+      quickReplies: scopedQuickReplies,
+      proposals: scopedProposals,
       createProposal,
       updateProposal,
       deleteProposal,
       acceptProposal,
-      transactions,
+      transactions: scopedTransactions,
       createFinancialTransaction,
       updateFinancialTransaction,
       markTransactionPaid,

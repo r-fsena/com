@@ -4,6 +4,7 @@ export type AIPersonaTone = 'CONSULTATIVE' | 'PERSUASIVE' | 'FRIENDLY' | 'TECHNI
 
 export interface User {
   id: string;
+  tenantId?: string;
   name: string;
   email: string;
   phone: string;

@@ -123,6 +123,7 @@ export const MOCK_USERS: User[] = [
   },
   {
     id: 'user-camila-gestora',
+    tenantId: 'tenant-vanguard-01',
     name: 'Camila Mendonça',
     email: 'camila.gestora@vanguardprime.com.br',
     phone: '+55 11 97766-5544',
@@ -140,6 +141,7 @@ export const MOCK_USERS: User[] = [
   },
   {
     id: 'user-lucas-corretor',
+    tenantId: 'tenant-vanguard-01',
     name: 'Lucas Brandão',
     email: 'lucas.corretor@vanguardprime.com.br',
     phone: '+55 11 96655-4433',
@@ -157,6 +159,7 @@ export const MOCK_USERS: User[] = [
   },
   {
     id: 'user-juliana-corretora',
+    tenantId: 'tenant-vanguard-01',
     name: 'Juliana Paes Costa',
     email: 'juliana.corretora@vanguardprime.com.br',
     phone: '+55 11 95544-3322',

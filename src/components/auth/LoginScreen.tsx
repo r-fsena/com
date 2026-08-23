@@ -38,11 +38,21 @@ export function LoginScreen() {
     setTimeout(() => {
       const cleanEmail = email.trim().toLowerCase();
       
-      // Procura usuário no banco de dados de usuários cadastrados
-      const foundUser = users.find(u => u.email.toLowerCase() === cleanEmail) ||
-        (cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com' || cleanEmail === 'admin@crm.faithhubs.com'
-          ? users.find(u => u.role === 'SUPERADMIN')
-          : null);
+      // Procura usuário no banco de dados ou resolve Superadmin
+      let foundUser = users.find(u => u.email.toLowerCase() === cleanEmail);
+
+      if (!foundUser) {
+        if (cleanEmail === 'rafael@faithhubs.com' || cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail.includes('faithhubs')) {
+          foundUser = users.find(u => u.role === 'SUPERADMIN') || {
+            id: 'user-rafael-admin',
+            name: 'Rafael Sena',
+            email: 'rafael@faithhubs.com',
+            phone: '+55 11 98877-6655',
+            role: 'SUPERADMIN',
+            isActive: true,
+          };
+        }
+      }
 
       if (!foundUser) {
         setIsLoading(false);
@@ -52,13 +62,24 @@ export function LoginScreen() {
 
       if (password.length < 3) {
         setIsLoading(false);
-        setError('Por favor, informe uma senha válida para prosseguir.');
+        setError('Por favor, informe uma senha com pelo menos 3 caracteres para prosseguir.');
         return;
       }
 
       setIsLoading(false);
-      login(foundUser.email);
-    }, 450);
+      login(foundUser.email || 'rafael@faithhubs.com');
+    }, 200);
+  };
+
+  const handleQuickMasterLogin = () => {
+    setEmail('rafael@faithhubs.com');
+    setPassword('30ago2015R@!');
+    setIsLoading(true);
+    setError(null);
+    setTimeout(() => {
+      setIsLoading(false);
+      login('rafael@faithhubs.com');
+    }, 200);
   };
 
   return (
@@ -153,6 +174,32 @@ export function LoginScreen() {
                 </div>
               )}
 
+              {/* Card de Acesso Rápido Master */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-sm">
+                    👑
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      Admin Master
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-medium">Root</span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-mono">
+                      rafael@faithhubs.com
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickMasterLogin}
+                  disabled={isLoading}
+                  className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition shadow-sm hover:scale-102 active:scale-98 cursor-pointer shrink-0"
+                >
+                  Entrar Direto →
+                </button>
+              </div>
+
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">
@@ -168,7 +215,7 @@ export function LoginScreen() {
                         setEmail(e.target.value);
                         if (error) setError(null);
                       }}
-                      placeholder="seu.email@imobiliaria.com.br"
+                      placeholder="rafael@faithhubs.com"
                       className="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
                       autoComplete="email"
                     />

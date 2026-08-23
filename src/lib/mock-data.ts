@@ -107,7 +107,7 @@ export const MOCK_USERS: User[] = [
   {
     id: 'user-rafael-admin',
     name: 'Rafael Sena',
-    email: 'rafael.sena@vanguardprime.com.br',
+    email: 'rafael@faithhubs.com',
     phone: '+55 11 98877-6655',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     role: 'SUPERADMIN',
@@ -537,7 +537,7 @@ export const MOCK_MASTER_USERS: MasterUser[] = [
   {
     id: 'master-01',
     name: 'Rafael Sena',
-    email: 'rafael.sena@faithhubs.com',
+    email: 'rafael@faithhubs.com',
     phone: '+55 11 98877-6655',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     role: 'SUPERADMIN_GLOBAL',

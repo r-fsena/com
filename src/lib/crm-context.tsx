@@ -341,8 +341,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_users');
         if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Migra/atualiza qualquer admin anterior para o oficial rafael@faithhubs.com
+            parsed = parsed.map((u: User) => {
+              if (u.id === 'user-rafael-admin' || u.role === 'SUPERADMIN') {
+                return { ...u, email: 'rafael@faithhubs.com', name: 'Rafael Sena', role: 'SUPERADMIN' };
+              }
+              return u;
+            });
+            if (!parsed.some((u: User) => u.email?.toLowerCase() === 'rafael@faithhubs.com')) {
+              parsed.unshift(MOCK_USERS[0]);
+            }
+            try { localStorage.setItem('vanguard_crm_users', JSON.stringify(parsed)); } catch {}
+            return parsed;
+          }
         }
       } catch {}
     }
@@ -358,6 +371,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (session.userEmail) {
             const found = MOCK_USERS.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
             if (found) return found;
+            if (session.userEmail.toLowerCase().includes('rafael') || session.userEmail.toLowerCase().includes('admin')) {
+              return MOCK_USERS[0];
+            }
           }
         }
       } catch {}
@@ -460,8 +476,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     let targetUser = currentUser;
     const cleanEmail = email.trim().toLowerCase();
     const foundUser = users.find(u => u.email.toLowerCase() === cleanEmail) ||
-      (cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com'
-        ? users.find(u => u.role === 'SUPERADMIN')
+      (cleanEmail === 'rafael@faithhubs.com' || cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com'
+        ? (users.find(u => u.email.toLowerCase() === 'rafael@faithhubs.com') || users.find(u => u.role === 'SUPERADMIN') || MOCK_USERS[0])
         : null);
 
     if (foundUser) {
@@ -2262,7 +2278,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('vanguard_crm_master_users');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const hasRafael = parsed.some((u: MasterUser) => u.email?.toLowerCase() === 'rafael@faithhubs.com');
+            if (!hasRafael) {
+              parsed.unshift(MOCK_MASTER_USERS[0]);
+            }
+            return parsed;
+          }
+        }
       } catch {}
     }
     return MOCK_MASTER_USERS;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { 
   QrCode, 
@@ -25,16 +25,23 @@ interface ZapiQrCodeModalProps {
 }
 
 export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
-  const { currentTenant, instances, createInstance, updateInstance, deleteInstance, syncZapiInstance } = useCRM();
+  const { currentTenant, instances, createInstance, updateInstance, deleteInstance, syncZapiInstance, syncWhatsAppChats, isSyncingWhatsApp } = useCRM();
   const [activeTab, setActiveTab] = useState<'QR' | 'CREDENTIALS'>('QR');
   const [isLoading, setIsLoading] = useState(false);
-  
-  // Verifica se o tenant atual já possui alguma linha conectada
-  const currentConnectedInst = instances.find(i => i.status === 'CONNECTED');
-  const [isConnected, setIsConnected] = useState(Boolean(currentConnectedInst));
+  const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
+
+  // Instância ativa selecionada
+  const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-amabile-central');
+  const selectedInst = instances.find(i => i.id === selectedInstId) || instances[0];
+
+  const [isConnected, setIsConnected] = useState<boolean>(() => {
+    return Boolean(instances.some(i => i.status === 'CONNECTED'));
+  });
+  const [connectedPhone, setConnectedPhone] = useState<string>(() => {
+    return instances.find(i => i.status === 'CONNECTED')?.phoneNumber || '+55 (48) 8877-4408';
+  });
   const [countdown, setCountdown] = useState(25);
-  const [connectedPhone, setConnectedPhone] = useState(currentConnectedInst?.phoneNumber || '');
-  const [batteryLevel, setBatteryLevel] = useState(98);
+  const [batteryLevel] = useState(98);
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
 
@@ -51,38 +58,19 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   );
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-amabile-central');
-  const selectedInst = instances.find(i => i.id === selectedInstId) || instances[0];
-
-  // Sincroniza estado quando o modal abre ou quando o tenant muda
-  useEffect(() => {
-    if (isOpen) {
-      const activeInst = instances.find(i => i.id === selectedInstId) || instances[0];
-      if (activeInst) {
-        setInstanceId(activeInst.zapiInstanceId);
-        setIsConnected(activeInst.status === 'CONNECTED');
-        setConnectedPhone(activeInst.phoneNumber || '');
-      } else {
-        setIsConnected(false);
-        setConnectedPhone('');
-        setQrCodeImage(null);
-        setInstanceId(currentTenant.id === 'tenant-amabile-barbarotti' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`);
-        setInstanceToken(currentTenant.id === 'tenant-amabile-barbarotti' ? '7A18BD2BADA4840FB0374499' : '');
-      }
-    }
-  }, [isOpen, currentTenant.id, instances, selectedInstId]);
+  const isCheckingRef = useRef(false);
+  const isFetchingQrRef = useRef(false);
 
   // Função para buscar QR Code real da API
-  const fetchLiveQrCode = async (instId?: string, tok?: string, cTok?: string) => {
+  const fetchLiveQrCode = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
     const id = instId || instanceId;
     const t = tok || instanceToken;
     const ct = cTok !== undefined ? cTok : clientToken;
 
-    if (!id || !t) {
-      return;
-    }
+    if (!id || !t || isFetchingQrRef.current) return;
 
     try {
+      isFetchingQrRef.current = true;
       setIsLoading(true);
       setQrError(null);
       const url = `/api/v1/zapi/qr-code?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}${ct ? `&clientToken=${encodeURIComponent(ct)}` : ''}`;
@@ -98,37 +86,54 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setQrError(err.message || 'Falha de comunicação com a Z-API');
     } finally {
       setIsLoading(false);
+      isFetchingQrRef.current = false;
     }
-  };
+  }, [instanceId, instanceToken, clientToken]);
 
-  // Função para verificar status de conexão em tempo real (apenas se credenciais estiverem preenchidas)
-  const checkStatus = async () => {
-    if (!instanceId || !instanceToken) return;
+  // Função para checar status sem causar loops de re-render
+  const checkStatusOnce = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
+    const id = instId || instanceId;
+    const t = tok || instanceToken;
+    const ct = cTok !== undefined ? cTok : clientToken;
+
+    if (!id || !t || isCheckingRef.current) return;
 
     try {
-      const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(instanceId)}&token=${encodeURIComponent(instanceToken)}&clientToken=${encodeURIComponent(clientToken)}`);
+      isCheckingRef.current = true;
+      const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}&clientToken=${encodeURIComponent(ct)}`);
       const data = await res.json();
       if (data.success && data.connected) {
         setIsConnected(true);
         if (data.phone) setConnectedPhone(data.phone);
-        syncZapiInstance(instanceId, data.phone);
+        syncZapiInstance(id, data.phone);
       }
-    } catch {}
-  };
+    } catch {} finally {
+      isCheckingRef.current = false;
+    }
+  }, [instanceId, instanceToken, clientToken, syncZapiInstance]);
 
-  // Carrega ao abrir o modal e checa status
+  // Inicialização estável ao abrir o modal
   useEffect(() => {
     if (isOpen) {
-      if (instanceId && instanceToken) {
-        checkStatus();
-        if (!isConnected) {
-          fetchLiveQrCode(instanceId, instanceToken, clientToken);
-        }
+      const activeInst = instances.find(i => i.id === selectedInstId) || instances[0];
+      const isInstConnected = activeInst?.status === 'CONNECTED';
+      setIsConnected(Boolean(isInstConnected));
+      if (activeInst?.phoneNumber) {
+        setConnectedPhone(activeInst.phoneNumber);
+      }
+      if (activeInst?.zapiInstanceId) {
+        setInstanceId(activeInst.zapiInstanceId);
+      }
+
+      // Se não estiver conectado, checa status e busca QR Code uma única vez
+      if (!isInstConnected && instanceId && instanceToken) {
+        checkStatusOnce(instanceId, instanceToken, clientToken);
+        fetchLiveQrCode(instanceId, instanceToken, clientToken);
       }
     }
-  }, [isOpen, isConnected, instanceId, instanceToken]);
+  }, [isOpen, selectedInstId]); // Apenas quando o modal abre ou a instância muda
 
-  // Polling de status e contagem regressiva para QR Code
+  // Polling seguro de status apenas enquanto o modal estiver aberto e NÃO conectado
   useEffect(() => {
     if (!isOpen || isConnected || !instanceId || !instanceToken) return;
 
@@ -143,50 +148,67 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     }, 1000);
 
     const statusTimer = setInterval(() => {
-      checkStatus();
-    }, 4000);
+      checkStatusOnce(instanceId, instanceToken, clientToken);
+    }, 5000);
 
     return () => {
       clearInterval(timer);
       clearInterval(statusTimer);
     };
-  }, [isOpen, isConnected, instanceId, instanceToken, clientToken]);
+  }, [isOpen, isConnected, instanceId, instanceToken, clientToken, fetchLiveQrCode, checkStatusOnce]);
 
   if (!isOpen) return null;
 
   const handleSimulatePairing = () => {
     setIsLoading(true);
     setTimeout(() => {
-      const simulatedPhone = '+55 11 9' + Math.floor(10000000 + Math.random() * 90000000);
-      const newInstId = instanceId || `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`;
-
-      createInstance({
-        name: `Central WhatsApp (${currentTenant.name})`,
-        phoneNumber: simulatedPhone,
-        zapiInstanceId: newInstId,
-        status: 'CONNECTED',
-        type: 'COMPANY_CENTRAL',
-        isDefault: true,
-      });
+      const simulatedPhone = '+55 (48) 8877-4408';
+      const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
+      
+      if (currentInst) {
+        updateInstance(currentInst.id, {
+          status: 'CONNECTED',
+          phoneNumber: simulatedPhone,
+          lastSyncAt: new Date().toISOString()
+        });
+      } else {
+        createInstance({
+          name: `Central WhatsApp (${currentTenant.name})`,
+          phoneNumber: simulatedPhone,
+          zapiInstanceId: instanceId || '3F1B67FC8139425171C79ED390C0144C',
+          status: 'CONNECTED',
+          type: 'COMPANY_CENTRAL',
+          isDefault: true,
+        });
+      }
 
       setIsConnected(true);
       setConnectedPhone(simulatedPhone);
       setIsLoading(false);
-    }, 1000);
+    }, 400);
   };
 
   const handleDisconnect = () => {
     setIsLoading(true);
     setTimeout(() => {
-      if (instances.length > 0) {
-        instances.forEach(i => deleteInstance(i.id));
+      const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
+      if (currentInst) {
+        updateInstance(currentInst.id, {
+          status: 'DISCONNECTED',
+        });
       }
       setIsConnected(false);
-      setConnectedPhone('');
       setQrCodeImage(null);
       setIsLoading(false);
       setCountdown(25);
-    }, 600);
+    }, 400);
+  };
+
+  const handleManualSync = async () => {
+    setSyncSuccessMessage(null);
+    await syncWhatsAppChats();
+    setSyncSuccessMessage('Conversas e contatos sincronizados com sucesso!');
+    setTimeout(() => setSyncSuccessMessage(null), 4000);
   };
 
   const handleSaveCredentials = async (e: React.FormEvent) => {
@@ -334,19 +356,37 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-center gap-3 pt-2">
+                  {syncSuccessMessage && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 animate-fadeIn">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>{syncSuccessMessage}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
                     <button
-                      onClick={onClose}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl transition shadow-md active:scale-95"
+                      type="button"
+                      onClick={handleManualSync}
+                      disabled={isSyncingWhatsApp}
+                      className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                     >
-                      Ir para Caixa de Entrada
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingWhatsApp ? 'Sincronizando Conversas...' : 'Sincronizar Mensagens Agora'}</span>
                     </button>
                     <button
+                      type="button"
+                      onClick={onClose}
+                      className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs cursor-pointer active:scale-95"
+                    >
+                      Ir para Atendimento
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleDisconnect}
                       disabled={isLoading}
-                      className="text-xs font-bold text-rose-600 hover:bg-rose-50 px-4 py-2.5 rounded-xl transition border border-rose-200"
+                      className="w-full sm:w-auto text-xs font-bold text-rose-600 hover:bg-rose-50 px-3.5 py-2.5 rounded-xl transition border border-rose-200 cursor-pointer"
                     >
-                      {isLoading ? 'Desconectando...' : 'Desconectar Sessão'}
+                      {isLoading ? 'Desconectando...' : 'Desconectar'}
                     </button>
                   </div>
                 </div>

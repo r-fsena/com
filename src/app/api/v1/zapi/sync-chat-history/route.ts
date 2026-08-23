@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phone, conversationId, tenantId = 'tenant-vanguard-01' } = body;
+    const { phone, conversationId, tenantId = 'tenant-amabile-barbarotti' } = body;
 
     if (!phone) {
       return NextResponse.json({ error: 'Telefone é obrigatório' }, { status: 400 });

@@ -101,7 +101,7 @@ export async function POST(
     if (cleanPhone && cleanPhone !== '0') {
       webhookStore.addMessage({
         id: messageId,
-        tenantId: tenantId || 'tenant-vanguard-01',
+        tenantId: tenantId || 'tenant-amabile-barbarotti',
         instanceId: instanceId || '3F1B67FC8139425171C79ED390C0144C',
         phone: cleanPhone,
         senderName,

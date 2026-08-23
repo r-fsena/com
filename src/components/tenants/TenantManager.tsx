@@ -354,7 +354,7 @@ export function TenantManager({ onEnterTenant }: TenantManagerProps) {
                       <option value="SUSPENDED">Suspender</option>
                     </select>
 
-                    {tenants.length > 1 && tenant.id !== 'tenant-vanguard-01' && (
+                    {tenants.length > 1 && tenant.id !== 'tenant-amabile-barbarotti' && (
                       <button
                         onClick={() => deleteTenant(tenant.id)}
                         className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"

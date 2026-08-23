@@ -41,17 +41,17 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   // Form de Credenciais da Instância
   const [instanceId, setInstanceId] = useState(
     instances[0]?.zapiInstanceId || 
-    (currentTenant.id === 'tenant-vanguard-01' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`)
+    (currentTenant.id === 'tenant-amabile-barbarotti' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`)
   );
   const [instanceToken, setInstanceToken] = useState(
-    currentTenant.id === 'tenant-vanguard-01' ? '7A18BD2BADA4840FB0374499' : ''
+    currentTenant.id === 'tenant-amabile-barbarotti' ? '7A18BD2BADA4840FB0374499' : ''
   );
   const [clientToken, setClientToken] = useState(
-    currentTenant.id === 'tenant-vanguard-01' ? 'Fc78d61c833db4b50864816b70766aee8S' : ''
+    currentTenant.id === 'tenant-amabile-barbarotti' ? 'Fc78d61c833db4b50864816b70766aee8S' : ''
   );
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-central');
+  const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-amabile-central');
   const selectedInst = instances.find(i => i.id === selectedInstId) || instances[0];
 
   // Sincroniza estado quando o modal abre ou quando o tenant muda
@@ -66,8 +66,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         setIsConnected(false);
         setConnectedPhone('');
         setQrCodeImage(null);
-        setInstanceId(currentTenant.id === 'tenant-vanguard-01' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`);
-        setInstanceToken(currentTenant.id === 'tenant-vanguard-01' ? '7A18BD2BADA4840FB0374499' : '');
+        setInstanceId(currentTenant.id === 'tenant-amabile-barbarotti' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`);
+        setInstanceToken(currentTenant.id === 'tenant-amabile-barbarotti' ? '7A18BD2BADA4840FB0374499' : '');
       }
     }
   }, [isOpen, currentTenant.id, instances, selectedInstId]);

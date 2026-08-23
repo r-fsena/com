@@ -23,6 +23,7 @@ import { MOCK_AUTOMATIONS, MOCK_AUTOMATION_LOGS } from '@/lib/mock-data';
 import { safeFormatDate } from '@/lib/date-utils';
 
 export function AutomationManager() {
+  const { currentTenant } = useCRM();
   const [automations, setAutomations] = useState<AutomationRule[]>(MOCK_AUTOMATIONS as any);
   const [logs] = useState(MOCK_AUTOMATION_LOGS);
   const [activeTab, setActiveTab] = useState<'RULES' | 'LOGS'>('RULES');
@@ -46,7 +47,7 @@ export function AutomationManager() {
 
     const newRule: AutomationRule = {
       id: `auto-${Date.now()}`,
-      tenantId: 'tenant-vanguard-01',
+      tenantId: currentTenant?.id || 'tenant-amabile-barbarotti',
       name: ruleName.trim(),
       description: ruleDescription.trim() || 'Regra de automação customizada',
       triggerType,

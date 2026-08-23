@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { S3StorageClient } from '@/lib/s3-client';
 
 const PresignedUrlSchema = z.object({
-  tenantId: z.string().default('tenant-vanguard-01'),
+  tenantId: z.string().default('tenant-amabile-barbarotti'),
   fileName: z.string().min(1, 'Nome do arquivo obrigatório'),
   fileType: z.string().min(1, 'MIME type obrigatório'),
   fileSizeBytes: z.number().max(25 * 1024 * 1024, 'Arquivo não pode exceder 25MB').optional(),

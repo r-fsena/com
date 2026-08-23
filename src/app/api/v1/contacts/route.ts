@@ -18,7 +18,7 @@ const CreateContactSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const tenantId = searchParams.get('tenantId') || 'tenant-vanguard-01';
+  const tenantId = searchParams.get('tenantId') || 'tenant-amabile-barbarotti';
   const temperature = searchParams.get('temperature');
   const search = searchParams.get('q');
 
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     const data = validated.data;
     const newContact = {
       id: `contact-${Date.now()}`,
-      tenantId: 'tenant-vanguard-01',
+      tenantId: 'tenant-amabile-barbarotti',
       ...data,
       aiPriorityScore: 75,
       consentGiven: true,

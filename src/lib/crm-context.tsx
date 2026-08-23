@@ -226,7 +226,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem('vanguard_crm_tenants');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const cleanList = parsed.filter((t: Tenant) => t.id !== 'tenant-horizonte-02' && t.id !== 'tenant-alphaville-03' && t.id !== 'tenant-vanguard-01');
+            if (cleanList.length > 0) return cleanList;
+          }
         }
       } catch {}
     }
@@ -237,7 +240,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('vanguard_crm_current_tenant');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.id !== 'tenant-horizonte-02' && parsed.id !== 'tenant-alphaville-03' && parsed.id !== 'tenant-vanguard-01') {
+            return parsed;
+          }
+        }
       } catch {}
     }
     return MOCK_TENANTS[0];
@@ -343,13 +351,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Migra/atualiza qualquer admin anterior para o oficial rafael@faithhubs.com
-            parsed = parsed.map((u: User) => {
-              if (u.id === 'user-rafael-admin' || u.role === 'SUPERADMIN') {
-                return { ...u, email: 'rafael@faithhubs.com', name: 'Rafael Sena', role: 'SUPERADMIN' };
-              }
-              return u;
-            });
+            parsed = parsed.filter((u: User) => 
+              u.email?.toLowerCase() === 'rafael@faithhubs.com' ||
+              u.role === 'SUPERADMIN' ||
+              (!u.email?.includes('vanguardprime') && !u.email?.includes('camila') && !u.email?.includes('lucas') && !u.email?.includes('juliana'))
+            );
             if (!parsed.some((u: User) => u.email?.toLowerCase() === 'rafael@faithhubs.com')) {
               parsed.unshift(MOCK_USERS[0]);
             }
@@ -514,8 +520,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_contacts');
         if (saved) {
-          const parsed = JSON.parse(saved);
+          let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01');
             return deduplicateContactList(parsed);
           }
         }
@@ -531,7 +538,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem('vanguard_crm_current_pipeline');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0) return parsed;
+          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0 && parsed.tenantId !== 'tenant-vanguard-01') return parsed;
         }
       } catch {}
     }
@@ -542,8 +549,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_deals');
         if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((d: Deal) => d.tenantId !== 'tenant-vanguard-01');
+            return parsed;
+          }
         }
       } catch {}
     }
@@ -555,8 +565,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_instances');
         if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((i: WhatsAppInstance) => i.tenantId !== 'tenant-vanguard-01' && i.id !== 'inst-lucas' && i.id !== 'inst-juliana');
+            if (parsed.length > 0) return parsed;
+          }
         }
       } catch {}
     }
@@ -564,7 +577,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [activeInstanceId, setActiveInstanceId] = useState<string>(() => {
-    return MOCK_INSTANCES[0]?.id || 'inst-central';
+    return MOCK_INSTANCES[0]?.id || 'inst-amabile-central';
   });
 
   const createInstance = (data: Partial<WhatsAppInstance>): WhatsAppInstance => {
@@ -635,7 +648,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('vanguard_crm_conversations');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01');
+            return parsed;
+          }
+        }
       } catch {}
     }
     return MOCK_CONVERSATIONS;
@@ -647,7 +666,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('vanguard_crm_messages');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((m: Message) => m.tenantId !== 'tenant-vanguard-01');
+            return parsed;
+          }
+        }
       } catch {}
     }
     return MOCK_MESSAGES;
@@ -2008,8 +2033,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_proposals');
         if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((p: Proposal) => p.tenantId !== 'tenant-vanguard-01');
+            return parsed;
+          }
         }
       } catch {}
     }
@@ -2164,8 +2192,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_transactions');
         if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed = parsed.filter((t: FinancialTransaction) => t.tenantId !== 'tenant-vanguard-01');
+            return parsed;
+          }
         }
       } catch {}
     }
@@ -2279,13 +2310,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_master_users');
         if (saved) {
-          const parsed = JSON.parse(saved);
+          let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const hasRafael = parsed.some((u: MasterUser) => u.email?.toLowerCase() === 'rafael@faithhubs.com');
-            if (!hasRafael) {
-              parsed.unshift(MOCK_MASTER_USERS[0]);
-            }
-            return parsed;
+            parsed = parsed.filter((u: MasterUser) => u.email?.toLowerCase() === 'rafael@faithhubs.com');
+            if (parsed.length > 0) return parsed;
           }
         }
       } catch {}
@@ -2439,7 +2467,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return users.filter(u => 
       u.role !== 'SUPERADMIN' && 
       u.role !== 'ADMIN_MASTER' && 
-      (u.tenantId ? u.tenantId === currentTenant.id : (currentTenant.id === 'tenant-vanguard-01'))
+      (u.tenantId ? u.tenantId === currentTenant.id : (currentTenant.id === 'tenant-amabile-barbarotti'))
     );
   }, [users, currentTenant.id]);
 

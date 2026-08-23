@@ -38,7 +38,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     return Boolean(instances.some(i => i.status === 'CONNECTED'));
   });
   const [connectedPhone, setConnectedPhone] = useState<string>(() => {
-    return instances.find(i => i.status === 'CONNECTED')?.phoneNumber || '+55 (48) 8877-4408';
+    return instances.find(i => i.status === 'CONNECTED')?.phoneNumber || '';
   });
   const [countdown, setCountdown] = useState(25);
   const [batteryLevel] = useState(98);
@@ -120,6 +120,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setIsConnected(Boolean(isInstConnected));
       if (activeInst?.phoneNumber) {
         setConnectedPhone(activeInst.phoneNumber);
+      } else {
+        setConnectedPhone('');
       }
       if (activeInst?.zapiInstanceId) {
         setInstanceId(activeInst.zapiInstanceId);
@@ -162,7 +164,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const handleSimulatePairing = () => {
     setIsLoading(true);
     setTimeout(() => {
-      const simulatedPhone = '+55 (48) 8877-4408';
+      const simulatedPhone = '+55 11 9' + Math.floor(10000000 + Math.random() * 90000000);
       const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
       
       if (currentInst) {
@@ -188,20 +190,33 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     }, 400);
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     setIsLoading(true);
-    setTimeout(() => {
-      const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
-      if (currentInst) {
-        updateInstance(currentInst.id, {
-          status: 'DISCONNECTED',
-        });
-      }
-      setIsConnected(false);
-      setQrCodeImage(null);
-      setIsLoading(false);
-      setCountdown(25);
-    }, 400);
+    try {
+      await fetch('/api/v1/zapi/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: instanceId.trim(),
+          token: instanceToken.trim(),
+          clientToken: clientToken.trim(),
+        }),
+      });
+    } catch {}
+
+    const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
+    if (currentInst) {
+      updateInstance(currentInst.id, {
+        status: 'DISCONNECTED',
+        phoneNumber: '',
+      });
+    }
+    setIsConnected(false);
+    setConnectedPhone('');
+    setQrCodeImage(null);
+    setIsLoading(false);
+    setCountdown(25);
+    fetchLiveQrCode(instanceId.trim(), instanceToken.trim(), clientToken.trim());
   };
 
   const handleManualSync = async () => {
@@ -217,6 +232,16 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     setSavedSuccess(false);
 
     try {
+      // Atualiza na instância do contexto
+      const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
+      if (currentInst) {
+        updateInstance(currentInst.id, {
+          zapiInstanceId: instanceId.trim(),
+          status: 'DISCONNECTED',
+          phoneNumber: '',
+        });
+      }
+
       // Auto-configura os webhooks na Z-API automaticamente
       await fetch('/api/v1/zapi/auto-configure', {
         method: 'POST',
@@ -230,11 +255,16 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       });
 
       setSavedSuccess(true);
+      setIsConnected(false);
+      setConnectedPhone('');
+      setQrCodeImage(null);
       setActiveTab('QR');
       fetchLiveQrCode(instanceId.trim(), instanceToken.trim(), clientToken.trim());
     } catch {
       setSavedSuccess(true);
+      setIsConnected(false);
       setActiveTab('QR');
+      fetchLiveQrCode(instanceId.trim(), instanceToken.trim(), clientToken.trim());
     } finally {
       setIsLoading(false);
     }

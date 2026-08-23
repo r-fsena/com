@@ -85,12 +85,12 @@ export const MOCK_INSTANCES: WhatsAppInstance[] = [
     id: 'inst-amabile-central',
     tenantId: 'tenant-amabile-barbarotti',
     name: 'Central WhatsApp • Amábile Barbarotti',
-    phoneNumber: '+55 11 98800-0000',
+    phoneNumber: '',
     zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C',
-    status: 'CONNECTED',
+    status: 'DISCONNECTED',
     type: 'COMPANY_CENTRAL',
     isDefault: true,
-    batteryLevel: 98,
+    batteryLevel: 100,
     lastSyncAt: new Date().toISOString(),
   }
 ];

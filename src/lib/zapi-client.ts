@@ -136,6 +136,24 @@ export class ZApiClient {
   }
 
   /**
+   * Desconecta a sessão atual do WhatsApp na Z-API (limpa o pareamento)
+   */
+  async disconnect(): Promise<ZApiResponse> {
+    return this.request('disconnect', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Reinicia a instância Z-API
+   */
+  async restart(): Promise<ZApiResponse> {
+    return this.request('restart', {
+      method: 'GET',
+    });
+  }
+
+  /**
    * Obtém QR Code para reconexão da instância
    */
   async getQRCode(): Promise<ZApiResponse<{ value?: string; image?: string }>> {

@@ -655,7 +655,7 @@ export function WhatsAppInbox() {
           action: 'send-contact',
           phone: activeContact.phone,
           contactName: currentUser.name,
-          contactPhone: instances[0]?.phoneNumber || '+554888774408',
+          contactPhone: currentUser.phone || instances[0]?.phoneNumber || '',
         }),
       });
       sendMessage(activeConversation.id, `📇 Cartão de Visita de ${currentUser.name} compartilhado.`);

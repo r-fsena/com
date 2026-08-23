@@ -567,7 +567,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((i: WhatsAppInstance) => i.tenantId !== 'tenant-vanguard-01' && i.id !== 'inst-lucas' && i.id !== 'inst-juliana');
+            parsed = parsed
+              .filter((i: WhatsAppInstance) => i.tenantId !== 'tenant-vanguard-01' && i.id !== 'inst-lucas' && i.id !== 'inst-juliana')
+              .map((i: WhatsAppInstance) => {
+                if (i.phoneNumber?.includes('8877') || i.phoneNumber?.includes('98800-0000')) {
+                  return { ...i, status: 'DISCONNECTED' as const, phoneNumber: '' };
+                }
+                return i;
+              });
             if (parsed.length > 0) return parsed;
           }
         }

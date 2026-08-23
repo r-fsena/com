@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
         cleanPhone,
         latitude || '-27.5954',
         longitude || '-48.5480',
-        name || 'Plantão de Vendas Vanguard',
-        address || 'Av. Beira Mar Norte, 1000 - Florianópolis, SC'
+        name || 'Plantão de Atendimento • Amábile Barbarotti',
+        address || 'Atendimento Personalizado'
       );
       return NextResponse.json(res);
     }
@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
       const { contactName, contactPhone } = body;
       const res = await zapi.sendContact(
         cleanPhone,
-        contactName || 'Corretor Vanguard',
-        contactPhone || '+554888774408'
+        contactName || 'Amábile Barbarotti Corretora',
+        contactPhone || ''
       );
       return NextResponse.json(res);
     }

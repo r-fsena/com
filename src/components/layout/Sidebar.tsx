@@ -12,7 +12,6 @@ import {
   Settings, 
   Building2, 
   Wifi, 
-  ChevronDown,
   Sparkles,
   Bot,
   Zap,
@@ -48,11 +47,7 @@ export function Sidebar({
 }: SidebarProps) {
   const { 
     currentTenant, 
-    tenants, 
-    setCurrentTenant, 
     currentUser, 
-    users, 
-    setCurrentUser,
     conversations,
     tasks,
     alerts,
@@ -210,17 +205,20 @@ export function Sidebar({
           ) : (
             <div>
               <div className="flex items-center justify-between gap-2">
-                {/* Logo & Marca */}
+                {/* Logo & Marca da Imobiliária Ativa */}
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30 flex-shrink-0">
                     <Building2 className="w-5 h-5" />
                   </div>
                   
                   <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 truncate">
-                      SaaS Multi-tenant
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 truncate">
+                        Ambiente Ativo
+                      </span>
                     </div>
-                    <h2 className="text-xs font-bold text-white tracking-tight truncate">
+                    <h2 className="text-xs font-bold text-white tracking-tight truncate" title={currentTenant.name}>
                       {currentTenant.name}
                     </h2>
                   </div>
@@ -247,25 +245,6 @@ export function Sidebar({
                     </button>
                   )}
                 </div>
-              </div>
-
-              {/* Tenant Switcher */}
-              <div className="relative mt-2.5">
-                <select
-                  value={currentTenant.id}
-                  onChange={(e) => {
-                    const selected = tenants.find(t => t.id === e.target.value);
-                    if (selected) setCurrentTenant(selected);
-                  }}
-                  className="w-full text-xs font-medium bg-slate-900 text-slate-200 border border-slate-800 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none appearance-none cursor-pointer hover:bg-slate-850 transition"
-                >
-                  {tenants.map(t => (
-                    <option key={t.id} value={t.id}>
-                      🏢 {t.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
               </div>
             </div>
           )}

@@ -359,6 +359,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             if (!parsed.some((u: User) => u.email?.toLowerCase() === 'rafael@faithhubs.com')) {
               parsed.unshift(MOCK_USERS[0]);
             }
+            // Deduplica estritamente por e-mail (nunca permite mais de 1 usuário por e-mail)
+            const seenEmails = new Set<string>();
+            const uniqueUsers: User[] = [];
+            for (const u of parsed) {
+              const emailKey = (u.email || '').trim().toLowerCase();
+              if (emailKey && !seenEmails.has(emailKey)) {
+                seenEmails.add(emailKey);
+                uniqueUsers.push(u);
+              }
+            }
+            parsed = uniqueUsers;
             try { localStorage.setItem('vanguard_crm_users', JSON.stringify(parsed)); } catch {}
             return parsed;
           }
@@ -388,6 +399,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   });
 
   const updateUser = (userId: string, updates: Partial<User>) => {
+    if (updates.email) {
+      const targetEmail = updates.email.trim().toLowerCase();
+      const isDuplicate = users.some(u => u.id !== userId && (u.email || '').trim().toLowerCase() === targetEmail);
+      if (isDuplicate) {
+        throw new Error(`O e-mail "${updates.email}" já está cadastrado para outro usuário.`);
+      }
+    }
+
     setUsers(prev => {
       const updated = prev.map(u => u.id === userId ? { ...u, ...updates } : u);
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
@@ -399,13 +418,25 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createUser = (userData: Partial<User>): User => {
+    const rawEmail = (userData.email || '').trim().toLowerCase();
+    if (!rawEmail) {
+      throw new Error('O e-mail é obrigatório para convidar ou cadastrar um usuário.');
+    }
+
+    // Validação estrita: impede múltiplos usuários com o mesmo e-mail
+    const emailAlreadyRegistered = users.some(u => (u.email || '').trim().toLowerCase() === rawEmail);
+    if (emailAlreadyRegistered) {
+      throw new Error(`Já existe um usuário cadastrado com o e-mail "${userData.email}". Cada usuário deve possuir um e-mail único.`);
+    }
+
     const brokerName = userData.name?.trim() || 'Novo Corretor';
     const brokerPhone = userData.phone?.trim() || '+55 11 99999-0000';
 
     const newUser: User = {
       id: `user-${Date.now()}`,
+      tenantId: currentTenant.id,
       name: brokerName,
-      email: userData.email?.trim() || `corretor${Date.now()}@vanguardprime.com.br`,
+      email: (userData.email || '').trim(),
       phone: brokerPhone,
       role: userData.role || 'BROKER',
       isActive: true,
@@ -421,6 +452,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
 
     setUsers(prev => {
+      // Garante unicidade antes de adicionar
+      if (prev.some(u => (u.email || '').trim().toLowerCase() === rawEmail)) {
+        return prev;
+      }
       const updated = [...prev, newUser];
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
       return updated;
@@ -430,13 +465,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const newDirectInst: WhatsAppInstance = {
       id: `inst-${newUser.id}`,
       tenantId: currentTenant.id,
-      name: `${brokerName} (Linha Direta Corretor)`,
+      name: `${brokerName} (Linha Direta)`,
       phoneNumber: brokerPhone,
       zapiInstanceId: `INST-${Date.now().toString(36).toUpperCase()}`,
-      status: 'CONNECTED',
+      status: 'DISCONNECTED',
       type: 'BROKER_DIRECT',
       assignedUserId: newUser.id,
-      batteryLevel: 95,
+      batteryLevel: 100,
       lastSyncAt: new Date().toISOString(),
     };
 
@@ -2502,9 +2537,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const scopedUsers = useMemo(() => {
     return users.filter(u => 
-      u.role !== 'SUPERADMIN' && 
-      u.role !== 'ADMIN_MASTER' && 
-      (u.tenantId ? u.tenantId === currentTenant.id : (currentTenant.id === 'tenant-amabile-barbarotti'))
+      u.role === 'SUPERADMIN' || 
+      u.role === 'ADMIN_MASTER' || 
+      (u.tenantId ? u.tenantId === currentTenant.id : true)
     );
   }, [users, currentTenant.id]);
 

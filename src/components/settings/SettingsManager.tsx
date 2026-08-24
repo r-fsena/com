@@ -27,7 +27,11 @@ import {
   Edit3,
   Save,
   CheckCircle2,
-  X
+  X,
+  Crown,
+  Mail,
+  Phone,
+  AlertTriangle
 } from 'lucide-react';
 import { UserRole } from '@/types/crm';
 
@@ -58,12 +62,15 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [workDays, setWorkDays] = useState<number[]>(currentTenant.businessHours?.workDays || [1, 2, 3, 4, 5, 6]);
   const [saveSlaSuccess, setSaveSlaSuccess] = useState(false);
 
-  // Estados de Modal de Novo Usuário
+  // Estados de Modal de Novo Usuário & Notificações
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('BROKER');
+  const [userSuccessMessage, setUserSuccessMessage] = useState<string | null>(null);
+  const [userModalError, setUserModalError] = useState<string | null>(null);
+  const [copiedUserEmail, setCopiedUserEmail] = useState<string | null>(null);
 
   // Estados Z-API
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -76,6 +83,13 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     navigator.clipboard.writeText(webhookUrl);
     setCopiedWebhook(true);
     setTimeout(() => setCopiedWebhook(false), 2000);
+  };
+
+  const handleCopyInviteLink = (userEmail: string, userName: string) => {
+    const inviteText = `Olá ${userName}! Seu acesso ao CRM da ${currentTenant.name} foi liberado.\n\nAcesse: https://crm.faithhubs.com\nSeu e-mail cadastrado: ${userEmail}`;
+    navigator.clipboard.writeText(inviteText);
+    setCopiedUserEmail(userEmail);
+    setTimeout(() => setCopiedUserEmail(null), 2500);
   };
 
   const handleSendTestMessage = (e: React.FormEvent) => {
@@ -118,20 +132,49 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
 
   const handleCreateNewUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName.trim() || !newUserEmail.trim()) return;
+    setUserModalError(null);
 
-    createUser({
-      name: newUserName.trim(),
-      email: newUserEmail.trim(),
-      phone: newUserPhone.trim() || '+55 11 99999-0000',
-      role: newUserRole,
-      isActive: true,
-    });
+    const cleanName = newUserName.trim();
+    const cleanEmail = newUserEmail.trim().toLowerCase();
+    const cleanPhone = newUserPhone.trim() || '+55 11 99999-0000';
 
-    setNewUserName('');
-    setNewUserEmail('');
-    setNewUserPhone('');
-    setIsNewUserModalOpen(false);
+    if (!cleanName) {
+      setUserModalError('Por favor, informe o nome completo do usuário.');
+      return;
+    }
+
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setUserModalError('Por favor, informe um endereço de e-mail válido.');
+      return;
+    }
+
+    // Validação estrita de unicidade de e-mail
+    const alreadyExists = users.some(u => (u.email || '').trim().toLowerCase() === cleanEmail);
+    if (alreadyExists) {
+      setUserModalError(`Já existe um usuário cadastrado com o e-mail "${cleanEmail}". Cada usuário deve ter um e-mail único.`);
+      return;
+    }
+
+    try {
+      const created = createUser({
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        role: newUserRole,
+        isActive: true,
+      });
+
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPhone('');
+      setUserModalError(null);
+      setIsNewUserModalOpen(false);
+
+      setUserSuccessMessage(`✅ Usuário "${created.name}" (${created.email}) cadastrado e convidado com sucesso na equipe!`);
+      setTimeout(() => setUserSuccessMessage(null), 6000);
+    } catch (err: any) {
+      setUserModalError(err.message || 'Erro ao cadastrar usuário.');
+    }
   };
 
   const toggleWorkDay = (day: number) => {
@@ -341,136 +384,249 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         {/* ========================================================================= */}
         {activeTab === 'USERS' && (
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Users className="w-4 h-4 text-emerald-600" />
-                  <span>Gestão de Usuários & Corretores da Equipe ({users.length})</span>
+                  <span>Gestão de Usuários & Corretores ({users.length})</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Adicione, edite cargos e gerencie o acesso de cada corretor e gestor do CRM.
+                  Adicione, edite perfis e gerencie o acesso de cada corretor e gestor do CRM.
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setIsNewUserModalOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-4 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-98"
+                onClick={() => {
+                  setUserModalError(null);
+                  setIsNewUserModalOpen(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 shrink-0"
               >
-                <UserPlus className="w-3.5 h-3.5" />
+                <UserPlus className="w-4 h-4" />
                 <span>+ Convidar Novo Usuário</span>
               </button>
             </div>
 
+            {/* Banner de Sucesso pós-convite */}
+            {userSuccessMessage && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs flex items-center justify-between gap-2 animate-fadeIn shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="font-semibold">{userSuccessMessage}</span>
+                </div>
+                <button 
+                  onClick={() => setUserSuccessMessage(null)} 
+                  className="text-emerald-700 hover:text-emerald-950 p-1 cursor-pointer"
+                  title="Fechar"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Tabela de Usuários */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
                   <tr>
                     <th className="py-3 px-4">Usuário / Corretor</th>
                     <th className="py-3 px-4">Cargo / Perfil</th>
-                    <th className="py-3 px-4">Telefone</th>
+                    <th className="py-3 px-4">WhatsApp / Telefone</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {users.map(u => (
-                    <tr key={u.id} className="hover:bg-slate-50/70 transition">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=059669&color=fff`}
-                            alt={u.name}
-                            className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200"
-                          />
-                          <div>
-                            <p className="font-bold text-slate-900">{u.name}</p>
-                            <p className="text-[11px] text-slate-500">{u.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          u.role === 'SUPERADMIN' || u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
-                          u.role === 'MANAGER' ? 'bg-blue-100 text-blue-800' :
-                          'bg-emerald-100 text-emerald-800'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-mono text-slate-600">{u.phone}</td>
-                      <td className="py-3 px-4">
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          ● Ativo
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <select
-                            value={u.role}
-                            onChange={(e) => updateUser(u.id, { role: e.target.value as UserRole })}
-                            className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-1 focus:outline-none cursor-pointer"
-                          >
-                            <option value="ADMIN">Admin</option>
-                            <option value="MANAGER">Gestor</option>
-                            <option value="BROKER">Corretor</option>
-                            <option value="VIEWER">Visualizador</option>
-                          </select>
-                          {users.length > 1 && u.id !== 'user-rafael-admin' && (
-                            <button
-                              onClick={() => deleteUser(u.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                              title="Excluir Usuário"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-400">
+                        <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="font-medium">Nenhum usuário cadastrado.</p>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    users.map(u => {
+                      const isMaster = u.role === 'SUPERADMIN' || u.role === 'ADMIN_MASTER';
+                      const isCurrent = u.id === 'user-rafael-admin';
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=059669&color=fff`}
+                                alt={u.name}
+                                className="w-9 h-9 rounded-full object-cover ring-2 ring-emerald-500/20"
+                              />
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-bold text-slate-900">{u.name}</p>
+                                  {isMaster && (
+                                    <span title="SuperAdmin Master">
+                                      <Crown className="w-3.5 h-3.5 text-amber-500" />
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
+                                  <Mail className="w-3 h-3 text-slate-400" /> {u.email}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`text-[10px] font-bold px-2.5 py-0.8 rounded-full inline-flex items-center gap-1 border ${
+                              isMaster ? 'bg-amber-50 text-amber-900 border-amber-300 font-black' :
+                              u.role === 'ADMIN' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                              u.role === 'MANAGER' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                              'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}>
+                              {isMaster ? '👑 SUPERADMIN' :
+                               u.role === 'ADMIN' ? '🛡️ ADMIN' :
+                               u.role === 'MANAGER' ? '💼 GESTOR' :
+                               u.role === 'VIEWER' ? '👁️ VISUALIZADOR' :
+                               '👤 CORRETOR'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-600">
+                            {u.phone ? (
+                              <span className="flex items-center gap-1">
+                                <Phone className="w-3 h-3 text-slate-400" /> {u.phone}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">Não informado</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span>Ativo</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Botão de Copiar Instruções de Acesso */}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyInviteLink(u.email, u.name)}
+                                className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition flex items-center gap-1 cursor-pointer ${
+                                  copiedUserEmail === u.email
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                                }`}
+                                title="Copiar link de acesso para o usuário"
+                              >
+                                {copiedUserEmail === u.email ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span>Copiado!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-slate-500" />
+                                    <span>Copiar Acesso</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {!isMaster && (
+                                <select
+                                  value={u.role}
+                                  onChange={(e) => updateUser(u.id, { role: e.target.value as UserRole })}
+                                  className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                                >
+                                  <option value="ADMIN">Admin</option>
+                                  <option value="MANAGER">Gestor</option>
+                                  <option value="BROKER">Corretor</option>
+                                  <option value="VIEWER">Visualizador</option>
+                                </select>
+                              )}
+
+                              {!isMaster && !isCurrent && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Deseja realmente remover o acesso de ${u.name}?`)) {
+                                      deleteUser(u.id);
+                                    }
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  title="Excluir Usuário"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
 
             {/* Modal de Cadastro de Novo Usuário */}
             {isNewUserModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
                 <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                       <UserPlus className="w-4 h-4 text-emerald-600" />
-                      <span>Convidar / Cadastrar Novo Corretor</span>
+                      <span>Convidar / Cadastrar Novo Usuário</span>
                     </h3>
-                    <button onClick={() => setIsNewUserModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setUserModalError(null);
+                        setIsNewUserModalOpen(false);
+                      }} 
+                      className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <form onSubmit={handleCreateNewUser} className="space-y-3">
+                  {userModalError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2 animate-shake">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <span className="font-semibold">{userModalError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateNewUser} className="space-y-3.5">
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">Nome Completo *</label>
                       <input
                         type="text"
-                        placeholder="Ex: Lucas Brandão"
+                        placeholder="Ex: Corretor Amábile"
                         value={newUserName}
-                        onChange={(e) => setNewUserName(e.target.value)}
-                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:bg-white focus:outline-none"
+                        onChange={(e) => {
+                          setNewUserName(e.target.value);
+                          if (userModalError) setUserModalError(null);
+                        }}
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">E-mail Comercial *</label>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        E-mail Comercial (Único) *
+                      </label>
                       <input
                         type="email"
-                        placeholder="corretor@vanguardprime.com.br"
+                        placeholder="corretor@empresa.com.br"
                         value={newUserEmail}
-                        onChange={(e) => setNewUserEmail(e.target.value)}
-                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:bg-white focus:outline-none"
+                        onChange={(e) => {
+                          setNewUserEmail(e.target.value);
+                          if (userModalError) setUserModalError(null);
+                        }}
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                         required
                       />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Este e-mail será a chave única de login do usuário no sistema.
+                      </p>
                     </div>
 
                     <div>
@@ -480,7 +636,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                         placeholder="+55 11 99999-8888"
                         value={newUserPhone}
                         onChange={(e) => setNewUserPhone(e.target.value)}
-                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:bg-white focus:outline-none"
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono"
                       />
                     </div>
 
@@ -489,11 +645,11 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                       <select
                         value={newUserRole}
                         onChange={(e) => setNewUserRole(e.target.value as UserRole)}
-                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:bg-white focus:outline-none"
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                       >
                         <option value="BROKER">Corretor (Acessa seus leads e atende no WhatsApp)</option>
                         <option value="MANAGER">Gestor Comercial (Acessa toda a equipe e funis)</option>
-                        <option value="ADMIN">Administrador (Controle total do sistema)</option>
+                        <option value="ADMIN">Administrador (Controle total do ambiente)</option>
                         <option value="VIEWER">Visualizador (Apenas leitura)</option>
                       </select>
                     </div>
@@ -501,16 +657,20 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                       <button
                         type="button"
-                        onClick={() => setIsNewUserModalOpen(false)}
-                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                        onClick={() => {
+                          setUserModalError(null);
+                          setIsNewUserModalOpen(false);
+                        }}
+                        className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
                       >
                         Cancelar
                       </button>
                       <button
                         type="submit"
-                        className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-xs"
+                        className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-xs cursor-pointer active:scale-98 flex items-center gap-1.5"
                       >
-                        Salvar e Convidar
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Salvar e Convidar</span>
                       </button>
                     </div>
                   </form>

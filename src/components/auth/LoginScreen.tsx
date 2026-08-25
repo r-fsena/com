@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export function LoginScreen() {
-  const { login, users, tenants } = useCRM();
+  const { login, users, tenants, updateUser } = useCRM();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,6 +29,23 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'LOGIN' | 'FORGOT' | 'ONBOARDING'>('LOGIN');
   const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [isActivating, setIsActivating] = useState(false);
+
+  // Detecta parâmetro de ativação no link do e-mail
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const actionParam = params.get('action');
+      const emailParam = params.get('email');
+
+      if (emailParam) {
+        setEmail(emailParam);
+      }
+      if (actionParam === 'activate') {
+        setIsActivating(true);
+      }
+    }
+  }, []);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +81,14 @@ export function LoginScreen() {
         setIsLoading(false);
         setError('Por favor, informe uma senha com pelo menos 3 caracteres para prosseguir.');
         return;
+      }
+
+      // Se o usuário ainda não tinha senha definida ou estava com status de convite, ativa a conta
+      if (!foundUser.passwordSet || foundUser.status === 'INVITED') {
+        updateUser(foundUser.id, {
+          passwordSet: true,
+          status: 'ACTIVE',
+        });
       }
 
       setIsLoading(false);
@@ -167,6 +192,18 @@ export function LoginScreen() {
           {/* VIEW 1: LOGIN PRINCIPAL */}
           {view === 'LOGIN' && (
             <div className="space-y-6">
+              {isActivating && (
+                <div className="p-4 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-xs rounded-2xl flex items-start gap-3 animate-in fade-in duration-300 shadow-lg shadow-emerald-950/40">
+                  <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-white text-sm mb-0.5">🎉 Convite de Acesso Confirmado!</p>
+                    <p className="text-emerald-300/90 leading-relaxed">
+                      Seja bem-vindo(a) à equipe! Digite a senha que deseja utilizar para ativar seu acesso definitivo ao CRM.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs rounded-xl flex items-center gap-2.5 animate-in fade-in duration-200">
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />

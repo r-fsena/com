@@ -11,6 +11,13 @@ export interface User {
   avatarUrl?: string;
   role: UserRole;
   isActive: boolean;
+
+  // Status de Convite & Senha
+  status?: 'INVITED' | 'ACTIVE' | 'SUSPENDED';
+  passwordSet?: boolean;
+  invitedAt?: string;
+  inviteToken?: string;
+  lastInviteSentAt?: string;
   
   // Configurações do IA Copiloto por Corretor
   aiPersonaPrompt?: string;

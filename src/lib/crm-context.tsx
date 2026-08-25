@@ -66,6 +66,7 @@ interface CRMContextType {
   updateUser: (userId: string, updates: Partial<User>) => void;
   createUser: (userData: Partial<User>) => User;
   deleteUser: (userId: string) => void;
+  resendUserInvite: (userId: string) => Promise<{ success: boolean; message: string }>;
   updateUserAIPersona: (userId: string, data: { aiPersonaPrompt?: string; aiTone?: any; aiDirectives?: string[]; aiModel?: string }) => void;
 
   // CRM Leads e Contatos
@@ -432,6 +433,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const brokerName = userData.name?.trim() || 'Novo Corretor';
     const brokerPhone = userData.phone?.trim() || '+55 11 99999-0000';
 
+    const nowIso = new Date().toISOString();
     const newUser: User = {
       id: `user-${Date.now()}`,
       tenantId: currentTenant.id,
@@ -440,6 +442,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       phone: brokerPhone,
       role: userData.role || 'BROKER',
       isActive: true,
+      status: 'INVITED',
+      passwordSet: false,
+      invitedAt: nowIso,
+      lastInviteSentAt: nowIso,
       aiPersonaPrompt: userData.aiPersonaPrompt || `Você é o copiloto comercial de ${brokerName}, especialista imobiliário na ${currentTenant.name}. Adote tom consultivo, polido e empático. Tire dúvidas sobre o imóvel com clareza, esclareça condições de pagamento e conduza o cliente para agendamento de visita presencial ou reunião com o corretor.`,
       aiTone: userData.aiTone || 'CONSULTATIVE',
       aiDirectives: userData.aiDirectives || [
@@ -481,7 +487,58 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       return updatedInst;
     });
 
+    // Dispara o envio real do e-mail de convite via API
+    if (typeof window !== 'undefined') {
+      fetch('/api/v1/users/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newUser.email,
+          name: newUser.name,
+          role: newUser.role,
+          tenantName: currentTenant.name,
+          tenantId: currentTenant.id,
+          isResend: false,
+        }),
+      }).catch(err => {
+        console.error('[CRMContext] Erro ao disparar e-mail de convite:', err);
+      });
+    }
+
     return newUser;
+  };
+
+  const resendUserInvite = async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const targetUser = users.find(u => u.id === userId);
+    if (!targetUser) {
+      throw new Error('Usuário não encontrado.');
+    }
+
+    const res = await fetch('/api/v1/users/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: targetUser.email,
+        name: targetUser.name,
+        role: targetUser.role,
+        tenantName: currentTenant.name,
+        tenantId: currentTenant.id,
+        isResend: true,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Erro ao reenviar e-mail de convite.');
+    }
+
+    const now = new Date().toISOString();
+    updateUser(userId, { lastInviteSentAt: now });
+
+    return {
+      success: true,
+      message: data.message || `E-mail de convite reenviado com sucesso para ${targetUser.email}!`,
+    };
   };
 
   const deleteUser = (userId: string) => {
@@ -2561,6 +2618,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updateUser,
       createUser,
       deleteUser,
+      resendUserInvite,
       updateUserAIPersona,
       contacts: scopedContacts,
       addContact,

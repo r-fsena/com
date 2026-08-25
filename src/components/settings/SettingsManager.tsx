@@ -40,7 +40,7 @@ interface SettingsManagerProps {
 }
 
 export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
-  const { currentTenant, updateTenant, instances, syncZapiInstance, users, updateUser, createUser, deleteUser } = useCRM();
+  const { currentTenant, updateTenant, instances, syncZapiInstance, users, updateUser, createUser, deleteUser, resendUserInvite } = useCRM();
   
   // 4 Submenus solicitados: Empresa, Usuários, Permissões, SLAs (+ Z-API)
   const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI'>('TENANT');
@@ -71,6 +71,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [userSuccessMessage, setUserSuccessMessage] = useState<string | null>(null);
   const [userModalError, setUserModalError] = useState<string | null>(null);
   const [copiedUserEmail, setCopiedUserEmail] = useState<string | null>(null);
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null);
 
   // Estados Z-API
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -497,13 +498,54 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                              <span>Ativo</span>
-                            </span>
+                            {u.passwordSet || u.status === 'ACTIVE' ? (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.8 rounded-full border border-emerald-200 inline-flex items-center gap-1.5 shadow-2xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Ativo (Senha Definida)</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.8 rounded-full border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                <span>Convite Enviado (Senha Pendente)</span>
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* Botão de Reenviar E-mail de Convite */}
+                              {(!u.passwordSet || u.status === 'INVITED') && !isMaster && (
+                                <button
+                                  type="button"
+                                  disabled={resendingUserId === u.id}
+                                  onClick={async () => {
+                                    try {
+                                      setResendingUserId(u.id);
+                                      const res = await resendUserInvite(u.id);
+                                      setUserSuccessMessage(`✉️ ${res.message}`);
+                                      setTimeout(() => setUserSuccessMessage(null), 6000);
+                                    } catch (err: any) {
+                                      setUserModalError(err.message || 'Erro ao reenviar convite');
+                                    } finally {
+                                      setResendingUserId(null);
+                                    }
+                                  }}
+                                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  title="Reenviar e-mail de convite com link de ativação"
+                                >
+                                  {resendingUserId === u.id ? (
+                                    <>
+                                      <RefreshCw className="w-3 h-3 animate-spin text-amber-700" />
+                                      <span>Enviando...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Send className="w-3 h-3 text-amber-700" />
+                                      <span>Reenviar E-mail</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
                               {/* Botão de Copiar Instruções de Acesso */}
                               <button
                                 type="button"
@@ -586,6 +628,14 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                     </button>
                   </div>
 
+                  {/* Info sobre envio de e-mail */}
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 text-emerald-900 rounded-xl text-xs flex items-start gap-2.5">
+                    <Mail className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">
+                      Um <strong>e-mail de convite oficial</strong> com link seguro para definição de senha e ativação da conta será enviado automaticamente para o endereço informado.
+                    </span>
+                  </div>
+
                   {userModalError && (
                     <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2 animate-shake">
                       <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -625,7 +675,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                         required
                       />
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Este e-mail será a chave única de login do usuário no sistema.
+                        Este e-mail será a chave única de login e receberá o convite.
                       </p>
                     </div>
 
@@ -670,7 +720,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                         className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-xs cursor-pointer active:scale-98 flex items-center gap-1.5"
                       >
                         <UserPlus className="w-3.5 h-3.5" />
-                        <span>Salvar e Convidar</span>
+                        <span>Salvar e Enviar Convite</span>
                       </button>
                     </div>
                   </form>

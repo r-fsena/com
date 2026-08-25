@@ -8,6 +8,7 @@ const inviteSchema = z.object({
   role: z.string().default('BROKER'),
   tenantName: z.string().default('Imobiliária'),
   tenantId: z.string().optional(),
+  temporaryPassword: z.string().optional(),
   isResend: z.boolean().optional().default(false),
 });
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
       tenantName: validated.tenantName,
       role: validated.role,
       inviteLink: inviteLink,
+      temporaryPassword: validated.temporaryPassword,
       isResend: validated.isResend,
     });
 

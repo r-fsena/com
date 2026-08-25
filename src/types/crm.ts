@@ -15,6 +15,8 @@ export interface User {
   // Status de Convite & Senha
   status?: 'INVITED' | 'ACTIVE' | 'SUSPENDED';
   passwordSet?: boolean;
+  password?: string;
+  mustChangePassword?: boolean;
   invitedAt?: string;
   inviteToken?: string;
   lastInviteSentAt?: string;

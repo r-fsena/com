@@ -6,7 +6,16 @@ export interface UserInviteEmailParams {
   tenantName: string;
   role: string;
   inviteLink: string;
+  temporaryPassword?: string;
   isResend?: boolean;
+}
+
+export interface PasswordResetEmailParams {
+  toEmail: string;
+  userName: string;
+  tenantName: string;
+  newPassword?: string;
+  loginLink: string;
 }
 
 export interface EmailSendResult {
@@ -244,16 +253,23 @@ export function generateUserInviteHtml(params: UserInviteEmailParams): string {
             <span class="info-label">E-mail Cadastrado</span>
             <span class="info-value" style="font-family: monospace;">${params.toEmail}</span>
           </div>
+          ${params.temporaryPassword ? `
+          <div class="info-row" style="background: rgba(16, 185, 129, 0.08); padding: 10px 8px; border-radius: 8px; margin-top: 4px;">
+            <span class="info-label" style="color: #34d399; font-weight: 700;">Senha Inicial Definida</span>
+            <span class="info-value" style="color: #ffffff; font-family: monospace; font-size: 14px; letter-spacing: 1px; font-weight: 800;">${params.temporaryPassword}</span>
+          </div>
+          ` : `
           <div class="info-row">
             <span class="info-label">Status da Senha</span>
             <span class="info-value" style="color: #fbbf24;">Aguardando Definição</span>
           </div>
+          `}
         </div>
 
         <!-- Botão de Ação -->
         <div class="cta-container">
           <a href="${inviteLink}" class="cta-button">
-            👉 Definir Senha & Acessar CRM
+            ${params.temporaryPassword ? '👉 Acessar Meu Workspace no CRM' : '👉 Definir Senha & Acessar CRM'}
           </a>
         </div>
 
@@ -268,11 +284,11 @@ export function generateUserInviteHtml(params: UserInviteEmailParams): string {
           <div style="font-size: 13px; font-weight: 700; color: #cbd5e1; margin-bottom: 12px;">Como realizar seu primeiro acesso:</div>
           <div class="step-item">
             <span class="step-number">1</span>
-            <span>Clique no botão acima para abrir a tela de validação do CRM.</span>
+            <span>Clique no botão acima para abrir a tela de login do CRM.</span>
           </div>
           <div class="step-item">
             <span class="step-number">2</span>
-            <span>Cadastre sua senha pessoal de alta segurança.</span>
+            <span>${params.temporaryPassword ? 'Utilize a senha inicial informada acima para entrar.' : 'Cadastre sua senha pessoal de alta segurança.'}</span>
           </div>
           <div class="step-item">
             <span class="step-number">3</span>
@@ -291,6 +307,221 @@ export function generateUserInviteHtml(params: UserInviteEmailParams): string {
 </body>
 </html>
   `.trim();
+}
+
+/**
+ * Gera o template HTML para notificação de redefinição de senha
+ */
+export function generatePasswordResetHtml(params: PasswordResetEmailParams): string {
+  const { userName, tenantName, newPassword, loginLink } = params;
+
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sua senha foi redefinida - FaithHubs CRM</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0b1320;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #e2e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #0b1320;
+      padding: 40px 10px;
+    }
+    .container {
+      max-width: 580px;
+      margin: 0 auto;
+      background: #111c2e;
+      border: 1px solid #1e293b;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .header {
+      background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #0369a1 100%);
+      padding: 36px 32px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 4px 14px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #93c5fd;
+      margin-bottom: 12px;
+    }
+    .header h1 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 800;
+    }
+    .content {
+      padding: 36px 32px;
+    }
+    .greeting {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 16px;
+    }
+    .text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #94a3b8;
+      margin-bottom: 24px;
+    }
+    .info-card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #1e293b;
+      font-size: 13px;
+    }
+    .info-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .info-label {
+      color: #64748b;
+      font-weight: 600;
+    }
+    .info-value {
+      color: #f8fafc;
+      font-weight: 700;
+      text-align: right;
+    }
+    .cta-container {
+      text-align: center;
+      margin: 32px 0;
+    }
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 16px 36px;
+      border-radius: 14px;
+      box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.4);
+    }
+    .footer {
+      background: #090e17;
+      padding: 24px 32px;
+      text-align: center;
+      border-top: 1px solid #1e293b;
+      font-size: 11px;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="badge">Segurança & Acesso</div>
+        <h1>🔑 Senha de Acesso Redefinida</h1>
+      </div>
+
+      <div class="content">
+        <div class="greeting">Olá, ${userName}!</div>
+        <p class="text">
+          A senha da sua conta de acesso ao <strong>FaithHubs CRM</strong> na imobiliária <strong>${tenantName}</strong> foi redefinida com sucesso pelo administrador do sistema.
+        </p>
+
+        <div class="info-card">
+          <div class="info-row">
+            <span class="info-label">E-mail de Acesso</span>
+            <span class="info-value" style="font-family: monospace;">${params.toEmail}</span>
+          </div>
+          ${newPassword ? `
+          <div class="info-row" style="background: rgba(37, 99, 235, 0.1); padding: 10px 8px; border-radius: 8px; margin-top: 4px;">
+            <span class="info-label" style="color: #60a5fa; font-weight: 700;">Nova Senha Temporária</span>
+            <span class="info-value" style="color: #ffffff; font-family: monospace; font-size: 14px; letter-spacing: 1px; font-weight: 800;">${newPassword}</span>
+          </div>
+          ` : ''}
+        </div>
+
+        <div class="cta-container">
+          <a href="${loginLink}" class="cta-button">
+            👉 Entrar no CRM com a Nova Senha
+          </a>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p style="margin: 0 0 6px 0;">Caso você não tenha solicitado esta alteração, entre em contato imediatamente com o administrador da sua empresa.</p>
+        <p style="margin: 0;">FaithHubs CRM Imobiliário • <a href="https://crm.faithhubs.com" style="color: #64748b;">crm.faithhubs.com</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+}
+
+/**
+ * Envia o e-mail de notificação de redefinição de senha
+ */
+export async function sendPasswordResetNotificationEmail(params: PasswordResetEmailParams): Promise<EmailSendResult> {
+  const { toEmail, tenantName } = params;
+  const subject = `🔑 Nova Senha de Acesso ao CRM - ${tenantName}`;
+  const htmlContent = generatePasswordResetHtml(params);
+
+  const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_SERVER_HOST;
+  const smtpPort = Number(process.env.SMTP_PORT || process.env.EMAIL_SERVER_PORT || 587);
+  const smtpUser = process.env.SMTP_USER || process.env.EMAIL_SERVER_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_SERVER_PASSWORD;
+  const smtpSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
+  const fromEmail = process.env.SMTP_FROM || process.env.EMAIL_FROM || '"FaithHubs CRM" <contato@faithhubs.com>';
+
+  if (smtpHost && smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+
+      const info = await transporter.sendMail({
+        from: fromEmail,
+        to: toEmail,
+        subject: subject,
+        html: htmlContent,
+      });
+
+      console.log(`[EmailService] ✅ E-mail de redefinição enviado via SMTP para ${toEmail}. MessageId: ${info.messageId}`);
+      return { success: true, messageId: info.messageId, isSimulated: false };
+    } catch (err: any) {
+      console.error(`[EmailService] ❌ Erro ao enviar e-mail de redefinição para ${toEmail}:`, err);
+      return { success: true, isSimulated: true, error: err.message };
+    }
+  }
+
+  console.log(`[EmailService] ✉️ [MODO SIMULADO] Senha Redefinida para: ${toEmail}`);
+  return { success: true, isSimulated: true, messageId: `sim-reset-${Date.now()}` };
 }
 
 /**

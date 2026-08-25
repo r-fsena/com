@@ -31,16 +31,20 @@ import {
   Crown,
   Mail,
   Phone,
-  AlertTriangle
+  AlertTriangle,
+  Key,
+  Eye,
+  EyeOff,
+  Sparkles
 } from 'lucide-react';
-import { UserRole } from '@/types/crm';
+import { UserRole, User } from '@/types/crm';
 
 interface SettingsManagerProps {
   onOpenQrCodeModal?: () => void;
 }
 
 export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
-  const { currentTenant, updateTenant, instances, syncZapiInstance, users, updateUser, createUser, deleteUser, resendUserInvite } = useCRM();
+  const { currentTenant, updateTenant, instances, syncZapiInstance, users, updateUser, createUser, deleteUser, resendUserInvite, resetUserPassword } = useCRM();
   
   // 4 Submenus solicitados: Empresa, Usuários, Permissões, SLAs (+ Z-API)
   const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI'>('TENANT');
@@ -68,10 +72,26 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('BROKER');
+  const [passwordMode, setPasswordMode] = useState<'LINK' | 'MANUAL'>('LINK');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [showNewUserPassword, setShowNewUserPassword] = useState(false);
+  const [newUserMustChangePassword, setNewUserMustChangePassword] = useState(false);
+
   const [userSuccessMessage, setUserSuccessMessage] = useState<string | null>(null);
   const [userModalError, setUserModalError] = useState<string | null>(null);
   const [copiedUserEmail, setCopiedUserEmail] = useState<string | null>(null);
   const [resendingUserId, setResendingUserId] = useState<string | null>(null);
+
+  // Estados do Modal de Redefinir Senha
+  const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
+  const [selectedUserForReset, setSelectedUserForReset] = useState<User | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [showResetPasswordValue, setShowResetPasswordValue] = useState(true);
+  const [resetNotifyEmail, setResetNotifyEmail] = useState(true);
+  const [resetMustChangePassword, setResetMustChangePassword] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetModalError, setResetModalError] = useState<string | null>(null);
+  const [copiedResetCredentials, setCopiedResetCredentials] = useState(false);
 
   // Estados Z-API
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -79,6 +99,16 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [testSent, setTestSent] = useState(false);
 
   const webhookUrl = `https://crm.faithhubs.com/api/v1/webhooks/zapi/${currentTenant.id}/${instances[0]?.zapiInstanceId || 'instance-01'}`;
+
+  // Gerador de senhas aleatórias seguras
+  const generateRandomPassword = () => {
+    const prefixes = ['Corretor', 'Vanguard', 'Prime', 'Imovel', 'Gestor', 'Acesso'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const symbols = ['@', '#', '$', '!'];
+    const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+    return `${prefix}${symbol}${randomNum}`;
+  };
 
   const handleCopyWebhook = () => {
     navigator.clipboard.writeText(webhookUrl);
@@ -91,6 +121,53 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     navigator.clipboard.writeText(inviteText);
     setCopiedUserEmail(userEmail);
     setTimeout(() => setCopiedUserEmail(null), 2500);
+  };
+
+  const handleCopyFullCredentials = (email: string, pass: string, name: string) => {
+    const text = `🔑 *Dados de Acesso ao CRM - ${currentTenant.name}*\n\nOlá ${name}!\nSeu acesso foi configurado:\n\n🌐 *Portal:* https://crm.faithhubs.com\n📧 *E-mail:* ${email}\n🔐 *Senha Inicial:* ${pass}\n\nRecomendamos alterar sua senha após o primeiro login.`;
+    navigator.clipboard.writeText(text);
+    setCopiedResetCredentials(true);
+    setTimeout(() => setCopiedResetCredentials(false), 2500);
+  };
+
+  const handleOpenResetModal = (user: User) => {
+    setSelectedUserForReset(user);
+    setResetPasswordValue(generateRandomPassword());
+    setShowResetPasswordValue(true);
+    setResetNotifyEmail(true);
+    setResetMustChangePassword(false);
+    setResetModalError(null);
+    setCopiedResetCredentials(false);
+    setIsResetPasswordModalOpen(true);
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserForReset) return;
+
+    const cleanPass = resetPasswordValue.trim();
+    if (cleanPass.length < 3) {
+      setResetModalError('A senha deve ter pelo menos 3 caracteres.');
+      return;
+    }
+
+    try {
+      setIsResettingPassword(true);
+      setResetModalError(null);
+
+      const res = await resetUserPassword(selectedUserForReset.id, cleanPass, {
+        notifyEmail: resetNotifyEmail,
+        mustChangePassword: resetMustChangePassword,
+      });
+
+      setUserSuccessMessage(`🔑 ${res.message} (Nova senha: ${cleanPass})`);
+      setIsResetPasswordModalOpen(false);
+      setTimeout(() => setUserSuccessMessage(null), 8000);
+    } catch (err: any) {
+      setResetModalError(err.message || 'Erro ao redefinir senha.');
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   const handleSendTestMessage = (e: React.FormEvent) => {
@@ -156,6 +233,11 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
       return;
     }
 
+    if (passwordMode === 'MANUAL' && newUserPassword.trim().length < 3) {
+      setUserModalError('A senha inicial deve ter pelo menos 3 caracteres.');
+      return;
+    }
+
     try {
       const created = createUser({
         name: cleanName,
@@ -163,16 +245,23 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         phone: cleanPhone,
         role: newUserRole,
         isActive: true,
+        password: passwordMode === 'MANUAL' ? newUserPassword.trim() : undefined,
+        mustChangePassword: passwordMode === 'MANUAL' ? newUserMustChangePassword : false,
       });
 
       setNewUserName('');
       setNewUserEmail('');
       setNewUserPhone('');
+      setNewUserPassword('');
       setUserModalError(null);
       setIsNewUserModalOpen(false);
 
-      setUserSuccessMessage(`✅ Usuário "${created.name}" (${created.email}) cadastrado e convidado com sucesso na equipe!`);
-      setTimeout(() => setUserSuccessMessage(null), 6000);
+      if (passwordMode === 'MANUAL') {
+        setUserSuccessMessage(`✅ Usuário "${created.name}" (${created.email}) cadastrado com a senha inicial: "${newUserPassword}"!`);
+      } else {
+        setUserSuccessMessage(`✅ Usuário "${created.name}" (${created.email}) cadastrado e convidado por e-mail com sucesso!`);
+      }
+      setTimeout(() => setUserSuccessMessage(null), 8000);
     } catch (err: any) {
       setUserModalError(err.message || 'Erro ao cadastrar usuário.');
     }
@@ -512,6 +601,17 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* Botão de Redefinir Senha */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenResetModal(u)}
+                                className="text-[11px] font-bold px-2 py-1 rounded-lg border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 transition flex items-center gap-1 cursor-pointer"
+                                title="Redefinir senha de acesso deste usuário"
+                              >
+                                <Key className="w-3 h-3 text-blue-700" />
+                                <span>Redefinir Senha</span>
+                              </button>
+
                               {/* Botão de Reenviar E-mail de Convite */}
                               {(!u.passwordSet || u.status === 'INVITED') && !isMaster && (
                                 <button
@@ -628,13 +728,53 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                     </button>
                   </div>
 
-                  {/* Info sobre envio de e-mail */}
-                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 text-emerald-900 rounded-xl text-xs flex items-start gap-2.5">
-                    <Mail className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span className="leading-relaxed">
-                      Um <strong>e-mail de convite oficial</strong> com link seguro para definição de senha e ativação da conta será enviado automaticamente para o endereço informado.
-                    </span>
+                  {/* Seletor de Modo de Definição de Senha */}
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setPasswordMode('LINK')}
+                      className={`py-2 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                        passwordMode === 'LINK'
+                          ? 'bg-white text-emerald-800 shadow-2xs font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Convite por E-mail</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordMode('MANUAL');
+                        if (!newUserPassword) setNewUserPassword(generateRandomPassword());
+                      }}
+                      className={`py-2 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                        passwordMode === 'MANUAL'
+                          ? 'bg-white text-emerald-800 shadow-2xs font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      <span>Definir Senha Padrão</span>
+                    </button>
                   </div>
+
+                  {/* Info contextual */}
+                  {passwordMode === 'LINK' ? (
+                    <div className="p-3 bg-emerald-50/80 border border-emerald-200 text-emerald-900 rounded-xl text-xs flex items-start gap-2.5">
+                      <Mail className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span className="leading-relaxed">
+                        Um <strong>e-mail de convite oficial</strong> com link seguro para definição de senha e ativação da conta será enviado automaticamente.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-blue-50/80 border border-blue-200 text-blue-900 rounded-xl text-xs flex items-start gap-2.5">
+                      <Key className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <span className="leading-relaxed">
+                        Você está definindo uma <strong>senha inicial padrão</strong>. O usuário já poderá acessar o CRM imediatamente com essa senha.
+                      </span>
+                    </div>
+                  )}
 
                   {userModalError && (
                     <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2 animate-shake">
@@ -675,9 +815,56 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                         required
                       />
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Este e-mail será a chave única de login e receberá o convite.
+                        Este e-mail será a chave única de login.
                       </p>
                     </div>
+
+                    {/* Campo de Senha Manual se ativado */}
+                    {passwordMode === 'MANUAL' && (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-700">Senha Inicial Definida *</label>
+                          <button
+                            type="button"
+                            onClick={() => setNewUserPassword(generateRandomPassword())}
+                            className="text-[10px] text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3 text-emerald-600" />
+                            <span>Gerar Automática</span>
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type={showNewUserPassword ? 'text' : 'password'}
+                            placeholder="Ex: Corretor@2026"
+                            value={newUserPassword}
+                            onChange={(e) => {
+                              setNewUserPassword(e.target.value);
+                              if (userModalError) setUserModalError(null);
+                            }}
+                            className="w-full text-xs bg-white border border-slate-200 rounded-xl pl-3.5 pr-10 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono font-bold"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewUserPassword(!showNewUserPassword)}
+                            className="absolute right-3 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            {showNewUserPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        <label className="flex items-center gap-2 text-slate-600 text-[11px] cursor-pointer pt-1">
+                          <input
+                            type="checkbox"
+                            checked={newUserMustChangePassword}
+                            onChange={(e) => setNewUserMustChangePassword(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                          />
+                          <span>Exigir alteração de senha no primeiro login</span>
+                        </label>
+                      </div>
+                    )}
 
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">WhatsApp / Telefone</label>
@@ -720,7 +907,154 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                         className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-xs cursor-pointer active:scale-98 flex items-center gap-1.5"
                       >
                         <UserPlus className="w-3.5 h-3.5" />
-                        <span>Salvar e Enviar Convite</span>
+                        <span>{passwordMode === 'MANUAL' ? 'Cadastrar com Senha' : 'Salvar e Enviar Convite'}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal de Redefinição de Senha de Usuário */}
+            {isResetPasswordModalOpen && selectedUserForReset && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+                <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Key className="w-4 h-4 text-blue-600" />
+                      <span>Redefinir Senha do Usuário</span>
+                    </h3>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setResetModalError(null);
+                        setIsResetPasswordModalOpen(false);
+                      }} 
+                      className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Informações do Usuário Selecionado */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-sm">
+                        {selectedUserForReset.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{selectedUserForReset.name}</p>
+                        <p className="text-[11px] text-slate-500 font-mono">{selectedUserForReset.email}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      {selectedUserForReset.role}
+                    </span>
+                  </div>
+
+                  {resetModalError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2 animate-shake">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <span className="font-semibold">{resetModalError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-700">Nova Senha de Acesso *</label>
+                        <button
+                          type="button"
+                          onClick={() => setResetPasswordValue(generateRandomPassword())}
+                          className="text-[10px] text-blue-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-blue-600" />
+                          <span>Gerar Senha Automática</span>
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showResetPasswordValue ? 'text' : 'password'}
+                          value={resetPasswordValue}
+                          onChange={(e) => {
+                            setResetPasswordValue(e.target.value);
+                            if (resetModalError) setResetModalError(null);
+                          }}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono font-bold"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowResetPasswordValue(!showResetPasswordValue)}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          {showResetPasswordValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Opções de Envio e Segurança */}
+                    <div className="space-y-2.5 p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
+                      <label className="flex items-center gap-2.5 text-slate-700 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={resetNotifyEmail}
+                          onChange={(e) => setResetNotifyEmail(e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                        />
+                        <span>Enviar e-mail de notificação com a nova senha</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 text-slate-700 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={resetMustChangePassword}
+                          onChange={(e) => setResetMustChangePassword(e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                        />
+                        <span>Exigir alteração de senha no próximo login</span>
+                      </label>
+                    </div>
+
+                    {/* Botão de Copiar Acesso Rápido */}
+                    <div className="flex items-center justify-between p-2.5 bg-blue-50/60 border border-blue-200 rounded-xl text-xs">
+                      <span className="text-blue-900 font-medium text-[11px]">Deseja enviar direto no WhatsApp?</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyFullCredentials(selectedUserForReset.email, resetPasswordValue, selectedUserForReset.name)}
+                        className="px-2.5 py-1 bg-white hover:bg-blue-100 text-blue-800 border border-blue-300 rounded-lg text-[10.5px] font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedResetCredentials ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-blue-600" />}
+                        <span>{copiedResetCredentials ? 'Copiado!' : 'Copiar Acesso'}</span>
+                      </button>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResetModalError(null);
+                          setIsResetPasswordModalOpen(false);
+                        }}
+                        className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isResettingPassword}
+                        className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition shadow-xs cursor-pointer active:scale-98 flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {isResettingPassword ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Salvando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Key className="w-3.5 h-3.5" />
+                            <span>Salvar Nova Senha</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </form>

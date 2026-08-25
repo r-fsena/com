@@ -67,6 +67,7 @@ interface CRMContextType {
   createUser: (userData: Partial<User>) => User;
   deleteUser: (userId: string) => void;
   resendUserInvite: (userId: string) => Promise<{ success: boolean; message: string }>;
+  resetUserPassword: (userId: string, newPassword: string, options?: { notifyEmail?: boolean; mustChangePassword?: boolean }) => Promise<{ success: boolean; message: string }>;
   updateUserAIPersona: (userId: string, data: { aiPersonaPrompt?: string; aiTone?: any; aiDirectives?: string[]; aiModel?: string }) => void;
 
   // CRM Leads e Contatos
@@ -434,6 +435,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const brokerPhone = userData.phone?.trim() || '+55 11 99999-0000';
 
     const nowIso = new Date().toISOString();
+    const hasManualPassword = Boolean(userData.password && userData.password.trim().length > 0);
+
     const newUser: User = {
       id: `user-${Date.now()}`,
       tenantId: currentTenant.id,
@@ -442,8 +445,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       phone: brokerPhone,
       role: userData.role || 'BROKER',
       isActive: true,
-      status: 'INVITED',
-      passwordSet: false,
+      status: hasManualPassword ? 'ACTIVE' : 'INVITED',
+      passwordSet: hasManualPassword,
+      password: userData.password ? userData.password.trim() : undefined,
+      mustChangePassword: userData.mustChangePassword ?? false,
       invitedAt: nowIso,
       lastInviteSentAt: nowIso,
       aiPersonaPrompt: userData.aiPersonaPrompt || `Você é o copiloto comercial de ${brokerName}, especialista imobiliário na ${currentTenant.name}. Adote tom consultivo, polido e empático. Tire dúvidas sobre o imóvel com clareza, esclareça condições de pagamento e conduza o cliente para agendamento de visita presencial ou reunião com o corretor.`,
@@ -498,6 +503,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           role: newUser.role,
           tenantName: currentTenant.name,
           tenantId: currentTenant.id,
+          temporaryPassword: userData.password ? userData.password.trim() : undefined,
           isResend: false,
         }),
       }).catch(err => {
@@ -523,6 +529,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         role: targetUser.role,
         tenantName: currentTenant.name,
         tenantId: currentTenant.id,
+        temporaryPassword: targetUser.password,
         isResend: true,
       }),
     });
@@ -538,6 +545,51 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return {
       success: true,
       message: data.message || `E-mail de convite reenviado com sucesso para ${targetUser.email}!`,
+    };
+  };
+
+  const resetUserPassword = async (
+    userId: string, 
+    newPassword: string, 
+    options?: { notifyEmail?: boolean; mustChangePassword?: boolean }
+  ): Promise<{ success: boolean; message: string }> => {
+    const targetUser = users.find(u => u.id === userId);
+    if (!targetUser) {
+      throw new Error('Usuário não encontrado.');
+    }
+
+    const cleanPass = newPassword.trim();
+    if (cleanPass.length < 3) {
+      throw new Error('A nova senha deve ter pelo menos 3 caracteres.');
+    }
+
+    const notifyEmail = options?.notifyEmail !== false;
+    const mustChange = options?.mustChangePassword === true;
+
+    updateUser(userId, {
+      password: cleanPass,
+      passwordSet: true,
+      status: 'ACTIVE',
+      mustChangePassword: mustChange,
+    });
+
+    if (typeof window !== 'undefined' && notifyEmail) {
+      fetch('/api/v1/users/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetUser.email,
+          name: targetUser.name,
+          newPassword: cleanPass,
+          tenantName: currentTenant.name,
+          notifyEmail: true,
+        }),
+      }).catch(err => console.error('[CRMContext] Erro ao enviar notificação de redefinição de senha:', err));
+    }
+
+    return {
+      success: true,
+      message: `Senha de ${targetUser.name} redefinida com sucesso!`,
     };
   };
 
@@ -2619,6 +2671,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       createUser,
       deleteUser,
       resendUserInvite,
+      resetUserPassword,
       updateUserAIPersona,
       contacts: scopedContacts,
       addContact,

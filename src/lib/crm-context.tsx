@@ -25,10 +25,12 @@ import {
   TransactionStatus,
   SaaSPlan,
   MasterUser,
-  SaaSApiConfig
+  SaaSApiConfig,
+  TenantFeatureFlags
 } from '@/types/crm';
 import { 
   MOCK_TENANTS, 
+  DEFAULT_FEATURE_FLAGS,
   MOCK_USERS, 
   MOCK_INSTANCES, 
   MOCK_CONTACTS, 
@@ -174,6 +176,10 @@ interface CRMContextType {
   isSyncingWhatsApp: boolean;
   syncWhatsAppChats: (targetInstanceId?: string, historyDays?: number) => Promise<{ success: boolean; count: number }>;
   syncZapiInstance: (instanceId: string, phone?: string) => void;
+
+  // Feature Flags & Módulos
+  isFeatureEnabled: (feature: keyof TenantFeatureFlags) => boolean;
+  updateTenantFeatureFlags: (flags: Partial<TenantFeatureFlags>) => void;
 }
 
 export function normalizePhoneKey(phone: string | undefined): string {
@@ -353,6 +359,28 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updated)); } catch {}
       return updated;
     });
+  };
+
+  const isFeatureEnabled = (feature: keyof TenantFeatureFlags): boolean => {
+    if (!currentTenant.featureFlags) return true; // Habilitado por padrão se não especificado
+    return currentTenant.featureFlags[feature] ?? true;
+  };
+
+  const updateTenantFeatureFlags = (flags: Partial<TenantFeatureFlags>) => {
+    const updatedTenant: Tenant = {
+      ...currentTenant,
+      featureFlags: {
+        ...(currentTenant.featureFlags || DEFAULT_FEATURE_FLAGS),
+        ...flags,
+      },
+    };
+    setCurrentTenant(updatedTenant);
+    setTenants(prev => {
+      const updatedList = prev.map(t => t.id === updatedTenant.id ? updatedTenant : t);
+      try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updatedList)); } catch {}
+      return updatedList;
+    });
+    try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(updatedTenant)); } catch {}
   };
   
   const [users, setUsers] = useState<User[]>(() => {
@@ -2843,6 +2871,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       isSyncingWhatsApp,
       syncWhatsAppChats,
       syncZapiInstance,
+      isFeatureEnabled,
+      updateTenantFeatureFlags,
     }}>
       {children}
     </CRMContext.Provider>

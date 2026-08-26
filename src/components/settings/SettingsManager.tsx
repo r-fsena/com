@@ -35,19 +35,38 @@ import {
   Key,
   Eye,
   EyeOff,
-  Sparkles
+  Sparkles,
+  Flag,
+  ToggleLeft,
+  ToggleRight,
+  SlidersHorizontal,
+  Bot
 } from 'lucide-react';
-import { UserRole, User } from '@/types/crm';
+import { UserRole, User, TenantFeatureFlags } from '@/types/crm';
 
 interface SettingsManagerProps {
   onOpenQrCodeModal?: () => void;
 }
 
 export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
-  const { currentTenant, updateTenant, instances, syncZapiInstance, users, updateUser, createUser, deleteUser, resendUserInvite, resetUserPassword } = useCRM();
+  const { 
+    currentTenant, 
+    updateTenant, 
+    instances, 
+    syncZapiInstance, 
+    users, 
+    updateUser, 
+    createUser, 
+    deleteUser, 
+    resendUserInvite, 
+    resetUserPassword,
+    isFeatureEnabled,
+    updateTenantFeatureFlags
+  } = useCRM();
   
-  // 4 Submenus solicitados: Empresa, Usuários, Permissões, SLAs (+ Z-API)
-  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI'>('TENANT');
+  // 6 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Módulos (Feature Flags)
+  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'FLAGS'>('TENANT');
+  const [flagsSavedMessage, setFlagsSavedMessage] = useState<string | null>(null);
 
   // Estados locais da Empresa
   const [companyName, setCompanyName] = useState(currentTenant.name);
@@ -370,6 +389,22 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         >
           <Smartphone className="w-4 h-4" />
           <span>5. Conexão WhatsApp & Z-API</span>
+        </button>
+
+        {/* 6. MÓDULOS & FEATURE FLAGS */}
+        <button
+          onClick={() => setActiveTab('FLAGS')}
+          className={`py-3.5 border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'FLAGS'
+              ? 'border-emerald-600 text-emerald-700 font-bold'
+              : 'border-transparent hover:text-slate-800'
+          }`}
+        >
+          <Flag className="w-4 h-4 text-emerald-600" />
+          <span>6. Módulos & Features (Flags)</span>
+          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-extrabold">
+            Ativo
+          </span>
         </button>
       </div>
 
@@ -1423,6 +1458,196 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           </div>
         )}
 
+        {/* ========================================================================= */}
+        {/* SUBMENU 6: MÓDULOS & FEATURE FLAGS                                       */}
+        {/* ========================================================================= */}
+        {activeTab === 'FLAGS' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Flag className="w-4 h-4 text-emerald-600" />
+                    <span>Módulos & Feature Flags do Ambiente ({currentTenant.name})</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Habilite ou desabilite recursos em tempo real para personalizar a experiência da sua equipe.
+                  </p>
+                </div>
+
+                <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200">
+                  ⚡ Atualização Instantânea
+                </span>
+              </div>
+
+              {flagsSavedMessage && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2 animate-fadeIn">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{flagsSavedMessage}</span>
+                </div>
+              )}
+
+              {/* Categorias de Flags */}
+              {[
+                {
+                  category: '📲 WhatsApp & Mensageria Omnichannel',
+                  description: 'Recursos de conexão, sincronização e inteligência de atendimento via WhatsApp.',
+                  items: [
+                    {
+                      key: 'whatsappAutoSync' as keyof TenantFeatureFlags,
+                      title: 'Sincronização Automática de Histórico',
+                      description: 'Puxa conversas, mensagens recentes e fotos de perfil assim que o corretor lê o QR Code.',
+                      badge: 'Essencial',
+                    },
+                    {
+                      key: 'whatsappVoiceTranscription' as keyof TenantFeatureFlags,
+                      title: 'Transcrição de Áudios por IA',
+                      description: 'Transcreve mensagens de voz do WhatsApp em texto corrido com 1 clique.',
+                      badge: 'IA',
+                    },
+                    {
+                      key: 'whatsappLabelsSync' as keyof TenantFeatureFlags,
+                      title: 'Sincronização de Etiquetas do WhatsApp Business',
+                      description: 'Importa e mapeia as etiquetas do WhatsApp Business diretamente como Tags dos Leads.',
+                      badge: 'Business',
+                    },
+                    {
+                      key: 'whatsappMultiBroker' as keyof TenantFeatureFlags,
+                      title: 'Linhas Individuais por Corretor',
+                      description: 'Permite que cada corretor conecte seu próprio número de WhatsApp diretamente ao CRM.',
+                      badge: 'Multi-Linha',
+                    },
+                  ],
+                },
+                {
+                  category: '🧠 Inteligência Artificial & Copiloto',
+                  description: 'Recursos de aprendizado comercial, sugestão de respostas e qualificação preditiva.',
+                  items: [
+                    {
+                      key: 'aiCopilot' as keyof TenantFeatureFlags,
+                      title: 'Copiloto Comercial de Respostas',
+                      description: 'Sugere respostas táticas, quebra de objeções e resumos 360º em tempo real.',
+                      badge: 'Claude 3.5',
+                    },
+                    {
+                      key: 'aiAutoScoring' as keyof TenantFeatureFlags,
+                      title: 'Pontuação Preditiva de Leads (Scoring)',
+                      description: 'Calcula a temperatura (HOT/WARM/COLD) e prioridade de atendimento automaticamente.',
+                      badge: 'Scoring',
+                    },
+                    {
+                      key: 'aiRequireHumanApproval' as keyof TenantFeatureFlags,
+                      title: 'Aprovação Humana Obrigatória',
+                      description: 'Exige que o corretor clique em aprovar/enviar antes de disparar qualquer sugestão da IA.',
+                      badge: 'Segurança',
+                    },
+                  ],
+                },
+                {
+                  category: '💼 Vendas & Funil Imobiliário',
+                  description: 'Gestão visual do pipeline de oportunidades e perfil financeiro completo dos clientes.',
+                  items: [
+                    {
+                      key: 'kanbanDeals' as keyof TenantFeatureFlags,
+                      title: 'Funil Visual de Oportunidades (Kanban)',
+                      description: 'Quadro visual de etapas com cards arrastáveis, valores totais e taxas de conversão.',
+                      badge: 'Vendas',
+                    },
+                    {
+                      key: 'financialQualification' as keyof TenantFeatureFlags,
+                      title: 'Qualificação Financeira 360º',
+                      description: 'Campos estruturados de Renda Mensal, Entrada Disponível, Orçamento e Financiamento.',
+                      badge: 'Financeiro',
+                    },
+                    {
+                      key: 'presentedProperties' as keyof TenantFeatureFlags,
+                      title: 'Rastreador de Imóveis Apresentados',
+                      description: 'Módulo lateral para registrar edifícios, unidades e propostas vinculadas a cada lead.',
+                      badge: 'Imóveis',
+                    },
+                    {
+                      key: 'leadImportExport' as keyof TenantFeatureFlags,
+                      title: 'Importação & Migração de Planilhas CSV',
+                      description: 'Permite carregar arquivos .CSV com validação de dados ou exportar a base de contatos.',
+                      badge: 'Migração',
+                    },
+                  ],
+                },
+                {
+                  category: '💳 Cobrança, Faturamento & Compliance',
+                  description: 'Módulos de integração financeira com gateway Asaas e governança de dados.',
+                  items: [
+                    {
+                      key: 'asaasBilling' as keyof TenantFeatureFlags,
+                      title: 'Integração & Faturamento Asaas',
+                      description: 'Emissão de cobranças, links de pagamento, PIX e boletos vinculados a transações.',
+                      badge: 'Asaas Gateway',
+                    },
+                    {
+                      key: 'lgpdCompliance' as keyof TenantFeatureFlags,
+                      title: 'Governança & Consentimento LGPD',
+                      description: 'Registro de opt-in, data de consentimento e termos de privacidade para cada lead.',
+                      badge: 'Compliance',
+                    },
+                  ],
+                },
+              ].map((group, gIdx) => (
+                <div key={gIdx} className="pt-4 border-t border-slate-100 space-y-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">{group.category}</h4>
+                    <p className="text-[11px] text-slate-500">{group.description}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {group.items.map(item => {
+                      const isEnabled = isFeatureEnabled(item.key);
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => {
+                            updateTenantFeatureFlags({ [item.key]: !isEnabled });
+                            setFlagsSavedMessage(`Recurso "${item.title}" ${!isEnabled ? 'habilitado' : 'desabilitado'} com sucesso!`);
+                            setTimeout(() => setFlagsSavedMessage(null), 3500);
+                          }}
+                          className={`p-4 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
+                            isEnabled
+                              ? 'bg-emerald-50/40 border-emerald-200 hover:bg-emerald-50/80 shadow-2xs'
+                              : 'bg-slate-50/80 border-slate-200 hover:bg-slate-100 opacity-75'
+                          }`}
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-xs text-slate-900">{item.title}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                              }`}>
+                                {item.badge}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">{item.description}</p>
+                          </div>
+
+                          <button
+                            type="button"
+                            className={`w-11 h-6 rounded-full transition relative shrink-0 mt-1 cursor-pointer ${
+                              isEnabled ? 'bg-emerald-600' : 'bg-slate-300'
+                            }`}
+                          >
+                            <span
+                              className={`w-5 h-5 rounded-full bg-white shadow-xs absolute top-0.5 transition-transform ${
+                                isEnabled ? 'left-5.5' : 'left-0.5'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -148,7 +148,8 @@ export function WhatsAppInbox() {
     transferConversationInstance,
     syncWhatsAppChats,
     isSyncingWhatsApp,
-    loadChatHistory
+    loadChatHistory,
+    isFeatureEnabled
   } = useCRM();
 
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED'>('ALL');
@@ -1512,7 +1513,7 @@ export function WhatsAppInbox() {
                               </div>
                               <p className="italic">{transcriptions[msg.id]}</p>
                             </div>
-                          ) : (
+                          ) : isFeatureEnabled('whatsappVoiceTranscription') ? (
                             <button
                               type="button"
                               disabled={isTranscribing[msg.id]}
@@ -1522,7 +1523,7 @@ export function WhatsAppInbox() {
                               <Sparkles className={`w-3 h-3 text-emerald-600 ${isTranscribing[msg.id] ? 'animate-spin' : ''}`} />
                               <span>{isTranscribing[msg.id] ? 'Transcrevendo Áudio...' : '✨ Transcrever Áudio com IA'}</span>
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       )}
 
@@ -1552,7 +1553,7 @@ export function WhatsAppInbox() {
             {/* ---------------------------------------------------- */}
             {/* IA COPILOTO: Sugestões Táticas e Quebra de Objeções  */}
             {/* ---------------------------------------------------- */}
-            {activeInsight && (activeInsight.suggestedResponse || (activeInsight.responseOptions && activeInsight.responseOptions.length > 0)) && (
+            {isFeatureEnabled('aiCopilot') && activeInsight && (activeInsight.suggestedResponse || (activeInsight.responseOptions && activeInsight.responseOptions.length > 0)) && (
               <div className="mx-4 mb-2 transition-all duration-200">
                 {isCopilotDismissed ? (
                   /* Estado Minimizado Totalmente (Pílula Flutuante Discreta) */

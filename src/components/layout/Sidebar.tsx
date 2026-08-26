@@ -52,7 +52,8 @@ export function Sidebar({
     tasks,
     alerts,
     instances,
-    logout
+    logout,
+    isFeatureEnabled
   } = useCRM();
 
   // Estado do Menu Retrátil (Expandido / Recolhido)
@@ -82,21 +83,14 @@ export function Sidebar({
   const criticalAlertsCount = alerts.filter(a => !a.isDismissed && a.severity === 'CRITICAL').length;
   const isZapiConnected = instances.some(i => i.status === 'CONNECTED');
 
-  // Ordem comercial solicitada:
-  // 1. Dashboard e Vendas
-  // 2. Inbox WhatsApp
-  // 3. Funil e Negócios
-  // 4. Tarefas e SLAs
-  // 5. Leads e Clientes
-  // 6. Campanhas em Lotes
-  // 7. Automações e Regras
-  // 8. Configurações e Z-API
+  // Itens de navegação com suporte dinâmico a Feature Flags
   const navItems = [
     {
       id: 'dashboard',
       label: 'Dashboard & Vendas',
       icon: BarChart3,
       badge: null,
+      enabled: true,
     },
     {
       id: 'inbox',
@@ -104,24 +98,28 @@ export function Sidebar({
       icon: MessageSquare,
       badge: totalUnreadMessages > 0 ? totalUnreadMessages : null,
       badgeColor: 'bg-emerald-600 text-white',
+      enabled: true,
     },
     {
       id: 'kanban',
       label: 'Funil & Negócios',
       icon: Kanban,
       badge: null,
+      enabled: isFeatureEnabled('kanbanDeals'),
     },
     {
       id: 'proposals',
       label: 'Propostas Comerciais',
       icon: FileText,
       badge: null,
+      enabled: true,
     },
     {
       id: 'financial',
       label: 'Financeiro & Asaas',
       icon: DollarSign,
       badge: null,
+      enabled: isFeatureEnabled('asaasBilling'),
     },
     {
       id: 'tasks',
@@ -129,24 +127,28 @@ export function Sidebar({
       icon: CheckSquare,
       badge: pendingTasksCount > 0 ? pendingTasksCount : null,
       badgeColor: 'bg-amber-500 text-white',
+      enabled: true,
     },
     {
       id: 'contacts',
       label: 'Leads & Clientes',
       icon: Users,
       badge: null,
+      enabled: true,
     },
     {
       id: 'campaigns',
       label: 'Campanhas em Lote',
       icon: Send,
       badge: null,
+      enabled: true,
     },
     {
       id: 'automations',
       label: 'Automações & Regras',
       icon: Zap,
       badge: null,
+      enabled: true,
     },
     {
       id: 'copilot',
@@ -154,6 +156,7 @@ export function Sidebar({
       icon: Bot,
       badge: 'IA',
       badgeColor: 'bg-emerald-600 text-white',
+      enabled: isFeatureEnabled('aiCopilot'),
     },
     {
       id: 'settings',
@@ -161,8 +164,9 @@ export function Sidebar({
       icon: Settings,
       badge: criticalAlertsCount > 0 ? criticalAlertsCount : null,
       badgeColor: 'bg-rose-500 text-white',
+      enabled: true,
     },
-  ];
+  ].filter(item => item.enabled);
 
   return (
     <>

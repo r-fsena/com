@@ -21,6 +21,29 @@ import {
   SaaSApiConfig 
 } from '@/types/crm';
 
+export const DEFAULT_FEATURE_FLAGS = {
+  // WhatsApp & Mensagens
+  whatsappAutoSync: true,
+  whatsappVoiceTranscription: true,
+  whatsappLabelsSync: true,
+  whatsappMultiBroker: true,
+
+  // Inteligência Artificial
+  aiCopilot: true,
+  aiAutoScoring: true,
+  aiRequireHumanApproval: true,
+
+  // Vendas & Comercial
+  kanbanDeals: true,
+  financialQualification: true,
+  presentedProperties: true,
+  leadImportExport: true,
+
+  // Cobrança & Compliance
+  asaasBilling: true,
+  lgpdCompliance: true,
+};
+
 // -------------------------------------------------------------
 // 1. AMBIENTES PRODUTIVOS (TENANTS)
 // -------------------------------------------------------------
@@ -39,6 +62,7 @@ export const MOCK_TENANTS: Tenant[] = [
     maxBrokers: 15,
     maxInstances: 3,
     asaasApiKey: 'asaas_secret_key_amabile_production',
+    featureFlags: { ...DEFAULT_FEATURE_FLAGS },
     businessHours: {
       start: '08:30',
       end: '19:00',

@@ -31,6 +31,29 @@ export interface User {
 export type TenantStatus = 'ACTIVE' | 'TRIAL' | 'SUSPENDED' | 'INACTIVE';
 export type TenantPlan = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 
+export interface TenantFeatureFlags {
+  // WhatsApp & Mensagens
+  whatsappAutoSync: boolean;           // Sincronização automática de contatos e histórico
+  whatsappVoiceTranscription: boolean; // Transcrição de áudios com IA
+  whatsappLabelsSync: boolean;         // Captura de Etiquetas do WhatsApp Business
+  whatsappMultiBroker: boolean;        // Linhas individuais dedicadas por corretor
+
+  // Inteligência Artificial
+  aiCopilot: boolean;                  // Copiloto de IA e sugestões de respostas
+  aiAutoScoring: boolean;              // Pontuação preditiva de prioridade do Lead
+  aiRequireHumanApproval: boolean;     // Exige revisão humana para envio
+
+  // Vendas & Comercial
+  kanbanDeals: boolean;                // Funil visual de oportunidades (Kanban)
+  financialQualification: boolean;     // Perfil financeiro 360º (Renda, Entrada, Financiamento)
+  presentedProperties: boolean;        // Registro de Imóveis apresentados na negociação
+  leadImportExport: boolean;           // Importação e Exportação de planilhas CSV
+
+  // Cobrança & Compliance
+  asaasBilling: boolean;               // Cobrança de mensalidades e faturas via Asaas
+  lgpdCompliance: boolean;             // Gestão de consentimento e opt-out LGPD
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -46,6 +69,7 @@ export interface Tenant {
   maxInstances: number;
   asaasApiKey?: string;
   asaasWalletId?: string;
+  featureFlags?: TenantFeatureFlags;
   businessHours: {
     start: string;
     end: string;

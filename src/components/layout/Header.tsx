@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 interface HeaderProps {
+  currentTab?: string;
   onOpenNewLead: () => void;
   onOpenZapiSimulator: () => void;
   onOpenAuthModal?: () => void;
@@ -24,7 +25,7 @@ interface HeaderProps {
   onToggleMobileSidebar?: () => void;
 }
 
-export function Header({ onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar }: HeaderProps) {
+export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar }: HeaderProps) {
   const { alerts, dismissAlert, contacts, deals, setActiveConversationId, conversations, currentUser } = useCRM();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAlertsPopover, setShowAlertsPopover] = useState(false);
@@ -107,14 +108,16 @@ export function Header({ onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, on
 
       {/* Action Buttons & Notifications */}
       <div className="flex items-center gap-3">
-        {/* Create Lead Button */}
-        <button
-          onClick={onOpenNewLead}
-          className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm shadow-emerald-700/20 active:scale-95 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Novo Lead</span>
-        </button>
+        {/* Create Lead Button - Apenas exibido em Inbox, Funil & Negócios e Leads & Clientes */}
+        {['inbox', 'kanban', 'contacts'].includes(currentTab || '') && (
+          <button
+            onClick={onOpenNewLead}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm shadow-emerald-700/20 active:scale-95 cursor-pointer animate-fadeIn"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Lead</span>
+          </button>
+        )}
 
         {/* SLA Alerts Dropdown */}
         <div className="relative">

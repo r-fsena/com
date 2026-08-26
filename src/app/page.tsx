@@ -146,6 +146,7 @@ export default function CRMApp() {
           {/* Área Principal de Trabalho */}
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
             <Header
+              currentTab={currentTab}
               onOpenNewLead={() => setIsNewLeadOpen(true)}
               onOpenZapiSimulator={() => setIsZapiSimulatorOpen(true)}
               onOpenAuthModal={() => setIsAuthModalOpen(true)}

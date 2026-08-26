@@ -236,12 +236,16 @@ export function WhatsAppInbox() {
     if (!activeConversation) return [];
     const convId = activeConversation.id;
     const cleanPhone = activeContact?.phone ? activeContact.phone.replace(/\D/g, '') : convId.replace(/\D/g, '');
+    const phoneSuffix = cleanPhone.length >= 8 ? cleanPhone.slice(-8) : cleanPhone;
 
     return messages
       .filter(m => {
         if (m.conversationId === convId) return true;
         if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
         if (cleanPhone && cleanPhone.length >= 8 && m.conversationId.includes(cleanPhone)) return true;
+        if (phoneSuffix && phoneSuffix.length >= 8 && m.conversationId.includes(phoneSuffix)) return true;
+        const mPhone = (m as any).phone ? String((m as any).phone).replace(/\D/g, '') : '';
+        if (mPhone && phoneSuffix && mPhone.endsWith(phoneSuffix)) return true;
         return false;
       })
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());

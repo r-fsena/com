@@ -1472,23 +1472,31 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       aiSuggested,
     };
 
-    setMessages(prev => [...prev, newMessage]);
+    setMessages(prev => {
+      const next = [...prev, newMessage];
+      try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(next)); } catch {}
+      return next;
+    });
 
     if (!isInternalNote) {
       // Atualiza conversa localmente (zera unreadCount e muda status para PENDING_CLIENT)
-      setConversations(prev => prev.map(conv => {
-        if (conv.id === conversationId) {
-          return {
-            ...conv,
-            lastMessagePreview: previewText,
-            lastMessageAt: new Date().toISOString(),
-            unreadCount: 0,
-            status: 'PENDING_CLIENT',
-            slaBreached: false,
-          };
-        }
-        return conv;
-      }));
+      setConversations(prev => {
+        const next = prev.map(conv => {
+          if (conv.id === conversationId) {
+            return {
+              ...conv,
+              lastMessagePreview: previewText,
+              lastMessageAt: new Date().toISOString(),
+              unreadCount: 0,
+              status: 'PENDING_CLIENT' as const,
+              slaBreached: false,
+            };
+          }
+          return conv;
+        });
+        try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(next)); } catch {}
+        return next;
+      });
 
       // Envia diretamente para a Z-API se for um contato real do WhatsApp
       const conv = conversations.find(c => c.id === conversationId);
@@ -1516,7 +1524,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             fileName: attachments?.[0]?.fileName,
             phone: targetPhone,
             senderUserId: currentUser.id,
-            instanceId: brokerInstance?.zapiInstanceId || brokerInstance?.id,
+            instanceId: brokerInstance?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C',
           }),
         }).catch(err => console.error('Erro ao enviar mensagem via Z-API:', err));
       }
@@ -2205,6 +2213,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
           data.messages.forEach((incoming: any) => {
             const rawPhone = incoming.phone.replace(/\D/g, '');
+            const phoneSuffix = rawPhone.length >= 8 ? rawPhone.slice(-8) : rawPhone;
             const formattedPhone = incoming.phone.startsWith('+') ? incoming.phone : `+${incoming.phone}`;
 
             // Verifica se o contato já existe
@@ -2251,36 +2260,49 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               ? users.find(u => u.id === matchingInst.assignedUserId)
               : undefined;
 
+            // Determina ID da conversa correspondente
+            let targetConvId = `conv-zapi-${rawPhone}`;
+
             // Adiciona ou atualiza conversa
             setConversations(prevConvs => {
-              const convId = `conv-zapi-${rawPhone}`;
-              const existingConv = prevConvs.find(c => c.id === convId || c.contactId === `contact-zapi-${rawPhone}`);
+              const existingConv = prevConvs.find(c => {
+                if (c.id === targetConvId) return true;
+                if (c.contactId === `contact-zapi-${rawPhone}`) return true;
+                const cDigits = c.contactId?.replace(/\D/g, '') || c.id.replace(/\D/g, '');
+                if (cDigits && phoneSuffix && cDigits.endsWith(phoneSuffix)) return true;
+                return false;
+              });
 
               if (existingConv) {
-                return prevConvs.map(c => c.id === existingConv.id ? {
+                targetConvId = existingConv.id;
+                const updated = prevConvs.map(c => c.id === existingConv.id ? {
                   ...c,
                   assignedUserId: c.assignedUserId || matchingInst?.assignedUserId,
                   lastMessagePreview: incoming.content,
                   lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                  status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
+                  status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
                   unreadCount: incoming.fromMe ? 0 : (c.unreadCount || 0) + 1,
                   slaBreached: false,
                 } : c);
+                try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+                return updated;
               }
 
               const newConv: Conversation = {
-                id: convId,
+                id: targetConvId,
                 tenantId: currentTenant.id,
                 instanceId: incoming.instanceId || matchingInst?.id || instances[0]?.id || '3F1B67FC8139425171C79ED390C0144C',
                 contactId: `contact-zapi-${rawPhone}`,
                 assignedUserId: matchingInst?.assignedUserId,
-                status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
+                status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
                 unreadCount: incoming.fromMe ? 0 : 1,
                 lastMessagePreview: incoming.content,
                 lastMessageAt: incoming.timestamp || new Date().toISOString(),
                 slaBreached: false,
               };
-              return [newConv, ...prevConvs];
+              const updated = [newConv, ...prevConvs];
+              try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+              return updated;
             });
 
             // Determina tipo e anexos de mídia
@@ -2295,7 +2317,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             const newMsg: Message = {
               id: incoming.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
               tenantId: currentTenant.id,
-              conversationId: `conv-zapi-${rawPhone}`,
+              conversationId: targetConvId,
               senderType: incoming.fromMe ? 'USER' : 'CONTACT',
               senderUserId: incoming.fromMe ? (assignedBroker?.id || currentUser.id) : undefined,
               senderName: incoming.fromMe ? (assignedBroker?.name || currentUser.name || 'Corretor') : incoming.senderName,
@@ -2320,7 +2342,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               // 2. Se for mensagem enviada (fromMe = true), verifica se já enviamos no portal
               if (incoming.fromMe) {
                 const isAlreadyPresent = prevMsgs.some(m =>
-                  m.conversationId === newMsg.conversationId &&
+                  (m.conversationId === newMsg.conversationId || (phoneSuffix && m.conversationId.includes(phoneSuffix))) &&
                   m.senderType === 'USER' &&
                   m.content.trim() === newMsg.content.trim()
                 );
@@ -2329,21 +2351,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
               // 3. Evita duplicatas gerais de mesmo conteúdo e mesmo remetente em menos de 10s
               const isDuplicateContent = prevMsgs.some(m =>
-                m.conversationId === newMsg.conversationId &&
+                (m.conversationId === newMsg.conversationId || (phoneSuffix && m.conversationId.includes(phoneSuffix))) &&
                 m.senderType === newMsg.senderType &&
                 m.content.trim() === newMsg.content.trim() &&
                 Math.abs(new Date(m.timestamp).getTime() - new Date(newMsg.timestamp).getTime()) < 10000
               );
               if (isDuplicateContent) return prevMsgs;
 
-              return [...prevMsgs, newMsg];
+              const updated = [...prevMsgs, newMsg];
+              try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
+              return updated;
             });
           });
         }
       } catch {}
     };
 
-    const interval = setInterval(pollWebhookMessages, 2500);
+    const interval = setInterval(pollWebhookMessages, 2000);
     return () => clearInterval(interval);
   }, [currentTenant.id, instances]);
 

@@ -408,8 +408,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         </button>
       </div>
 
-      {/* Conteúdo dos Submenus */}
-      <div className="flex-1 overflow-y-auto p-6 max-w-5xl w-full mx-auto space-y-6">
+      {/* Conteúdo dos Submenus com Aproveitamento Total de Tela */}
+      <div className="flex-1 overflow-y-auto p-6 w-full max-w-7xl mx-auto space-y-6">
 
         {/* ========================================================================= */}
         {/* SUBMENU 1: CONFIGURAÇÕES DA EMPRESA                                      */}
@@ -550,23 +550,23 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               </div>
             )}
 
-            {/* Tabela de Usuários */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+            {/* Tabela de Usuários com Aproveitamento Amplo de Tela */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
-                    <th className="py-3 px-4">Usuário / Corretor</th>
-                    <th className="py-3 px-4">Cargo / Perfil</th>
-                    <th className="py-3 px-4">WhatsApp / Telefone</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Ações</th>
+                    <th className="py-3.5 px-4 w-1/4">Usuário / Corretor</th>
+                    <th className="py-3.5 px-4">Cargo / Perfil</th>
+                    <th className="py-3.5 px-4">WhatsApp / Telefone</th>
+                    <th className="py-3.5 px-4">Status de Acesso</th>
+                    <th className="py-3.5 px-4 text-right">Ações Rápidas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {users.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400">
-                        <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <td colSpan={5} className="py-10 text-center text-slate-400">
+                        <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
                         <p className="font-medium">Nenhum usuário cadastrado.</p>
                       </td>
                     </tr>
@@ -575,31 +575,31 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                       const isMaster = u.role === 'SUPERADMIN' || u.role === 'ADMIN_MASTER';
                       const isCurrent = u.id === 'user-rafael-admin';
                       return (
-                        <tr key={u.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4">
+                        <tr key={u.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3.5 px-4">
                             <div className="flex items-center gap-3">
                               <img
                                 src={u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=059669&color=fff`}
                                 alt={u.name}
-                                className="w-9 h-9 rounded-full object-cover ring-2 ring-emerald-500/20"
+                                className="w-9 h-9 rounded-full object-cover ring-2 ring-emerald-500/20 shrink-0"
                               />
-                              <div>
+                              <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <p className="font-bold text-slate-900">{u.name}</p>
+                                  <p className="font-bold text-slate-900 truncate">{u.name}</p>
                                   {isMaster && (
-                                    <span title="SuperAdmin Master">
+                                    <span title="SuperAdmin Master" className="shrink-0">
                                       <Crown className="w-3.5 h-3.5 text-amber-500" />
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
-                                  <Mail className="w-3 h-3 text-slate-400" /> {u.email}
+                                <p className="text-[11px] text-slate-500 flex items-center gap-1 font-mono truncate">
+                                  <Mail className="w-3 h-3 text-slate-400 shrink-0" /> {u.email}
                                 </p>
                               </div>
                             </div>
                           </td>
-                          <td className="py-3 px-4">
-                            <span className={`text-[10px] font-bold px-2.5 py-0.8 rounded-full inline-flex items-center gap-1 border ${
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-lg inline-flex items-center gap-1 border ${
                               isMaster ? 'bg-amber-50 text-amber-900 border-amber-300 font-black' :
                               u.role === 'ADMIN' ? 'bg-purple-50 text-purple-800 border-purple-200' :
                               u.role === 'MANAGER' ? 'bg-blue-50 text-blue-800 border-blue-200' :
@@ -612,38 +612,38 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                '👤 CORRETOR'}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-mono text-slate-600">
+                          <td className="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
                             {u.phone ? (
-                              <span className="flex items-center gap-1">
-                                <Phone className="w-3 h-3 text-slate-400" /> {u.phone}
+                              <span className="flex items-center gap-1.5">
+                                <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> {u.phone}
                               </span>
                             ) : (
                               <span className="text-slate-400 italic">Não informado</span>
                             )}
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-3.5 px-4 whitespace-nowrap">
                             {u.passwordSet || u.status === 'ACTIVE' ? (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.8 rounded-full border border-emerald-200 inline-flex items-center gap-1.5 shadow-2xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 inline-flex items-center gap-1.5 shadow-2xs">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                                 <span>Ativo (Senha Definida)</span>
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.8 rounded-full border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                                <span>Convite Enviado (Senha Pendente)</span>
+                              <span className="text-[10.5px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                <span>Convite Enviado (Pendente)</span>
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
                               {/* Botão de Redefinir Senha */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenResetModal(u)}
-                                className="text-[11px] font-bold px-2 py-1 rounded-lg border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 transition flex items-center gap-1 cursor-pointer"
-                                title="Redefinir senha de acesso deste usuário"
+                                className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                                title="Definir ou redefinir senha do usuário"
                               >
-                                <Key className="w-3 h-3 text-blue-700" />
+                                <Key className="w-3.5 h-3.5 text-blue-700" />
                                 <span>Redefinir Senha</span>
                               </button>
 
@@ -664,17 +664,17 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                       setResendingUserId(null);
                                     }
                                   }}
-                                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                  title="Reenviar e-mail de convite com link de ativação"
+                                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs active:scale-95"
+                                  title="Reenviar e-mail com instruções de primeiro acesso"
                                 >
                                   {resendingUserId === u.id ? (
                                     <>
-                                      <RefreshCw className="w-3 h-3 animate-spin text-amber-700" />
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-700" />
                                       <span>Enviando...</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Send className="w-3 h-3 text-amber-700" />
+                                      <Send className="w-3.5 h-3.5 text-amber-700" />
                                       <span>Reenviar E-mail</span>
                                     </>
                                   )}
@@ -685,21 +685,21 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                               <button
                                 type="button"
                                 onClick={() => handleCopyInviteLink(u.email, u.name)}
-                                className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition flex items-center gap-1 cursor-pointer ${
+                                className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
                                   copiedUserEmail === u.email
                                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
                                 }`}
-                                title="Copiar link de acesso para o usuário"
+                                title="Copiar mensagem com instruções de login"
                               >
                                 {copiedUserEmail === u.email ? (
                                   <>
-                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
                                     <span>Copiado!</span>
                                   </>
                                 ) : (
                                   <>
-                                    <Copy className="w-3 h-3 text-slate-500" />
+                                    <Copy className="w-3.5 h-3.5 text-slate-500" />
                                     <span>Copiar Acesso</span>
                                   </>
                                 )}
@@ -709,7 +709,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                 <select
                                   value={u.role}
                                   onChange={(e) => updateUser(u.id, { role: e.target.value as UserRole })}
-                                  className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                                  className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none cursor-pointer text-slate-700 shadow-2xs"
                                 >
                                   <option value="ADMIN">Admin</option>
                                   <option value="MANAGER">Gestor</option>
@@ -726,10 +726,10 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                       deleteUser(u.id);
                                     }
                                   }}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
                                   title="Excluir Usuário"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
                             </div>

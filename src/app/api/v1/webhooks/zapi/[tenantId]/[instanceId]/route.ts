@@ -27,7 +27,7 @@ export async function POST(
     const body = await request.json();
 
     // Extrai o telefone de forma limpa (removendo @lid, @c.us, @s.whatsapp.net)
-    let rawPhone = body.senderPhone || body.phone || body.sender || body.from || body.chatId || (body.data && (body.data.senderPhone || body.data.phone)) || '';
+    let rawPhone = body.phone || body.recipientPhone || body.to || body.senderPhone || body.chatId || body.sender || body.from || (body.data && (body.data.phone || body.data.recipientPhone || body.data.senderPhone)) || '';
     
     // Se o telefone vier no formato JID / LID (ex: 38247304564788@lid ou 55489999@c.us)
     let cleanPhone = String(rawPhone).replace(/@.*$/, '').replace(/\D/g, '');
@@ -37,9 +37,9 @@ export async function POST(
       cleanPhone = String(body.chatPhone).replace(/\D/g, '');
     }
 
-    const senderName = body.senderName || body.chatName || body.pushName || body.name || `WhatsApp ${cleanPhone ? cleanPhone.slice(-4) : 'Cliente'}`;
-    const senderPhoto = body.photo || body.senderPhoto || body.avatar || '';
     const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);
+    const senderName = body.senderName || body.chatName || body.pushName || body.name || (fromMe ? 'Corretor' : `WhatsApp ${cleanPhone ? cleanPhone.slice(-4) : 'Cliente'}`);
+    const senderPhoto = body.photo || body.senderPhoto || body.avatar || '';
     const messageId = body.messageId || body.id || body.zaapId || `zmsg-${Date.now()}`;
     
     // Detecção de Visualização Única (View-Once)

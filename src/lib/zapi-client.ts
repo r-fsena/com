@@ -181,6 +181,26 @@ export class ZApiClient {
   }
 
   /**
+   * Configuração do Webhook de Status de Mensagem
+   */
+  async configureWebhookStatus(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-status', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
+  /**
+   * Configuração do Webhook de Conexão
+   */
+  async configureWebhookConnected(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-connected', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
+  /**
    * Configuração automática do Webhook de Desconexão na Z-API
    */
   async configureWebhookDisconnected(webhookUrl: string): Promise<ZApiResponse> {
@@ -197,6 +217,8 @@ export class ZApiClient {
     const results = await Promise.allSettled([
       this.configureWebhookReceived(webhookUrl),
       this.configureWebhookDelivery(webhookUrl),
+      this.configureWebhookStatus(webhookUrl),
+      this.configureWebhookConnected(webhookUrl),
       this.configureWebhookDisconnected(webhookUrl),
     ]);
 

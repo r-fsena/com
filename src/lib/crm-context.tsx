@@ -172,7 +172,7 @@ interface CRMContextType {
 
   // Z-API Sincronização em Tempo Real
   isSyncingWhatsApp: boolean;
-  syncWhatsAppChats: () => Promise<void>;
+  syncWhatsAppChats: (targetInstanceId?: string) => Promise<{ success: boolean; count: number }>;
   syncZapiInstance: (instanceId: string, phone?: string) => void;
 }
 
@@ -1932,10 +1932,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
 
-  const syncWhatsAppChats = async () => {
+  const syncWhatsAppChats = async (targetInstanceId?: string): Promise<{ success: boolean; count: number }> => {
     try {
       setIsSyncingWhatsApp(true);
-      const res = await fetch('/api/v1/zapi/sync-chats');
+      const chosenInst = targetInstanceId 
+        ? instances.find(i => i.id === targetInstanceId || i.zapiInstanceId === targetInstanceId)
+        : (instances.find(i => i.assignedUserId === currentUser.id) || instances[0]);
+
+      const res = await fetch('/api/v1/zapi/sync-chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: chosenInst?.zapiInstanceId || chosenInst?.id,
+          tenantId: currentTenant.id,
+          assignedUserId: chosenInst?.assignedUserId || currentUser.id,
+          fetchHistoryMessages: true,
+        }),
+      });
       const data = await res.json();
 
       if (data.success && Array.isArray(data.contacts) && data.contacts.length > 0) {
@@ -2029,9 +2042,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
 
         setActiveConversationId(prev => prev ? prev : (data.conversations[0]?.id || null));
+        return { success: true, count: data.contacts.length };
       }
+      return { success: true, count: 0 };
     } catch (err) {
       console.error('Erro ao sincronizar conversas:', err);
+      return { success: false, count: 0 };
     } finally {
       setIsSyncingWhatsApp(false);
     }

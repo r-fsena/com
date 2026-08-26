@@ -3,12 +3,33 @@ import { webhookStore } from '@/lib/webhook-store';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
-  const tenantId = searchParams.get('tenantId') || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
+async function handleSyncChats(req: NextRequest) {
+  let instanceId = process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
+  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+  let tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
+  let assignedUserId: string | undefined;
+  let fetchHistoryMessages = true;
+
+  // Extração via GET query params ou POST JSON body
+  if (req.method === 'POST') {
+    try {
+      const body = await req.json();
+      if (body.instanceId) instanceId = body.instanceId;
+      if (body.token) instanceToken = body.token;
+      if (body.clientToken) securityToken = body.clientToken;
+      if (body.tenantId) tenantId = body.tenantId;
+      if (body.assignedUserId) assignedUserId = body.assignedUserId;
+      if (typeof body.fetchHistoryMessages === 'boolean') fetchHistoryMessages = body.fetchHistoryMessages;
+    } catch {}
+  } else {
+    const { searchParams } = new URL(req.url);
+    if (searchParams.get('instanceId')) instanceId = searchParams.get('instanceId')!;
+    if (searchParams.get('token')) instanceToken = searchParams.get('token')!;
+    if (searchParams.get('clientToken')) securityToken = searchParams.get('clientToken')!;
+    if (searchParams.get('tenantId')) tenantId = searchParams.get('tenantId')!;
+    if (searchParams.get('assignedUserId')) assignedUserId = searchParams.get('assignedUserId')!;
+  }
 
   try {
     const headers = {
@@ -18,8 +39,8 @@ export async function GET(req: NextRequest) {
 
     // 1. Busca lista de chats e agenda de contatos em paralelo
     const [chatsRes, contactsRes] = await Promise.allSettled([
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=1&pageSize=35`, { headers }),
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=1&pageSize=150`, { headers }),
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=1&pageSize=40`, { headers }),
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=1&pageSize=200`, { headers }),
     ]);
 
     let zapiChats: any[] = [];
@@ -34,7 +55,7 @@ export async function GET(req: NextRequest) {
         if (Array.isArray(zapiContacts)) {
           zapiContacts.forEach((cnt: any) => {
             const raw = (cnt.phone || '').replace(/\D/g, '');
-            const resolvedName = cnt.name || cnt.vname || cnt.short;
+            const resolvedName = cnt.name || cnt.vname || cnt.short || cnt.notify;
             if (raw && resolvedName) {
               contactsNameMap.set(raw, resolvedName);
             }
@@ -52,7 +73,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 2. Filtra conversas válidas e ordena pela última mensagem mais recente no topo
+    // 2. Filtra conversas válidas (ignora grupos) e ordena pela mais recente
     const validChats = zapiChats
       .filter((c: any) => c.phone && c.phone !== '0' && !c.isGroup)
       .sort((a: any, b: any) => {
@@ -61,10 +82,10 @@ export async function GET(req: NextRequest) {
         return timeB - timeA;
       });
 
-    // 3. Busca foto de perfil do WhatsApp para cada chat em paralelo com timeout
+    // 3. Busca foto de perfil do WhatsApp para os chats em paralelo
     const picturesMap = new Map<string, string>();
     await Promise.allSettled(
-      validChats.slice(0, 20).map(async (c: any) => {
+      validChats.slice(0, 30).map(async (c: any) => {
         try {
           const picRes = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/profile-picture?phone=${c.phone}`, {
             headers,
@@ -84,7 +105,7 @@ export async function GET(req: NextRequest) {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const formattedPhone = c.phone.startsWith('+') ? c.phone : `+${c.phone}`;
       
-      // Resolução de nome: chat name -> agenda de contatos -> formatação de telefone
+      // Resolução de nome: chat name -> agenda de contatos do corretor -> formatação de telefone
       const resolvedName = c.name 
         || contactsNameMap.get(cleanPhone) 
         || (cleanPhone.length >= 10 ? `WhatsApp (${cleanPhone.slice(-4)})` : `Cliente ${cleanPhone}`);
@@ -102,10 +123,11 @@ export async function GET(req: NextRequest) {
         name: resolvedName,
         phone: formattedPhone,
         avatarUrl: avatar,
+        assignedUserId: assignedUserId || undefined,
         source: 'WHATSAPP' as const,
         temperature: 'WARM' as const,
-        aiPriorityScore: 80,
-        tags: ['WhatsApp Z-API', 'Sincronizado'],
+        aiPriorityScore: 82,
+        tags: ['WhatsApp Sync', 'Lead WhatsApp'],
         targetRegions: ['Região Metropolitana'],
         notesCount: 0,
         consentGiven: true,
@@ -132,6 +154,7 @@ export async function GET(req: NextRequest) {
         tenantId,
         instanceId,
         contactId: `contact-zapi-${cleanPhone}`,
+        assignedUserId: assignedUserId || undefined,
         status: unread > 0 ? ('PENDING_TEAM' as const) : ('OPEN' as const),
         unreadCount: unread,
         lastMessagePreview: lastMessageText,
@@ -140,7 +163,57 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 5. Mensagens capturadas pelo webhook em tempo real (sem placeholders falsos)
+    // 5. Histórico recente das mensagens (para os 10 chats mais ativos)
+    const historyMessages: any[] = [];
+    if (fetchHistoryMessages) {
+      const topChats = validChats.slice(0, 10);
+      await Promise.allSettled(
+        topChats.map(async (c: any) => {
+          try {
+            const clean = (c.phone || '').replace(/\D/g, '');
+            const msgRes = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chat-messages/${clean}?page=1&pageSize=10`, {
+              headers,
+            });
+            if (msgRes.ok) {
+              const msgsData = await msgRes.json();
+              if (Array.isArray(msgsData)) {
+                msgsData.forEach((m: any, idx: number) => {
+                  if (m && (m.text || m.body || m.caption || m.message || m.audio || m.image || m.document)) {
+                    const isFromMe = Boolean(m.fromMe);
+                    const text = m.text?.message || m.body || m.caption || m.message || (m.image ? '📷 [Foto]' : m.audio ? '🎙️ [Áudio]' : m.document ? '📄 [Documento]' : '');
+                    const timestamp = m.momment ? new Date(Number(m.momment)).toISOString() : (m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString());
+                    const mId = m.id || m.zaapId || m.messageId || `hist-${clean}-${idx}-${Date.now()}`;
+                    const mediaUrl = m.image?.imageUrl || m.audio?.audioUrl || m.document?.documentUrl;
+
+                    historyMessages.push({
+                      id: mId,
+                      tenantId,
+                      conversationId: `conv-zapi-${clean}`,
+                      senderType: isFromMe ? 'USER' : 'CONTACT',
+                      senderName: isFromMe ? 'Corretor' : (contactsNameMap.get(clean) || c.name || 'Cliente'),
+                      messageType: m.audio ? 'AUDIO' : m.image ? 'IMAGE' : m.document ? 'DOCUMENT' : 'TEXT',
+                      attachments: mediaUrl ? [{
+                        id: `att-${mId}`,
+                        url: mediaUrl,
+                        fileName: m.document?.fileName || (m.image ? 'Foto.jpg' : 'Audio.ogg'),
+                        fileSize: 1024,
+                        mimeType: m.image ? 'image/jpeg' : m.audio ? 'audio/ogg' : 'application/pdf',
+                      }] : undefined,
+                      content: text,
+                      status: 'DELIVERED',
+                      isInternalNote: false,
+                      timestamp,
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+        })
+      );
+    }
+
+    // 6. Combina mensagens capturadas em tempo real pelo webhook
     const liveWebhookMessages = webhookStore.getAllMessages().map(m => {
       const rawPhone = m.phone.replace(/\D/g, '');
       return {
@@ -153,9 +226,9 @@ export async function GET(req: NextRequest) {
         attachments: m.mediaUrl ? [{
           id: `att-${m.id}`,
           url: m.mediaUrl,
-          fileName: m.mediaType === 'audio' ? 'Áudio' : m.mediaType === 'image' ? 'Imagem' : 'Documento',
-          fileSize: 1024,
-          mimeType: 'application/octet-stream',
+          fileName: m.fileName || (m.mediaType === 'audio' ? 'Áudio' : m.mediaType === 'image' ? 'Imagem' : 'Documento'),
+          fileSize: m.fileSize || 1024,
+          mimeType: m.mimeType || (m.mediaType === 'image' ? 'image/jpeg' : 'application/octet-stream'),
         }] : undefined,
         content: m.content,
         status: 'DELIVERED' as const,
@@ -164,12 +237,17 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    const allMessagesMap = new Map<string, any>();
+    [...historyMessages, ...liveWebhookMessages].forEach(m => {
+      allMessagesMap.set(m.id, m);
+    });
+
     return NextResponse.json({
       success: true,
       count: validChats.length,
       contacts,
       conversations,
-      messages: liveWebhookMessages,
+      messages: Array.from(allMessagesMap.values()),
     });
   } catch (err: any) {
     return NextResponse.json({
@@ -178,3 +256,12 @@ export async function GET(req: NextRequest) {
     }, { status: 500 });
   }
 }
+
+export async function GET(req: NextRequest) {
+  return handleSyncChats(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handleSyncChats(req);
+}
+

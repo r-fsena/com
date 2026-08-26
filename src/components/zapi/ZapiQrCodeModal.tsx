@@ -106,11 +106,19 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         setIsConnected(true);
         if (data.phone) setConnectedPhone(data.phone);
         syncZapiInstance(id, data.phone);
+        
+        // Auto-sincronização de leads, fotos e conversas
+        syncWhatsAppChats(id).then(syncRes => {
+          if (syncRes?.count) {
+            setSyncSuccessMessage(`🎉 Conexão ativa! ${syncRes.count} Leads e conversas do WhatsApp sincronizados.`);
+            setTimeout(() => setSyncSuccessMessage(null), 5000);
+          }
+        });
       }
     } catch {} finally {
       isCheckingRef.current = false;
     }
-  }, [instanceId, instanceToken, clientToken, syncZapiInstance]);
+  }, [instanceId, instanceToken, clientToken, syncZapiInstance, syncWhatsAppChats]);
 
   // Inicialização estável ao abrir o modal
   useEffect(() => {

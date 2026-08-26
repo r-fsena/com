@@ -15,11 +15,12 @@ import {
   DollarSign, 
   Flame, 
   Trash2, 
-  Edit,
   Download,
   Upload,
   FileSpreadsheet,
-  Sparkles
+  Sparkles,
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -31,7 +32,7 @@ interface ContactsListProps {
 }
 
 export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
-  const { contacts, deleteContact, users } = useCRM();
+  const { contacts, deleteContact, users, syncWhatsAppChats, isSyncingWhatsApp } = useCRM();
   const [search, setSearch] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState('ALL');
   const [sourceFilter, setSourceFilter] = useState('ALL');
@@ -41,6 +42,15 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleSyncWhatsApp = async () => {
+    const res = await syncWhatsAppChats();
+    if (res.success) {
+      showToast(`🎉 ${res.count} Leads e conversas do WhatsApp sincronizados com sucesso!`);
+    } else {
+      showToast('❌ Erro ao sincronizar contatos do WhatsApp');
+    }
   };
 
   const filtered = contacts.filter(c => {
@@ -106,14 +116,25 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Botão Importar Planilha */}
+          {/* Botão Sincronizar WhatsApp */}
+          <button
+            onClick={handleSyncWhatsApp}
+            disabled={isSyncingWhatsApp}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+            title="Puxar contatos com fotos e conversas do WhatsApp em tempo real"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
+            <span>{isSyncingWhatsApp ? 'Sincronizando...' : 'Sincronizar WhatsApp'}</span>
+          </button>
+
+          {/* Botão Importar Planilha / WhatsApp Modal */}
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-2xs cursor-pointer active:scale-95"
-            title="Importar leads de planilha CSV ou migrar de outro CRM"
+            title="Importar leads do WhatsApp ou planilha CSV"
           >
             <Upload className="w-4 h-4 text-emerald-600" />
-            <span>Importar Planilha (.CSV)</span>
+            <span>Importar Leads / Planilha</span>
           </button>
 
           {/* Botão Exportar CSV */}

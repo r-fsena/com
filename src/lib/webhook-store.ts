@@ -8,6 +8,9 @@ export interface LiveWebhookMessage {
   content: string;
   mediaUrl?: string;
   mediaType?: 'text' | 'image' | 'audio' | 'document';
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
   fromMe: boolean;
   timestamp: string;
   receivedAt: number;

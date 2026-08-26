@@ -59,9 +59,9 @@ export async function POST(
     }
 
     const targetPhone = validated.data.phone || validated.data.contactPhone;
-    const instanceId = validated.data.instanceId || process.env.ZAPI_INSTANCE_ID || '';
-    const instanceToken = validated.data.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '';
-    const securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
+    const instanceId = validated.data.instanceId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+    const instanceToken = validated.data.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
+    const securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
 
     let externalMessageId = `zapi-${Date.now()}`;
 

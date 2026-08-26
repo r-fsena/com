@@ -27,9 +27,9 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanPhone = phone.replace(/\D/g, '');
-    const instanceId = reqInstId || process.env.ZAPI_INSTANCE_ID || '';
-    const instanceToken = reqToken || process.env.ZAPI_INSTANCE_TOKEN || '';
-    const securityToken = reqClientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+    const instanceId = reqInstId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+    const instanceToken = reqToken || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
+    const securityToken = reqClientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
 
     if (!instanceId || !instanceToken) {
       return NextResponse.json({

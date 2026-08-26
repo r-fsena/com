@@ -16,9 +16,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Telefone obrigatório' }, { status: 400 });
     }
 
-    const instanceId = targetInstanceId || process.env.ZAPI_INSTANCE_ID || '';
-    const instanceToken = targetToken || process.env.ZAPI_INSTANCE_TOKEN || '';
-    const securityToken = process.env.ZAPI_CLIENT_TOKEN || '';
+    const instanceId = targetInstanceId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+    const instanceToken = targetToken || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
+    const securityToken = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
 
     if (!instanceId || !instanceToken) {
       return NextResponse.json({

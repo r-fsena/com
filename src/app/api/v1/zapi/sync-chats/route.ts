@@ -254,7 +254,40 @@ async function handleSyncChats(req: NextRequest) {
       };
     });
 
-    // 5. Histórico recente das mensagens (para os 10 chats mais ativos)
+    // 5. Histórico recente das mensagens e extração das últimas mensagens ativas de cada conversa
+    const chatLastMessages: any[] = [];
+    validChats.forEach((c: any) => {
+      const cleanPhone = (c.phone || '').replace(/\D/g, '');
+      const lastMsgDate = c.lastMessageTime 
+        ? new Date(Number(c.lastMessageTime)).toISOString() 
+        : new Date().toISOString();
+
+      let msgText = '';
+      let isFromMe = false;
+
+      if (typeof c.lastMessage === 'string' && c.lastMessage.trim()) {
+        msgText = c.lastMessage.trim();
+      } else if (c.lastMessage && typeof c.lastMessage === 'object') {
+        msgText = c.lastMessage.message || c.lastMessage.text || '';
+        isFromMe = Boolean(c.lastMessage.fromMe);
+      }
+
+      if (msgText && msgText !== '📱 Conversa sincronizada via WhatsApp') {
+        chatLastMessages.push({
+          id: `sync-last-${cleanPhone}-${c.lastMessageTime || Date.now()}`,
+          tenantId,
+          conversationId: `conv-zapi-${cleanPhone}`,
+          senderType: isFromMe ? 'USER' : 'CONTACT',
+          senderName: isFromMe ? 'Corretor' : (c.name || `WhatsApp ${cleanPhone.slice(-4)}`),
+          messageType: 'TEXT',
+          content: msgText,
+          status: 'DELIVERED',
+          isInternalNote: false,
+          timestamp: lastMsgDate,
+        });
+      }
+    });
+
     const historyMessages: any[] = [];
     if (fetchHistoryMessages) {
       const topChats = validChats.slice(0, 10);
@@ -335,7 +368,7 @@ async function handleSyncChats(req: NextRequest) {
     });
 
     const allMessagesMap = new Map<string, any>();
-    [...historyMessages, ...liveWebhookMessages].forEach(m => {
+    [...chatLastMessages, ...historyMessages, ...liveWebhookMessages].forEach(m => {
       allMessagesMap.set(m.id, m);
     });
 

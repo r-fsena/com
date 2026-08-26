@@ -1509,6 +1509,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (!targetPhone && conv?.contactId?.includes('zapi-')) {
         targetPhone = conv.contactId.split('zapi-')[1]?.replace(/\D/g, '') || '';
       }
+      if (!targetPhone) {
+        const rawDigits = conversationId.replace(/\D/g, '');
+        if (rawDigits.length >= 8) targetPhone = rawDigits;
+      }
+      if (targetPhone && !targetPhone.startsWith('55') && (targetPhone.length === 10 || targetPhone.length === 11)) {
+        targetPhone = `55${targetPhone}`;
+      }
 
       if (targetPhone) {
         // Procura a linha individual do corretor logado ou a da conversa
@@ -2368,7 +2375,39 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
 
     const interval = setInterval(pollWebhookMessages, 2000);
-    return () => clearInterval(interval);
+
+    // Sincronização em segundo plano de novas mensagens e status de clientes a cada 5s
+    const syncInterval = setInterval(async () => {
+      try {
+        const chosenInst = instances.find(i => i.assignedUserId === currentUser.id) || instances[0];
+        const res = await fetch('/api/v1/zapi/sync-chats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceId: chosenInst?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C',
+            tenantId: currentTenant.id,
+            assignedUserId: chosenInst?.assignedUserId || currentUser.id,
+            fetchHistoryMessages: false,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(prev => {
+            const seenIds = new Set(prev.map(m => m.id));
+            const newOnes = data.messages.filter((m: any) => !seenIds.has(m.id));
+            if (newOnes.length === 0) return prev;
+            const updated = [...prev, ...newOnes];
+            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+      } catch {}
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(syncInterval);
+    };
   }, [currentTenant.id, instances]);
 
   // -------------------------------------------------------------

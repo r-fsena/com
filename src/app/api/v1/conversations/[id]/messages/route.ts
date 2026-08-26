@@ -58,7 +58,12 @@ export async function POST(
       });
     }
 
-    const targetPhone = validated.data.phone || validated.data.contactPhone;
+    let targetPhone = validated.data.phone || validated.data.contactPhone;
+    if (!targetPhone) {
+      const extracted = conversationId.replace(/\D/g, '');
+      if (extracted.length >= 8) targetPhone = extracted;
+    }
+
     let instanceId = validated.data.instanceId;
     if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
       instanceId = process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
@@ -79,7 +84,11 @@ export async function POST(
         securityToken,
       });
 
-      const cleanPhone = targetPhone.replace(/\D/g, '');
+      let cleanPhone = targetPhone.replace(/\D/g, '');
+      if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
+        cleanPhone = `55${cleanPhone}`;
+      }
+
       let sendResult = null;
 
       if (messageType === 'AUDIO' && mediaUrl) {

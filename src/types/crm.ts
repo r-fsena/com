@@ -122,6 +122,7 @@ export interface Contact {
   tenantId: string;
   name: string;
   phone: string;
+  lid?: string;
   email?: string;
   cpf?: string;
   avatarUrl?: string;

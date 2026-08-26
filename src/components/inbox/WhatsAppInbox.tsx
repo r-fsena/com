@@ -237,6 +237,7 @@ export function WhatsAppInbox() {
     const convId = activeConversation.id;
     const cleanPhone = activeContact?.phone ? activeContact.phone.replace(/\D/g, '') : convId.replace(/\D/g, '');
     const phoneSuffix = cleanPhone.length >= 8 ? cleanPhone.slice(-8) : cleanPhone;
+    const cleanLid = activeContact?.lid ? activeContact.lid.replace(/\D/g, '') : '';
 
     return messages
       .filter(m => {
@@ -244,8 +245,10 @@ export function WhatsAppInbox() {
         if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
         if (cleanPhone && cleanPhone.length >= 8 && m.conversationId.includes(cleanPhone)) return true;
         if (phoneSuffix && phoneSuffix.length >= 8 && m.conversationId.includes(phoneSuffix)) return true;
+        if (cleanLid && cleanLid.length >= 8 && m.conversationId.includes(cleanLid)) return true;
         const mPhone = (m as any).phone ? String((m as any).phone).replace(/\D/g, '') : '';
         if (mPhone && phoneSuffix && mPhone.endsWith(phoneSuffix)) return true;
+        if (mPhone && cleanLid && mPhone.includes(cleanLid)) return true;
         return false;
       })
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());

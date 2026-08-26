@@ -208,6 +208,7 @@ async function handleSyncChats(req: NextRequest) {
         tenantId,
         name: resolvedName,
         phone: formattedPhone,
+        lid: c.lid || undefined,
         avatarUrl: avatar,
         assignedUserId: assignedUserId || undefined,
         source: 'WHATSAPP' as const,

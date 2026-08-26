@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { validateApiSession } from '@/lib/api-auth';
+import { processZapiWebhookRequest } from '@/lib/zapi-webhook-handler';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,4 +32,8 @@ export async function GET(request: NextRequest) {
     messages,
     serverTime: Date.now(),
   });
+}
+
+export async function POST(request: NextRequest) {
+  return processZapiWebhookRequest(request);
 }

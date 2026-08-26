@@ -5,18 +5,18 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { tenantId: string; instanceId: string } }
+  { params }: { params: { tenantId: string } }
 ) {
-  return processZapiWebhookRequest(request, params);
+  return processZapiWebhookRequest(request, { tenantId: params.tenantId });
 }
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { tenantId: string; instanceId: string } }
+  { params }: { params: { tenantId: string } }
 ) {
   return NextResponse.json({
     status: 'ACTIVE',
-    endpoint: `/api/v1/webhooks/zapi/${params.tenantId}/${params.instanceId}`,
+    endpoint: `/api/v1/webhooks/zapi/${params.tenantId}`,
     ready: true,
   });
 }

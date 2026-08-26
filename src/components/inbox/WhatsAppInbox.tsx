@@ -1025,9 +1025,18 @@ export function WhatsAppInbox() {
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-slate-500 truncate mb-1.5 leading-relaxed">
-                      {conv.lastMessagePreview}
-                    </p>
+                    {/* Preview da Mensagem */}
+                    {(() => {
+                      const convMsgs = messages.filter(m => m.conversationId === conv.id && !m.isInternalNote && m.content);
+                      const latest = convMsgs.length > 0 ? convMsgs[convMsgs.length - 1] : null;
+                      const preview = latest?.content 
+                        || (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : (conv.lastMessagePreview && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber') ? conv.lastMessagePreview : '📱 Conversa sincronizada via WhatsApp'));
+                      return (
+                        <p className={`text-[11px] truncate mb-1.5 leading-relaxed ${conv.unreadCount > 0 ? 'font-semibold text-emerald-800' : 'text-slate-500'}`}>
+                          {preview}
+                        </p>
+                      );
+                    })()}
 
                     <div className="flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1 text-[10px] flex-wrap">

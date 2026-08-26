@@ -236,7 +236,9 @@ async function handleSyncChats(req: NextRequest) {
         ? new Date(Number(c.lastMessageTime)).toISOString() 
         : new Date().toISOString();
 
-      const lastMessageText = typeof c.lastMessage === 'string' ? c.lastMessage : (c.lastMessage?.message || c.message || 'Conversa ativa no WhatsApp');
+      const lastMessageText = typeof c.lastMessage === 'string' && c.lastMessage.trim()
+        ? c.lastMessage
+        : (c.lastMessage?.message || c.message || (unread > 0 ? `💬 ${unread} nova(s) mensagem(ns)` : '📱 Conversa sincronizada via WhatsApp'));
 
       return {
         id: `conv-zapi-${cleanPhone}`,

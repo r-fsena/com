@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
+import { serverCRMStore } from '@/lib/server-crm-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,10 +43,11 @@ async function handleSyncChats(req: NextRequest) {
       'Client-Token': securityToken,
     };
 
-    // 1. Busca lista de chats e agenda de contatos em paralelo
-    const [chatsRes, contactsRes] = await Promise.allSettled([
+    // 1. Busca lista de chats, agenda de contatos e etiquetas do WhatsApp Business em paralelo
+    const [chatsRes, contactsRes, labelsRes] = await Promise.allSettled([
       fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=1&pageSize=40`, { headers }),
       fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=1&pageSize=200`, { headers }),
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/labels`, { headers }),
     ]);
 
     let zapiChats: any[] = [];
@@ -63,6 +65,21 @@ async function handleSyncChats(req: NextRequest) {
             const resolvedName = cnt.name || cnt.vname || cnt.short || cnt.notify;
             if (raw && resolvedName) {
               contactsNameMap.set(raw, resolvedName);
+            }
+          });
+        }
+      } catch {}
+    }
+
+    // Mapa de Etiquetas do WhatsApp Business (ID -> Nome)
+    const labelsMap = new Map<string, string>();
+    if (labelsRes.status === 'fulfilled' && labelsRes.value.ok) {
+      try {
+        const zapiLabels = await labelsRes.value.json();
+        if (Array.isArray(zapiLabels)) {
+          zapiLabels.forEach((lbl: any) => {
+            if (lbl && lbl.name) {
+              labelsMap.set(String(lbl.id || lbl.labelId || lbl.name), lbl.name);
             }
           });
         }
@@ -105,7 +122,7 @@ async function handleSyncChats(req: NextRequest) {
       })
     );
 
-    // 4. Constrói contatos e conversas
+    // 4. Constrói contatos e conversas com etiquetas do WhatsApp Business mapeadas
     const contacts = validChats.map((c: any) => {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const formattedPhone = c.phone.startsWith('+') ? c.phone : `+${c.phone}`;
@@ -122,6 +139,22 @@ async function handleSyncChats(req: NextRequest) {
         ? new Date(Number(c.lastMessageTime)).toISOString() 
         : new Date().toISOString();
 
+      // Extração de Etiquetas do WhatsApp Business
+      const rawLabels = Array.isArray(c.labels) 
+        ? c.labels 
+        : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
+      
+      const resolvedLabels = rawLabels.map((lbl: any) => {
+        const lblStr = String(lbl);
+        return labelsMap.get(lblStr) || lblStr;
+      }).filter(Boolean);
+
+      const generatedTags = Array.from(new Set([
+        'WhatsApp Sync', 
+        'Lead WhatsApp',
+        ...resolvedLabels.map((l: string) => `[Etiqueta] ${l}`)
+      ]));
+
       return {
         id: `contact-zapi-${cleanPhone}`,
         tenantId,
@@ -132,7 +165,10 @@ async function handleSyncChats(req: NextRequest) {
         source: 'WHATSAPP' as const,
         temperature: 'WARM' as const,
         aiPriorityScore: 82,
-        tags: ['WhatsApp Sync', 'Lead WhatsApp'],
+        tags: generatedTags,
+        whatsappLabels: resolvedLabels,
+        firstSyncedAt: new Date().toISOString(),
+        lastSyncedAt: new Date().toISOString(),
         targetRegions: ['Região Metropolitana'],
         notesCount: 0,
         consentGiven: true,
@@ -253,12 +289,21 @@ async function handleSyncChats(req: NextRequest) {
       allMessagesMap.set(m.id, m);
     });
 
+    const finalMessages = Array.from(allMessagesMap.values());
+
+    // Persiste imediatamente o snapshot dos contatos, conversas e mensagens no banco de dados do servidor
+    serverCRMStore.updateState({
+      contacts,
+      conversations,
+      messages: finalMessages,
+    });
+
     return NextResponse.json({
       success: true,
       count: validChats.length,
       contacts,
       conversations,
-      messages: Array.from(allMessagesMap.values()),
+      messages: finalMessages,
     });
   } catch (err: any) {
     return NextResponse.json({

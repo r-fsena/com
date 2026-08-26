@@ -87,6 +87,9 @@ export const serverCRMStore = {
           preferredPropertyType: c.preferredPropertyType || existing.preferredPropertyType,
           email: c.email || existing.email,
           tags: Array.from(new Set([...(existing.tags || []), ...(c.tags || [])])),
+          whatsappLabels: Array.from(new Set([...(existing.whatsappLabels || []), ...(c.whatsappLabels || [])])),
+          firstSyncedAt: existing.firstSyncedAt || c.firstSyncedAt || new Date().toISOString(),
+          lastSyncedAt: c.lastSyncedAt || new Date().toISOString(),
           targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(c.targetRegions || [])])),
           presentedProperties: c.presentedProperties || existing.presentedProperties,
           assignedUserId: c.assignedUserId || existing.assignedUserId,
@@ -99,9 +102,14 @@ export const serverCRMStore = {
         const idx = result.findIndex(x => x.id === existing.id);
         if (idx >= 0) result[idx] = merged;
       } else {
-        if (pKey) phoneMap.set(pKey, c);
-        idMap.set(c.id, c);
-        result.push(c);
+        const withTimestamps: Contact = {
+          ...c,
+          firstSyncedAt: c.firstSyncedAt || new Date().toISOString(),
+          lastSyncedAt: c.lastSyncedAt || new Date().toISOString(),
+        };
+        if (pKey) phoneMap.set(pKey, withTimestamps);
+        idMap.set(c.id, withTimestamps);
+        result.push(withTimestamps);
       }
     });
 

@@ -124,6 +124,9 @@ export interface Contact {
   aiPriorityScore: number;
   assignedUserId?: string;
   tags: string[];
+  whatsappLabels?: string[]; // Etiquetas originais do WhatsApp Business
+  firstSyncedAt?: string;
+  lastSyncedAt?: string;
   notesCount: number;
   
   consentGiven: boolean;

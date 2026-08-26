@@ -1990,6 +1990,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 email: existing.email || newC.email,
                 temperature: existing.temperature || newC.temperature,
                 tags: Array.from(new Set([...(existing.tags || []), ...(newC.tags || [])])),
+                whatsappLabels: Array.from(new Set([...(existing.whatsappLabels || []), ...(newC.whatsappLabels || [])])),
+                firstSyncedAt: existing.firstSyncedAt || newC.firstSyncedAt || new Date().toISOString(),
+                lastSyncedAt: new Date().toISOString(),
                 aiPriorityScore: Math.max(existing.aiPriorityScore || 70, newC.aiPriorityScore || 70),
                 updatedAt: new Date().toISOString(),
               };
@@ -1999,9 +2002,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               if (clean) mapByPhone.set(clean, merged);
               mapById.set(existing.id, merged);
             } else {
-              result.push(newC);
-              if (clean) mapByPhone.set(clean, newC);
-              mapById.set(newC.id, newC);
+              const freshContact: Contact = {
+                ...newC,
+                firstSyncedAt: newC.firstSyncedAt || new Date().toISOString(),
+                lastSyncedAt: new Date().toISOString(),
+              };
+              result.push(freshContact);
+              if (clean) mapByPhone.set(clean, freshContact);
+              mapById.set(newC.id, freshContact);
             }
           });
 
@@ -2013,6 +2021,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
 
         // 2. Merge de Conversas
+        let finalConversations: Conversation[] = [];
         setConversations(prev => {
           const map = new Map(prev.map(c => [c.id, c]));
           data.conversations.forEach((c: Conversation) => {
@@ -2029,6 +2038,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             }
           });
           const result = Array.from(map.values());
+          finalConversations = result;
           try {
             localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result));
           } catch {}
@@ -2036,17 +2046,32 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
 
         // 3. Merge de Mensagens (NUNCA apaga mensagens!)
+        let finalMessages: Message[] = [];
         if (data.messages && data.messages.length > 0) {
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
             const newOnes = data.messages.filter((m: Message) => !existingIds.has(m.id));
             const merged = deduplicateMessages([...prev, ...newOnes]);
+            finalMessages = merged;
             try {
               localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged));
             } catch {}
             return merged;
           });
         }
+
+        // 4. Sincroniza Snapshot com a API de Estado do Servidor
+        try {
+          fetch('/api/v1/crm/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contacts: data.contacts,
+              conversations: finalConversations,
+              messages: finalMessages,
+            }),
+          }).catch(() => {});
+        } catch {}
 
         setActiveConversationId(prev => prev ? prev : (data.conversations[0]?.id || null));
         return { success: true, count: data.contacts.length };

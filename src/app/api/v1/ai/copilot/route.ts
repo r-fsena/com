@@ -8,6 +8,16 @@ const AnalyzeConversationSchema = z.object({
     text: z.string(),
   })).min(1, 'Histórico de mensagens é obrigatório'),
   brokerName: z.string().default('Corretor'),
+  contactContext: z.object({
+    name: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    whatsappLabels: z.array(z.string()).optional(),
+    monthlyIncome: z.number().optional(),
+    downPaymentAvailable: z.number().optional(),
+    maxPropertyValue: z.number().optional(),
+    preferredPropertyType: z.string().optional(),
+    targetRegions: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -22,9 +32,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { chatHistory, brokerName } = validated.data;
+    const { chatHistory, brokerName, contactContext } = validated.data;
     const copilot = new BedrockCopilotClient();
-    const analysis = await copilot.analyzeConversation(chatHistory, brokerName);
+    const analysis = await copilot.analyzeConversation(chatHistory, brokerName, contactContext);
 
     return NextResponse.json({
       data: analysis,

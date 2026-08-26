@@ -47,9 +47,19 @@ export class BedrockCopilotClient {
    */
   async analyzeConversation(
     chatHistory: Array<{ sender: 'CLIENT' | 'BROKER'; text: string }>,
-    brokerName = 'Corretor'
+    brokerName = 'Corretor',
+    contactContext?: {
+      name?: string;
+      tags?: string[];
+      whatsappLabels?: string[];
+      monthlyIncome?: number;
+      downPaymentAvailable?: number;
+      maxPropertyValue?: number;
+      preferredPropertyType?: string;
+      targetRegions?: string[];
+    }
   ): Promise<AICopilotAnalysis> {
-    return this.enhancedSemanticAnalysis(chatHistory, brokerName);
+    return this.enhancedSemanticAnalysis(chatHistory, brokerName, contactContext);
   }
 
   /**
@@ -58,7 +68,17 @@ export class BedrockCopilotClient {
    */
   private enhancedSemanticAnalysis(
     chatHistory: Array<{ sender: 'CLIENT' | 'BROKER'; text: string }>,
-    brokerName: string
+    brokerName: string,
+    contactContext?: {
+      name?: string;
+      tags?: string[];
+      whatsappLabels?: string[];
+      monthlyIncome?: number;
+      downPaymentAvailable?: number;
+      maxPropertyValue?: number;
+      preferredPropertyType?: string;
+      targetRegions?: string[];
+    }
   ): AICopilotAnalysis {
     const clientMessages = chatHistory.filter(m => m.sender === 'CLIENT').map(m => m.text);
     const clientText = clientMessages.join(' ').toLowerCase();

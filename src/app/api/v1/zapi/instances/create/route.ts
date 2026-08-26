@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateApiSession } from '@/lib/api-auth';
 
 export async function POST(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req, {
+    requireSuperAdmin: true,
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json();
     const { tenantId, name, partnerToken } = body;

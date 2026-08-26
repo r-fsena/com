@@ -1,20 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
+import { validateApiSession } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json();
-    const { action, phone } = body;
+    const { action, phone, targetInstanceId, targetToken } = body;
 
     if (!phone) {
       return NextResponse.json({ success: false, error: 'Telefone obrigatório' }, { status: 400 });
     }
 
-    const instanceId = process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-    const instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-    const securityToken = process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+    const instanceId = targetInstanceId || process.env.ZAPI_INSTANCE_ID || '';
+    const instanceToken = targetToken || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const securityToken = process.env.ZAPI_CLIENT_TOKEN || '';
+
+    if (!instanceId || !instanceToken) {
+      return NextResponse.json({
+        success: false,
+        error: 'Instância Z-API não configurada no servidor',
+      }, { status: 500 });
+    }
 
     const zapi = new ZApiClient({
       instanceId,

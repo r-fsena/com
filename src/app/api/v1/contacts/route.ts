@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { MOCK_CONTACTS } from '@/lib/mock-data';
+import { validateApiSession } from '@/lib/api-auth';
 
 const CreateContactSchema = z.object({
   name: z.string().min(2, 'Nome muito curto'),
@@ -17,8 +18,15 @@ const CreateContactSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const { session, errorResponse } = validateApiSession(request);
+  if (errorResponse) return errorResponse;
+
   const searchParams = request.nextUrl.searchParams;
-  const tenantId = searchParams.get('tenantId') || 'tenant-amabile-barbarotti';
+  // Anti-IDOR: O tenantId é sempre forçado a partir da sessão autenticada do usuário
+  const tenantId = session?.isSuperAdmin 
+    ? (searchParams.get('tenantId') || session.tenantId)
+    : session?.tenantId || 'tenant-amabile-barbarotti';
+
   const temperature = searchParams.get('temperature');
   const search = searchParams.get('q');
 
@@ -44,6 +52,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const { session, errorResponse } = validateApiSession(request, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await request.json();
     const validated = CreateContactSchema.safeParse(body);
@@ -58,7 +71,7 @@ export async function POST(request: NextRequest) {
     const data = validated.data;
     const newContact = {
       id: `contact-${Date.now()}`,
-      tenantId: 'tenant-amabile-barbarotti',
+      tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
       ...data,
       aiPriorityScore: 75,
       consentGiven: true,

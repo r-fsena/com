@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { sendUserInvitationEmail } from '@/lib/email-service';
+import { validateApiSession } from '@/lib/api-auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 const inviteSchema = z.object({
   email: z.string().email('E-mail inválido'),
@@ -13,6 +15,21 @@ const inviteSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // 1. Rate Limiting (Máx 10 convites por minuto por IP)
+  const clientIp = getClientIp(req.headers);
+  const rateCheck = checkRateLimit(`invite:${clientIp}`, 10, 60);
+  if (!rateCheck.allowed) {
+    return NextResponse.json({
+      success: false,
+      error: `Limite de disparos excedido. Aguarde ${rateCheck.resetInSeconds} segundos para tentar novamente.`,
+    }, { status: 429 });
+  }
+
+  // 2. Validação de Autorização (Apenas ADMIN ou SUPERADMIN)
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN'],
+  });
+  if (errorResponse) return errorResponse;
   try {
     const body = await req.json();
     const validated = inviteSchema.parse(body);

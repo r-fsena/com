@@ -1,15 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
+import { validateApiSession } from '@/lib/api-auth';
 
 export async function POST(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN'],
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json();
     const { instanceId, token, clientToken, tenantId } = body;
 
-    const currentTenantId = tenantId || 'tenant-amabile-barbarotti';
-    const currentInstanceId = instanceId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-    const currentToken = token || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-    const securityToken = clientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN;
+    const currentTenantId = tenantId || session?.tenantId || 'tenant-amabile-barbarotti';
+    const currentInstanceId = instanceId || process.env.ZAPI_INSTANCE_ID || '';
+    const currentToken = token || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const securityToken = clientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+
+    if (!currentInstanceId || !currentToken) {
+      return NextResponse.json({
+        success: false,
+        error: 'Instância Z-API não configurada',
+      }, { status: 400 });
+    }
 
     const webhookUrl = `https://crm.faithhubs.com/api/v1/webhooks/zapi/${currentTenantId}/${currentInstanceId}`;
 

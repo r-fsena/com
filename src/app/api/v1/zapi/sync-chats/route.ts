@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
+import { validateApiSession } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 async function handleSyncChats(req: NextRequest) {
-  let instanceId = process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
-  let tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+
+  let instanceId = process.env.ZAPI_INSTANCE_ID || '';
+  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
+  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+  let tenantId = session?.tenantId || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
   let assignedUserId: string | undefined;
   let fetchHistoryMessages = true;
   let historyDays = 15; // Padrão inicial de 15 dias
@@ -20,7 +24,7 @@ async function handleSyncChats(req: NextRequest) {
       if (body.instanceId) instanceId = body.instanceId;
       if (body.token) instanceToken = body.token;
       if (body.clientToken) securityToken = body.clientToken;
-      if (body.tenantId) tenantId = body.tenantId;
+      if (body.tenantId && session?.isSuperAdmin) tenantId = body.tenantId;
       if (body.assignedUserId) assignedUserId = body.assignedUserId;
       if (typeof body.fetchHistoryMessages === 'boolean') fetchHistoryMessages = body.fetchHistoryMessages;
       if (body.historyDays !== undefined) historyDays = Number(body.historyDays);
@@ -30,9 +34,16 @@ async function handleSyncChats(req: NextRequest) {
     if (searchParams.get('instanceId')) instanceId = searchParams.get('instanceId')!;
     if (searchParams.get('token')) instanceToken = searchParams.get('token')!;
     if (searchParams.get('clientToken')) securityToken = searchParams.get('clientToken')!;
-    if (searchParams.get('tenantId')) tenantId = searchParams.get('tenantId')!;
+    if (searchParams.get('tenantId') && session?.isSuperAdmin) tenantId = searchParams.get('tenantId')!;
     if (searchParams.get('assignedUserId')) assignedUserId = searchParams.get('assignedUserId')!;
     if (searchParams.get('historyDays')) historyDays = Number(searchParams.get('historyDays'));
+  }
+
+  if (!instanceId || !instanceToken) {
+    return NextResponse.json({
+      success: false,
+      error: 'Instância Z-API não informada ou não configurada no servidor',
+    }, { status: 400 });
   }
 
   const cutoffMs = historyDays > 0 ? Date.now() - (historyDays * 24 * 60 * 60 * 1000) : 0;

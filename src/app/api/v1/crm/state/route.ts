@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverCRMStore } from '@/lib/server-crm-store';
+import { validateApiSession } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+
   try {
     const state = serverCRMStore.getState();
     return NextResponse.json({
@@ -19,6 +23,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json();
     const updatedState = serverCRMStore.updateState(body);

@@ -59,9 +59,15 @@ export async function POST(
     }
 
     const targetPhone = validated.data.phone || validated.data.contactPhone;
-    const instanceId = validated.data.instanceId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-    const instanceToken = validated.data.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-    const securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
+    let instanceId = validated.data.instanceId;
+    if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
+      instanceId = process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+    }
+    let instanceToken = validated.data.instanceToken;
+    if (!instanceToken || instanceToken.length < 15) {
+      instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
+    }
+    let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
 
     let externalMessageId = `zapi-${Date.now()}`;
 
@@ -91,6 +97,23 @@ export async function POST(
       } else if (sendResult && !sendResult.success) {
         console.error('Falha ao enviar mensagem Z-API:', sendResult.error);
       }
+    }
+
+    // Registra a mensagem enviada no buffer global de webhooks
+    if (targetPhone) {
+      const rawTarget = targetPhone.replace(/\D/g, '');
+      webhookStore.addMessage({
+        id: externalMessageId,
+        tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
+        instanceId,
+        phone: rawTarget,
+        senderName: session?.userEmail ? 'Corretor' : 'Corretor',
+        content,
+        mediaType: (messageType.toLowerCase() as any),
+        mediaUrl,
+        fromMe: true,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return NextResponse.json({

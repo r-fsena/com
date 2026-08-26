@@ -27,14 +27,14 @@ export async function POST(
     const body = await request.json();
 
     // Extrai o telefone de forma limpa (removendo @lid, @c.us, @s.whatsapp.net)
-    let rawPhone = body.phone || body.recipientPhone || body.to || body.senderPhone || body.chatId || body.sender || body.from || (body.data && (body.data.phone || body.data.recipientPhone || body.data.senderPhone)) || '';
+    let rawPhone = body.chatPhone || body.phone || body.recipientPhone || body.to || body.senderPhone || body.chatId || body.sender || body.from || (body.data && (body.data.chatPhone || body.data.phone || body.data.recipientPhone || body.data.senderPhone)) || '';
     
-    // Se o telefone vier no formato JID / LID (ex: 38247304564788@lid ou 55489999@c.us)
     let cleanPhone = String(rawPhone).replace(/@.*$/, '').replace(/\D/g, '');
     
-    // Se cleanPhone estiver vazio mas houver chatPhone
-    if (!cleanPhone && body.chatPhone) {
-      cleanPhone = String(body.chatPhone).replace(/\D/g, '');
+    // Se cleanPhone estiver com chatPhone válido
+    if (body.chatPhone) {
+      const p = String(body.chatPhone).replace(/\D/g, '');
+      if (p.length >= 10) cleanPhone = p;
     }
 
     const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);

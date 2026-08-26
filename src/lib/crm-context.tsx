@@ -104,7 +104,7 @@ interface CRMContextType {
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
   openChatForContact: (contactId: string) => string;
-  loadChatHistory: (phone: string, conversationId: string) => Promise<void>;
+  loadChatHistory: (phone: string, conversationId: string, page?: number, historyDays?: number) => Promise<void>;
   messages: Message[];
   sendMessage: (
     conversationId: string, 
@@ -172,7 +172,7 @@ interface CRMContextType {
 
   // Z-API Sincronização em Tempo Real
   isSyncingWhatsApp: boolean;
-  syncWhatsAppChats: (targetInstanceId?: string) => Promise<{ success: boolean; count: number }>;
+  syncWhatsAppChats: (targetInstanceId?: string, historyDays?: number) => Promise<{ success: boolean; count: number }>;
   syncZapiInstance: (instanceId: string, phone?: string) => void;
 }
 
@@ -1892,9 +1892,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setCampaigns(prev => [newCamp, ...prev]);
   };
 
-  const loadChatHistory = async (phone: string, conversationId: string) => {
+  const loadChatHistory = async (phone: string, conversationId: string, page = 1, historyDays = 15) => {
     try {
       const cleanPhone = phone.replace(/\D/g, '');
+      const conv = conversations.find(c => c.id === conversationId);
+      const brokerInst = instances.find(i => i.id === conv?.instanceId) || instances[0];
+
       const res = await fetch('/api/v1/zapi/sync-chat-history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1902,6 +1905,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           phone: cleanPhone,
           conversationId,
           tenantId: currentTenant.id,
+          page,
+          historyDays,
+          instanceId: brokerInst?.zapiInstanceId || brokerInst?.id,
         }),
       });
       const data = await res.json();
@@ -1932,7 +1938,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
 
-  const syncWhatsAppChats = async (targetInstanceId?: string): Promise<{ success: boolean; count: number }> => {
+  const syncWhatsAppChats = async (targetInstanceId?: string, historyDays = 15): Promise<{ success: boolean; count: number }> => {
     try {
       setIsSyncingWhatsApp(true);
       const chosenInst = targetInstanceId 
@@ -1947,6 +1953,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           tenantId: currentTenant.id,
           assignedUserId: chosenInst?.assignedUserId || currentUser.id,
           fetchHistoryMessages: true,
+          historyDays,
         }),
       });
       const data = await res.json();

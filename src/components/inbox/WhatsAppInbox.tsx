@@ -205,6 +205,8 @@ export function WhatsAppInbox() {
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
@@ -1356,6 +1358,28 @@ export function WhatsAppInbox() {
                       Digite abaixo para responder. Todas as mensagens trocadas a partir de agora ficarão salvas aqui.
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* Botão Carregar Mensagens Anteriores sob Demanda */}
+              {activeContact?.phone && (
+                <div className="flex justify-center my-1.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsLoadingHistory(true);
+                      const nextPage = historyPage + 1;
+                      setHistoryPage(nextPage);
+                      await loadChatHistory(activeContact.phone, activeConversation.id, nextPage, 90);
+                      setIsLoadingHistory(false);
+                    }}
+                    disabled={isLoadingHistory}
+                    className="bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-[11px] font-semibold px-3.5 py-1.5 rounded-full shadow-2xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    title="Carregar lote anterior de mensagens da Z-API"
+                  >
+                    <RefreshCw className={`w-3 h-3 text-emerald-600 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+                    <span>{isLoadingHistory ? 'Carregando histórico...' : '📜 Carregar mensagens anteriores (+15 dias)'}</span>
+                  </button>
                 </div>
               )}
 

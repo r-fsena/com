@@ -57,6 +57,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     currentTenant.id === 'tenant-amabile-barbarotti' ? 'Fc78d61c833db4b50864816b70766aee8S' : ''
   );
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [syncHistoryDays, setSyncHistoryDays] = useState<number>(15);
 
   const isCheckingRef = useRef(false);
   const isFetchingQrRef = useRef(false);
@@ -229,8 +230,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   const handleManualSync = async () => {
     setSyncSuccessMessage(null);
-    await syncWhatsAppChats();
-    setSyncSuccessMessage('Conversas e contatos sincronizados com sucesso!');
+    const res = await syncWhatsAppChats(selectedInstId, syncHistoryDays);
+    setSyncSuccessMessage(`Conversas e contatos sincronizados com sucesso (${res.count} contatos nos últimos ${syncHistoryDays === 0 ? 'todos os' : `${syncHistoryDays}`} dias)!`);
     setTimeout(() => setSyncSuccessMessage(null), 4000);
   };
 
@@ -394,6 +395,30 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                     </div>
                   </div>
 
+                  {/* Seletor de Período de Recuperação de Histórico */}
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+                    <div className="text-left w-full sm:w-auto">
+                      <p className="text-xs font-bold text-slate-800">Janela de Histórico Inicial:</p>
+                      <p className="text-[10.5px] text-slate-500">Recupera mensagens anteriores trocadas pelo WhatsApp</p>
+                    </div>
+
+                    <select
+                      value={syncHistoryDays}
+                      onChange={(e) => setSyncHistoryDays(Number(e.target.value))}
+                      className="w-full sm:w-auto text-xs font-bold bg-white text-slate-800 border border-slate-300 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+                    >
+                      <option value={7}>⚡ Últimos 7 dias (Ultra rápido)</option>
+                      <option value={15}>📅 Últimos 15 dias (Padrão Inicial Recomendado)</option>
+                      <option value={25}>📅 Últimos 25 dias</option>
+                      <option value={35}>📅 Últimos 35 dias</option>
+                      <option value={45}>📅 Últimos 45 dias</option>
+                      <option value={60}>📅 Últimos 60 dias (2 meses)</option>
+                      <option value={70}>📅 Últimos 70 dias</option>
+                      <option value={90}>🗄️ Últimos 90 dias (3 meses)</option>
+                      <option value={0}>♾️ Histórico Completo</option>
+                    </select>
+                  </div>
+
                   {syncSuccessMessage && (
                     <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 animate-fadeIn">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -409,7 +434,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                       className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
-                      <span>{isSyncingWhatsApp ? 'Sincronizando Conversas...' : 'Sincronizar Mensagens Agora'}</span>
+                      <span>{isSyncingWhatsApp ? 'Sincronizando Conversas...' : 'Sincronizar Histórico Agora'}</span>
                     </button>
                     <button
                       type="button"

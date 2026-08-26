@@ -68,6 +68,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
   const [whatsappPreviewContacts, setWhatsappPreviewContacts] = useState<any[]>([]);
   const [isLoadingWhatsAppContacts, setIsLoadingWhatsAppContacts] = useState(false);
   const [selectedWhatsAppPhones, setSelectedWhatsAppPhones] = useState<Set<string>>(new Set());
+  const [historyDays, setHistoryDays] = useState<number>(15);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Carrega preview dos contatos do WhatsApp ao abrir modal na aba WhatsApp
@@ -83,6 +84,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
             body: JSON.stringify({
               instanceId: brokerInst?.zapiInstanceId || brokerInst?.id,
               fetchHistoryMessages: false,
+              historyDays,
             }),
           });
           const data = await res.json();
@@ -96,7 +98,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
       };
       fetchPreview();
     }
-  }, [isOpen, activeTab, currentUser.id, instances]);
+  }, [isOpen, activeTab, currentUser.id, instances, historyDays]);
 
   if (!isOpen) return null;
 
@@ -105,7 +107,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
     setIsProcessing(true);
     try {
       const brokerInst = instances.find(i => i.assignedUserId === assignedBrokerId) || instances[0];
-      const result = await syncWhatsAppChats(brokerInst?.zapiInstanceId || brokerInst?.id);
+      const result = await syncWhatsAppChats(brokerInst?.zapiInstanceId || brokerInst?.id, historyDays);
       
       // Cria deals no Kanban para os contatos selecionados se marcado
       if (createDealsInKanban && currentPipeline.stages.length > 0 && whatsappPreviewContacts.length > 0) {
@@ -448,9 +450,9 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                     })}
                   </div>
 
-                  {/* Opções de Atribuição e Funil */}
+                  {/* Opções de Atribuição, Histórico e Funil */}
                   <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Corretor Responsável:
@@ -466,7 +468,28 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                         </select>
                       </div>
 
-                      <div className="flex items-center pt-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Janela de Histórico:
+                        </label>
+                        <select
+                          value={historyDays}
+                          onChange={(e) => setHistoryDays(Number(e.target.value))}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none cursor-pointer font-medium text-slate-800"
+                        >
+                          <option value={7}>⚡ 7 dias (Rápido)</option>
+                          <option value={15}>📅 15 dias (Padrão)</option>
+                          <option value={25}>📅 25 dias</option>
+                          <option value={35}>📅 35 dias</option>
+                          <option value={45}>📅 45 dias</option>
+                          <option value={60}>📅 60 dias (2 meses)</option>
+                          <option value={70}>📅 70 dias</option>
+                          <option value={90}>🗄️ 90 dias (3 meses)</option>
+                          <option value={0}>♾️ Histórico Completo</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center pt-4">
                         <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
                           <input
                             type="checkbox"
@@ -474,7 +497,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                             onChange={(e) => setCreateDealsInKanban(e.target.checked)}
                             className="rounded text-emerald-600 focus:ring-emerald-500"
                           />
-                          <span>🚀 Criar cards no Funil (Kanban)</span>
+                          <span>🚀 Criar no Kanban</span>
                         </label>
                       </div>
                     </div>

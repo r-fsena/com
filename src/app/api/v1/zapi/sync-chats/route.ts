@@ -10,6 +10,7 @@ async function handleSyncChats(req: NextRequest) {
   let tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
   let assignedUserId: string | undefined;
   let fetchHistoryMessages = true;
+  let historyDays = 15; // Padrão inicial de 15 dias
 
   // Extração via GET query params ou POST JSON body
   if (req.method === 'POST') {
@@ -21,6 +22,7 @@ async function handleSyncChats(req: NextRequest) {
       if (body.tenantId) tenantId = body.tenantId;
       if (body.assignedUserId) assignedUserId = body.assignedUserId;
       if (typeof body.fetchHistoryMessages === 'boolean') fetchHistoryMessages = body.fetchHistoryMessages;
+      if (body.historyDays !== undefined) historyDays = Number(body.historyDays);
     } catch {}
   } else {
     const { searchParams } = new URL(req.url);
@@ -29,7 +31,10 @@ async function handleSyncChats(req: NextRequest) {
     if (searchParams.get('clientToken')) securityToken = searchParams.get('clientToken')!;
     if (searchParams.get('tenantId')) tenantId = searchParams.get('tenantId')!;
     if (searchParams.get('assignedUserId')) assignedUserId = searchParams.get('assignedUserId')!;
+    if (searchParams.get('historyDays')) historyDays = Number(searchParams.get('historyDays'));
   }
+
+  const cutoffMs = historyDays > 0 ? Date.now() - (historyDays * 24 * 60 * 60 * 1000) : 0;
 
   try {
     const headers = {
@@ -182,6 +187,12 @@ async function handleSyncChats(req: NextRequest) {
                     const isFromMe = Boolean(m.fromMe);
                     const text = m.text?.message || m.body || m.caption || m.message || (m.image ? '📷 [Foto]' : m.audio ? '🎙️ [Áudio]' : m.document ? '📄 [Documento]' : '');
                     const timestamp = m.momment ? new Date(Number(m.momment)).toISOString() : (m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString());
+                    
+                    // Filtra por data de corte selecionada (ex: últimos 15 dias)
+                    if (cutoffMs > 0 && new Date(timestamp).getTime() < cutoffMs) {
+                      return;
+                    }
+
                     const mId = m.id || m.zaapId || m.messageId || `hist-${clean}-${idx}-${Date.now()}`;
                     const mediaUrl = m.image?.imageUrl || m.audio?.audioUrl || m.document?.documentUrl;
 

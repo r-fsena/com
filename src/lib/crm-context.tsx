@@ -888,7 +888,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         content === 'Mensagem recebida pelo WhatsApp' ||
         content === 'Olá! Conversa sincronizada do WhatsApp.' ||
         content === 'Conversa sincronizada do WhatsApp.' ||
-        content === 'Conversa ativa no WhatsApp'
+        content === 'Conversa ativa no WhatsApp' ||
+        content.includes('Gostaria de receber mais informações sobre os imóveis disponíveis') ||
+        content.includes('Temos excelentes oportunidades residenciais e comerciais') ||
+        content.includes('Separei opções que atendem exatamente ao seu perfil') ||
+        content.includes('Busco apartamento de 2 a 3 dormitórios')
       ) {
         return false;
       }

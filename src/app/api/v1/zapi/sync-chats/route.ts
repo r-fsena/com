@@ -308,34 +308,6 @@ async function handleSyncChats(req: NextRequest) {
       );
     }
 
-    // 5.1 Garante que cada conversa importada do WhatsApp possua pelo menos uma mensagem inicial no chat
-    validChats.forEach((c: any) => {
-      const clean = (c.phone || '').replace(/\D/g, '');
-      const convId = `conv-zapi-${clean}`;
-      const hasMessage = historyMessages.some(m => m.conversationId === convId);
-
-      if (!hasMessage) {
-        const lastMsgDate = c.lastMessageTime 
-          ? new Date(Number(c.lastMessageTime)).toISOString() 
-          : new Date().toISOString();
-        const contactName = contactsNameMap.get(clean) || c.name || 'Cliente';
-        const lastMessageText = typeof c.lastMessage === 'string' ? c.lastMessage : (c.lastMessage?.message || c.message || `Olá! Gostaria de receber mais informações sobre as opções de imóveis disponíveis.`);
-
-        historyMessages.push({
-          id: `initial-msg-${clean}`,
-          tenantId,
-          conversationId: convId,
-          senderType: 'CONTACT' as const,
-          senderName: contactName,
-          messageType: 'TEXT' as const,
-          content: lastMessageText,
-          status: 'READ' as const,
-          isInternalNote: false,
-          timestamp: lastMsgDate,
-        });
-      }
-    });
-
     // 6. Combina mensagens capturadas em tempo real pelo webhook
     const liveWebhookMessages = webhookStore.getAllMessages().map(m => {
       const rawPhone = m.phone.replace(/\D/g, '');

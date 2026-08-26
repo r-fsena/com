@@ -1349,15 +1349,26 @@ export function WhatsAppInbox() {
             {/* Área de Mensagens (com background WhatsApp) */}
             <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 whatsapp-chat-bg">
               {activeMessages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full min-h-[260px] text-center p-6 space-y-2.5">
-                  <div className="w-11 h-11 rounded-2xl bg-white/90 backdrop-blur-xs text-emerald-600 flex items-center justify-center shadow-xs border border-slate-200/80">
-                    <MessageSquare className="w-5 h-5" />
+                <div className="flex flex-col items-center justify-center h-full min-h-[280px] text-center p-6 space-y-3 max-w-md mx-auto my-auto">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-xs border border-emerald-200">
+                    <MessageSquare className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-slate-800">Conversa Ativa no WhatsApp</h3>
-                    <p className="text-[11px] text-slate-500 max-w-xs mt-0.5 leading-relaxed">
-                      Digite abaixo para responder. Todas as mensagens trocadas a partir de agora ficarão salvas aqui.
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Conversa com {activeContact?.name || 'Cliente'}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      As mensagens anteriores trocadas pelo celular estão no seu aplicativo do WhatsApp.
                     </p>
+                    <div className="mt-3 p-3 bg-white/95 border border-slate-200/90 rounded-xl text-left shadow-2xs">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 mb-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>Sincronização em Tempo Real Ativa</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Envie uma mensagem abaixo para iniciar o atendimento. Todas as mensagens trocadas serão registradas e analisadas pelo CRM em tempo real.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}

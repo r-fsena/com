@@ -85,81 +85,16 @@ export async function POST(req: NextRequest) {
       })
       .filter(m => cutoffMs === 0 || new Date(m.timestamp).getTime() >= cutoffMs);
 
-    // Se a Z-API Multi-Device não retorna histórico remoto, recupera do banco e reconstrói o fluxo da conversa
+    // Se a Z-API Multi-Device não retorna histórico remoto antigo do aparelho, recupera apenas mensagens reais gravadas
     if (formattedMessages.length === 0) {
       const serverState = serverCRMStore.getState();
       const storedMsgs = serverState.messages.filter(m => 
         m.conversationId === (conversationId || `conv-zapi-${cleanPhone}`) ||
         (m as any).phone === cleanPhone
-      );
+      ).filter(m => !m.id.startsWith('hist-') && !m.id.startsWith('initial-msg-'));
 
       if (storedMsgs.length > 0) {
         formattedMessages = storedMsgs;
-      } else {
-        // Constrói histórico contextual com base no contato do WhatsApp
-        const contact = serverState.contacts.find(c => c.phone.replace(/\D/g, '').includes(cleanPhone));
-        const contactName = contact?.name && !contact.name.startsWith('+') && !contact.name.startsWith('WhatsApp')
-          ? contact.name
-          : 'Cliente';
-
-        const now = Date.now();
-        const daysAgo = (d: number, hoursOffset = 0) => new Date(now - (d * 24 * 60 * 60 * 1000) - (hoursOffset * 60 * 60 * 1000)).toISOString();
-
-        formattedMessages = [
-          {
-            id: `hist-${cleanPhone}-1`,
-            tenantId,
-            conversationId: conversationId || `conv-zapi-${cleanPhone}`,
-            senderType: 'CONTACT' as const,
-            senderName: contactName,
-            messageType: 'TEXT' as const,
-            content: `Olá! Gostaria de receber mais informações sobre os imóveis disponíveis e opções de plantas.`,
-            status: 'READ' as const,
-            isInternalNote: false,
-            timestamp: daysAgo(Math.min(historyDays, 5), 4),
-          },
-          {
-            id: `hist-${cleanPhone}-2`,
-            tenantId,
-            conversationId: conversationId || `conv-zapi-${cleanPhone}`,
-            senderType: 'USER' as const,
-            senderName: 'Corretor',
-            messageType: 'TEXT' as const,
-            content: `Olá ${contactName}, tudo bem? Muito prazer! Temos excelentes oportunidades residenciais e comerciais. Qual perfil ou região você tem preferência?`,
-            status: 'READ' as const,
-            isInternalNote: false,
-            timestamp: daysAgo(Math.min(historyDays, 4), 2),
-          },
-          {
-            id: `hist-${cleanPhone}-3`,
-            tenantId,
-            conversationId: conversationId || `conv-zapi-${cleanPhone}`,
-            senderType: 'CONTACT' as const,
-            senderName: contactName,
-            messageType: 'TEXT' as const,
-            content: `Busco apartamento de 2 a 3 dormitórios, preferencialmente com suíte e vaga de garagem.`,
-            status: 'READ' as const,
-            isInternalNote: false,
-            timestamp: daysAgo(Math.min(historyDays, 3), 1),
-          },
-          {
-            id: `hist-${cleanPhone}-4`,
-            tenantId,
-            conversationId: conversationId || `conv-zapi-${cleanPhone}`,
-            senderType: 'USER' as const,
-            senderName: 'Corretor',
-            messageType: 'TEXT' as const,
-            content: `Perfeito! Separei opções que atendem exatamente ao seu perfil. Posso te enviar as fotos e tabela de valores?`,
-            status: 'READ' as const,
-            isInternalNote: false,
-            timestamp: daysAgo(Math.min(historyDays, 2), 1),
-          },
-        ];
-
-        // Persiste as mensagens no estado global do servidor
-        serverCRMStore.updateState({
-          messages: [...serverState.messages, ...formattedMessages],
-        });
       }
     }
 

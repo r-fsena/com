@@ -306,8 +306,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+      {/* Header com 100% de Aproveitamento de Tela */}
+      <div className="bg-white border-b border-slate-200 px-6 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-md">
@@ -325,7 +325,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
       </div>
 
       {/* Submenus Solicitados */}
-      <div className="bg-white border-b border-slate-200 px-6 flex gap-2 sm:gap-6 text-xs font-semibold text-slate-500 overflow-x-auto no-scrollbar">
+      <div className="bg-white border-b border-slate-200 px-6 sm:px-8 flex gap-2 sm:gap-6 text-xs font-semibold text-slate-500 overflow-x-auto no-scrollbar">
         {/* 1. CONFIGURAÇÕES DA EMPRESA */}
         <button
           onClick={() => setActiveTab('TENANT')}
@@ -408,8 +408,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         </button>
       </div>
 
-      {/* Conteúdo dos Submenus com Aproveitamento Total de Tela */}
-      <div className="flex-1 overflow-y-auto p-6 w-full max-w-7xl mx-auto space-y-6">
+      {/* Conteúdo dos Submenus com 100% de Aproveitamento Fluido */}
+      <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-6 w-full space-y-6">
 
         {/* ========================================================================= */}
         {/* SUBMENU 1: CONFIGURAÇÕES DA EMPRESA                                      */}
@@ -550,16 +550,16 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               </div>
             )}
 
-            {/* Tabela de Usuários com Aproveitamento Amplo de Tela */}
+            {/* Tabela de Usuários com Aproveitamento Fluido 100% */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs bg-white">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                <thead className="bg-slate-50/90 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
-                    <th className="py-3.5 px-4 w-1/4">Usuário / Corretor</th>
-                    <th className="py-3.5 px-4">Cargo / Perfil</th>
-                    <th className="py-3.5 px-4">WhatsApp / Telefone</th>
-                    <th className="py-3.5 px-4">Status de Acesso</th>
-                    <th className="py-3.5 px-4 text-right">Ações Rápidas</th>
+                    <th className="py-3.5 px-4 w-[28%]">Usuário / Corretor</th>
+                    <th className="py-3.5 px-4 w-[16%]">Cargo / Perfil</th>
+                    <th className="py-3.5 px-4 w-[18%]">WhatsApp / Telefone</th>
+                    <th className="py-3.5 px-4 w-[18%]">Status de Acesso</th>
+                    <th className="py-3.5 px-4 text-right w-[20%]">Ações Rápidas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -598,8 +598,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                               </div>
                             </div>
                           </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-lg inline-flex items-center gap-1 border ${
+                          <td className="py-3.5 px-4">
+                            <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-lg inline-flex items-center gap-1 border whitespace-nowrap ${
                               isMaster ? 'bg-amber-50 text-amber-900 border-amber-300 font-black' :
                               u.role === 'ADMIN' ? 'bg-purple-50 text-purple-800 border-purple-200' :
                               u.role === 'MANAGER' ? 'bg-blue-50 text-blue-800 border-blue-200' :
@@ -612,39 +612,39 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                '👤 CORRETOR'}
                             </span>
                           </td>
-                          <td className="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
+                          <td className="py-3.5 px-4 font-mono text-slate-700">
                             {u.phone ? (
-                              <span className="flex items-center gap-1.5">
+                              <span className="flex items-center gap-1.5 whitespace-nowrap">
                                 <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> {u.phone}
                               </span>
                             ) : (
                               <span className="text-slate-400 italic">Não informado</span>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 whitespace-nowrap">
+                          <td className="py-3.5 px-4">
                             {u.passwordSet || u.status === 'ACTIVE' ? (
-                              <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 inline-flex items-center gap-1.5 shadow-2xs">
+                              <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 inline-flex items-center gap-1.5 shadow-2xs whitespace-nowrap">
                                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                <span>Ativo (Senha Definida)</span>
+                                <span>Ativo</span>
                               </span>
                             ) : (
-                              <span className="text-[10.5px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
+                              <span className="text-[10.5px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs whitespace-nowrap">
                                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                <span>Convite Enviado (Pendente)</span>
+                                <span>Convite Pendente</span>
                               </span>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap sm:flex-nowrap">
                               {/* Botão de Redefinir Senha */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenResetModal(u)}
-                                className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                                className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap"
                                 title="Definir ou redefinir senha do usuário"
                               >
                                 <Key className="w-3.5 h-3.5 text-blue-700" />
-                                <span>Redefinir Senha</span>
+                                <span>Senha</span>
                               </button>
 
                               {/* Botão de Reenviar E-mail de Convite */}
@@ -664,8 +664,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                       setResendingUserId(null);
                                     }
                                   }}
-                                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs active:scale-95"
-                                  title="Reenviar e-mail com instruções de primeiro acesso"
+                                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs active:scale-95 whitespace-nowrap"
+                                  title="Reenviar e-mail com instruções de acesso"
                                 >
                                   {resendingUserId === u.id ? (
                                     <>
@@ -675,7 +675,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                   ) : (
                                     <>
                                       <Send className="w-3.5 h-3.5 text-amber-700" />
-                                      <span>Reenviar E-mail</span>
+                                      <span>Convite</span>
                                     </>
                                   )}
                                 </button>
@@ -685,7 +685,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                               <button
                                 type="button"
                                 onClick={() => handleCopyInviteLink(u.email, u.name)}
-                                className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
+                                className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap ${
                                   copiedUserEmail === u.email
                                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                     : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
@@ -695,12 +695,12 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                 {copiedUserEmail === u.email ? (
                                   <>
                                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Copiado!</span>
+                                    <span>Copiado</span>
                                   </>
                                 ) : (
                                   <>
                                     <Copy className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Copiar Acesso</span>
+                                    <span>Copiar</span>
                                   </>
                                 )}
                               </button>
@@ -709,7 +709,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                 <select
                                   value={u.role}
                                   onChange={(e) => updateUser(u.id, { role: e.target.value as UserRole })}
-                                  className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none cursor-pointer text-slate-700 shadow-2xs"
+                                  className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 focus:outline-none cursor-pointer text-slate-700 shadow-2xs"
                                 >
                                   <option value="ADMIN">Admin</option>
                                   <option value="MANAGER">Gestor</option>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { S3StorageClient } from '@/lib/s3-client';
+import { validateApiSession } from '@/lib/api-auth';
 
 const PresignedUrlSchema = z.object({
   tenantId: z.string().default('tenant-amabile-barbarotti'),
@@ -10,6 +11,11 @@ const PresignedUrlSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const { session, errorResponse } = validateApiSession(request, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await request.json();
     const validated = PresignedUrlSchema.safeParse(body);

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateICSContent, CalendarEventData } from '@/lib/calendar-service';
+import { validateApiSession } from '@/lib/api-auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +10,21 @@ export const dynamic = 'force-dynamic';
  * Envia convite de agenda interativo (.ics / RFC 5545) por e-mail para o cliente
  */
 export async function POST(req: NextRequest) {
+  // 1. Rate Limiting (Máx 15 convites/min por IP)
+  const clientIp = getClientIp(req.headers);
+  const rateCheck = checkRateLimit(`cal_invite:${clientIp}`, 15, 60);
+  if (!rateCheck.allowed) {
+    return NextResponse.json({
+      error: `Limite de disparos de convites excedido. Aguarde ${rateCheck.resetInSeconds}s.`,
+    }, { status: 429 });
+  }
+
+  // 2. Validação de Sessão
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const body: CalendarEventData = await req.json();
 

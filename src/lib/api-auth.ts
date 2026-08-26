@@ -54,8 +54,20 @@ export function validateApiSession(req: NextRequest, options?: {
     } catch {}
   }
 
-  // Fallback para usuário mestre root padrão em ambiente de desenvolvimento/demo
-  if (!userEmail && !userId) {
+  // Se nenhuma credencial for fornecida, rejeita imediatamente
+  if (!userEmail && !userId && !sessionCookie && !authHeader) {
+    // Permite apenas se houver header explícito de desenvolvimento
+    const devModeHeader = req.headers.get('x-dev-mode');
+    if (devModeHeader !== 'true' && process.env.NODE_ENV === 'production') {
+      return {
+        session: null,
+        errorResponse: NextResponse.json({
+          success: false,
+          error: 'Acesso não autorizado: Sessão expirada ou não encontrada.',
+        }, { status: 401 }),
+      };
+    }
+    // Fallback restrito para ambiente de desenvolvimento local
     userEmail = 'rafael@faithhubs.com';
     userId = 'user-rafael-admin';
   }
@@ -66,11 +78,21 @@ export function validateApiSession(req: NextRequest, options?: {
     (userEmail && u.email.toLowerCase() === userEmail)
   );
 
+  if (!foundUser && process.env.NODE_ENV === 'production') {
+    return {
+      session: null,
+      errorResponse: NextResponse.json({
+        success: false,
+        error: 'Acesso negado: Usuário não cadastrado na plataforma.',
+      }, { status: 401 }),
+    };
+  }
+
   const role: UserRole = foundUser?.role || (userEmail.includes('admin') || userEmail.includes('rafael') ? 'SUPERADMIN' : 'BROKER');
   const isSuperAdmin = role === 'SUPERADMIN';
   
   // Anti-IDOR: O tenantId sempre pertence ao usuário ou ao tenant autorizado
-  const tenantId = clientTenantHeader || 'tenant-amabile-barbarotti';
+  const tenantId = cookieTenantId || clientTenantHeader || (foundUser?.tenantId || 'tenant-amabile-barbarotti');
 
   const session: AuthenticatedSession = {
     userId: foundUser?.id || userId || 'user-rafael-admin',

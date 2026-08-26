@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ZApiClient } from '@/lib/zapi-client';
 import { webhookStore } from '@/lib/webhook-store';
+import { validateApiSession } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const { session, errorResponse } = validateApiSession(request, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
+  });
+  if (errorResponse) return errorResponse;
+
   const conversationId = params.id;
 
   try {
@@ -53,9 +59,9 @@ export async function POST(
     }
 
     const targetPhone = validated.data.phone || validated.data.contactPhone;
-    const instanceId = validated.data.instanceId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-    const instanceToken = validated.data.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '7A18BD2BADA4840FB0374499';
-    const securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
+    const instanceId = validated.data.instanceId || process.env.ZAPI_INSTANCE_ID || '';
+    const instanceToken = validated.data.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
 
     let externalMessageId = `zapi-${Date.now()}`;
 

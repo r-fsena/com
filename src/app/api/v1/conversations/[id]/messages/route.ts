@@ -6,7 +6,10 @@ import { webhookStore } from '@/lib/webhook-store';
 export const dynamic = 'force-dynamic';
 
 const SendMessageSchema = z.object({
-  content: z.string().min(1, 'Conteúdo obrigatório'),
+  content: z.string().default(''),
+  messageType: z.enum(['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE']).default('TEXT'),
+  mediaUrl: z.string().optional(),
+  fileName: z.string().optional(),
   isInternalNote: z.boolean().default(false),
   idempotencyKey: z.string().optional(),
   aiSuggested: z.boolean().default(false),
@@ -15,6 +18,7 @@ const SendMessageSchema = z.object({
   instanceId: z.string().optional(),
   instanceToken: z.string().optional(),
   clientToken: z.string().optional(),
+  senderUserId: z.string().optional(),
 });
 
 export async function POST(
@@ -34,7 +38,7 @@ export async function POST(
       );
     }
 
-    const { content, isInternalNote, idempotencyKey } = validated.data;
+    const { content, messageType, mediaUrl, fileName, isInternalNote, idempotencyKey } = validated.data;
 
     // Se for nota interna, grava internamente sem disparar para a Z-API
     if (isInternalNote) {
@@ -64,11 +68,21 @@ export async function POST(
       });
 
       const cleanPhone = targetPhone.replace(/\D/g, '');
-      const sendResult = await zapi.sendText(cleanPhone, content);
+      let sendResult = null;
 
-      if (sendResult.success && sendResult.externalMessageId) {
+      if (messageType === 'AUDIO' && mediaUrl) {
+        sendResult = await zapi.sendAudio(cleanPhone, mediaUrl);
+      } else if (messageType === 'IMAGE' && mediaUrl) {
+        sendResult = await zapi.sendImage(cleanPhone, mediaUrl, content || undefined);
+      } else if (messageType === 'DOCUMENT' && mediaUrl) {
+        sendResult = await zapi.sendDocument(cleanPhone, mediaUrl, fileName || 'documento.pdf');
+      } else {
+        sendResult = await zapi.sendText(cleanPhone, content || 'Mensagem enviada');
+      }
+
+      if (sendResult && sendResult.success && sendResult.externalMessageId) {
         externalMessageId = sendResult.externalMessageId;
-      } else if (!sendResult.success) {
+      } else if (sendResult && !sendResult.success) {
         console.error('Falha ao enviar mensagem Z-API:', sendResult.error);
       }
     }
@@ -79,6 +93,9 @@ export async function POST(
       externalId: externalMessageId,
       isInternalNote: false,
       content,
+      messageType,
+      mediaUrl,
+      fileName,
       status: 'DELIVERED',
       idempotencyKey: idempotencyKey || `idem-${Date.now()}`,
       timestamp: new Date().toISOString(),

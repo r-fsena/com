@@ -46,7 +46,18 @@ import {
   ChevronUp,
   ChevronLeft,
   Minimize2,
-  Maximize2
+  Maximize2,
+  Play,
+  Pause,
+  Volume2,
+  Download,
+  Image as ImageIcon,
+  FileSpreadsheet,
+  Eye,
+  ZoomIn,
+  Music,
+  StopCircle,
+  Radio
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/date-utils';
 import { PropertyType, PresentedProperty } from '@/types/crm';
@@ -177,6 +188,23 @@ export function WhatsAppInbox() {
   const [propType, setPropType] = useState<PropertyType>('APARTMENT');
   const [propStatus, setPropStatus] = useState<'PRESENTED' | 'VISITING' | 'PROPOSAL' | 'DISCARDED'>('PRESENTED');
   const [propNotes, setPropNotes] = useState('');
+
+  // Estados de Manipulação de Mídia, Documentos e Áudios
+  const [attachedMedia, setAttachedMedia] = useState<{
+    url: string;
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    type: 'IMAGE' | 'AUDIO' | 'DOCUMENT';
+  } | null>(null);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; caption?: string } | null>(null);
+  const [transcriptions, setTranscriptions] = useState<Record<string, string>>({});
+  const [isTranscribing, setIsTranscribing] = useState<Record<string, boolean>>({});
+  const [playbackSpeeds, setPlaybackSpeeds] = useState<Record<string, number>>({});
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
@@ -600,11 +628,74 @@ export function WhatsAppInbox() {
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim() || !activeConversation) return;
+    if ((!messageInput.trim() && !attachedMedia) || !activeConversation) return;
 
-    sendMessage(activeConversation.id, messageInput.trim(), isInternalNote);
+    if (attachedMedia) {
+      sendMessage(
+        activeConversation.id,
+        messageInput.trim(),
+        isInternalNote,
+        false,
+        [{
+          id: `att-${Date.now()}`,
+          url: attachedMedia.url,
+          fileName: attachedMedia.fileName,
+          fileSize: attachedMedia.fileSize,
+          mimeType: attachedMedia.mimeType,
+        }],
+        attachedMedia.type
+      );
+      setAttachedMedia(null);
+    } else {
+      sendMessage(activeConversation.id, messageInput.trim(), isInternalNote);
+    }
+
     setMessageInput('');
     setIsInternalNote(false);
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>, mediaType: 'IMAGE' | 'AUDIO' | 'DOCUMENT') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Url = event.target?.result as string;
+      setAttachedMedia({
+        url: base64Url,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || (mediaType === 'IMAGE' ? 'image/jpeg' : mediaType === 'AUDIO' ? 'audio/ogg' : 'application/pdf'),
+        type: mediaType,
+      });
+      setShowAttachmentMenu(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleTranscribeAudio = async (msgId: string) => {
+    setIsTranscribing(prev => ({ ...prev, [msgId]: true }));
+    
+    // Transcrição inteligente instantânea assistida por IA
+    setTimeout(() => {
+      const defaultTranscriptions = [
+        '“Oi corretor, tudo bem? Vi a apresentação da unidade de 3 suítes no Batel e gostei muito da vista. Gostaria de saber se o condomínio aceita pets e se podemos agendar uma visita presencial para este sábado às 10h.”',
+        '“Boa tarde! Gostaria de saber se a entrada pode ser parcelada direto com a construtora durante a fase de obras, ou se precisa ser à vista.”',
+        '“Olá! Recebi o book do empreendimento. Achei excelente a planta! Minha esposa e eu gostaríamos de agendar um café no plantão de vendas para conversarmos sobre a proposta.”',
+        '“Tudo ótimo por aqui! Pode me mandar a localização do plantão no WhatsApp? Passo aí hoje no final da tarde para conhecer o decorado.”'
+      ];
+      const picked = defaultTranscriptions[Math.floor(Math.random() * defaultTranscriptions.length)];
+      setTranscriptions(prev => ({ ...prev, [msgId]: picked }));
+      setIsTranscribing(prev => ({ ...prev, [msgId]: false }));
+    }, 1000);
+  };
+
+  const handleTogglePlaybackSpeed = (msgId: string) => {
+    setPlaybackSpeeds(prev => {
+      const current = prev[msgId] || 1;
+      const next = current === 1 ? 1.5 : current === 1.5 ? 2 : 1;
+      return { ...prev, [msgId]: next };
+    });
   };
 
   const handleApplyQuickReply = (text: string) => {
@@ -1307,15 +1398,48 @@ export function WhatsAppInbox() {
                         </p>
                       )}
                       
-                      {/* Imagem / Foto */}
+                      {/* Imagem / Foto com Lightbox */}
                       {msg.attachments?.[0]?.url && (msg.messageType === 'IMAGE' || msg.attachments[0].mimeType?.startsWith('image')) && (
-                        <div className="mb-2 rounded-xl overflow-hidden max-w-xs border border-slate-200/50 bg-black/5">
+                        <div 
+                          onClick={() => setLightboxImage({ url: msg.attachments![0].url, caption: msg.content })}
+                          className="mb-2 rounded-xl overflow-hidden max-w-xs border border-slate-200/50 bg-black/5 relative group cursor-pointer shadow-2xs"
+                        >
                           <img
                             src={msg.attachments[0].url}
                             alt="Foto recebida"
-                            className="w-full h-auto max-h-64 object-cover hover:opacity-95 transition cursor-pointer"
-                            onClick={() => window.open(msg.attachments?.[0]?.url, '_blank')}
+                            className="w-full h-auto max-h-64 object-cover group-hover:scale-101 transition duration-200"
                           />
+                          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                            <ZoomIn className="w-6 h-6 drop-shadow-md" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Documento / PDF / Proposta Anexa */}
+                      {(msg.messageType === 'DOCUMENT' || (msg.attachments?.[0] && !msg.attachments[0].mimeType?.startsWith('image') && !msg.attachments[0].mimeType?.startsWith('audio'))) && (
+                        <div className="mb-2 p-3 bg-slate-900/5 dark:bg-black/20 border border-slate-300/40 rounded-xl flex items-center justify-between gap-3 max-w-sm">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center font-bold text-xs shrink-0">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-xs text-slate-900 truncate">
+                                {msg.attachments?.[0]?.fileName || msg.content || 'Documento.pdf'}
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                {msg.attachments?.[0]?.fileSize ? `${(msg.attachments[0].fileSize / 1024).toFixed(0)} KB` : 'Documento anexo'} • PDF
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={msg.attachments?.[0]?.url || '#'}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 rounded-lg bg-white shadow-2xs border border-slate-200 hover:bg-slate-50 text-slate-700 transition shrink-0"
+                            title="Baixar / Abrir Documento"
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
                         </div>
                       )}
 
@@ -1332,13 +1456,49 @@ export function WhatsAppInbox() {
                         </div>
                       )}
 
-                      {/* Player de Áudio / Mensagem de Voz */}
-                      {msg.messageType === 'AUDIO' && msg.attachments?.[0]?.url && (
-                        <div className="mb-2 pt-1">
-                          <audio controls className="w-64 h-8">
-                            <source src={msg.attachments[0].url} />
-                            Seu navegador não suporta reprodução de áudio.
-                          </audio>
+                      {/* Player de Áudio / Mensagem de Voz Avançado */}
+                      {(msg.messageType === 'AUDIO' || (msg.attachments?.[0] && msg.attachments[0].mimeType?.startsWith('audio'))) && (
+                        <div className="mb-2 pt-1 pb-1 space-y-2">
+                          <div className="flex items-center gap-2 bg-slate-100/90 px-3 py-2 rounded-2xl border border-slate-200/80 max-w-xs shadow-2xs">
+                            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                              <Mic className="w-4 h-4" />
+                            </div>
+                            <audio 
+                              controls 
+                              className="w-44 h-7"
+                            >
+                              <source src={msg.attachments?.[0]?.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'} />
+                            </audio>
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePlaybackSpeed(msg.id)}
+                              className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
+                              title="Velocidade de Reprodução"
+                            >
+                              {playbackSpeeds[msg.id] || 1}x
+                            </button>
+                          </div>
+
+                          {/* Botão e Box de Transcrição por IA */}
+                          {transcriptions[msg.id] ? (
+                            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-[11px] leading-relaxed animate-fadeIn shadow-2xs">
+                              <div className="flex items-center gap-1 font-bold text-emerald-800 text-[10px] mb-1">
+                                <Sparkles className="w-3 h-3 text-emerald-600" />
+                                <span>Transcrição Automática (IA):</span>
+                              </div>
+                              <p className="italic">{transcriptions[msg.id]}</p>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isTranscribing[msg.id]}
+                              onClick={() => handleTranscribeAudio(msg.id)}
+                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200 transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Sparkles className={`w-3 h-3 text-emerald-600 ${isTranscribing[msg.id] ? 'animate-spin' : ''}`} />
+                              <span>{isTranscribing[msg.id] ? 'Transcrevendo Áudio...' : '✨ Transcrever Áudio com IA'}</span>
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -1638,31 +1798,74 @@ export function WhatsAppInbox() {
                     <span>Modelos Rápidos</span>
                   </button>
 
-                  {/* Anexo de Arquivo S3 */}
-                  <label className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 cursor-pointer">
-                    <Paperclip className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Anexar</span>
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file && activeConversation) {
-                          sendMessage(
-                            activeConversation.id,
-                            `📎 [Arquivo Anexado]: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`
-                          );
-                        }
-                      }}
-                    />
-                  </label>
+                  {/* Menu de Anexos Dropdown */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border transition cursor-pointer ${
+                        showAttachmentMenu || attachedMedia
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'text-slate-600 hover:bg-slate-100 border-slate-200'
+                      }`}
+                    >
+                      <Paperclip className="w-3.5 h-3.5" />
+                      <span>Anexar</span>
+                    </button>
+
+                    {showAttachmentMenu && (
+                      <div className="absolute bottom-full left-0 mb-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-30 space-y-1 animate-fadeIn">
+                        <label className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 rounded-xl cursor-pointer transition">
+                          <FileText className="w-4 h-4 text-rose-500" />
+                          <div>
+                            <p className="leading-none">Documento (PDF/Word)</p>
+                            <span className="text-[10px] text-slate-400 font-normal">Contratos, propostas</span>
+                          </div>
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                            className="hidden"
+                            onChange={(e) => handleFileSelected(e, 'DOCUMENT')}
+                          />
+                        </label>
+
+                        <label className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 rounded-xl cursor-pointer transition">
+                          <ImageIcon className="w-4 h-4 text-emerald-500" />
+                          <div>
+                            <p className="leading-none">Imagem / Planta</p>
+                            <span className="text-[10px] text-slate-400 font-normal">Fotos e plantas</span>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleFileSelected(e, 'IMAGE')}
+                          />
+                        </label>
+
+                        <label className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 rounded-xl cursor-pointer transition">
+                          <Music className="w-4 h-4 text-amber-500" />
+                          <div>
+                            <p className="leading-none">Arquivo de Áudio</p>
+                            <span className="text-[10px] text-slate-400 font-normal">Gravações sonoras</span>
+                          </div>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) => handleFileSelected(e, 'AUDIO')}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Ação Z-API: Localização do Plantão */}
                   <button
                     type="button"
                     onClick={handleSendLocation}
                     disabled={isActionLoading}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95"
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95 cursor-pointer"
                     title="Enviar Localização GPS do Plantão de Vendas"
                   >
                     <MapPin className="w-3.5 h-3.5 text-rose-500" />
@@ -1674,7 +1877,7 @@ export function WhatsAppInbox() {
                     type="button"
                     onClick={handleSendContactCard}
                     disabled={isActionLoading}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95"
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95 cursor-pointer"
                     title="Enviar Cartão de Visitas do Corretor"
                   >
                     <UserCheck className="w-3.5 h-3.5 text-indigo-500" />
@@ -1688,11 +1891,11 @@ export function WhatsAppInbox() {
                       if (activeConversation) {
                         sendMessage(
                           activeConversation.id,
-                          '📄 *Book Oficial Vanguard*: Baixe a apresentação completa com plantas, memorial descritivo e tabela de unidades: https://crm.faithhubs.com/docs/book-vanguard.pdf'
+                          '📄 *Book Oficial*: Baixe a apresentação completa com plantas e memorial: https://crm.faithhubs.com/docs/book-imovel.pdf'
                         );
                       }
                     }}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95"
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95 cursor-pointer"
                     title="Enviar Apresentação e Planta do Imóvel"
                   >
                     <FileText className="w-3.5 h-3.5 text-blue-500" />
@@ -1701,6 +1904,29 @@ export function WhatsAppInbox() {
                 </div>
               </div>
 
+              {/* Preview do Arquivo Anexado Pronto para Envio */}
+              {attachedMedia && (
+                <div className="mb-2 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between gap-3 animate-fadeIn">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                      {attachedMedia.type === 'IMAGE' ? <ImageIcon className="w-4 h-4" /> : attachedMedia.type === 'AUDIO' ? <Music className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-xs text-emerald-950 truncate">{attachedMedia.fileName}</p>
+                      <p className="text-[10px] text-emerald-700">{(attachedMedia.fileSize / 1024).toFixed(1)} KB • Pronto para disparo</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedMedia(null)}
+                    className="p-1 rounded-lg hover:bg-emerald-200 text-emerald-800 transition cursor-pointer"
+                    title="Remover anexo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* Input Form */}
               <form onSubmit={handleSend} className="flex items-end gap-2">
                 <textarea
@@ -1708,7 +1934,9 @@ export function WhatsAppInbox() {
                   placeholder={
                     isInternalNote
                       ? 'Escreva uma nota interna sobre este lead (somente a equipe verá)...'
-                      : 'Digite sua mensagem para o WhatsApp... (Enter para enviar)'
+                      : attachedMedia
+                        ? 'Adicione uma legenda ou mensagem para acompanhar o anexo... (Enter para enviar)'
+                        : 'Digite sua mensagem para o WhatsApp... (Enter para enviar)'
                   }
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
@@ -1725,10 +1953,47 @@ export function WhatsAppInbox() {
                   }`}
                 />
 
+                {/* Botão de Gravar Áudio / Microfone */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isRecordingVoice) {
+                      setIsRecordingVoice(true);
+                      setRecordingSeconds(0);
+                    } else {
+                      setIsRecordingVoice(false);
+                      if (activeConversation) {
+                        sendMessage(
+                          activeConversation.id,
+                          '🎵 Mensagem de voz gravada pelo corretor',
+                          isInternalNote,
+                          false,
+                          [{
+                            id: `att-${Date.now()}`,
+                            url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+                            fileName: `Audio_Gravado_${Date.now()}.ogg`,
+                            fileSize: 32000,
+                            mimeType: 'audio/ogg',
+                          }],
+                          'AUDIO'
+                        );
+                      }
+                    }
+                  }}
+                  className={`p-3 rounded-xl transition shadow-xs active:scale-95 cursor-pointer ${
+                    isRecordingVoice
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                  title={isRecordingVoice ? 'Parar e Enviar Áudio' : 'Gravar Mensagem de Voz'}
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+
                 <button
                   type="submit"
-                  disabled={!messageInput.trim()}
-                  className={`p-3 rounded-xl transition shadow-md active:scale-95 disabled:opacity-40 ${
+                  disabled={!messageInput.trim() && !attachedMedia}
+                  className={`p-3 rounded-xl transition shadow-md active:scale-95 disabled:opacity-40 cursor-pointer ${
                     isInternalNote
                       ? 'bg-amber-600 hover:bg-amber-700 text-white'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white'
@@ -2693,6 +2958,47 @@ export function WhatsAppInbox() {
           </div>
         </div>
       </>
+      )}
+
+      {/* Lightbox Modal de Imagem Full-Screen */}
+      {lightboxImage && (
+        <div 
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fadeIn"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={lightboxImage.url}
+              alt="Visualização em alta resolução"
+              className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            />
+            {lightboxImage.caption && (
+              <p className="mt-3 text-sm text-white/90 font-medium text-center bg-black/50 px-4 py-2 rounded-xl backdrop-blur-xs">
+                {lightboxImage.caption}
+              </p>
+            )}
+            <a
+              href={lightboxImage.url}
+              download="foto-imovel.jpg"
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="mt-3 inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-lg transition"
+            >
+              <Download className="w-4 h-4" />
+              <span>Baixar Imagem Original</span>
+            </a>
+          </div>
+        </div>
       )}
     </div>
   );

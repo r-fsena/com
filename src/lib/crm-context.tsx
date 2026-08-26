@@ -13,6 +13,8 @@ import {
   Deal, 
   Conversation, 
   Message, 
+  Attachment,
+  MessageType,
   AIInsight, 
   Task, 
   SLAAlert, 
@@ -104,7 +106,14 @@ interface CRMContextType {
   openChatForContact: (contactId: string) => string;
   loadChatHistory: (phone: string, conversationId: string) => Promise<void>;
   messages: Message[];
-  sendMessage: (conversationId: string, content: string, isInternalNote?: boolean, aiSuggested?: boolean) => void;
+  sendMessage: (
+    conversationId: string, 
+    content: string, 
+    isInternalNote?: boolean, 
+    aiSuggested?: boolean, 
+    attachments?: Attachment[], 
+    messageType?: MessageType
+  ) => void;
   markConversationAsRead: (conversationId: string) => void;
   clearChatMessages: (conversationId: string) => Promise<void>;
   archiveConversation: (conversationId: string, archive?: boolean) => Promise<void>;
@@ -1389,19 +1398,29 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     conversationId: string, 
     content: string, 
     isInternalNote = false, 
-    aiSuggested = false
+    aiSuggested = false,
+    attachments?: Attachment[],
+    messageType: MessageType = 'TEXT'
   ) => {
-    if (!content.trim()) return;
+    const cleanContent = (content || '').trim();
+    if (!cleanContent && (!attachments || attachments.length === 0)) return;
+
+    const actualType: MessageType = messageType || (attachments && attachments.length > 0 
+      ? (attachments[0].mimeType?.startsWith('image/') ? 'IMAGE' : attachments[0].mimeType?.startsWith('audio/') ? 'AUDIO' : 'DOCUMENT')
+      : 'TEXT');
+
+    const previewText = cleanContent || (actualType === 'IMAGE' ? '📷 Foto' : actualType === 'AUDIO' ? '🎵 Áudio' : actualType === 'DOCUMENT' ? '📄 Documento' : 'Mensagem');
 
     const newMessage: Message = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       tenantId: currentTenant.id,
       conversationId,
-      senderType: isInternalNote ? 'USER' : 'USER',
+      senderType: 'USER',
       senderUserId: currentUser.id,
       senderName: currentUser.name,
-      messageType: 'TEXT',
-      content: content.trim(),
+      messageType: actualType,
+      content: cleanContent || previewText,
+      attachments,
       status: isInternalNote ? 'SENT' : 'DELIVERED',
       isInternalNote,
       timestamp: new Date().toISOString(),
@@ -1416,7 +1435,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (conv.id === conversationId) {
           return {
             ...conv,
-            lastMessagePreview: content.trim(),
+            lastMessagePreview: previewText,
             lastMessageAt: new Date().toISOString(),
             unreadCount: 0,
             status: 'PENDING_CLIENT',
@@ -1439,13 +1458,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (targetPhone) {
+        // Procura a linha individual do corretor logado ou a da conversa
+        const brokerInstance = instances.find(i => i.assignedUserId === currentUser.id) || instances.find(i => i.id === conv?.instanceId) || instances[0];
+
         fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            content: content.trim(),
+            content: cleanContent || previewText,
+            messageType: actualType,
+            mediaUrl: attachments?.[0]?.url,
+            fileName: attachments?.[0]?.fileName,
             phone: targetPhone,
             senderUserId: currentUser.id,
+            instanceId: brokerInstance?.zapiInstanceId || brokerInstance?.id,
           }),
         }).catch(err => console.error('Erro ao enviar mensagem via Z-API:', err));
       }
@@ -1453,7 +1479,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       // Confirmação de entrega
       setTimeout(() => {
         setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'DELIVERED' } : m));
-      }, 1500);
+      }, 1200);
     }
   };
 
@@ -2122,6 +2148,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               return [newContact, ...prevContacts];
             });
 
+            // Localiza a linha/instância e o corretor correspondente
+            const matchingInst = instances.find(i => 
+              i.zapiInstanceId === incoming.instanceId || 
+              i.id === incoming.instanceId ||
+              (i.phoneNumber && incoming.phone && i.phoneNumber.replace(/\D/g, '') === incoming.phone.replace(/\D/g, ''))
+            );
+            const assignedBroker = matchingInst?.assignedUserId 
+              ? users.find(u => u.id === matchingInst.assignedUserId)
+              : undefined;
+
             // Adiciona ou atualiza conversa
             setConversations(prevConvs => {
               const convId = `conv-zapi-${rawPhone}`;
@@ -2130,10 +2166,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               if (existingConv) {
                 return prevConvs.map(c => c.id === existingConv.id ? {
                   ...c,
+                  assignedUserId: c.assignedUserId || matchingInst?.assignedUserId,
                   lastMessagePreview: incoming.content,
                   lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                  status: 'PENDING_TEAM',
-                  unreadCount: (c.unreadCount || 0) + 1,
+                  status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
+                  unreadCount: incoming.fromMe ? 0 : (c.unreadCount || 0) + 1,
                   slaBreached: false,
                 } : c);
               }
@@ -2141,10 +2178,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               const newConv: Conversation = {
                 id: convId,
                 tenantId: currentTenant.id,
-                instanceId: incoming.instanceId || instances[0]?.id || '3F1B67FC8139425171C79ED390C0144C',
+                instanceId: incoming.instanceId || matchingInst?.id || instances[0]?.id || '3F1B67FC8139425171C79ED390C0144C',
                 contactId: `contact-zapi-${rawPhone}`,
-                status: 'PENDING_TEAM',
-                unreadCount: 1,
+                assignedUserId: matchingInst?.assignedUserId,
+                status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
+                unreadCount: incoming.fromMe ? 0 : 1,
                 lastMessagePreview: incoming.content,
                 lastMessageAt: incoming.timestamp || new Date().toISOString(),
                 slaBreached: false,
@@ -2152,20 +2190,29 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               return [newConv, ...prevConvs];
             });
 
-            // Adiciona a nova mensagem à conversa
+            // Determina tipo e anexos de mídia
+            const mType: MessageType = incoming.mediaType === 'audio' 
+              ? 'AUDIO' 
+              : incoming.mediaType === 'image' 
+                ? 'IMAGE' 
+                : incoming.mediaType === 'document' 
+                  ? 'DOCUMENT' 
+                  : 'TEXT';
+
             const newMsg: Message = {
-              id: incoming.id || `msg-${Date.now()}-${Math.random()}`,
+              id: incoming.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
               tenantId: currentTenant.id,
               conversationId: `conv-zapi-${rawPhone}`,
               senderType: incoming.fromMe ? 'USER' : 'CONTACT',
-              senderName: incoming.fromMe ? 'Corretor' : incoming.senderName,
-              messageType: incoming.mediaType === 'audio' ? 'AUDIO' : incoming.mediaType === 'image' ? 'IMAGE' : incoming.mediaType === 'document' ? 'DOCUMENT' : 'TEXT',
+              senderUserId: incoming.fromMe ? (assignedBroker?.id || currentUser.id) : undefined,
+              senderName: incoming.fromMe ? (assignedBroker?.name || currentUser.name || 'Corretor') : incoming.senderName,
+              messageType: mType,
               attachments: incoming.mediaUrl ? [{
                 id: `att-${Date.now()}`,
                 url: incoming.mediaUrl,
-                fileName: incoming.mediaType === 'audio' ? 'Áudio' : incoming.mediaType === 'image' ? 'Imagem' : 'Documento',
-                fileSize: 1024,
-                mimeType: incoming.mediaType === 'image' ? 'image/jpeg' : 'application/octet-stream',
+                fileName: incoming.fileName || (incoming.mediaType === 'audio' ? 'Mensagem de Voz.ogg' : incoming.mediaType === 'image' ? 'Foto.jpg' : 'Documento.pdf'),
+                fileSize: incoming.fileSize || 1024,
+                mimeType: incoming.mimeType || (incoming.mediaType === 'audio' ? 'audio/ogg' : incoming.mediaType === 'image' ? 'image/jpeg' : 'application/pdf'),
               }] : undefined,
               content: incoming.content,
               status: 'DELIVERED',
@@ -2187,11 +2234,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 if (isAlreadyPresent) return prevMsgs;
               }
 
-              // 3. Evita duplicatas gerais de mesmo conteúdo na mesma conversa
+              // 3. Evita duplicatas gerais de mesmo conteúdo e mesmo remetente em menos de 10s
               const isDuplicateContent = prevMsgs.some(m =>
                 m.conversationId === newMsg.conversationId &&
                 m.senderType === newMsg.senderType &&
-                m.content.trim() === newMsg.content.trim()
+                m.content.trim() === newMsg.content.trim() &&
+                Math.abs(new Date(m.timestamp).getTime() - new Date(newMsg.timestamp).getTime()) < 10000
               );
               if (isDuplicateContent) return prevMsgs;
 

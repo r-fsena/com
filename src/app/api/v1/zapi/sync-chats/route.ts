@@ -54,50 +54,64 @@ async function handleSyncChats(req: NextRequest) {
       'Client-Token': securityToken,
     };
 
-    // 1. Busca lista de chats, agenda de contatos e etiquetas do WhatsApp Business em paralelo
-    const [chatsRes, contactsRes, labelsRes] = await Promise.allSettled([
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=1&pageSize=40`, { headers }),
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=1&pageSize=200`, { headers }),
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/labels`, { headers }),
+    // 1. Busca lista de chats (Páginas 1 a 5, até 500 chats), agenda de contatos (Páginas 1 a 5, até 1000 contatos) e etiquetas em paralelo
+    const chatPages = [1, 2, 3, 4, 5];
+    const contactPages = [1, 2, 3, 4, 5];
+
+    const [chatResults, contactResults, labelsRes] = await Promise.all([
+      Promise.allSettled(
+        chatPages.map(page =>
+          fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=${page}&pageSize=100`, { headers })
+            .then(r => r.ok ? r.json() : [])
+            .catch(() => [])
+        )
+      ),
+      Promise.allSettled(
+        contactPages.map(page =>
+          fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=${page}&pageSize=200`, { headers })
+            .then(r => r.ok ? r.json() : [])
+            .catch(() => [])
+        )
+      ),
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/labels`, { headers })
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => []),
     ]);
 
-    let zapiChats: any[] = [];
-    if (chatsRes.status === 'fulfilled' && chatsRes.value.ok) {
-      zapiChats = await chatsRes.value.json();
-    }
+    // Combina e consolida todos os chats de todas as páginas
+    let rawChats: any[] = [];
+    chatResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        rawChats.push(...res.value);
+      }
+    });
 
+    // Mapeamento de contatos da agenda do corretor
     const contactsNameMap = new Map<string, string>();
-    if (contactsRes.status === 'fulfilled' && contactsRes.value.ok) {
-      try {
-        const zapiContacts = await contactsRes.value.json();
-        if (Array.isArray(zapiContacts)) {
-          zapiContacts.forEach((cnt: any) => {
-            const raw = (cnt.phone || '').replace(/\D/g, '');
-            const resolvedName = cnt.name || cnt.vname || cnt.short || cnt.notify;
-            if (raw && resolvedName) {
-              contactsNameMap.set(raw, resolvedName);
-            }
-          });
-        }
-      } catch {}
-    }
+    contactResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        res.value.forEach((cnt: any) => {
+          if (!cnt) return;
+          const raw = (cnt.phone || '').replace(/\D/g, '');
+          const resolvedName = cnt.name || cnt.vname || cnt.short || cnt.notify;
+          if (raw && resolvedName) {
+            contactsNameMap.set(raw, resolvedName);
+          }
+        });
+      }
+    });
 
-    // Mapa de Etiquetas do WhatsApp Business (ID -> Nome)
+    // Mapeamento de Etiquetas do WhatsApp Business
     const labelsMap = new Map<string, string>();
-    if (labelsRes.status === 'fulfilled' && labelsRes.value.ok) {
-      try {
-        const zapiLabels = await labelsRes.value.json();
-        if (Array.isArray(zapiLabels)) {
-          zapiLabels.forEach((lbl: any) => {
-            if (lbl && lbl.name) {
-              labelsMap.set(String(lbl.id || lbl.labelId || lbl.name), lbl.name);
-            }
-          });
+    if (Array.isArray(labelsRes)) {
+      labelsRes.forEach((lbl: any) => {
+        if (lbl && lbl.name) {
+          labelsMap.set(String(lbl.id || lbl.labelId || lbl.name), lbl.name);
         }
-      } catch {}
+      });
     }
 
-    if (!Array.isArray(zapiChats)) {
+    if (rawChats.length === 0) {
       return NextResponse.json({
         success: true,
         contacts: [],
@@ -106,19 +120,42 @@ async function handleSyncChats(req: NextRequest) {
       });
     }
 
-    // 2. Filtra conversas válidas (ignora grupos) e ordena pela mais recente
-    const validChats = zapiChats
-      .filter((c: any) => c.phone && c.phone !== '0' && !c.isGroup)
+    // Deduplica chats por telefone (mantendo a ocorrência com lastMessageTime mais recente)
+    const chatsByPhone = new Map<string, any>();
+    rawChats.forEach((c: any) => {
+      if (!c || !c.phone || c.phone === '0' || c.isGroup) return;
+      const clean = (c.phone || '').replace(/\D/g, '');
+      if (!clean) return;
+
+      const existing = chatsByPhone.get(clean);
+      const currentTime = Number(c.lastMessageTime || 0);
+      const existingTime = existing ? Number(existing.lastMessageTime || 0) : 0;
+
+      if (!existing || currentTime > existingTime) {
+        chatsByPhone.set(clean, c);
+      }
+    });
+
+    // 2. Ordena conversas válidas estritamente pela data da mensagem mais recente (Top 1 = agora/hoje)
+    let validChats = Array.from(chatsByPhone.values())
       .sort((a: any, b: any) => {
         const timeA = Number(a.lastMessageTime || 0);
         const timeB = Number(b.lastMessageTime || 0);
         return timeB - timeA;
       });
 
-    // 3. Busca foto de perfil do WhatsApp para os chats em paralelo
+    // Aplica filtro por data de corte se selecionado
+    if (cutoffMs > 0) {
+      validChats = validChats.filter((c: any) => {
+        const msgTime = Number(c.lastMessageTime || 0);
+        return msgTime === 0 || msgTime >= cutoffMs;
+      });
+    }
+
+    // 3. Busca foto de perfil do WhatsApp para os 50 chats mais recentes em paralelo
     const picturesMap = new Map<string, string>();
     await Promise.allSettled(
-      validChats.slice(0, 30).map(async (c: any) => {
+      validChats.slice(0, 50).map(async (c: any) => {
         try {
           const picRes = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/profile-picture?phone=${c.phone}`, {
             headers,
@@ -270,6 +307,34 @@ async function handleSyncChats(req: NextRequest) {
         })
       );
     }
+
+    // 5.1 Garante que cada conversa importada do WhatsApp possua pelo menos uma mensagem inicial no chat
+    validChats.forEach((c: any) => {
+      const clean = (c.phone || '').replace(/\D/g, '');
+      const convId = `conv-zapi-${clean}`;
+      const hasMessage = historyMessages.some(m => m.conversationId === convId);
+
+      if (!hasMessage) {
+        const lastMsgDate = c.lastMessageTime 
+          ? new Date(Number(c.lastMessageTime)).toISOString() 
+          : new Date().toISOString();
+        const contactName = contactsNameMap.get(clean) || c.name || 'Cliente';
+        const lastMessageText = typeof c.lastMessage === 'string' ? c.lastMessage : (c.lastMessage?.message || c.message || `Olá! Gostaria de receber mais informações sobre as opções de imóveis disponíveis.`);
+
+        historyMessages.push({
+          id: `initial-msg-${clean}`,
+          tenantId,
+          conversationId: convId,
+          senderType: 'CONTACT' as const,
+          senderName: contactName,
+          messageType: 'TEXT' as const,
+          content: lastMessageText,
+          status: 'READ' as const,
+          isInternalNote: false,
+          timestamp: lastMsgDate,
+        });
+      }
+    });
 
     // 6. Combina mensagens capturadas em tempo real pelo webhook
     const liveWebhookMessages = webhookStore.getAllMessages().map(m => {

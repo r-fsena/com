@@ -685,6 +685,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       } else {
         localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
       }
+
+      // Sincroniza sessão no servidor com HttpOnly Cookie
+      fetch('/api/v1/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetUser.email,
+          userId: targetUser.id,
+          role: targetUser.role,
+          tenantId: currentTenant.id,
+        }),
+      }).catch(() => {});
     } catch {}
     setIsAuthenticated(true);
   };
@@ -692,6 +704,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     try {
       localStorage.removeItem('vanguard_auth_session');
+      fetch('/api/v1/auth/session', { method: 'DELETE' }).catch(() => {});
     } catch {}
     setIsAuthenticated(false);
   };

@@ -23,10 +23,22 @@ export function validateApiSession(req: NextRequest, options?: {
   const clientTenantHeader = req.headers.get('x-tenant-id') || '';
   const clientUserHeader = req.headers.get('x-user-id') || '';
   const clientEmailHeader = req.headers.get('x-user-email') || '';
+  const sessionCookie = req.cookies.get('vanguard_session')?.value;
 
   // 1. Extrai identificação do usuário
   let userEmail = clientEmailHeader.toLowerCase().trim();
   let userId = clientUserHeader.trim();
+  let cookieTenantId = '';
+
+  // Leitura prioritária do Cookie HttpOnly Seguro
+  if (sessionCookie) {
+    try {
+      const decodedCookie = JSON.parse(Buffer.from(sessionCookie, 'base64url').toString('utf-8'));
+      if (decodedCookie.email) userEmail = decodedCookie.email.toLowerCase().trim();
+      if (decodedCookie.userId) userId = decodedCookie.userId;
+      if (decodedCookie.tenantId) cookieTenantId = decodedCookie.tenantId;
+    } catch {}
+  }
 
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.replace('Bearer ', '').trim();
@@ -37,6 +49,7 @@ export function validateApiSession(req: NextRequest, options?: {
         const decoded = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf-8'));
         userEmail = (decoded.email || decoded.username || '').toLowerCase();
         userId = decoded.sub || decoded.userId || userId;
+        if (decoded.tenantId) cookieTenantId = decoded.tenantId;
       }
     } catch {}
   }

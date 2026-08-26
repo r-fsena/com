@@ -2212,12 +2212,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const pollWebhookMessages = async () => {
       try {
-        const res = await fetch(`/api/v1/webhooks/zapi/events?since=${lastPollTimeRef.current}`);
+        const res = await fetch('/api/v1/webhooks/zapi/events');
         const data = await res.json();
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          lastPollTimeRef.current = data.serverTime || Date.now();
-
           data.messages.forEach((incoming: any) => {
             const rawPhone = incoming.phone.replace(/\D/g, '');
             const phoneSuffix = rawPhone.length >= 8 ? rawPhone.slice(-8) : rawPhone;
@@ -2398,6 +2396,34 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             if (newOnes.length === 0) return prev;
             const updated = [...prev, ...newOnes];
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+
+        if (data.success && Array.isArray(data.conversations) && data.conversations.length > 0) {
+          setConversations(prev => {
+            const mapById = new Map<string, Conversation>();
+            prev.forEach(c => mapById.set(c.id, c));
+            data.conversations.forEach((newC: Conversation) => {
+              const existing = mapById.get(newC.id);
+              if (existing) {
+                mapById.set(newC.id, {
+                  ...existing,
+                  lastMessagePreview: newC.lastMessagePreview || existing.lastMessagePreview,
+                  lastMessageAt: newC.lastMessageAt || existing.lastMessageAt,
+                  unreadCount: newC.unreadCount !== undefined ? newC.unreadCount : existing.unreadCount,
+                  status: newC.status || existing.status,
+                });
+              } else {
+                mapById.set(newC.id, newC);
+              }
+            });
+            const updated = Array.from(mapById.values()).sort((a, b) => {
+              const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+              const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+              return timeB - timeA;
+            });
+            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
             return updated;
           });
         }

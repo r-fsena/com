@@ -174,10 +174,12 @@ export function WhatsAppInbox() {
     transferConversationInstance,
     syncWhatsAppChats,
     isSyncingWhatsApp,
+    resetCRMDatabase,
     loadChatHistory,
     isFeatureEnabled
   } = useCRM();
 
+  const [showResetModal, setShowResetModal] = useState(false);
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED'>('ALL');
   const [instanceFilter, setInstanceFilter] = useState<'ALL' | 'CENTRAL' | 'DIRECT'>('ALL');
   const [sendingInstanceId, setSendingInstanceId] = useState<string>(activeInstanceId);
@@ -857,15 +859,26 @@ export function WhatsAppInbox() {
               )}
             </div>
 
-            <button
-              onClick={() => syncWhatsAppChats()}
-              disabled={isSyncingWhatsApp}
-              className="flex items-center gap-1.5 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg transition active:scale-95 disabled:opacity-50"
-              title="Sincronizar conversas do WhatsApp"
-            >
-              <RefreshCw className={`w-3 h-3 text-emerald-700 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
-              <span>{isSyncingWhatsApp ? 'Sincronizando...' : 'Sincronizar'}</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => syncWhatsAppChats()}
+                disabled={isSyncingWhatsApp}
+                className="flex items-center gap-1.5 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="Sincronizar conversas do WhatsApp"
+              >
+                <RefreshCw className={`w-3 h-3 text-emerald-700 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
+                <span>{isSyncingWhatsApp ? 'Sincronizando...' : 'Sincronizar'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowResetModal(true)}
+                disabled={isSyncingWhatsApp}
+                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition cursor-pointer"
+                title="Zerar base de leads de teste & Resincronizar limpo"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -3086,6 +3099,50 @@ export function WhatsAppInbox() {
               <Download className="w-4 h-4" />
               <span>Baixar Imagem Original</span>
             </a>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação para Zerar Base */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">Zerar Base & Resincronizar WhatsApp?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Esta ação limpará todas as conversas, mensagens e leads antigos em cache no CRM, e fará uma <strong>puxada 100% limpa diretamente do seu WhatsApp ativo</strong>.
+              </p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-[11px] text-slate-600 space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold text-emerald-700">
+                <Check className="w-3.5 h-3.5" /> A instância conectada continuará ativa
+              </div>
+              <div className="flex items-center gap-1.5 font-semibold text-emerald-700">
+                <Check className="w-3.5 h-3.5" /> Os números e nomes reais serão reimportados do zero
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="flex-1 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowResetModal(false);
+                  await resetCRMDatabase(true);
+                }}
+                className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+              >
+                Sim, Zerar e Recarregar
+              </button>
+            </div>
           </div>
         </div>
       )}

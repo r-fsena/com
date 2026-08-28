@@ -42,6 +42,18 @@ export const serverCRMStore = {
     return global.__SERVER_CRM_STATE__;
   },
 
+  resetState(): ServerCRMState {
+    const fresh: ServerCRMState = {
+      contacts: [],
+      deals: [],
+      conversations: [],
+      messages: [],
+      aiInsights: {},
+    };
+    global.__SERVER_CRM_STATE__ = fresh;
+    return fresh;
+  },
+
   updateState(partial: Partial<ServerCRMState>): ServerCRMState {
     const current = this.getState();
     const next: ServerCRMState = {

@@ -176,6 +176,7 @@ interface CRMContextType {
   isSyncingWhatsApp: boolean;
   syncWhatsAppChats: (targetInstanceId?: string, historyDays?: number) => Promise<{ success: boolean; count: number }>;
   syncZapiInstance: (instanceId: string, phone?: string) => void;
+  resetCRMDatabase: (resyncAfter?: boolean) => Promise<{ success: boolean; message: string }>;
 
   // Feature Flags & Módulos
   isFeatureEnabled: (feature: keyof TenantFeatureFlags) => boolean;
@@ -2158,6 +2159,51 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const resetCRMDatabase = async (resyncAfter = true): Promise<{ success: boolean; message: string }> => {
+    try {
+      setIsSyncingWhatsApp(true);
+      // 1. Limpa o servidor via endpoint dedicado
+      await fetch('/api/v1/crm/reset', { method: 'POST' }).catch(() => {});
+
+      // 2. Limpa estados no frontend
+      setContacts([]);
+      setConversations([]);
+      setMessages([]);
+      setDeals([]);
+      setActiveConversationId(null);
+
+      // 3. Limpa chaves do localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('vanguard_crm_contacts');
+          localStorage.removeItem('vanguard_crm_conversations');
+          localStorage.removeItem('vanguard_crm_messages');
+          localStorage.removeItem('vanguard_crm_deals');
+          localStorage.removeItem('vanguard_crm_ai_insights');
+          localStorage.removeItem('vanguard_crm_active_conv_id');
+        } catch {}
+      }
+
+      // 4. Se solicitado, resincroniza imediatamente o WhatsApp de forma 100% limpa
+      if (resyncAfter) {
+        await syncWhatsAppChats();
+      }
+
+      return {
+        success: true,
+        message: 'Base de dados resetada com sucesso e sincronização limpa concluída.',
+      };
+    } catch (err: any) {
+      console.error('Erro ao resetar base do CRM:', err);
+      return {
+        success: false,
+        message: err.message || 'Falha ao resetar base de dados.',
+      };
+    } finally {
+      setIsSyncingWhatsApp(false);
+    }
+  };
+
   // Checa status de conexão da Z-API ao carregar apenas uma vez
   useEffect(() => {
     let isMounted = true;
@@ -2969,6 +3015,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       isSyncingWhatsApp,
       syncWhatsAppChats,
       syncZapiInstance,
+      resetCRMDatabase,
       isFeatureEnabled,
       updateTenantFeatureFlags,
     }}>

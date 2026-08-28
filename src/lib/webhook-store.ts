@@ -55,5 +55,9 @@ export const webhookStore = {
 
   getAllMessages() {
     return global.__GLOBAL_ZAPI_MESSAGES__ || [];
+  },
+
+  clearAll() {
+    global.__GLOBAL_ZAPI_MESSAGES__ = [];
   }
 };

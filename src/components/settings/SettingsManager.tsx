@@ -61,12 +61,16 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     resendUserInvite, 
     resetUserPassword,
     isFeatureEnabled,
-    updateTenantFeatureFlags
+    updateTenantFeatureFlags,
+    resetCRMDatabase
   } = useCRM();
   
   // 6 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Módulos (Feature Flags)
   const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'FLAGS'>('TENANT');
   const [flagsSavedMessage, setFlagsSavedMessage] = useState<string | null>(null);
+  const [isResettingData, setIsResettingData] = useState(false);
+  const [resetDataSuccess, setResetDataSuccess] = useState(false);
+  const [showConfirmResetDataModal, setShowConfirmResetDataModal] = useState(false);
 
   // Estados locais da Empresa
   const [companyName, setCompanyName] = useState(currentTenant.name);
@@ -1455,6 +1459,40 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                 </div>
               ))
             )}
+
+            {/* Card de Higienização e Limpeza da Base */}
+            <div className="bg-rose-50/60 border border-rose-200 rounded-2xl p-6 space-y-4 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Higienização e Reset da Base de Testes</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Limpe todos os contatos e conversas antigas e recarregue uma base 100% nova diretamente do WhatsApp conectado.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmResetDataModal(true)}
+                  disabled={isResettingData}
+                  className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isResettingData ? 'animate-spin' : ''}`} />
+                  <span>{isResettingData ? 'Higienizando...' : 'Zerar Base & Resincronizar'}</span>
+                </button>
+              </div>
+
+              {resetDataSuccess && (
+                <div className="bg-emerald-100 text-emerald-800 text-xs font-bold p-3 rounded-xl border border-emerald-300 flex items-center gap-2 animate-in fade-in">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Base de dados resetada com sucesso e sincronização limpa concluída!</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1649,6 +1687,46 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           </div>
         )}
       </div>
+
+      {/* Modal de Confirmação para Zerar Base em Settings */}
+      {showConfirmResetDataModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">Confirmar Limpeza da Base?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Todos os contatos, conversas e mensagens antigas serão excluídos do cache do CRM. O sistema fará uma nova puxada limpa diretamente da instância oficial do WhatsApp.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmResetDataModal(false)}
+                className="flex-1 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowConfirmResetDataModal(false);
+                  setIsResettingData(true);
+                  await resetCRMDatabase(true);
+                  setIsResettingData(false);
+                  setResetDataSuccess(true);
+                  setTimeout(() => setResetDataSuccess(false), 4000);
+                }}
+                className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+              >
+                Sim, Limpar e Resincronizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

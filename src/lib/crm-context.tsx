@@ -191,21 +191,48 @@ export function normalizePhoneKey(phone: string | undefined): string {
   return digits;
 }
 
+export function isLidNumber(phoneOrId: string | undefined): boolean {
+  if (!phoneOrId) return false;
+  const digits = phoneOrId.replace(/\D/g, '');
+  return digits.length >= 14 && (digits.startsWith('13') || digits.startsWith('14') || digits.startsWith('26') || digits.startsWith('90') || digits.startsWith('107') || digits.startsWith('64'));
+}
+
 export function deduplicateContactList(list: Contact[]): Contact[] {
   const phoneMap = new Map<string, Contact>();
+  const lidMap = new Map<string, Contact>();
   const idMap = new Map<string, Contact>();
   const result: Contact[] = [];
 
   list.forEach(contact => {
     if (!contact) return;
-    const pKey = normalizePhoneKey(contact.phone);
-    const existing = (pKey ? phoneMap.get(pKey) : null) || idMap.get(contact.id);
+    const clean = contact.phone.replace(/\D/g, '');
+    const isLid = isLidNumber(clean);
+    
+    // Se o contato foi salvo com LID no campo de telefone, extrai para contact.lid
+    if (isLid && !contact.lid) {
+      contact.lid = clean;
+    }
+
+    const pKey = !isLid ? normalizePhoneKey(contact.phone) : '';
+    const lidKey = contact.lid ? contact.lid.replace(/\D/g, '') : (isLid ? clean : '');
+
+    const existing = (pKey ? phoneMap.get(pKey) : null) 
+      || (lidKey ? lidMap.get(lidKey) : null) 
+      || idMap.get(contact.id);
 
     if (existing) {
+      // Prefere o telefone real (não-LID)
+      const existingIsLid = isLidNumber(existing.phone);
+      const chosenPhone = (!existingIsLid && existing.phone) ? existing.phone : ((!isLid && contact.phone) ? contact.phone : existing.phone);
+      const chosenLid = existing.lid || contact.lid || (existingIsLid ? existing.phone.replace(/\D/g, '') : (isLid ? clean : undefined));
+      const chosenId = chosenPhone && !isLidNumber(chosenPhone) ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` : existing.id;
+
       const merged: Contact = {
         ...existing,
         ...contact,
-        id: existing.id,
+        id: chosenId,
+        phone: chosenPhone,
+        lid: chosenLid,
         name: (existing.name && !existing.name.startsWith('+') && !existing.name.startsWith('WhatsApp') && existing.name !== 'Lead WhatsApp' && existing.name !== 'Cliente')
           ? existing.name
           : (contact.name || existing.name),
@@ -218,13 +245,17 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         email: existing.email || contact.email,
         assignedUserId: existing.assignedUserId || contact.assignedUserId,
       };
-      if (pKey) phoneMap.set(pKey, merged);
+
+      const realPKey = normalizePhoneKey(chosenPhone);
+      if (realPKey && !isLidNumber(chosenPhone)) phoneMap.set(realPKey, merged);
+      if (chosenLid) lidMap.set(chosenLid.replace(/\D/g, ''), merged);
       idMap.set(merged.id, merged);
 
-      const idx = result.findIndex(c => c.id === existing.id);
+      const idx = result.findIndex(c => c.id === existing.id || c.id === contact.id);
       if (idx >= 0) result[idx] = merged;
     } else {
       if (pKey) phoneMap.set(pKey, contact);
+      if (lidKey) lidMap.set(lidKey, contact);
       idMap.set(contact.id, contact);
       result.push(contact);
     }
@@ -2022,92 +2053,45 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       });
       const data = await res.json();
 
-      if (data.success && Array.isArray(data.contacts) && data.contacts.length > 0) {
-        // 1. Merge de Contatos (Preserva 100% dos dados qualificados e históricos de cada contato)
-        setContacts(prev => {
-          const mapByPhone = new Map<string, Contact>();
-          const mapById = new Map<string, Contact>();
-          prev.forEach(c => {
-            const clean = c.phone.replace(/\D/g, '');
-            if (clean) mapByPhone.set(clean, c);
-            mapById.set(c.id, c);
+      if (data.success) {
+        if (Array.isArray(data.contacts) && data.contacts.length > 0) {
+          // Merge e higienização completa de contatos com resolução de LID para telefone real
+          setContacts(prev => {
+            const combined = [...prev, ...data.contacts];
+            const deduplicated = deduplicateContactList(combined);
+            try {
+              localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduplicated));
+            } catch {}
+            return deduplicated;
           });
-
-          const result: Contact[] = [...prev];
-
-          data.contacts.forEach((newC: Contact) => {
-            const clean = newC.phone.replace(/\D/g, '');
-            const existing = (clean ? mapByPhone.get(clean) : null) || mapById.get(newC.id);
-
-            if (existing) {
-              const merged: Contact = {
-                ...newC,
-                ...existing,
-                id: existing.id,
-                name: (existing.name && !existing.name.startsWith('WhatsApp')) ? existing.name : (newC.name || existing.name),
-                avatarUrl: newC.avatarUrl || existing.avatarUrl,
-                monthlyIncome: existing.monthlyIncome || newC.monthlyIncome,
-                downPaymentAvailable: existing.downPaymentAvailable || newC.downPaymentAvailable,
-                maxPropertyValue: existing.maxPropertyValue || newC.maxPropertyValue,
-                preferredPropertyType: existing.preferredPropertyType || newC.preferredPropertyType,
-                targetRegions: (existing.targetRegions && existing.targetRegions.length > 0 && !existing.targetRegions.includes('Geral')) ? existing.targetRegions : (newC.targetRegions || existing.targetRegions),
-                email: existing.email || newC.email,
-                temperature: existing.temperature || newC.temperature,
-                tags: Array.from(new Set([...(existing.tags || []), ...(newC.tags || [])])),
-                whatsappLabels: Array.from(new Set([...(existing.whatsappLabels || []), ...(newC.whatsappLabels || [])])),
-                firstSyncedAt: existing.firstSyncedAt || newC.firstSyncedAt || new Date().toISOString(),
-                lastSyncedAt: new Date().toISOString(),
-                aiPriorityScore: Math.max(existing.aiPriorityScore || 70, newC.aiPriorityScore || 70),
-                updatedAt: new Date().toISOString(),
-              };
-
-              const idx = result.findIndex(x => x.id === existing.id);
-              if (idx >= 0) result[idx] = merged;
-              if (clean) mapByPhone.set(clean, merged);
-              mapById.set(existing.id, merged);
-            } else {
-              const freshContact: Contact = {
-                ...newC,
-                firstSyncedAt: newC.firstSyncedAt || new Date().toISOString(),
-                lastSyncedAt: new Date().toISOString(),
-              };
-              result.push(freshContact);
-              if (clean) mapByPhone.set(clean, freshContact);
-              mapById.set(newC.id, freshContact);
-            }
-          });
-
-          try {
-            localStorage.setItem('vanguard_crm_contacts', JSON.stringify(result));
-          } catch {}
-
-          return result;
-        });
+        }
 
         // 2. Merge de Conversas
         let finalConversations: Conversation[] = [];
-        setConversations(prev => {
-          const map = new Map(prev.map(c => [c.id, c]));
-          data.conversations.forEach((c: Conversation) => {
-            const old = map.get(c.id) || prev.find(x => x.contactId === c.contactId);
-            if (old) {
-              map.set(old.id, {
-                ...c,
-                ...old,
-                lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview,
-                lastMessageAt: old.lastMessageAt || c.lastMessageAt,
-              });
-            } else {
-              map.set(c.id, c);
-            }
+        if (Array.isArray(data.conversations)) {
+          setConversations(prev => {
+            const map = new Map(prev.map(c => [c.id, c]));
+            data.conversations.forEach((c: Conversation) => {
+              const old = map.get(c.id) || prev.find(x => x.contactId === c.contactId);
+              if (old) {
+                map.set(old.id, {
+                  ...c,
+                  ...old,
+                  lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview,
+                  lastMessageAt: old.lastMessageAt || c.lastMessageAt,
+                });
+              } else {
+                map.set(c.id, c);
+              }
+            });
+            const result = Array.from(map.values());
+            finalConversations = result;
+            try {
+              localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result));
+            } catch {}
+            return result;
           });
-          const result = Array.from(map.values());
-          finalConversations = result;
-          try {
-            localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result));
-          } catch {}
-          return result;
-        });
+        }
 
         // 3. Merge de Mensagens (NUNCA apaga mensagens!)
         let finalMessages: Message[] = [];
@@ -2137,8 +2121,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           }).catch(() => {});
         } catch {}
 
-        setActiveConversationId(prev => prev ? prev : (data.conversations[0]?.id || null));
-        return { success: true, count: data.contacts.length };
+        setActiveConversationId(prev => prev ? prev : (data.conversations?.[0]?.id || null));
+        return { success: true, count: data.contacts?.length || 0 };
       }
       return { success: true, count: 0 };
     } catch (err) {

@@ -3,6 +3,7 @@ export interface LiveWebhookMessage {
   tenantId: string;
   instanceId: string;
   phone: string;
+  lid?: string;
   senderName: string;
   senderPhoto?: string;
   content: string;

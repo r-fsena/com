@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     name VARCHAR(255) NOT NULL,
     phone_normalized VARCHAR(30) NOT NULL, -- Ex: 554891079478
     phone_display VARCHAR(30),             -- Ex: +55 (48) 9107-9478
+    whatsapp_lid VARCHAR(100),             -- WhatsApp Linked Identity (LID)
     email VARCHAR(255),
     cpf_encrypted TEXT,
     avatar_url TEXT,

@@ -104,11 +104,37 @@ const mapToPropertyType = (type?: string): PropertyType => {
   return 'APARTMENT';
 };
 
-const formatDisplayPhone = (phone?: string | null): string => {
+export const formatDisplayPhone = (phone?: string | null): string => {
   if (!phone) return '';
-  const clean = phone.replace(/@.*$/, '').replace(/[^\d+]/g, '');
-  if (!clean) return '';
-  return clean.startsWith('+') ? clean : `+${clean}`;
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return '';
+
+  // Se for LID puro (14-16 dígitos iniciado com 13, 14, 26, 90 etc)
+  if (digits.length >= 14 && (digits.startsWith('13') || digits.startsWith('14') || digits.startsWith('26') || digits.startsWith('90'))) {
+    return `ID WhatsApp: ...${digits.slice(-6)}`;
+  }
+
+  // Se for número brasileiro com 55 e 10 ou 11 dígitos
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    const ddd = digits.slice(2, 4);
+    const num = digits.slice(4);
+    if (num.length === 9) {
+      return `+55 (${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`;
+    }
+    return `+55 (${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
+  }
+
+  // Se for número brasileiro sem 55 (10 ou 11 dígitos)
+  if (digits.length === 10 || digits.length === 11) {
+    const ddd = digits.slice(0, 2);
+    const num = digits.slice(2);
+    if (num.length === 9) {
+      return `+55 (${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`;
+    }
+    return `+55 (${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
+  }
+
+  return `+${digits}`;
 };
 
 export function WhatsAppInbox() {
@@ -2170,6 +2196,12 @@ export function WhatsAppInbox() {
                 <p className="text-xs text-slate-500 font-mono flex items-center gap-1">
                   <span>{formatDisplayPhone(activeContact.phone)}</span>
                 </p>
+                {activeContact.lid && (
+                  <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5" title="Identificador de Sessão WhatsApp (LID)">
+                    <span className="px-1 py-0.2 bg-slate-100 text-slate-500 rounded font-semibold text-[9px]">LID</span>
+                    <span className="truncate">{activeContact.lid.replace(/@.*$/, '')}</span>
+                  </div>
+                )}
 
                 {/* E-mail Editável */}
                 {isEditingEmail ? (

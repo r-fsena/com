@@ -20,29 +20,48 @@ export async function processZapiWebhookRequest(
   try {
     const body = await request.json();
 
-    // 1. Extração robusta do telefone do contato
-    let rawPhone = body.chatPhone 
-      || body.phone 
-      || body.senderPhone 
-      || body.recipientPhone 
-      || body.to 
-      || body.chatId 
-      || body.sender 
-      || body.from 
-      || (body.data && (body.data.chatPhone || body.data.phone || body.data.senderPhone || body.data.recipientPhone))
+    // 1. Extração robusta de LID e Telefone Real do contato
+    let lid = '';
+    if (body.lid) {
+      lid = String(body.lid).replace(/@.*$/, '').replace(/\D/g, '');
+    } else if (String(body.phone || '').includes('@lid')) {
+      lid = String(body.phone).replace(/@.*$/, '').replace(/\D/g, '');
+    } else if (String(body.chatId || '').includes('@lid')) {
+      lid = String(body.chatId).replace(/@.*$/, '').replace(/\D/g, '');
+    }
+
+    let realPhoneCandidate = body.chatPhone 
+      || (!String(body.phone || '').includes('@lid') ? body.phone : '')
+      || (!String(body.senderPhone || '').includes('@lid') ? body.senderPhone : '')
+      || (!String(body.recipientPhone || '').includes('@lid') ? body.recipientPhone : '')
+      || (!String(body.to || '').includes('@lid') ? body.to : '')
+      || (!String(body.chatId || '').includes('@lid') ? body.chatId : '')
+      || (!String(body.from || '').includes('@lid') ? body.from : '')
+      || (body.data && (body.data.chatPhone || (!String(body.data.phone || '').includes('@lid') ? body.data.phone : '') || body.data.senderPhone))
       || '';
 
-    let cleanPhone = String(rawPhone).replace(/@.*$/, '').replace(/\D/g, '');
+    let cleanPhone = String(realPhoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
 
     // Se chatPhone estiver presente com número completo
     if (body.chatPhone) {
       const p = String(body.chatPhone).replace(/\D/g, '');
-      if (p.length >= 10) cleanPhone = p;
+      if (p.length >= 10 && !p.startsWith('1397')) cleanPhone = p;
     }
 
     // Se o telefone não começar com 55 e tiver 10 ou 11 dígitos (formato BR com DDD), normaliza com 55
     if (cleanPhone && !cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
       cleanPhone = `55${cleanPhone}`;
+    }
+
+    // Se o telefone ainda estiver vazio mas temos um LID, busca no serverCRMStore pelo telefone real desse LID
+    if (!cleanPhone && lid) {
+      const serverState = serverCRMStore.getState();
+      const existingContact = serverState.contacts?.find((c: any) => c.lid?.replace(/\D/g, '') === lid || c.phone?.replace(/\D/g, '') === lid);
+      if (existingContact && existingContact.phone && !existingContact.phone.replace(/\D/g, '').startsWith('1397')) {
+        cleanPhone = existingContact.phone.replace(/\D/g, '');
+      } else {
+        cleanPhone = lid;
+      }
     }
 
     const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);

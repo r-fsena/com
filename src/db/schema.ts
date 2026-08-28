@@ -121,6 +121,7 @@ export const contacts = pgTable('contacts', {
   tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   phoneNormalized: varchar('phone_normalized', { length: 30 }).notNull(), // E.164
+  whatsappLid: varchar('whatsapp_lid', { length: 100 }), // WhatsApp Linked Identity (LID)
   email: varchar('email', { length: 255 }),
   cpfEncrypted: text('cpf_encrypted'),
   avatarUrl: text('avatar_url'),

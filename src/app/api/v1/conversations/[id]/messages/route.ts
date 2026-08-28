@@ -65,11 +65,11 @@ export async function POST(
     }
 
     let instanceId = validated.data.instanceId;
-    if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
+    if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20 || instanceId === '3F1B67FC8139425171C79ED390C0144C') {
       instanceId = process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
     }
     let instanceToken = validated.data.instanceToken;
-    if (!instanceToken || instanceToken.length < 15) {
+    if (!instanceToken || instanceToken.length < 15 || instanceToken === '7A18BD2BADA4840FB0374499') {
       instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
     }
     let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';

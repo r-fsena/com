@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { 
   Search, 
@@ -179,6 +179,11 @@ export function WhatsAppInbox() {
   const [selectedAIResponseIdx, setSelectedAIResponseIdx] = useState<number>(0);
   const [isCopilotExpanded, setIsCopilotExpanded] = useState<boolean>(false);
   const [isCopilotDismissed, setIsCopilotDismissed] = useState<boolean>(false);
+
+  // Sincroniza chats do WhatsApp automaticamente ao abrir o Inbox
+  useEffect(() => {
+    syncWhatsAppChats();
+  }, []);
 
   // Estados do Módulo de Imóveis Apresentados
   const [isAddingProp, setIsAddingProp] = useState(false);

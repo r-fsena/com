@@ -2221,12 +2221,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             const phoneSuffix = rawPhone.length >= 8 ? rawPhone.slice(-8) : rawPhone;
             const formattedPhone = incoming.phone.startsWith('+') ? incoming.phone : `+${incoming.phone}`;
 
-            // Verifica se o contato já existe
+            // 1. Encontra ou cria contato
             setContacts(prevContacts => {
-              const existing = prevContacts.find(c => c.phone.replace(/\D/g, '') === rawPhone);
+              const pKey = normalizePhoneKey(rawPhone);
+              const existing = prevContacts.find(c => {
+                const cPKey = normalizePhoneKey(c.phone);
+                if (cPKey && pKey && (cPKey === pKey || cPKey.endsWith(pKey) || pKey.endsWith(cPKey))) return true;
+                if (phoneSuffix && c.phone.replace(/\D/g, '').endsWith(phoneSuffix)) return true;
+                return false;
+              });
+
               if (existing) {
                 return prevContacts.map(c => c.id === existing.id ? {
                   ...c,
+                  name: (existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.senderName || existing.name),
                   avatarUrl: incoming.senderPhoto || c.avatarUrl,
                   lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
@@ -2265,21 +2273,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               ? users.find(u => u.id === matchingInst.assignedUserId)
               : undefined;
 
-            // Determina ID da conversa correspondente
-            let targetConvId = `conv-zapi-${rawPhone}`;
-
-            // Adiciona ou atualiza conversa
+            // 2. Atualiza ou cria a conversa
             setConversations(prevConvs => {
               const existingConv = prevConvs.find(c => {
-                if (c.id === targetConvId) return true;
+                if (c.id === `conv-zapi-${rawPhone}`) return true;
                 if (c.contactId === `contact-zapi-${rawPhone}`) return true;
-                const cDigits = c.contactId?.replace(/\D/g, '') || c.id.replace(/\D/g, '');
-                if (cDigits && phoneSuffix && cDigits.endsWith(phoneSuffix)) return true;
+                const cDigits = (c.contactId?.replace(/\D/g, '') || '') + (c.id.replace(/\D/g, '') || '');
+                if (cDigits && phoneSuffix && cDigits.includes(phoneSuffix)) return true;
                 return false;
               });
 
               if (existingConv) {
-                targetConvId = existingConv.id;
                 const updated = prevConvs.map(c => c.id === existingConv.id ? {
                   ...c,
                   assignedUserId: c.assignedUserId || matchingInst?.assignedUserId,
@@ -2288,13 +2292,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                   status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
                   unreadCount: incoming.fromMe ? 0 : (c.unreadCount || 0) + 1,
                   slaBreached: false,
-                } : c);
+                } : c).sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
                 try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
                 return updated;
               }
 
               const newConv: Conversation = {
-                id: targetConvId,
+                id: `conv-zapi-${rawPhone}`,
                 tenantId: currentTenant.id,
                 instanceId: incoming.instanceId || matchingInst?.id || instances[0]?.id || '3F1B67FC8139425171C79ED390C0144C',
                 contactId: `contact-zapi-${rawPhone}`,
@@ -2305,12 +2309,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 lastMessageAt: incoming.timestamp || new Date().toISOString(),
                 slaBreached: false,
               };
-              const updated = [newConv, ...prevConvs];
+              const updated = [newConv, ...prevConvs].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
               try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
               return updated;
             });
 
-            // Determina tipo e anexos de mídia
+            // 3. Adiciona a mensagem em setMessages com ID unificado
             const mType: MessageType = incoming.mediaType === 'audio' 
               ? 'AUDIO' 
               : incoming.mediaType === 'image' 
@@ -2322,7 +2326,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             const newMsg: Message = {
               id: incoming.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
               tenantId: currentTenant.id,
-              conversationId: targetConvId,
+              conversationId: `conv-zapi-${rawPhone}`,
               senderType: incoming.fromMe ? 'USER' : 'CONTACT',
               senderUserId: incoming.fromMe ? (assignedBroker?.id || currentUser.id) : undefined,
               senderName: incoming.fromMe ? (assignedBroker?.name || currentUser.name || 'Corretor') : incoming.senderName,

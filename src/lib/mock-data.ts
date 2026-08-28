@@ -112,7 +112,7 @@ export const MOCK_INSTANCES: WhatsAppInstance[] = [
     tenantId: 'tenant-amabile-barbarotti',
     name: 'Central WhatsApp • Amábile Barbarotti',
     phoneNumber: '',
-    zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C',
+    zapiInstanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
     status: 'DISCONNECTED',
     type: 'COMPANY_CENTRAL',
     isDefault: true,

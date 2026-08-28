@@ -122,7 +122,7 @@ export async function processZapiWebhookRequest(
     }
 
     const tenantId = routeParams?.tenantId || 'tenant-amabile-barbarotti';
-    const instanceId = routeParams?.instanceId || '3F1B67FC8139425171C79ED390C0144C';
+    const instanceId = routeParams?.instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
 
     // Se temos um telefone e conteúdo válido, registra no buffer global de eventos
     if (cleanPhone && cleanPhone !== '0') {

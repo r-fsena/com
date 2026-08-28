@@ -48,10 +48,10 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   // Form de Credenciais da Instância
   const [instanceId, setInstanceId] = useState(
     instances[0]?.zapiInstanceId || 
-    (currentTenant.id === 'tenant-amabile-barbarotti' ? '3F1B67FC8139425171C79ED390C0144C' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`)
+    (currentTenant.id === 'tenant-amabile-barbarotti' ? '3F8144490C66805B4E3FD64A35E2F2DC' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`)
   );
   const [instanceToken, setInstanceToken] = useState(
-    currentTenant.id === 'tenant-amabile-barbarotti' ? '7A18BD2BADA4840FB0374499' : ''
+    currentTenant.id === 'tenant-amabile-barbarotti' ? '550DBC07B2F984AB74E4BCE5' : ''
   );
   const [clientToken, setClientToken] = useState(
     currentTenant.id === 'tenant-amabile-barbarotti' ? 'Fc78d61c833db4b50864816b70766aee8S' : ''

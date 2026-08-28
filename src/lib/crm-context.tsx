@@ -1531,7 +1531,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             fileName: attachments?.[0]?.fileName,
             phone: targetPhone,
             senderUserId: currentUser.id,
-            instanceId: brokerInstance?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C',
+            instanceId: brokerInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
           }),
         }).catch(err => console.error('Erro ao enviar mensagem via Z-API:', err));
       }
@@ -2300,7 +2300,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               const newConv: Conversation = {
                 id: `conv-zapi-${rawPhone}`,
                 tenantId: currentTenant.id,
-                instanceId: incoming.instanceId || matchingInst?.id || instances[0]?.id || '3F1B67FC8139425171C79ED390C0144C',
+                instanceId: incoming.instanceId || matchingInst?.id || instances[0]?.id || '3F8144490C66805B4E3FD64A35E2F2DC',
                 contactId: `contact-zapi-${rawPhone}`,
                 assignedUserId: matchingInst?.assignedUserId,
                 status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
@@ -2386,7 +2386,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            instanceId: chosenInst?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C',
+            instanceId: chosenInst?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
             tenantId: currentTenant.id,
             assignedUserId: chosenInst?.assignedUserId || currentUser.id,
             fetchHistoryMessages: false,

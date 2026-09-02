@@ -250,7 +250,14 @@ export function WhatsAppInbox() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
-  const activeConversation = conversations.find(c => c.id === activeConversationId) || conversations[0];
+  const activeConversation = React.useMemo(() => {
+    if (activeConversationId) {
+      const found = conversations.find(c => c.id === activeConversationId);
+      if (found) return found;
+    }
+    const valid = conversations.find(c => !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
+    return valid || conversations[0] || null;
+  }, [conversations, activeConversationId]);
   
   const activeContact = React.useMemo(() => {
     if (!activeConversation) return contacts[0] || null;
@@ -853,7 +860,7 @@ export function WhatsAppInbox() {
   };
 
   return (
-    <div className="flex-1 flex h-[calc(100vh-4rem)] overflow-hidden bg-slate-100">
+    <div className="flex-1 flex h-full w-full overflow-hidden bg-slate-100">
       {/* ---------------------------------------------------- */}
       {/* COLUNA 1: Lista de Conversas & Filtros              */}
       {/* ---------------------------------------------------- */}
@@ -1019,11 +1026,11 @@ export function WhatsAppInbox() {
       {/* ---------------------------------------------------- */}
       {/* COLUNA 2: Janela de Chat Ativa & Mensagens           */}
       {/* ---------------------------------------------------- */}
-      <div className="flex-1 flex flex-col bg-[#efeae2] relative min-w-0">
+      <div className="flex-1 flex flex-col h-full bg-[#efeae2] relative min-w-0 overflow-hidden">
         {activeConversation && activeContact ? (
           <>
             {/* Header do Chat Sovereign (Limpo, Objetivo e Focado) */}
-            <div className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between z-10 shadow-xs gap-3">
+            <div className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between z-10 shadow-xs gap-3 shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 {/* Botão Voltar no Mobile */}
                 <button
@@ -1215,7 +1222,7 @@ export function WhatsAppInbox() {
             )}
 
             {/* Área de Mensagens (com background WhatsApp) */}
-            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 whatsapp-chat-bg">
+            <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 whatsapp-chat-bg">
               {activeMessages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full min-h-[280px] text-center p-6 space-y-3 max-w-md mx-auto my-auto">
                   <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-xs border border-emerald-200">
@@ -1646,8 +1653,8 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Toolbar e Input Footer */}
-            <div className="bg-white border-t border-slate-200/80 p-3 sm:p-4 space-y-2.5 shadow-sm">
+            {/* Toolbar e Input Footer (Fixo e Sempre Visível no Rodapé do Chat) */}
+            <div className="bg-white border-t border-slate-200/80 p-3 sm:p-4 space-y-2.5 shadow-sm shrink-0 z-20">
               {/* Toolbar Superior Discreta */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 flex-wrap">

@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans, Inter } from 'next/font/google';
+import { Cabin, Inter } from 'next/font/google';
 import './globals.css';
 import { CRMProvider } from '@/lib/crm-context';
 
-const plusJakarta = Plus_Jakarta_Sans({ 
+const cabin = Cabin({ 
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-sans',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-cabin',
   display: 'swap',
 });
 
@@ -27,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" className={`${plusJakarta.variable} ${inter.variable} h-full antialiased`}>
+    <html lang="pt-BR" className={`${cabin.variable} ${inter.variable} h-full antialiased`}>
       <body className="h-full bg-[#F0F3FA] text-slate-800 font-sans selection:bg-[#3742AC] selection:text-white">
         <CRMProvider>
           {children}

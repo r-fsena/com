@@ -6,14 +6,14 @@
   :root {
     --background: 220 33% 96%;
     --foreground: 222.2 84% 4.9%;
-    --font-sans: var(--font-sans), system-ui, -apple-system, sans-serif;
+    --font-sans: var(--font-cabin), 'Cabin', system-ui, -apple-system, sans-serif;
   }
 }
 
 body {
+  font-family: var(--font-cabin), 'Cabin', system-ui, -apple-system, sans-serif;
   color: #1e293b;
   background-color: #F0F3FA;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

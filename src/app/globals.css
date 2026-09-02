@@ -4,18 +4,52 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
+    --background: 220 33% 96%;
     --foreground: 222.2 84% 4.9%;
-    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-sans: var(--font-sans), system-ui, -apple-system, sans-serif;
   }
 }
 
 body {
   color: #1e293b;
-  background-color: #f8fafc;
+  background-color: #F0F3FA;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Sovereign Design System Tokens */
+.sovereign-card {
+  background-color: #ffffff;
+  border-radius: 28px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 10px 30px rgba(30, 41, 102, 0.035);
+}
+
+.sovereign-card-interactive {
+  background-color: #ffffff;
+  border-radius: 28px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 10px 30px rgba(30, 41, 102, 0.035);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sovereign-card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px rgba(30, 41, 102, 0.06);
+  border-color: rgba(55, 66, 172, 0.25);
+}
+
+.sovereign-pill-button {
+  border-radius: 9999px;
+  transition: all 0.15s ease-in-out;
+}
+
+.sovereign-navy-card {
+  background-color: #202759;
+  border-radius: 28px;
+  color: #ffffff;
+  box-shadow: 0 12px 36px rgba(32, 39, 89, 0.18);
 }
 
 /* Custom Scrollbars */
@@ -47,18 +81,8 @@ body {
 
 /* Glassmorphism */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(226, 232, 240, 0.8);
-}
-
-/* Animation utilities */
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.02); }
-}
-
-.animate-pulse-subtle {
-  animation: pulse-subtle 3s ease-in-out infinite;
 }

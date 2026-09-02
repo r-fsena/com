@@ -38,46 +38,47 @@ interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-export function Sidebar({ 
-  currentTab, 
-  setCurrentTab, 
-  onOpenZapiSimulator, 
-  onOpenQrCodeModal, 
+export function Sidebar({
+  currentTab,
+  setCurrentTab,
+  onOpenZapiSimulator,
+  onOpenQrCodeModal,
   onGoToMasterPortal,
-  isOpenOnMobile,
+  isOpenOnMobile = false,
   onCloseMobile
 }: SidebarProps) {
   const { 
     currentTenant, 
     currentUser, 
-    conversations,
-    tasks,
-    alerts,
-    instances,
-    logout,
-    isFeatureEnabled
+    conversations, 
+    instances, 
+    alerts, 
+    tasks, 
+    isFeatureEnabled,
+    logout 
   } = useCRM();
 
-  // Estado do Menu Retrátil (Expandido / Recolhido)
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('vanguard_crm_sidebar_collapsed');
+      const saved = localStorage.getItem('vanguard_sidebar_collapsed');
       if (saved !== null) {
         setIsCollapsed(saved === 'true');
       }
-    } catch {}
+    } catch {
+      // Ignora erro no SSR
+    }
   }, []);
 
   const toggleCollapsed = () => {
-    setIsCollapsed(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem('vanguard_crm_sidebar_collapsed', String(next));
-      } catch {}
-      return next;
-    });
+    const nextState = !isCollapsed;
+    setIsCollapsed(nextState);
+    try {
+      localStorage.setItem('vanguard_sidebar_collapsed', String(nextState));
+    } catch {
+      // Ignora erro
+    }
   };
 
   const totalUnreadMessages = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
@@ -85,7 +86,7 @@ export function Sidebar({
   const criticalAlertsCount = alerts.filter(a => !a.isDismissed && a.severity === 'CRITICAL').length;
   const isZapiConnected = instances.some(i => i.status === 'CONNECTED');
 
-  // 1. Visão Geral
+  // 1. Visão Geral Sovereign
   const overviewItems = [
     {
       id: 'dashboard',
@@ -96,7 +97,7 @@ export function Sidebar({
     },
   ];
 
-  // 2. Grupo WhatsApp
+  // 2. Grupo WhatsApp Sovereign
   const whatsappNavItems = [
     {
       id: 'inbox',
@@ -118,7 +119,7 @@ export function Sidebar({
       label: 'Conexão & API',
       icon: Radio,
       badge: isZapiConnected ? 'Ao Vivo' : 'Offline',
-      badgeColor: isZapiConnected ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800',
+      badgeColor: isZapiConnected ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200',
       enabled: true,
     },
   ];
@@ -180,7 +181,7 @@ export function Sidebar({
       label: 'IA Copiloto',
       icon: Bot,
       badge: 'IA',
-      badgeColor: 'bg-emerald-600 text-white',
+      badgeColor: 'bg-[#3742AC] text-white',
       enabled: isFeatureEnabled('aiCopilot'),
     },
     {
@@ -205,29 +206,29 @@ export function Sidebar({
           onCloseMobile?.();
         }}
         className={`w-full flex items-center ${
-          isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-        } py-2.5 rounded-xl text-xs font-medium transition-all duration-150 group relative cursor-pointer ${
+          isCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'
+        } py-2.5 rounded-2xl text-xs font-semibold transition-all duration-150 group relative cursor-pointer ${
           isActive
-            ? 'bg-emerald-600/20 text-emerald-300 font-semibold border border-emerald-500/30 shadow-xs'
-            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+            ? 'bg-[#3742AC] text-white shadow-md shadow-indigo-950/10'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
         }`}
         title={isCollapsed ? item.label : undefined}
       >
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-          <Icon className={`w-4 h-4 transition flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+          <Icon className={`w-4 h-4 transition flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'}`} />
           {!isCollapsed && <span className="truncate">{item.label}</span>}
         </div>
 
         {/* Badge Expandido */}
         {!isCollapsed && item.badge && (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.badgeColor || 'bg-slate-800 text-slate-300'}`}>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.badgeColor || 'bg-slate-100 text-slate-700'}`}>
             {item.badge}
           </span>
         )}
 
         {/* Dot Badge quando Recolhido */}
         {isCollapsed && item.badge && (
-          <span className="absolute top-1.5 right-2 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-950"></span>
+          <span className="absolute top-1.5 right-2 w-2 h-2 rounded-full bg-[#3742AC] ring-2 ring-white"></span>
         )}
       </button>
     );
@@ -238,7 +239,7 @@ export function Sidebar({
       {/* Backdrop Overlay no Mobile */}
       {isOpenOnMobile && (
         <div 
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-2xs z-40 md:hidden animate-fadeIn"
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-2xs z-40 md:hidden animate-fadeIn"
           onClick={onCloseMobile}
         />
       )}
@@ -246,48 +247,48 @@ export function Sidebar({
       <aside 
         className={`${
           isCollapsed ? 'w-20' : 'w-64'
-        } bg-slate-950 text-slate-300 flex flex-col flex-shrink-0 border-r border-slate-800 select-none transition-all duration-200 ease-in-out fixed md:static inset-y-0 left-0 z-50 md:z-auto ${
+        } bg-white text-slate-700 flex flex-col flex-shrink-0 border-r border-slate-200/80 select-none transition-all duration-200 ease-in-out fixed md:static inset-y-0 left-0 z-50 md:z-auto ${
           isOpenOnMobile ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
         }`}
       >
         {/* Header com Tenant e Botão de Recolher/Expandir */}
-        <div className="p-3 border-b border-slate-800/80">
+        <div className="p-4 border-b border-slate-100">
           {isCollapsed ? (
             <div className="flex flex-col items-center gap-2 w-full">
-              {/* Logo Centralizado no modo reduzido */}
+              {/* Logo Centralizado no modo reduzido Sovereign */}
               <div 
-                className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30"
-                title={`${currentTenant.name} (SaaS Multi-tenant)`}
+                className="w-10 h-10 rounded-2xl bg-[#3742AC] flex items-center justify-center text-white shadow-md shadow-indigo-900/20"
+                title={`${currentTenant.name} (Sovereign CRM)`}
               >
                 <Building2 className="w-5 h-5" />
               </div>
 
-              {/* Botão de Expandir Centralizado e Separado */}
+              {/* Botão de Expandir */}
               <button
                 onClick={toggleCollapsed}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-400 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition cursor-pointer shadow-2xs"
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl transition cursor-pointer shadow-2xs"
                 title="Expandir menu lateral"
               >
-                <PanelLeftOpen className="w-4 h-4 text-emerald-400" />
+                <PanelLeftOpen className="w-4 h-4 text-[#3742AC]" />
               </button>
             </div>
           ) : (
             <div>
               <div className="flex items-center justify-between gap-2">
-                {/* Logo & Marca da Imobiliária Ativa */}
+                {/* Logo & Marca da Imobiliária Ativa Sovereign */}
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-900/30 flex-shrink-0">
+                  <div className="w-9 h-9 rounded-2xl bg-[#3742AC] flex items-center justify-center text-white shadow-md shadow-indigo-900/20 flex-shrink-0">
                     <Building2 className="w-5 h-5" />
                   </div>
                   
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 truncate">
-                        Ambiente Ativo
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#3742AC] truncate">
+                        Sovereign CRM
                       </span>
                     </div>
-                    <h2 className="text-xs font-bold text-white tracking-tight truncate" title={currentTenant.name}>
+                    <h2 className="text-xs font-bold text-slate-900 tracking-tight truncate" title={currentTenant.name}>
                       {currentTenant.name}
                     </h2>
                   </div>
@@ -297,8 +298,8 @@ export function Sidebar({
                   {/* Botão de Recolher no Desktop */}
                   <button
                     onClick={toggleCollapsed}
-                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer flex-shrink-0 hidden md:block"
-                    title="Reduzir menu lateral (apenas ícones)"
+                    className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer flex-shrink-0 hidden md:block"
+                    title="Reduzir menu lateral"
                   >
                     <PanelLeftClose className="w-4 h-4" />
                   </button>
@@ -307,7 +308,7 @@ export function Sidebar({
                   {onCloseMobile && (
                     <button
                       onClick={onCloseMobile}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer flex-shrink-0 md:hidden"
+                      className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer flex-shrink-0 md:hidden"
                       title="Fechar menu lateral"
                     >
                       <ChevronLeft className="w-4 h-4" />
@@ -320,19 +321,19 @@ export function Sidebar({
         </div>
 
       {/* Navigation List */}
-      <nav className="flex-1 px-2.5 py-3 space-y-4 overflow-y-auto">
+      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
         
         {/* Seção 1: Visão Geral */}
         <div className="space-y-1">
           {overviewItems.map(renderNavButton)}
         </div>
 
-        {/* Seção 2: Grupo WhatsApp */}
+        {/* Seção 2: Grupo WhatsApp Sovereign */}
         <div className="space-y-1 pt-1">
           {!isCollapsed && (
-            <div className="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-400/90 flex items-center justify-between">
+            <div className="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[#3742AC] flex items-center justify-between">
               <span>WhatsApp</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${isZapiConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${isZapiConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
             </div>
           )}
           {whatsappNavItems.map(renderNavButton)}
@@ -341,7 +342,7 @@ export function Sidebar({
         {/* Seção 3: Módulos de Gestão & CRM */}
         <div className="space-y-1 pt-1">
           {!isCollapsed && (
-            <div className="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+            <div className="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
               Módulos Comerciais
             </div>
           )}
@@ -349,24 +350,21 @@ export function Sidebar({
         </div>
       </nav>
 
-      {/* Rodapé da Sidebar: Z-API Widget Mini + Usuário Logado */}
-      <div className="p-2.5 border-t border-slate-800/80 bg-slate-950 space-y-2">
-        {/* ---------------------------------------------------- */}
-        {/* MINI WIDGET Z-API: REDUZIDO E LOGO ACIMA DO USUÁRIO */}
-        {/* ---------------------------------------------------- */}
+      {/* Rodapé da Sidebar: Z-API Widget Mini + Perfil */}
+      <div className="p-3 border-t border-slate-100 bg-slate-50/50 space-y-2">
         {isCollapsed ? (
           <div className="flex justify-center">
             <button
               onClick={onOpenQrCodeModal}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer relative"
+              className="p-2 rounded-2xl bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-600 hover:text-slate-900 transition cursor-pointer relative shadow-2xs"
               title={`Z-API Gateway (${isZapiConnected ? 'Online / Conectado' : 'Offline / Clique para vincular'})`}
             >
-              <QrCode className="w-4 h-4" />
-              <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${isZapiConnected ? 'bg-emerald-500 ring-2 ring-slate-950' : 'bg-rose-500'}`} />
+              <QrCode className="w-4 h-4 text-[#3742AC]" />
+              <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${isZapiConnected ? 'bg-emerald-500 ring-2 ring-white' : 'bg-rose-500'}`} />
             </button>
           </div>
         ) : (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 shadow-2xs">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-2.5 shadow-2xs">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -375,7 +373,7 @@ export function Sidebar({
                   )}
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${isZapiConnected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
                 </span>
-                <span className="text-[11px] font-semibold text-slate-200 truncate">
+                <span className="text-[11px] font-bold text-slate-800 truncate">
                   Z-API {isZapiConnected ? 'Online' : 'Offline'}
                 </span>
               </div>
@@ -383,10 +381,10 @@ export function Sidebar({
               {onOpenQrCodeModal && (
                 <button
                   onClick={onOpenQrCodeModal}
-                  className={`text-[10px] font-bold px-2 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 border ${
+                  className={`text-[10px] font-bold px-2 py-1 rounded-xl transition cursor-pointer flex items-center gap-1 border ${
                     isZapiConnected 
-                      ? 'bg-emerald-950/70 hover:bg-emerald-900/70 text-emerald-300 border-emerald-800/60'
-                      : 'bg-amber-950/70 hover:bg-amber-900/70 text-amber-300 border-amber-800/60'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-amber-50 text-amber-900 border-amber-200'
                   }`}
                   title="Gerenciar conexão do WhatsApp via Z-API"
                 >
@@ -398,20 +396,18 @@ export function Sidebar({
           </div>
         )}
 
-        {/* ---------------------------------------------------- */}
-        {/* PERFIL DO USUÁRIO LOGADO                             */}
-        {/* ---------------------------------------------------- */}
+        {/* Perfil do Usuário */}
         {isCollapsed ? (
           <div className="flex flex-col items-center gap-2 pt-1">
             <img
               src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
               alt={currentUser.name}
-              className="w-8 h-8 rounded-full object-cover ring-2 ring-emerald-500/50"
+              className="w-8 h-8 rounded-full object-cover ring-2 ring-indigo-200"
               title={`${currentUser.name} (${currentUser.role})`}
             />
             <button
               onClick={() => logout()}
-              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
               title="Sair da Conta (Logoff)"
             >
               <LogOut className="w-4 h-4" />
@@ -423,53 +419,30 @@ export function Sidebar({
               <img
                 src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
                 alt={currentUser.name}
-                className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-700 flex-shrink-0"
+                className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 flex-shrink-0"
               />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
-                <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border ${
-                  currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN_MASTER'
-                    ? 'text-amber-300 bg-amber-950/80 border-amber-800/50'
-                    : 'text-emerald-400 bg-emerald-950/80 border-emerald-800/40'
-                }`}>
-                  {currentUser.role === 'SUPERADMIN' ? '👑 SUPERADMIN' : currentUser.role === 'ADMIN_MASTER' ? '🛡️ ADMIN MASTER' : currentUser.role}
-                </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-slate-900 truncate">
+                  {currentUser.name}
+                </p>
+                <p className="text-[10px] font-semibold text-[#3742AC] truncate">
+                  {currentUser.role}
+                </p>
               </div>
+
+              <button
+                onClick={() => logout()}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                title="Sair da Conta (Logoff)"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Botão de Retorno ao Portal Master SaaS (Exclusivo SuperAdmin / Dono do CRM) */}
-            {(currentUser.role === 'SUPERADMIN' || currentUser.role === 'ADMIN_MASTER') && onGoToMasterPortal && (
-              <div className="px-0.5">
-                <button
-                  type="button"
-                  onClick={onGoToMasterPortal}
-                  className="w-full bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-teal-500/20 hover:from-amber-500/30 hover:to-emerald-500/30 border border-amber-500/40 text-amber-300 rounded-xl p-2 flex items-center justify-between text-xs font-bold transition shadow-xs cursor-pointer group"
-                  title="Abrir o Portal Master de Gestão SaaS"
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Crown className="w-4 h-4 text-amber-400 shrink-0 group-hover:rotate-12 transition-transform" />
-                    <span className="truncate text-[11px]">Portal Master SaaS</span>
-                  </div>
-                  <span className="text-[9px] bg-amber-400/20 text-amber-200 px-1.5 py-0.2 rounded font-mono shrink-0">
-                    HUB
-                  </span>
-                </button>
-              </div>
-            )}
-
-            {/* Botão de Logoff */}
-            <button
-              onClick={() => logout()}
-              className="w-full flex items-center justify-center gap-1.5 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 hover:text-rose-100 border border-rose-800/40 rounded-xl py-1.5 text-xs font-bold transition shadow-xs active:scale-98 cursor-pointer"
-              title="Encerrar sessão"
-            >
-              <LogOut className="w-3.5 h-3.5 text-rose-400" />
-              <span>Sair da Conta (Logoff)</span>
-            </button>
           </div>
         )}
       </div>
-    </aside>
-  </>
+
+      </aside>
+    </>
   );
 }

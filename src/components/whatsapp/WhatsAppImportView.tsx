@@ -304,54 +304,54 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
+    <div className="flex-1 flex flex-col h-[calc(100vh-5rem)] overflow-hidden bg-[#F0F3FA]">
       
-      {/* Header Principal da Tela de Importação */}
-      <div className="bg-white border-b border-slate-200 px-6 sm:px-8 py-5 flex flex-wrap items-center justify-between gap-4 shadow-xs shrink-0">
+      {/* Header Principal da Tela de Importação Sovereign */}
+      <div className="bg-transparent px-6 sm:px-8 py-5 flex flex-wrap items-center justify-between gap-4 shrink-0">
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-2xl bg-[#3742AC] text-white flex items-center justify-center shadow-md shadow-indigo-950/10">
               <Users className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-slate-900">Importação de Contatos & Histórico</h1>
-                <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                  Módulo WhatsApp
+                <h1 className="text-xl font-extrabold text-slate-900">Importação de Contatos & Histórico</h1>
+                <span className="text-xs font-bold bg-white text-[#3742AC] border border-indigo-100 px-3 py-0.5 rounded-full shadow-2xs">
+                  Sovereign WhatsApp
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5">
                 Importe conversas com etiquetas e contexto de mensagens do WhatsApp ou arquivos de agenda telefônica.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Abas de Navegação Superiores (Estilo Pills) */}
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+        {/* Abas de Navegação Superiores (Estilo Sovereign Pills) */}
+        <div className="flex items-center gap-1.5 bg-white p-1 rounded-full border border-slate-200/80 shadow-2xs">
           <button
             type="button"
             onClick={() => setActiveTab('WHATSAPP')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'WHATSAPP'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/80'
+                ? 'bg-[#3742AC] text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Smartphone className="w-4 h-4 text-emerald-600" />
+            <Smartphone className="w-4 h-4" />
             <span>1. WhatsApp Z-API (Histórico & Tags)</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('FILE')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'FILE'
-                ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/80'
+                ? 'bg-[#3742AC] text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <FileSpreadsheet className="w-4 h-4" />
             <span>2. Arquivo de Agenda (VCF / CSV)</span>
           </button>
         </div>

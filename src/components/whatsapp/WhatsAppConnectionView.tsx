@@ -153,29 +153,29 @@ export function WhatsAppConnectionView() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
+    <div className="flex-1 flex flex-col h-[calc(100vh-5rem)] overflow-hidden bg-[#F0F3FA]">
       
-      {/* Header Principal */}
-      <div className="bg-white border-b border-slate-200 px-6 sm:px-8 py-5 flex flex-wrap items-center justify-between gap-4 shadow-xs shrink-0">
+      {/* Header Principal Sovereign */}
+      <div className="bg-transparent px-6 sm:px-8 py-5 flex flex-wrap items-center justify-between gap-4 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md">
-            <Radio className="w-5 h-5 text-emerald-400" />
+          <div className="w-10 h-10 rounded-2xl bg-[#3742AC] text-white flex items-center justify-center shadow-md shadow-indigo-950/10">
+            <Radio className="w-5 h-5 text-indigo-100" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900">Conexão & Gateway Z-API WhatsApp</h1>
+              <h1 className="text-xl font-extrabold text-slate-900">Conexão & Gateway Z-API WhatsApp</h1>
               {isConnected ? (
-                <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                <span className="text-xs font-bold bg-white text-emerald-700 border border-emerald-200 px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   <span>Instância Conectada Ao Vivo</span>
                 </span>
               ) : (
-                <span className="text-xs font-bold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full">
+                <span className="text-xs font-bold bg-white text-rose-700 border border-rose-200 px-3 py-0.5 rounded-full shadow-2xs">
                   Desconectado
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5">
               Gerencie a instância ativa do WhatsApp, leitura de QR Code, webhooks oficiais e envio de testes.
             </p>
           </div>
@@ -185,9 +185,9 @@ export function WhatsAppConnectionView() {
           type="button"
           onClick={handleFetchQrCode}
           disabled={isLoadingQr}
-          className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+          className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold px-5 py-2.5 rounded-full transition shadow-md shadow-indigo-950/10 flex items-center gap-2 cursor-pointer disabled:opacity-50"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isLoadingQr ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoadingQr ? 'animate-spin' : ''}`} />
           <span>Atualizar Status</span>
         </button>
       </div>

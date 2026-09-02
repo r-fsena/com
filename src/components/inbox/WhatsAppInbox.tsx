@@ -1091,7 +1091,7 @@ export function WhatsAppInbox() {
                   <ExternalLink className="w-4 h-4" />
                 </a>
 
-                {/* 3. Botão Ficha do Lead / Perfil 360 */}
+                {/* 3. Botão Qualificação do Lead */}
                 <button
                   type="button"
                   onClick={() => setShowLeadDrawer(!showLeadDrawer)}
@@ -1100,10 +1100,10 @@ export function WhatsAppInbox() {
                       ? 'bg-[#3742AC] text-white border-[#3742AC]'
                       : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
                   }`}
-                  title="Abrir / Ocultar Ficha do Lead"
+                  title="Abrir / Ocultar Qualificação do Lead"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Ficha do Lead</span>
+                  <span>Qualificação do Lead</span>
                 </button>
 
                 {/* 4. Menu de Opções */}
@@ -1882,7 +1882,7 @@ export function WhatsAppInbox() {
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-emerald-600" />
-                  <span>Perfil 360º • IA + CRM</span>
+                  <span>Qualificação do Lead • IA + CRM</span>
                 </span>
                 
                 <div className="flex items-center gap-2">
@@ -2454,13 +2454,13 @@ export function WhatsAppInbox() {
             </div>
 
             {/* ---------------------------------------------------- */}
-            {/* 3. QUALIFICAÇÃO DO IMÓVEL & FINANCEIRA (EDIÇÃO INLINE)*/}
+            {/* 3. QUALIFICAÇÃO DO LEAD (FINANCEIRA & PERFIL)         */}
             {/* ---------------------------------------------------- */}
             <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Qualificação do Imóvel</span>
+                  <span>Qualificação do Lead</span>
                 </h4>
                 <span className="text-[10px] text-slate-400 font-medium">Edição Rápida</span>
               </div>

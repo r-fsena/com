@@ -17,8 +17,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Sovereign CRM • CRM Imobiliário Multi-tenant WhatsApp',
-  description: 'Plataforma SaaS de CRM Imobiliário Multiempresa integrada ao WhatsApp via Z-API com IA Copiloto e Funis de Conversão',
+  title: 'Brokiva — Relacionamentos que viram negócios',
+  description: 'CRM imobiliário especializado para organizar leads, acompanhar clientes e fechar mais negócios.',
 };
 
 export default function RootLayout({

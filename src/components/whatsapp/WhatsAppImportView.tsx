@@ -317,7 +317,7 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-extrabold text-slate-900">Importação de Contatos & Histórico</h1>
                 <span className="text-xs font-bold bg-white text-[#3742AC] border border-indigo-100 px-3 py-0.5 rounded-full shadow-2xs">
-                  Sovereign WhatsApp
+                  Brokiva WhatsApp
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">

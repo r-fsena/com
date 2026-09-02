@@ -57,10 +57,12 @@ import {
   ZoomIn,
   Music,
   StopCircle,
-  Radio
+  Radio,
+  UserPlus
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/date-utils';
 import { PropertyType, PresentedProperty } from '@/types/crm';
+import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
 const MOCK_CATALOG_PROPERTIES = [
   {
@@ -180,6 +182,7 @@ export function WhatsAppInbox() {
   } = useCRM();
 
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED'>('ALL');
   const [instanceFilter, setInstanceFilter] = useState<'ALL' | 'CENTRAL' | 'DIRECT'>('ALL');
   const [sendingInstanceId, setSendingInstanceId] = useState<string>(activeInstanceId);
@@ -860,6 +863,15 @@ export function WhatsAppInbox() {
             </div>
 
             <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-1 text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded-lg transition active:scale-95 shadow-2xs cursor-pointer"
+                title="Assistente de Importação com Filtros e Histórico"
+              >
+                <UserPlus className="w-3 h-3 text-emerald-400" />
+                <span>Importar</span>
+              </button>
+
               <button
                 onClick={() => syncWhatsAppChats()}
                 disabled={isSyncingWhatsApp}
@@ -3146,6 +3158,12 @@ export function WhatsAppInbox() {
           </div>
         </div>
       )}
+
+      {/* Modal Assistente de Importação */}
+      <ImportLeadsModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+      />
     </div>
   );
 }

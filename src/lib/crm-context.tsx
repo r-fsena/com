@@ -172,11 +172,13 @@ interface CRMContextType {
   saasApiConfig: SaaSApiConfig;
   updateSaaSApiConfig: (updates: Partial<SaaSApiConfig>) => void;
 
-  // Z-API Sincronização em Tempo Real
+  // Z-API Sincronização em Tempo Real & Importação Inteligente
   isSyncingWhatsApp: boolean;
   syncWhatsAppChats: (targetInstanceId?: string, historyDays?: number) => Promise<{ success: boolean; count: number }>;
   syncZapiInstance: (instanceId: string, phone?: string) => void;
   resetCRMDatabase: (resyncAfter?: boolean) => Promise<{ success: boolean; message: string }>;
+  importWhatsAppBatch: (payload: { contacts: Contact[]; conversations: Conversation[]; messages: Message[] }) => void;
+  importFileContacts: (records: any[], assignedBrokerId?: string, createDeals?: boolean) => { count: number };
 
   // Feature Flags & Módulos
   isFeatureEnabled: (feature: keyof TenantFeatureFlags) => boolean;
@@ -2204,6 +2206,125 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const importWhatsAppBatch = (payload: { contacts: Contact[]; conversations: Conversation[]; messages: Message[] }) => {
+    if (payload.contacts && payload.contacts.length > 0) {
+      setContacts(prev => {
+        const combined = [...prev, ...payload.contacts];
+        const deduplicated = deduplicateContactList(combined);
+        try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduplicated)); } catch {}
+        return deduplicated;
+      });
+    }
+
+    if (payload.conversations && payload.conversations.length > 0) {
+      setConversations(prev => {
+        const map = new Map(prev.map(c => [c.id, c]));
+        payload.conversations.forEach((c: Conversation) => {
+          const old = map.get(c.id) || prev.find(x => x.contactId === c.contactId);
+          if (old) {
+            map.set(old.id, {
+              ...c,
+              ...old,
+              lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview,
+              lastMessageAt: old.lastMessageAt || c.lastMessageAt,
+            });
+          } else {
+            map.set(c.id, c);
+          }
+        });
+        const result = Array.from(map.values());
+        try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result)); } catch {}
+        return result;
+      });
+    }
+
+    if (payload.messages && payload.messages.length > 0) {
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id));
+        const newOnes = payload.messages.filter((m: Message) => !existingIds.has(m.id));
+        const merged = deduplicateMessages([...prev, ...newOnes]);
+        try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
+        return merged;
+      });
+    }
+  };
+
+  const importFileContacts = (records: any[], assignedBrokerId?: string, createDeals = true): { count: number } => {
+    if (!Array.isArray(records) || records.length === 0) return { count: 0 };
+
+    const newContacts: Contact[] = [];
+    const newDeals: Deal[] = [];
+
+    records.forEach((rec) => {
+      const clean = (rec.phone || '').replace(/\D/g, '');
+      if (!clean || clean.length < 8) return;
+
+      const contactId = `contact-file-${clean}`;
+      const newContact: Contact = {
+        id: contactId,
+        tenantId: currentTenant.id,
+        name: rec.name || `Lead ${rec.phone}`,
+        phone: rec.phone,
+        email: rec.email,
+        assignedUserId: assignedBrokerId || currentUser.id,
+        source: (rec.source as any) || 'IMPORT_CSV',
+        temperature: (rec.temperature as any) || 'WARM',
+        aiPriorityScore: 75,
+        tags: Array.from(new Set(['Importação de Arquivo', ...(rec.tags || [])])),
+        notesCount: rec.notes ? 1 : 0,
+        consentGiven: true,
+        consentDate: new Date().toISOString(),
+        hasOptedOut: false,
+        monthlyIncome: rec.monthlyIncome,
+        downPaymentAvailable: rec.downPaymentAvailable,
+        maxPropertyValue: rec.maxPropertyValue,
+        preferredPropertyType: rec.preferredPropertyType,
+        targetRegions: rec.targetRegions || ['Geral'],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      newContacts.push(newContact);
+
+      if (createDeals && currentPipeline?.stages?.[0]) {
+        const firstStage = currentPipeline.stages[0];
+        newDeals.push({
+          id: `deal-${Date.now()}-${clean.slice(-4)}`,
+          tenantId: currentTenant.id,
+          contactId,
+          pipelineId: currentPipeline.id,
+          stageId: firstStage.id,
+          title: `Interesse • ${newContact.name}`,
+          expectedValue: Number(rec.maxPropertyValue) || 650000,
+          manualProbability: 40,
+          aiProbabilityScore: 50,
+          status: 'OPEN',
+          assignedUserId: assignedBrokerId || currentUser.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    if (newContacts.length > 0) {
+      setContacts(prev => {
+        const combined = [...prev, ...newContacts];
+        const deduplicated = deduplicateContactList(combined);
+        try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduplicated)); } catch {}
+        return deduplicated;
+      });
+    }
+
+    if (newDeals.length > 0) {
+      setDeals(prev => {
+        const updated = [...prev, ...newDeals];
+        try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
+
+    return { count: newContacts.length };
+  };
+
   // Checa status de conexão da Z-API ao carregar apenas uma vez
   useEffect(() => {
     let isMounted = true;
@@ -3016,6 +3137,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       syncWhatsAppChats,
       syncZapiInstance,
       resetCRMDatabase,
+      importWhatsAppBatch,
+      importFileContacts,
       isFeatureEnabled,
       updateTenantFeatureFlags,
     }}>

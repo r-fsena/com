@@ -25,7 +25,8 @@ import {
   Layers,
   FileText,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  Tag
 } from 'lucide-react';
 import { Contact, Deal } from '@/types/crm';
 import { parseCSVContent, parseVCFContent, normalizePhoneNumber, ParsedContactRecord } from '@/lib/vcf-parser';
@@ -48,6 +49,7 @@ interface WhatsAppChatPreview {
   lastMessageTimestamp: string;
   unreadCount: number;
   isGroup: boolean;
+  whatsappLabels?: string[];
 }
 
 export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModalProps) {
@@ -64,6 +66,8 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
   // Estados do WhatsApp Wizard
   const [historyDays, setHistoryDays] = useState<number>(30);
   const [onlyWithName, setOnlyWithName] = useState<boolean>(false);
+  const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>('ALL');
+  const [availableLabels, setAvailableLabels] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [previewChats, setPreviewChats] = useState<WhatsAppChatPreview[]>([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
@@ -109,6 +113,9 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
       const data = await res.json();
       if (data.success && Array.isArray(data.chats)) {
         setPreviewChats(data.chats);
+        if (Array.isArray(data.availableLabels)) {
+          setAvailableLabels(data.availableLabels);
+        }
         // Pré-seleciona todos os contatos inicialmente
         setSelectedPhoneSet(new Set(data.chats.map((c: WhatsAppChatPreview) => c.phone)));
       } else {
@@ -129,20 +136,24 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
     }
   }, [isOpen, activeTab, historyDays]);
 
-  // Filtra chats pela busca e opção de "Apenas com nome"
+  // Filtra chats pela busca, etiqueta e opção de "Apenas com nome"
   const filteredChats = useMemo(() => {
     return previewChats.filter(chat => {
       if (onlyWithName && !chat.hasRealName) return false;
+      if (selectedLabelFilter !== 'ALL') {
+        if (!chat.whatsappLabels || !chat.whatsappLabels.includes(selectedLabelFilter)) return false;
+      }
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
         chat.name.toLowerCase().includes(term) ||
         chat.phone.includes(term) ||
         chat.phoneDisplay.includes(term) ||
-        chat.lastMessagePreview.toLowerCase().includes(term)
+        chat.lastMessagePreview.toLowerCase().includes(term) ||
+        (chat.whatsappLabels && chat.whatsappLabels.some(l => l.toLowerCase().includes(term)))
       );
     });
-  }, [previewChats, onlyWithName, searchTerm]);
+  }, [previewChats, onlyWithName, selectedLabelFilter, searchTerm]);
 
   // Ações de Seleção
   const toggleSelectPhone = (phone: string) => {
@@ -171,7 +182,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
     }
   };
 
-  // 2. Execução da Importação em Lotes com Histórico Leve
+  // 2. Execução da Importação em Lotes com Histórico Leve e Tags
   const handleStartBatchImport = async () => {
     const selectedList = previewChats.filter(c => selectedPhoneSet.has(c.phone));
     if (selectedList.length === 0) return;
@@ -212,6 +223,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
               name: c.name,
               lid: c.lid,
               avatarUrl: c.avatarUrl,
+              whatsappLabels: c.whatsappLabels || [],
             })),
             historyLimit: 15, // Contexto inicial de 15 mensagens por conversa
             assignedUserId: assignedBrokerId,
@@ -229,7 +241,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
           processed += (data.count || chunk.length);
         }
 
-        // Pequena pausa de 300ms entre lotes para não sobrecarregar a Z-API
+        // Pausa suave de 300ms entre lotes
         await new Promise(r => setTimeout(r, 300));
       }
 
@@ -312,9 +324,9 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Assistente de Importação de Leads & Histórico</h2>
+              <h2 className="text-base font-bold text-slate-900">Assistente de Importação de Leads & Etiquetas</h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Importe contatos com contexto do WhatsApp ou faça upload de arquivos de agenda (VCF / CSV).
+                Importe contatos com histórico e etiquetas do WhatsApp ou arquivos de agenda (VCF / CSV).
               </p>
             </div>
           </div>
@@ -327,7 +339,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
           </button>
         </div>
 
-        {/* Abas de Escolha: WhatsApp Direto vs Arquivo VCF/CSV */}
+        {/* Abas de Escolha */}
         <div className="flex border-b border-slate-200 px-6 bg-white shrink-0">
           <button
             type="button"
@@ -339,7 +351,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
             }`}
           >
             <Smartphone className="w-4 h-4" />
-            <span>1. Importar Direto do WhatsApp (com Histórico)</span>
+            <span>1. Importar do WhatsApp (com Etiquetas & Histórico)</span>
             <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-extrabold">
               Z-API Ao Vivo
             </span>
@@ -363,7 +375,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           
           {/* ========================================================================= */}
-          {/* ABA 1: IMPORTAÇÃO DO WHATSAPP COM FILTROS & LOTES                         */}
+          {/* ABA 1: IMPORTAÇÃO DO WHATSAPP COM FILTROS & ETIQUETAS                     */}
           {/* ========================================================================= */}
           {activeTab === 'WHATSAPP' && (
             <div className="space-y-5">
@@ -375,7 +387,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                   {/* Seletor de Período */}
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
                     <Clock className="w-4 h-4 text-slate-400" />
-                    <span>Período de Atividade:</span>
+                    <span>Período:</span>
                     <select
                       value={historyDays}
                       onChange={(e) => setHistoryDays(Number(e.target.value))}
@@ -388,6 +400,24 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                       <option value={0}>Todo o Histórico</option>
                     </select>
                   </div>
+
+                  {/* Filtro de Etiquetas do WhatsApp */}
+                  {availableLabels.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                      <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Etiqueta:</span>
+                      <select
+                        value={selectedLabelFilter}
+                        onChange={(e) => setSelectedLabelFilter(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                      >
+                        <option value="ALL">Todas as Etiquetas ({availableLabels.length})</option>
+                        {availableLabels.map((lbl) => (
+                          <option key={lbl} value={lbl}>{lbl}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Filtro: Apenas com Nome */}
                   <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer select-none bg-white border border-slate-200 px-3 py-1 rounded-xl hover:bg-slate-50">
@@ -402,11 +432,11 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                 </div>
 
                 {/* Campo de Busca Rápida */}
-                <div className="relative w-full sm:w-64">
+                <div className="relative w-full sm:w-60">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     type="text"
-                    placeholder="Filtrar por nome ou número..."
+                    placeholder="Filtrar por nome, número ou tag..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-white text-xs rounded-xl pl-8 pr-3 py-1.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -418,8 +448,8 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
               {isLoadingPreview ? (
                 <div className="py-12 text-center space-y-3">
                   <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
-                  <p className="text-xs font-bold text-slate-700">Buscando contatos e conversas na Z-API...</p>
-                  <p className="text-[11px] text-slate-400">Filtrando grupos e estruturando a agenda do corretor.</p>
+                  <p className="text-xs font-bold text-slate-700">Buscando contatos, etiquetas e histórico na Z-API...</p>
+                  <p className="text-[11px] text-slate-400">Filtrando grupos e estruturando as etiquetas do WhatsApp Business.</p>
                 </div>
               ) : previewError ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-3">
@@ -455,7 +485,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                     </span>
                   </div>
 
-                  {/* Tabela de Conversas com Preview */}
+                  {/* Tabela de Conversas com Preview & Badges de Etiquetas */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto divide-y divide-slate-100 bg-white">
                     {filteredChats.length === 0 ? (
                       <div className="py-8 text-center text-xs text-slate-400">
@@ -484,8 +514,8 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                                 alt={chat.name}
                                 className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200"
                               />
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
+                              <div className="min-w-0 space-y-0.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
                                   <span className="text-xs font-bold text-slate-900 truncate">
                                     {chat.name}
                                   </span>
@@ -498,6 +528,17 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                                       Chat
                                     </span>
                                   )}
+
+                                  {/* Badges de Etiquetas do WhatsApp Business */}
+                                  {chat.whatsappLabels && chat.whatsappLabels.map((tag) => (
+                                    <span 
+                                      key={tag}
+                                      className="text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/60 px-1.5 py-0.2 rounded-md flex items-center gap-0.5 shrink-0"
+                                    >
+                                      <Tag className="w-2.5 h-2.5" />
+                                      <span>{tag}</span>
+                                    </span>
+                                  ))}
                                 </div>
                                 <p className="text-[11px] text-slate-400 truncate max-w-sm">
                                   {chat.lastMessagePreview}
@@ -540,7 +581,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                   </div>
 
                   <p className="text-[11px] text-emerald-700">
-                    Baixando contexto e histórico inicial de: <strong>{batchProgress.currentName || 'Leads em fila'}</strong>
+                    Baixando contexto, etiquetas e histórico de: <strong>{batchProgress.currentName || 'Leads em fila'}</strong>
                   </p>
                 </div>
               )}
@@ -553,7 +594,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                     <div>
                       <h4 className="text-xs font-bold text-emerald-900">Importação Concluída com Sucesso!</h4>
                       <p className="text-[11px] text-emerald-700">
-                        {importedCount} leads importados com histórico inicial e cadastrados no CRM.
+                        {importedCount} leads importados com histórico e etiquetas do WhatsApp salvos no CRM.
                       </p>
                     </div>
                   </div>
@@ -669,7 +710,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
           <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Contexto inicial de 15 mensagens por lead com zero risco de bloqueio.</span>
+              <span>Etiquetas e contexto inicial de 15 mensagens por lead com zero risco de bloqueio.</span>
             </div>
 
             <div className="flex items-center gap-3">

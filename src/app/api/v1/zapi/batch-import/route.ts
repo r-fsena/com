@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
       name?: string;
       lid?: string;
       avatarUrl?: string;
+      whatsappLabels?: string[];
+      tags?: string[];
     }> = Array.isArray(body.items) ? body.items : [];
 
     const historyLimit = Number(body.historyLimit || 15);
@@ -126,6 +128,13 @@ export async function POST(req: NextRequest) {
           console.warn(`Aviso: falha ao buscar histórico de mensagens para ${cleanPhone}:`, err);
         }
 
+        const combinedTags = Array.from(new Set([
+          'Lead WhatsApp',
+          'Importação em Lote',
+          ...(item.whatsappLabels || []),
+          ...(item.tags || []),
+        ]));
+
         const newContact: Contact = {
           id: contactId,
           tenantId,
@@ -137,7 +146,8 @@ export async function POST(req: NextRequest) {
           source: 'WHATSAPP',
           temperature: 'WARM',
           aiPriorityScore: 80,
-          tags: ['Lead WhatsApp', 'Importação em Lote'],
+          tags: combinedTags,
+          whatsappLabels: item.whatsappLabels || [],
           firstSyncedAt: new Date().toISOString(),
           lastSyncedAt: new Date().toISOString(),
           targetRegions: ['Região Metropolitana'],

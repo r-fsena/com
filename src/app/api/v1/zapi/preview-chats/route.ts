@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
       'Client-Token': securityToken,
     };
 
-    // Busca chats (páginas 1 a 3 = até 300 conversas) e agenda de contatos em paralelo
-    const [chatResults, contactResults] = await Promise.all([
+    // Busca chats (páginas 1 a 3 = até 300 conversas), agenda de contatos e etiquetas do WhatsApp Business em paralelo
+    const [chatResults, contactResults, labelsRes] = await Promise.all([
       Promise.allSettled(
         [1, 2, 3].map(page =>
           fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=${page}&pageSize=100`, { headers })
@@ -45,7 +45,22 @@ export async function POST(req: NextRequest) {
             .catch(() => [])
         )
       ),
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/labels`, { headers })
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => []),
     ]);
+
+    // Mapeamento de Etiquetas do WhatsApp Business
+    const labelsMap = new Map<string, string>();
+    if (Array.isArray(labelsRes)) {
+      labelsRes.forEach((lbl: any) => {
+        if (lbl && (lbl.name || lbl.labelName)) {
+          const name = lbl.name || lbl.labelName;
+          const id = String(lbl.id || lbl.labelId || name);
+          labelsMap.set(id, name);
+        }
+      });
+    }
 
     // Consolida lista de chats
     let rawChats: any[] = [];
@@ -123,6 +138,22 @@ export async function POST(req: NextRequest) {
       const hasRealName = Boolean(rawName && !rawName.startsWith('+') && !rawName.startsWith('WhatsApp') && rawName !== 'Cliente');
       const { display } = normalizePhoneNumber(cleanPhone);
 
+      // Extrai etiquetas/tags do WhatsApp associadas à conversa
+      const rawLabels = chat.labels || chat.labelIds || chat.tags || [];
+      const resolvedLabels: string[] = [];
+      if (Array.isArray(rawLabels)) {
+        rawLabels.forEach((l: any) => {
+          if (typeof l === 'string' || typeof l === 'number') {
+            const mapped = labelsMap.get(String(l));
+            if (mapped && !resolvedLabels.includes(mapped)) resolvedLabels.push(mapped);
+            else if (typeof l === 'string' && isNaN(Number(l)) && !resolvedLabels.includes(l)) resolvedLabels.push(l);
+          } else if (l && typeof l === 'object' && (l.name || l.labelName)) {
+            const n = l.name || l.labelName;
+            if (!resolvedLabels.includes(n)) resolvedLabels.push(n);
+          }
+        });
+      }
+
       previewList.push({
         id: cleanPhone,
         phone: cleanPhone,
@@ -135,6 +166,7 @@ export async function POST(req: NextRequest) {
         lastMessageTimestamp: timestampMs > 0 ? new Date(timestampMs).toISOString() : new Date().toISOString(),
         unreadCount: Number(chat.unreadCount || 0),
         isGroup: false,
+        whatsappLabels: resolvedLabels,
       });
     }
 
@@ -145,6 +177,7 @@ export async function POST(req: NextRequest) {
       success: true,
       chats: previewList,
       totalFound: previewList.length,
+      availableLabels: Array.from(labelsMap.values()),
       historyDays,
     });
   } catch (error: any) {

@@ -221,6 +221,8 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
               lid: c.lid,
               avatarUrl: c.avatarUrl,
               whatsappLabels: c.whatsappLabels || [],
+              lastMessagePreview: c.lastMessagePreview,
+              lastMessageTimestamp: c.lastMessageTimestamp,
             })),
             historyLimit: 15,
             assignedUserId: assignedBrokerId,

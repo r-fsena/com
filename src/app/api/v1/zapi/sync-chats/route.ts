@@ -3,6 +3,7 @@ import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { validateApiSession } from '@/lib/api-auth';
 import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,8 +130,8 @@ async function handleSyncChats(req: NextRequest) {
       if (!clean) return;
 
       const existing = chatsByPhone.get(clean);
-      const currentTime = Number(c.lastMessageTime || 0);
-      const existingTime = existing ? Number(existing.lastMessageTime || 0) : 0;
+      const currentTime = parseWhatsAppTimestamp(c.lastMessageTime);
+      const existingTime = existing ? parseWhatsAppTimestamp(existing.lastMessageTime) : 0;
 
       if (!existing || currentTime > existingTime) {
         chatsByPhone.set(clean, c);
@@ -140,15 +141,15 @@ async function handleSyncChats(req: NextRequest) {
     // 2. Ordena conversas válidas estritamente pela data da mensagem mais recente (Top 1 = agora/hoje)
     let validChats = Array.from(chatsByPhone.values())
       .sort((a: any, b: any) => {
-        const timeA = Number(a.lastMessageTime || 0);
-        const timeB = Number(b.lastMessageTime || 0);
+        const timeA = parseWhatsAppTimestamp(a.lastMessageTime);
+        const timeB = parseWhatsAppTimestamp(b.lastMessageTime);
         return timeB - timeA;
       });
 
     // Aplica filtro por data de corte se selecionado
     if (cutoffMs > 0) {
       validChats = validChats.filter((c: any) => {
-        const msgTime = Number(c.lastMessageTime || 0);
+        const msgTime = parseWhatsAppTimestamp(c.lastMessageTime);
         return msgTime === 0 || msgTime >= cutoffMs;
       });
     }
@@ -184,8 +185,9 @@ async function handleSyncChats(req: NextRequest) {
       const avatar = picturesMap.get(c.phone) 
         || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=059669&color=fff`;
 
-      const lastInteraction = c.lastMessageTime 
-        ? new Date(Number(c.lastMessageTime)).toISOString() 
+      const msgMs = parseWhatsAppTimestamp(c.lastMessageTime);
+      const lastInteraction = msgMs > 0 
+        ? new Date(msgMs).toISOString() 
         : new Date().toISOString();
 
       // Extração de Etiquetas do WhatsApp Business
@@ -222,20 +224,21 @@ async function handleSyncChats(req: NextRequest) {
         targetRegions: ['Região Metropolitana'],
         notesCount: 0,
         consentGiven: true,
-        consentDate: new Date().toISOString(),
+        consentDate: lastInteraction,
         hasOptedOut: false,
         lastClientInteractionAt: lastInteraction,
-        lastTeamInteractionAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        lastTeamInteractionAt: lastInteraction,
+        createdAt: lastInteraction,
+        updatedAt: lastInteraction,
       };
     });
 
     const conversations = validChats.map((c: any) => {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const unread = Number(c.unread || c.messagesUnread || 0);
-      const lastMsgDate = c.lastMessageTime 
-        ? new Date(Number(c.lastMessageTime)).toISOString() 
+      const msgMs = parseWhatsAppTimestamp(c.lastMessageTime);
+      const lastMsgDate = msgMs > 0 
+        ? new Date(msgMs).toISOString() 
         : new Date().toISOString();
 
       const lastMessageText = typeof c.lastMessage === 'string' && c.lastMessage.trim()

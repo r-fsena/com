@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
 import { normalizePhoneNumber } from '@/lib/vcf-parser';
 import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 import { serverCRMStore } from '@/lib/server-crm-store';
 
@@ -25,6 +26,8 @@ export async function POST(req: NextRequest) {
       avatarUrl?: string;
       whatsappLabels?: string[];
       tags?: string[];
+      lastMessagePreview?: string;
+      lastMessageTimestamp?: string;
     }> = Array.isArray(body.items) ? body.items : [];
 
     const historyLimit = Number(body.historyLimit || 15);
@@ -63,8 +66,8 @@ export async function POST(req: NextRequest) {
 
         // Busca mensagens históricas leves do contato (últimas 10-15 mensagens)
         let itemMessages: Message[] = [];
-        let lastPreview = 'Conversa importada';
-        let lastMsgAt = new Date().toISOString();
+        let lastPreview = item.lastMessagePreview || 'Conversa importada';
+        let lastMsgAt = item.lastMessageTimestamp || new Date().toISOString();
 
         try {
           const res = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats-messages?phone=${cleanPhone}`, { headers });
@@ -89,10 +92,10 @@ export async function POST(req: NextRequest) {
                   contentText = contentText || '📄 Documento';
                 }
 
-                let msgTimestamp = new Date().toISOString();
+                let msgTimestamp = lastMsgAt;
                 if (m.timestamp) {
-                  const ms = typeof m.timestamp === 'number' ? (m.timestamp < 1e12 ? m.timestamp * 1000 : m.timestamp) : new Date(m.timestamp).getTime();
-                  if (!isNaN(ms) && ms > 0) msgTimestamp = new Date(ms).toISOString();
+                  const ms = parseWhatsAppTimestamp(m.timestamp);
+                  if (ms > 0) msgTimestamp = new Date(ms).toISOString();
                 }
 
                 const msgId = m.id || m.messageId || m.zaapId || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -155,10 +158,11 @@ export async function POST(req: NextRequest) {
           targetRegions: ['Região Metropolitana'],
           notesCount: 0,
           consentGiven: true,
-          consentDate: new Date().toISOString(),
+          consentDate: lastMsgAt,
           hasOptedOut: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          lastClientInteractionAt: lastMsgAt,
+          createdAt: lastMsgAt,
+          updatedAt: lastMsgAt,
         };
 
         const newConv: Conversation = {

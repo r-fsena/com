@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
 import { normalizePhoneNumber } from '@/lib/vcf-parser';
 import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,13 +121,8 @@ export async function POST(req: NextRequest) {
       seenPhones.add(cleanPhone);
 
       // Checa data da última mensagem em relação ao período filtrado
-      let lastMsgTime = chat.lastMessageTime || chat.updatedAt || chat.timestamp;
-      let timestampMs = 0;
-      if (typeof lastMsgTime === 'number') {
-        timestampMs = lastMsgTime < 1e12 ? lastMsgTime * 1000 : lastMsgTime;
-      } else if (typeof lastMsgTime === 'string') {
-        timestampMs = new Date(lastMsgTime).getTime();
-      }
+      const lastMsgTime = chat.lastMessageTime || chat.updatedAt || chat.timestamp;
+      const timestampMs = parseWhatsAppTimestamp(lastMsgTime);
 
       if (cutoffMs > 0 && timestampMs > 0 && timestampMs < cutoffMs) {
         continue; // Ignora conversas inativas anteriores ao período

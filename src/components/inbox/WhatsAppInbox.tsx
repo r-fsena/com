@@ -61,7 +61,7 @@ import {
   Radio,
   UserPlus
 } from 'lucide-react';
-import { safeFormatDate } from '@/lib/date-utils';
+import { safeFormatDate, formatWhatsAppDate } from '@/lib/date-utils';
 import { PropertyType, PresentedProperty } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
@@ -979,8 +979,8 @@ export function WhatsAppInbox() {
                       <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#3742AC]' : 'text-slate-900'}`}>
                         {contact?.name || 'Lead WhatsApp'}
                       </h3>
-                      <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1 font-mono">
-                        {safeFormatDate(conv.lastMessageAt, 'HH:mm')}
+                      <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1 font-sans">
+                        {formatWhatsAppDate(conv.lastMessageAt)}
                       </span>
                     </div>
 

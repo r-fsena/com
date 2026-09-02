@@ -104,6 +104,7 @@ interface CRMContextType {
   createInstance: (data: Partial<WhatsAppInstance>) => WhatsAppInstance;
   updateInstance: (instanceId: string, updates: Partial<WhatsAppInstance>) => void;
   deleteInstance: (instanceId: string) => void;
+  refreshLiveZapiStatus: () => Promise<boolean>;
   transferConversationInstance: (conversationId: string, targetInstanceId: string, sendTransitionMessage?: boolean) => void;
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -803,9 +804,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               .map((i: WhatsAppInstance) => {
                 if (i.zapiInstanceId === '3F1B67FC8139425171C79ED390C0144C' || !i.zapiInstanceId || i.zapiInstanceId.startsWith('INST-')) {
                   return { ...i, zapiInstanceId: '3F8144490C66805B4E3FD64A35E2F2DC' };
-                }
-                if (i.phoneNumber?.includes('8877') || i.phoneNumber?.includes('98800-0000')) {
-                  return { ...i, status: 'DISCONNECTED' as const, phoneNumber: '' };
                 }
                 return i;
               });
@@ -2392,40 +2390,44 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return { count: newContacts.length };
   };
 
-  // Checa status de conexão da Z-API ao carregar apenas uma vez
+  // Consulta e atualiza o status de conexão da Z-API em tempo real
+  const refreshLiveZapiStatus = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/v1/zapi/status');
+      const data = await res.json();
+      if (data.success && data.connected) {
+        setInstances(prev => {
+          const updated = prev.map(i => ({
+            ...i,
+            status: 'CONNECTED' as const,
+            phoneNumber: data.phone || i.phoneNumber,
+            lastSyncAt: new Date().toISOString()
+          }));
+          try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  // Checa status de conexão da Z-API ao carregar e periodicamente
   useEffect(() => {
     let isMounted = true;
-    const checkLiveZapiStatus = async () => {
-      try {
-        const res = await fetch('/api/v1/zapi/status');
-        const data = await res.json();
-        if (isMounted && data.success && data.connected) {
-          setInstances(prev => {
-            let changed = false;
-            const updated = prev.map(i => {
-              if (i.status !== 'CONNECTED' || (data.phone && i.phoneNumber !== data.phone)) {
-                changed = true;
-                return {
-                  ...i,
-                  status: 'CONNECTED' as const,
-                  phoneNumber: data.phone || i.phoneNumber,
-                  lastSyncAt: new Date().toISOString()
-                };
-              }
-              return i;
-            });
-            if (changed) {
-              try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
-              return updated;
-            }
-            return prev;
-          });
-        }
-      } catch {}
+    const checkStatus = async () => {
+      if (!isMounted) return;
+      await refreshLiveZapiStatus();
     };
 
-    checkLiveZapiStatus();
-    return () => { isMounted = false; };
+    checkStatus();
+    const interval = setInterval(checkStatus, 25000);
+    return () => { 
+      isMounted = false; 
+      clearInterval(interval);
+    };
   }, []);
 
   // Polling contínuo de novos eventos e mensagens do Webhook Z-API em tempo real (a cada 2.5s)
@@ -3153,6 +3155,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       createInstance,
       updateInstance,
       deleteInstance,
+      refreshLiveZapiStatus,
       transferConversationInstance,
       conversations: scopedConversations,
       activeConversationId: effectiveActiveConversationId,

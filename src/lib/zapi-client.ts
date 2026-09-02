@@ -156,7 +156,7 @@ export class ZApiClient {
   /**
    * Obtém QR Code para reconexão da instância
    */
-  async getQRCode(): Promise<ZApiResponse<{ value?: string; image?: string }>> {
+  async getQRCode(): Promise<ZApiResponse<{ value?: string; image?: string; connected?: boolean; smartphoneConnected?: boolean }>> {
     return this.request('qr-code/image');
   }
 

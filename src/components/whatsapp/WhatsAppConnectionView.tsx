@@ -19,23 +19,36 @@ import {
   Clock,
   Sparkles,
   Link2,
-  Radio
+  Radio,
+  LogOut,
+  BatteryCharging
 } from 'lucide-react';
 
 export function WhatsAppConnectionView() {
   const { 
     currentTenant, 
     instances, 
+    updateInstance,
+    refreshLiveZapiStatus,
     syncZapiInstance, 
     resetCRMDatabase,
     isSyncingWhatsApp 
   } = useCRM();
 
   const [instanceIdInput, setInstanceIdInput] = useState('');
-  const [tokenInput, setTokenInput] = useState('');
-  const [clientTokenInput, setClientTokenInput] = useState('');
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
+
+  // Estados detalhados de status ao vivo
+  const [liveDetails, setLiveDetails] = useState<{
+    connected: boolean;
+    phone: string;
+    name: string;
+    avatarUrl?: string | null;
+    deviceModel?: string;
+    battery?: number;
+    isBusiness?: boolean;
+  } | null>(null);
 
   // Estados do QR Code ao vivo
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
@@ -43,7 +56,7 @@ export function WhatsAppConnectionView() {
   const [isQrConnected, setIsQrConnected] = useState(false);
 
   // Teste de Envio
-  const [testPhone, setTestPhone] = useState('554891079478');
+  const [testPhone, setTestPhone] = useState('554888774408');
   const [testMessage, setTestMessage] = useState('Olá! Teste de conexão do Vanguard CRM via Z-API.');
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -52,46 +65,72 @@ export function WhatsAppConnectionView() {
   const [isAutoConfiguring, setIsAutoConfiguring] = useState(false);
   const [autoConfigSuccess, setAutoConfigSuccess] = useState(false);
 
+  // Desconexão
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [showConfirmDisconnect, setShowConfirmDisconnect] = useState(false);
+
   // Reset de Base
   const [isResetting, setIsResetting] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
 
   const activeInstance = instances[0];
-  const isConnected = activeInstance?.status === 'CONNECTED';
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
-  useEffect(() => {
-    if (activeInstance) {
-      setInstanceIdInput(activeInstance.zapiInstanceId || activeInstance.id || '');
-    }
-  }, [activeInstance]);
-
-  // Carrega QR Code em tempo real
-  const handleFetchQrCode = async () => {
+  // Consulta e sincronização de status em tempo real
+  const handleRefreshAllStatus = async () => {
     setIsLoadingQr(true);
     try {
-      const res = await fetch('/api/v1/zapi/qr-code');
+      const res = await fetch('/api/v1/zapi/status');
       const data = await res.json();
       if (data.success) {
-        if (data.connected) {
+        const isConn = Boolean(data.connected);
+        setLiveDetails({
+          connected: isConn,
+          phone: data.phone || '+55 (48) 8877-4408',
+          name: data.name || 'Rafael Sena',
+          avatarUrl: data.avatarUrl || null,
+          deviceModel: data.deviceModel || 'iPhone',
+          battery: data.battery || 100,
+          isBusiness: Boolean(data.isBusiness),
+        });
+
+        if (isConn) {
           setIsQrConnected(true);
           setQrCodeData(null);
-        } else if (data.qrCode) {
-          setQrCodeData(data.qrCode);
+          updateInstance(activeInstance?.id || 'inst-amabile-central', {
+            status: 'CONNECTED',
+            phoneNumber: data.phone || '+55 (48) 8877-4408',
+            name: data.name || activeInstance?.name || 'Linha Principal',
+            lastSyncAt: new Date().toISOString(),
+          });
+        } else {
           setIsQrConnected(false);
+          const qrRes = await fetch('/api/v1/zapi/qr-code');
+          const qrData = await qrRes.json();
+          if (qrData.success && qrData.qrCode) {
+            setQrCodeData(qrData.qrCode);
+          }
         }
       }
     } catch {
-      console.warn('Falha ao carregar QR Code');
+      console.warn('Falha ao checar status da Z-API');
     } finally {
       setIsLoadingQr(false);
     }
   };
 
   useEffect(() => {
-    handleFetchQrCode();
-  }, []);
+    if (activeInstance) {
+      setInstanceIdInput(activeInstance.zapiInstanceId || activeInstance.id || '');
+    }
+    handleRefreshAllStatus();
+  }, [activeInstance]);
+
+  const isConnected = Boolean(liveDetails?.connected || isQrConnected || activeInstance?.status === 'CONNECTED');
+  const displayPhone = liveDetails?.phone || activeInstance?.phoneNumber || '+55 (48) 8877-4408';
+  const displayName = liveDetails?.name || activeInstance?.name || 'Rafael Sena';
+  const displayDevice = liveDetails?.deviceModel || 'Apple iPhone';
 
   // Enviar Mensagem de Teste
   const handleSendTestMessage = async (e: React.FormEvent) => {
@@ -138,17 +177,62 @@ export function WhatsAppConnectionView() {
   const handleAutoConfigureWebhooks = async () => {
     setIsAutoConfiguring(true);
     setAutoConfigSuccess(false);
+
     try {
-      const res = await fetch('/api/v1/zapi/auto-configure', { method: 'POST' });
+      const res = await fetch('/api/v1/zapi/auto-configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
+          token: process.env.NEXT_PUBLIC_ZAPI_TOKEN || '550DBC07B2F984AB74E4BCE5',
+          clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+          webhookUrl: officialWebhookUrl,
+        }),
+      });
+
       const data = await res.json();
       if (data.success) {
         setAutoConfigSuccess(true);
-        setTimeout(() => setAutoConfigSuccess(false), 4000);
+        setTimeout(() => setAutoConfigSuccess(false), 5000);
+      } else {
+        alert(`Erro na configuração: ${data.error || 'Não foi possível configurar os webhooks'}`);
       }
-    } catch {
-      console.warn('Erro ao configurar webhooks automaticamente');
+    } catch (err: any) {
+      alert(`Falha de rede: ${err.message || 'Erro ao comunicar com a Z-API'}`);
     } finally {
       setIsAutoConfiguring(false);
+    }
+  };
+
+  // Desconectar Sessão da Z-API
+  const handleDisconnectSession = async () => {
+    setIsDisconnecting(true);
+    setShowConfirmDisconnect(false);
+    try {
+      const res = await fetch('/api/v1/zapi/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
+          token: '550DBC07B2F984AB74E4BCE5',
+          clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setIsQrConnected(false);
+        setLiveDetails(null);
+        updateInstance(activeInstance?.id || 'inst-amabile-central', {
+          status: 'DISCONNECTED',
+          lastSyncAt: new Date().toISOString()
+        });
+        await handleRefreshAllStatus();
+      }
+    } catch {
+      alert('Falha ao desconectar sessão da Z-API');
+    } finally {
+      setIsDisconnecting(false);
     }
   };
 
@@ -165,13 +249,14 @@ export function WhatsAppConnectionView() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-extrabold text-slate-900">Conexão & Gateway Z-API WhatsApp</h1>
               {isConnected ? (
-                <span className="text-xs font-bold bg-white text-emerald-700 border border-emerald-200 px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                <span className="text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   <span>Instância Conectada Ao Vivo</span>
                 </span>
               ) : (
-                <span className="text-xs font-bold bg-white text-rose-700 border border-rose-200 px-3 py-0.5 rounded-full shadow-2xs">
-                  Desconectado
+                <span className="text-xs font-bold bg-white text-rose-700 border border-rose-200 px-3 py-0.5 rounded-full shadow-2xs flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <span>Desconectado</span>
                 </span>
               )}
             </div>
@@ -183,7 +268,7 @@ export function WhatsAppConnectionView() {
 
         <button
           type="button"
-          onClick={handleFetchQrCode}
+          onClick={handleRefreshAllStatus}
           disabled={isLoadingQr}
           className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold px-5 py-2.5 rounded-full transition shadow-md shadow-indigo-950/10 flex items-center gap-2 cursor-pointer disabled:opacity-50"
         >
@@ -195,14 +280,14 @@ export function WhatsAppConnectionView() {
       {/* Conteúdo com Grid Responsivo */}
       <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
         
-        {/* Grid Superior: Card de Conexão + QR Code */}
+        {/* Grid Superior: Card de Conexão + QR Code / Status do Aparelho */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Card de Status da Linha Conectada */}
           <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2.5">
-                <Smartphone className="w-5 h-5 text-emerald-600" />
+                <Smartphone className={`w-5 h-5 ${isConnected ? 'text-emerald-600' : 'text-slate-400'}`} />
                 <h3 className="text-sm font-bold text-slate-900">Instância de Produção Oficial</h3>
               </div>
               <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl">
@@ -214,15 +299,17 @@ export function WhatsAppConnectionView() {
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Status da Conexão</span>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
-                  <span className="text-sm font-bold text-slate-900">{isConnected ? 'ONLINE / CONECTADO' : 'OFFLINE'}</span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                  <span className={`text-sm font-bold ${isConnected ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    {isConnected ? 'ONLINE / CONECTADO' : 'OFFLINE'}
+                  </span>
                 </div>
               </div>
 
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Número Pareado</span>
                 <span className="text-sm font-mono font-bold text-slate-900 mt-1 block">
-                  {activeInstance?.phoneNumber || '+55 (48) 9107-9478'}
+                  {displayPhone}
                 </span>
               </div>
 
@@ -277,27 +364,56 @@ export function WhatsAppConnectionView() {
             </div>
           </div>
 
-          {/* Card do QR Code */}
+          {/* Card do QR Code / Aparelho Conectado */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col items-center justify-center text-center space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
-              <QrCode className="w-4 h-4 text-emerald-600" />
-              <span>Pareamento por QR Code</span>
+              <QrCode className="w-4 h-4 text-[#3742AC]" />
+              <span>Status do Pareamento</span>
             </div>
 
             {isLoadingQr ? (
               <div className="py-12 space-y-2">
-                <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
-                <p className="text-xs text-slate-400">Verificando QR Code...</p>
+                <RefreshCw className="w-8 h-8 text-[#3742AC] animate-spin mx-auto" />
+                <p className="text-xs text-slate-400">Verificando conexão com WhatsApp...</p>
               </div>
-            ) : isQrConnected || isConnected ? (
-              <div className="py-8 space-y-3">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-sm">
-                  <CheckCircle2 className="w-8 h-8" />
+            ) : isConnected ? (
+              <div className="py-4 space-y-4 w-full">
+                <div className="relative mx-auto w-20 h-20">
+                  <img
+                    src={liveDetails?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=3742AC&color=fff`}
+                    alt={displayName}
+                    className="w-20 h-20 rounded-3xl object-cover shadow-md ring-4 ring-emerald-100 mx-auto"
+                  />
+                  <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-white text-xs shadow-xs font-bold" title="Conectado Ao Vivo">
+                    ✓
+                  </span>
                 </div>
-                <h4 className="text-sm font-bold text-slate-900">WhatsApp Pareado</h4>
-                <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-                  Sua instância está conectada e pronta para envio e recebimento de mensagens.
+
+                <div>
+                  <h4 className="text-base font-extrabold text-slate-900">{displayName}</h4>
+                  <p className="text-xs text-slate-500 font-mono mt-0.5">{displayPhone}</p>
+                  <div className="flex items-center justify-center gap-1.5 mt-2">
+                    <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>{displayDevice} • Sessão Ativa</span>
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                  Sua conta do WhatsApp está 100% pareada e funcional. Mensagens em tempo real, mídias e contatos estão integrados ao CRM.
                 </p>
+
+                <div className="pt-2 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmDisconnect(true)}
+                    className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Desconectar Linha</span>
+                  </button>
+                </div>
               </div>
             ) : qrCodeData ? (
               <div className="space-y-3">
@@ -326,7 +442,7 @@ export function WhatsAppConnectionView() {
           {/* Card de Teste de Disparo Imediato */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-4">
-              <Send className="w-4 h-4 text-emerald-600" />
+              <Send className="w-4 h-4 text-[#3742AC]" />
               <h3 className="text-sm font-bold text-slate-900">Disparo de Mensagem de Teste</h3>
             </div>
 
@@ -337,8 +453,8 @@ export function WhatsAppConnectionView() {
                   type="text"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder="554891079478"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="554888774408"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                 />
               </div>
 
@@ -348,7 +464,7 @@ export function WhatsAppConnectionView() {
                   rows={3}
                   value={testMessage}
                   onChange={(e) => setTestMessage(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC] resize-none"
                 />
               </div>
 
@@ -356,7 +472,7 @@ export function WhatsAppConnectionView() {
                 <button
                   type="submit"
                   disabled={isSendingTest}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <Send className={`w-3.5 h-3.5 ${isSendingTest ? 'animate-pulse' : ''}`} />
                   <span>{isSendingTest ? 'Disparando...' : 'Enviar Mensagem de Teste'}</span>
@@ -425,6 +541,40 @@ export function WhatsAppConnectionView() {
         </div>
 
       </div>
+
+      {/* Modal de Confirmação para Desconectar */}
+      {showConfirmDisconnect && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <LogOut className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">Desconectar WhatsApp?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                A sessão ativa do WhatsApp será encerrada no gateway Z-API. Para voltar a enviar e receber mensagens, será necessário ler um novo QR Code.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmDisconnect(false)}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDisconnectSession}
+                disabled={isDisconnecting}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                {isDisconnecting ? 'Desconectando...' : 'Sim, Desconectar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Confirmação para Reset */}
       {showConfirmReset && (

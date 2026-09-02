@@ -18,11 +18,13 @@ export async function GET(req: NextRequest) {
     const qrResponse = await client.getQRCode();
 
     if (qrResponse.success && qrResponse.data) {
+      const isConnected = Boolean((qrResponse.data as any).connected || (qrResponse.data as any).smartphoneConnected);
+      const code = (qrResponse.data as any).value || (qrResponse.data as any).image || null;
       return NextResponse.json({
         success: true,
         instanceId,
-        qrCode: qrResponse.data.value || qrResponse.data.image,
-        connected: false,
+        qrCode: isConnected ? null : code,
+        connected: isConnected,
       });
     }
 

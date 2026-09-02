@@ -26,6 +26,10 @@ export async function GET(req: NextRequest) {
       connected = Boolean(statusResponse.data.connected || (statusResponse.data as any).smartphoneConnected);
     }
 
+    let avatarUrl: string | null = null;
+    let deviceModel = 'Smartphone';
+    let isBusiness = false;
+
     if (connected) {
       // Busca dados detalhados do aparelho conectado
       try {
@@ -34,8 +38,23 @@ export async function GET(req: NextRequest) {
         });
         if (deviceRes.ok) {
           const deviceData = await deviceRes.json();
-          phone = deviceData.phone ? `+55 (${deviceData.phone.substring(2, 4)}) ${deviceData.phone.substring(4)}` : phone;
+          if (deviceData.phone) {
+            const raw = String(deviceData.phone).replace(/\D/g, '');
+            if (raw.startsWith('55') && raw.length >= 12) {
+              const ddd = raw.substring(2, 4);
+              const num = raw.substring(4);
+              const formattedNum = num.length === 9 
+                ? `${num.substring(0, 5)}-${num.substring(5)}` 
+                : `${num.substring(0, 4)}-${num.substring(4)}`;
+              phone = `+55 (${ddd}) ${formattedNum}`;
+            } else {
+              phone = `+${raw}`;
+            }
+          }
           name = deviceData.name || name;
+          avatarUrl = deviceData.imgUrl || null;
+          deviceModel = deviceData.originalDevice || deviceData.device?.device_model || 'Smartphone';
+          isBusiness = Boolean(deviceData.isBusiness);
         }
       } catch {}
     }
@@ -47,6 +66,9 @@ export async function GET(req: NextRequest) {
       phone,
       name,
       battery,
+      avatarUrl,
+      deviceModel,
+      isBusiness,
     });
   } catch (error: any) {
     return NextResponse.json({

@@ -1,9 +1,10 @@
+import { parseWhatsAppTimestamp } from './date-utils';
+
 /**
  * Utilitário central de filtragem para canais do WhatsApp (Channels / Newsletters),
  * grupos (@g.us), status/stories (@broadcast) e contatos inválidos.
  * Garante que apenas conversas diretas 1:1 com leads/clientes entrem no CRM e no Inbox.
  */
-
 export function isWhatsAppChannelOrGroup(target: {
   phone?: string;
   id?: string;
@@ -64,4 +65,32 @@ export function isWhatsAppChannelOrGroup(target: {
   }
 
   return false;
+}
+
+/**
+ * Valida se um chat retornado pela Z-API é uma conversa 1:1 REAL e ATIVA (com mensagens trocadas).
+ * Rejeita contatos salvos na agenda do celular que NUNCA trocaram mensagem no WhatsApp (lastMessageTime === '0' ou 0).
+ */
+export function isRealWhatsAppConversation(target: any): boolean {
+  if (!target) return false;
+
+  // Se for grupo, canal ou newsletter, rejeita
+  if (isWhatsAppChannelOrGroup(target)) return false;
+
+  // Rejeita telefones vazios ou do sistema
+  const rawPhone = String(target.phone || target.id || target.chatId || '').replace(/\D/g, '');
+  if (!rawPhone || rawPhone === '0' || rawPhone.length < 8) return false;
+
+  // Checa timestamp da última mensagem
+  const lastTime = target.lastMessageTime ?? target.timestamp ?? target.updatedAt;
+  if (lastTime === '0' || lastTime === 0 || !lastTime) {
+    return false; // Contato apenas salvo na agenda do celular, sem nenhuma mensagem no WhatsApp
+  }
+
+  const ms = parseWhatsAppTimestamp(lastTime);
+  if (!ms || ms <= 0) {
+    return false;
+  }
+
+  return true;
 }

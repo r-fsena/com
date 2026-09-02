@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -255,7 +255,7 @@ export function WhatsAppInbox() {
       const found = conversations.find(c => c.id === activeConversationId);
       if (found) return found;
     }
-    const valid = conversations.find(c => !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
+    const valid = conversations.find(c => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
     return valid || conversations[0] || null;
   }, [conversations, activeConversationId]);
   
@@ -656,11 +656,12 @@ export function WhatsAppInbox() {
 
     const contact = contacts.find(cnt => cnt.id === c.contactId);
 
-    // Filtra canais do WhatsApp (newsletters), grupos, transmissões e números de sistema
-    if (isWhatsAppChannelOrGroup({
+    // Filtra canais do WhatsApp (newsletters), grupos, transmissões e contatos da agenda sem nenhuma conversa
+    if (!isRealWhatsAppConversation({
       id: c.id,
       phone: contact?.phone || c.contactId,
       name: contact?.name,
+      lastMessageTime: c.lastMessageAt,
       isGroup: (c as any).isGroup,
       isNewsletter: (c as any).isNewsletter,
       isChannel: (c as any).isChannel,

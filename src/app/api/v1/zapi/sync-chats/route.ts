@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { validateApiSession } from '@/lib/api-auth';
-import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
@@ -125,7 +125,7 @@ async function handleSyncChats(req: NextRequest) {
     // Deduplica chats por telefone (mantendo a ocorrência com lastMessageTime mais recente)
     const chatsByPhone = new Map<string, any>();
     rawChats.forEach((c: any) => {
-      if (!c || isWhatsAppChannelOrGroup(c)) return;
+      if (!c || !isRealWhatsAppConversation(c)) return;
       const clean = (c.phone || '').replace(/\D/g, '');
       if (!clean) return;
 

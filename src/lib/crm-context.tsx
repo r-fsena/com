@@ -50,7 +50,7 @@ import {
   MOCK_MASTER_USERS,
   MOCK_SAAS_API_CONFIG
 } from './mock-data';
-import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
 
 interface CRMContextType {
   // Autenticação & Sessão Cognito
@@ -755,7 +755,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && !isWhatsAppChannelOrGroup(c));
+            parsed = parsed.filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }));
             return deduplicateContactList(parsed);
           }
         }
@@ -892,7 +892,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
+            parsed = parsed.filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
             return parsed;
           }
         }
@@ -2124,10 +2124,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       if (data.success) {
         if (Array.isArray(data.contacts) && data.contacts.length > 0) {
-          const validIncoming = data.contacts.filter((c: Contact) => !isWhatsAppChannelOrGroup(c));
+          const validIncoming = data.contacts.filter((c: Contact) => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
           // Merge e higienização completa de contatos com resolução de LID para telefone real
           setContacts(prev => {
-            const cleanPrev = prev.filter(c => !isWhatsAppChannelOrGroup(c));
+            const cleanPrev = prev.filter(c => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
             const combined = [...cleanPrev, ...validIncoming];
             const deduplicated = deduplicateContactList(combined);
             try {
@@ -2140,9 +2140,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // 2. Merge de Conversas
         let finalConversations: Conversation[] = [];
         if (Array.isArray(data.conversations)) {
-          const validConvs = data.conversations.filter((c: Conversation) => !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
+          const validConvs = data.conversations.filter((c: Conversation) => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
           setConversations(prev => {
-            const cleanPrev = prev.filter(c => !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
+            const cleanPrev = prev.filter(c => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
             const map = new Map(cleanPrev.map(c => [c.id, c]));
             validConvs.forEach((c: Conversation) => {
               const old = map.get(c.id) || cleanPrev.find(x => x.contactId === c.contactId);

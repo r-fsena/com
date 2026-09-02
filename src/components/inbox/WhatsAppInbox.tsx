@@ -840,201 +840,96 @@ export function WhatsAppInbox() {
       {/* ---------------------------------------------------- */}
       {/* COLUNA 1: Lista de Conversas & Filtros              */}
       {/* ---------------------------------------------------- */}
-      <div className={`w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 min-w-0 ${
+      {/* ---------------------------------------------------- */}
+      {/* COLUNA 1: Lista de Conversas & Filtros Simplificados */}
+      {/* ---------------------------------------------------- */}
+      <div className={`w-full md:w-80 lg:w-96 bg-white border-r border-slate-200/80 flex flex-col flex-shrink-0 min-w-0 ${
         activeConversation ? 'hidden md:flex' : 'flex'
       }`}>
         {/* Header & Filtros Rápidos */}
-        <div className="p-3.5 border-b border-slate-100 space-y-2.5">
+        <div className="p-4 border-b border-slate-100 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold text-slate-800">
-                Inbox WhatsApp
-              </h1>
+              <h2 className="text-sm font-extrabold text-slate-900">
+                Conversas
+              </h2>
               {instances[0]?.status === 'CONNECTED' ? (
-                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span>Ao Vivo</span>
                 </span>
               ) : (
-                <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                  Desconectado
+                <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                  Offline
                 </span>
               )}
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => syncWhatsAppChats()}
-                disabled={isSyncingWhatsApp}
-                className="flex items-center gap-1.5 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                title="Sincronizar conversas do WhatsApp"
-              >
-                <RefreshCw className={`w-3 h-3 text-emerald-700 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
-                <span>{isSyncingWhatsApp ? 'Sincronizando...' : 'Sincronizar'}</span>
-              </button>
-
-              <button
-                onClick={() => setShowResetModal(true)}
-                disabled={isSyncingWhatsApp}
-                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition cursor-pointer"
-                title="Zerar base de leads de teste & Resincronizar limpo"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <button
+              onClick={() => syncWhatsAppChats()}
+              disabled={isSyncingWhatsApp}
+              className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
+              title="Sincronizar mensagens"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin text-[#3742AC]' : ''}`} />
+            </button>
           </div>
 
           {/* Search */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               placeholder="Buscar conversa ou telefone..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="w-full bg-slate-50 text-xs rounded-xl pl-8 pr-3 py-2 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full bg-slate-50 text-xs rounded-full pl-9 pr-3 py-2 border border-slate-200/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3742AC]/20 focus:border-[#3742AC] transition"
             />
           </div>
 
-          {/* Seletor de Linha WhatsApp: Todas vs Central vs Linhas Diretas */}
-          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/90 rounded-xl text-[10.5px] font-bold text-slate-600">
-            <button
-              type="button"
-              onClick={() => setInstanceFilter('ALL')}
-              className={`py-1 px-1.5 rounded-lg text-center transition cursor-pointer ${
-                instanceFilter === 'ALL'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'hover:text-slate-900'
-              }`}
-            >
-              Todas Linhas
-            </button>
-            <button
-              type="button"
-              onClick={() => setInstanceFilter('CENTRAL')}
-              className={`py-1 px-1.5 rounded-lg text-center transition flex items-center justify-center gap-1 cursor-pointer ${
-                instanceFilter === 'CENTRAL'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'hover:text-blue-700'
-              }`}
-            >
-              🏢 Central
-            </button>
-            <button
-              type="button"
-              onClick={() => setInstanceFilter('DIRECT')}
-              className={`py-1 px-1.5 rounded-lg text-center transition flex items-center justify-center gap-1 cursor-pointer ${
-                instanceFilter === 'DIRECT'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'hover:text-emerald-700'
-              }`}
-            >
-              👤 Linha Direta
-            </button>
-          </div>
-
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] font-medium text-slate-600 no-scrollbar">
+          {/* Filter Pills Simplificados */}
+          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-full border border-slate-200/60">
             <button
               onClick={() => setFilterTab('ALL')}
-              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
-                filterTab === 'ALL' ? 'bg-slate-900 text-white font-semibold' : 'bg-slate-100 hover:bg-slate-200'
+              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition cursor-pointer ${
+                filterTab === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               Todas
             </button>
             <button
               onClick={() => setFilterTab('UNASSIGNED')}
-              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
-                filterTab === 'UNASSIGNED' ? 'bg-slate-900 text-white font-semibold' : 'bg-slate-100 hover:bg-slate-200'
+              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition cursor-pointer ${
+                filterTab === 'UNASSIGNED' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              Não Atribuídas
+              Novas
             </button>
             <button
               onClick={() => setFilterTab('MINE')}
-              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
-                filterTab === 'MINE' ? 'bg-slate-900 text-white font-semibold' : 'bg-slate-100 hover:bg-slate-200'
+              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition cursor-pointer ${
+                filterTab === 'MINE' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               Minhas
             </button>
-            <button
-              onClick={() => setFilterTab('PENDING_TEAM')}
-              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
-                filterTab === 'PENDING_TEAM' ? 'bg-emerald-600 text-white font-semibold' : 'bg-slate-100 hover:bg-slate-200'
-              }`}
-            >
-              Aguardando
-            </button>
-            <button
-              onClick={() => setFilterTab('SLA_BREACHED')}
-              className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
-                filterTab === 'SLA_BREACHED' ? 'bg-rose-600 text-white font-semibold' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-              }`}
-            >
-              SLA Atrasado
-            </button>
-          </div>
-
-          {/* Tag / Etiquetas Filter Bar */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[10px] no-scrollbar">
-            <span className="text-slate-400 font-bold uppercase text-[9px] flex-shrink-0">Tags:</span>
-            <button
-              onClick={() => setSelectedTagFilter(null)}
-              className={`px-2 py-0.5 rounded-md font-semibold transition whitespace-nowrap ${
-                selectedTagFilter === null ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Todas
-            </button>
-            {availableTags.map(tag => (
-              <button
-                key={tag}
-                onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
-                className={`px-2 py-0.5 rounded-md font-semibold transition whitespace-nowrap border ${
-                  selectedTagFilter === tag
-                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
-                    : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                }`}
-              >
-                #{tag}
-              </button>
-            ))}
           </div>
         </div>
 
         {/* Lista de Chats */}
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-100/80">
           {filteredConversations.length === 0 ? (
-            <div className="p-8 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                <MessageSquare className="w-6 h-6" />
+            <div className="p-8 text-center space-y-2">
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <MessageSquare className="w-5 h-5" />
               </div>
-              <div>
-                <p className="text-xs font-bold text-slate-700">
-                  {instanceFilter === 'DIRECT' 
-                    ? 'Nenhuma conversa na Linha Direta'
-                    : instanceFilter === 'CENTRAL'
-                    ? 'Nenhuma conversa na Central'
-                    : 'Nenhuma conversa no momento'}
-                </p>
-                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                  {instanceFilter === 'DIRECT'
-                    ? 'Leads atendidos diretamente pelo WhatsApp pessoal do corretor ou migrados da Central aparecerão aqui.'
-                    : instanceFilter === 'CENTRAL'
-                    ? 'Todas as conversas que chegarem no número principal da empresa aparecerão aqui.'
-                    : 'As mensagens recebidas no WhatsApp aparecerão aqui automaticamente.'}
-                </p>
-              </div>
+              <p className="text-xs font-bold text-slate-700">Nenhuma conversa encontrada</p>
+              <p className="text-[11px] text-slate-400">As mensagens recebidas no WhatsApp aparecerão aqui.</p>
             </div>
           ) : (
             filteredConversations.map((conv) => {
               const contact = contacts.find(c => c.id === conv.contactId) || contacts.find(c => c.phone.replace(/\D/g, '') === conv.id.replace(/\D/g, ''));
               const isSelected = conv.id === activeConversation?.id;
-              const dealForContact = deals.find(d => d.contactId === contact?.id || (contact && d.contactId.includes(contact.phone.replace(/\D/g, ''))));
-              const effectiveUserId = conv.assignedUserId || contact?.assignedUserId || dealForContact?.assignedUserId;
-              const assignedUser = users.find(u => u.id === effectiveUserId);
 
               return (
                 <button
@@ -1043,8 +938,8 @@ export function WhatsAppInbox() {
                     setActiveConversationId(conv.id);
                     markConversationAsRead(conv.id);
                   }}
-                  className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group ${
-                    isSelected ? 'bg-emerald-50/70 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
+                  className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group cursor-pointer ${
+                    isSelected ? 'bg-indigo-50/50 border-l-4 border-[#3742AC]' : 'hover:bg-slate-50'
                   }`}
                 >
                   {/* Avatar */}
@@ -1052,7 +947,7 @@ export function WhatsAppInbox() {
                     <img
                       src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
                       alt={contact?.name}
-                      className="w-11 h-11 rounded-full object-cover ring-1 ring-slate-200"
+                      className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200"
                     />
                     {contact?.temperature === 'HOT' && (
                       <span className="absolute -bottom-1 -right-1 text-xs" title="Lead Quente">
@@ -1064,17 +959,10 @@ export function WhatsAppInbox() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-emerald-950' : 'text-slate-800'}`}>
-                          {contact?.name || 'Lead WhatsApp'}
-                        </h3>
-                        {conv.isPinned && (
-                          <span title="Conversa Fixada">
-                            <Pin className="w-3 h-3 text-amber-500 fill-amber-500 flex-shrink-0" />
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1">
+                      <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#3742AC]' : 'text-slate-900'}`}>
+                        {contact?.name || 'Lead WhatsApp'}
+                      </h3>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1 font-mono">
                         {safeFormatDate(conv.lastMessageAt, 'HH:mm')}
                       </span>
                     </div>
@@ -1084,58 +972,21 @@ export function WhatsAppInbox() {
                       const convMsgs = messages.filter(m => m.conversationId === conv.id && !m.isInternalNote && m.content);
                       const latest = convMsgs.length > 0 ? convMsgs[convMsgs.length - 1] : null;
                       const preview = latest?.content 
-                        || (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : (conv.lastMessagePreview && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber') ? conv.lastMessagePreview : '📱 Conversa sincronizada via WhatsApp'));
+                        || (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : (conv.lastMessagePreview && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber') ? conv.lastMessagePreview : '📱 Conversa sincronizada'));
                       return (
-                        <p className={`text-[11px] truncate mb-1.5 leading-relaxed ${conv.unreadCount > 0 ? 'font-semibold text-emerald-800' : 'text-slate-500'}`}>
+                        <p className={`text-[11px] truncate mb-1 leading-relaxed ${conv.unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
                           {preview}
                         </p>
                       );
                     })()}
 
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1 text-[10px] flex-wrap">
-                        {/* Linha de WhatsApp */}
-                        {(() => {
-                          const inst = instances.find(i => i.id === conv.instanceId) || instances[0];
-                          const isCentral = inst?.type === 'COMPANY_CENTRAL';
-                          return (
-                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5 ${
-                              isCentral ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}>
-                              {isCentral ? '🏢 Central' : '👤 Direto'}
-                            </span>
-                          );
-                        })()}
-
-                        {assignedUser ? (
-                          <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-medium truncate max-w-[90px]">
-                            {assignedUser.name.split(' ')[0]}
-                          </span>
-                        ) : (
-                          <span className="text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">
-                            ⚠️ Sem Dono
-                          </span>
-                        )}
-
-                        {contact?.aiPriorityScore && contact.aiPriorityScore >= 80 && (
-                          <span className="text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded font-bold">
-                            ★ {contact.aiPriorityScore}
-                          </span>
-                        )}
-
-                        {deals.some(d => d.contactId === contact?.id) ? (
-                          <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                            💎 Funil
-                          </span>
-                        ) : (contact?.maxPropertyValue && contact.maxPropertyValue > 0) ? (
-                          <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                            ✨ Qualificado
-                          </span>
-                        ) : null}
-                      </div>
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="text-slate-400 font-mono">
+                        {formatDisplayPhone(contact?.phone || conv.id)}
+                      </span>
 
                       {conv.unreadCount > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
+                        <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white text-[10px] font-bold flex items-center justify-center shadow-2xs">
                           {conv.unreadCount}
                         </span>
                       )}
@@ -1154,14 +1005,14 @@ export function WhatsAppInbox() {
       <div className="flex-1 flex flex-col bg-[#efeae2] relative min-w-0">
         {activeConversation && activeContact ? (
           <>
-            {/* Header do Chat */}
-            <div className="h-16 bg-white border-b border-slate-200 px-4 sm:px-5 flex items-center justify-between z-10 shadow-xs gap-2">
-              <div className="flex items-center gap-2.5 min-w-0">
+            {/* Header do Chat Sovereign (Limpo, Objetivo e Focado) */}
+            <div className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between z-10 shadow-xs gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 {/* Botão Voltar no Mobile */}
                 <button
                   type="button"
                   onClick={() => setActiveConversationId(null)}
-                  className="md:hidden p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-0.5 shrink-0"
+                  className="md:hidden p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-0.5 shrink-0"
                   title="Voltar para lista de conversas"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -1170,199 +1021,97 @@ export function WhatsAppInbox() {
                 <img
                   src={activeContact.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(activeContact.name)}
                   alt={activeContact.name}
-                  className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                  className="w-10 h-10 rounded-full object-cover ring-2 ring-indigo-100 shrink-0"
                 />
+                
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-sm font-bold text-slate-800 truncate">{activeContact.name}</h2>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                      activeContact.temperature === 'HOT' ? 'bg-rose-100 text-rose-700' :
-                      activeContact.temperature === 'WARM' ? 'bg-amber-100 text-amber-700' :
-                      'bg-slate-100 text-slate-700'
-                    }`}>
-                      {activeContact.temperature === 'HOT' ? '🔥 Quente' : activeContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
-                    </span>
-
-                    {/* Seletor de Etapa do Funil no Header com 1 Clique */}
-                    {activeDeal ? (
-                      <div className="hidden sm:flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-0.5 text-[10px] font-bold text-blue-900 shrink-0">
-                        <TrendingUp className="w-2.5 h-2.5 text-blue-600 shrink-0" />
-                        <select
-                          value={activeDeal.stageId}
-                          onChange={(e) => moveDealStage(activeDeal.id, e.target.value)}
-                          className="bg-transparent border-none text-[10px] font-bold text-blue-900 focus:outline-none cursor-pointer py-0"
-                          title="Alterar etapa do funil instantaneamente"
-                        >
-                          {currentPipeline.stages.map((st) => (
-                            <option key={st.id} value={st.id}>
-                              {st.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (currentPipeline.stages.length > 0) {
-                            createDeal({
-                              contactId: activeContact.id,
-                              pipelineId: currentPipeline.id,
-                              stageId: currentPipeline.stages[0].id,
-                              assignedUserId: currentUser.id,
-                              title: `Oportunidade • ${activeContact.name}`,
-                              expectedValue: activeContact.maxPropertyValue || 750000,
-                              manualProbability: 40,
-                            });
-                          }
-                        }}
-                        className="hidden sm:flex items-center gap-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-full px-2.5 py-0.5 text-[10px] font-bold transition cursor-pointer shrink-0"
-                        title="Criar negócio no Kanban em 1 clique"
-                      >
-                        <Plus className="w-2.5 h-2.5" />
-                        <span>+ Criar no Funil</span>
-                      </button>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900 truncate">{activeContact.name}</h2>
+                    {activeContact.temperature === 'HOT' && (
+                      <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                        🔥 Quente
+                      </span>
                     )}
                   </div>
                   <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
                 </div>
               </div>
 
-              {/* Ações do Header */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {/* Botão Rápido de Agendar Visita */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const defaultProp = activeContact.presentedProperties?.[0] || MOCK_CATALOG_PROPERTIES[0];
-                    handleScheduleVisitForProperty(defaultProp as any);
-                  }}
-                  className="hidden md:flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
-                  title="Agendar visita rápida para este lead"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Agendar Visita</span>
-                </button>
-
-                {/* Botão Perfil 360 / Drawer Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setShowLeadDrawer(!showLeadDrawer)}
-                  className={`p-2 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                    showLeadDrawer
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                  title="Abrir / Ocultar Perfil 360º e IA Insights"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden lg:inline">Perfil 360º</span>
-                </button>
-                {/* Linha Ativa no Chat & Botão de Migração */}
-                {(() => {
-                  const currentInst = instances.find(i => i.id === activeConversation.instanceId) || instances[0];
-                  const isCentral = currentInst?.type === 'COMPANY_CENTRAL';
-                  const myDirectInst = instances.find(i => i.type === 'BROKER_DIRECT' && i.assignedUserId === currentUser.id);
-
-                  return (
-                    <div className="flex items-center gap-1.5">
-                      <span className={`hidden lg:flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-xl border ${
-                        isCentral 
-                          ? 'bg-blue-50 text-blue-800 border-blue-200' 
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      }`}>
-                        <span>{isCentral ? '🏢 Empresa:' : '👤 Direto:'}</span>
-                        <strong className="font-mono">{currentInst?.phoneNumber}</strong>
-                      </span>
-
-                      {isCentral && myDirectInst && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`Deseja migrar este atendimento para o seu WhatsApp Direto (${myDirectInst.phoneNumber})? O cliente receberá uma mensagem automática de cortesia informando a transição.`)) {
-                              transferConversationInstance(activeConversation.id, myDirectInst.id, true);
-                            }
-                          }}
-                          className="px-2.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl transition shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
-                          title="Assumir este lead no seu WhatsApp Pessoal/Direto com mensagem de transição"
-                        >
-                          <span>🔀 Migrar p/ Meu WhatsApp</span>
-                        </button>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Atribuição de Corretor */}
-                <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-                  <span className="text-slate-400 text-[11px]">Responsável:</span>
-                  <select
-                    value={activeConversation.assignedUserId || activeContact?.assignedUserId || activeDeal?.assignedUserId || ''}
-                    onChange={(e) => {
-                      const newUserId = e.target.value || undefined;
-                      assignConversation(activeConversation.id, newUserId);
-                      if (activeContact) {
-                        updateContact(activeContact.id, { assignedUserId: newUserId });
-                      }
-                      if (activeDeal) {
-                        updateDeal(activeDeal.id, { assignedUserId: newUserId || currentUser.id });
+              {/* Ações do Header (Apenas as Essenciais) */}
+              <div className="flex items-center gap-2 shrink-0">
+                
+                {/* 1. Seletor de Etapa do Funil com 1 Clique */}
+                {activeDeal ? (
+                  <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200/90 rounded-full px-3 py-1 text-xs font-semibold text-slate-800">
+                    <span className="text-slate-400 text-[11px]">Etapa:</span>
+                    <select
+                      value={activeDeal.stageId}
+                      onChange={(e) => moveDealStage(activeDeal.id, e.target.value)}
+                      className="bg-transparent font-bold text-[#3742AC] focus:outline-none cursor-pointer text-xs"
+                      title="Alterar etapa do funil"
+                    >
+                      {currentPipeline.stages.map((st) => (
+                        <option key={st.id} value={st.id}>
+                          {st.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (currentPipeline.stages.length > 0) {
+                        createDeal({
+                          contactId: activeContact.id,
+                          pipelineId: currentPipeline.id,
+                          stageId: currentPipeline.stages[0].id,
+                          assignedUserId: currentUser.id,
+                          title: `Oportunidade • ${activeContact.name}`,
+                          expectedValue: activeContact.maxPropertyValue || 750000,
+                          manualProbability: 40,
+                        });
                       }
                     }}
-                    className="bg-transparent font-semibold text-slate-700 focus:outline-none cursor-pointer text-xs"
+                    className="hidden sm:flex items-center gap-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-[#3742AC] border border-slate-200/80 rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer"
                   >
-                    <option value="">(Não Atribuído)</option>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Funil</span>
+                  </button>
+                )}
 
-                {/* Atalho WhatsApp Web Oficial */}
+                {/* 2. Link WhatsApp Web Oficial */}
                 <a
                   href={`https://web.whatsapp.com/send?phone=${activeContact.phone.replace(/\D/g, '')}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-2.5 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
-                  title="Abrir esta conversa no WhatsApp Web oficial"
+                  className="p-2 text-slate-500 hover:text-emerald-700 bg-white hover:bg-emerald-50 border border-slate-200/80 rounded-full transition shadow-2xs"
+                  title="Abrir no WhatsApp Web Oficial"
                 >
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden sm:inline">WhatsApp Web</span>
-                  <ExternalLink className="w-3 h-3 text-emerald-500" />
+                  <ExternalLink className="w-4 h-4" />
                 </a>
 
-                {/* Botão Analisar com IA no Cabeçalho */}
+                {/* 3. Botão Ficha do Lead / Perfil 360 */}
                 <button
-                  onClick={handleForceAIAnalysis}
-                  disabled={isAnalyzingAI}
-                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer ring-1 ring-emerald-400/50"
-                  title="Executar análise de IA para extrair dados financeiros e qualificação imobiliária"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-                  <span>{isAnalyzingAI ? 'Analisando...' : 'Analisar com IA'}</span>
-                </button>
-
-                {/* Drawer Toggle */}
-                <button
+                  type="button"
                   onClick={() => setShowLeadDrawer(!showLeadDrawer)}
-                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition ${
-                    showLeadDrawer ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs' : 'bg-white text-slate-600 border-slate-200'
+                  className={`px-3.5 py-1.5 rounded-full border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                    showLeadDrawer
+                      ? 'bg-[#3742AC] text-white border-[#3742AC]'
+                      : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
                   }`}
-                  title="Abrir Perfil 360 do Lead"
+                  title="Abrir / Ocultar Ficha do Lead"
                 >
-                  <Building2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Perfil 360º</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Ficha do Lead</span>
                 </button>
 
-                {/* Menu 3 Pontinhos de Gerenciamento da Conversa */}
+                {/* 4. Menu de Opções */}
                 <div className="relative">
                   <button
                     onClick={() => setShowChatOptionsDropdown(!showChatOptionsDropdown)}
-                    className={`p-2 rounded-xl border text-slate-600 transition active:scale-95 ${
-                      showChatOptionsDropdown ? 'bg-slate-100 border-slate-300 text-slate-900 shadow-inner' : 'bg-white hover:bg-slate-50 border-slate-200'
-                    }`}
-                    title="Mais opções da conversa"
+                    className="p-2 rounded-full border border-slate-200/80 bg-white hover:bg-slate-50 text-slate-500 transition cursor-pointer shadow-2xs"
+                    title="Mais opções"
                   >
                     <MoreVertical className="w-4 h-4" />
                   </button>
@@ -1858,93 +1607,78 @@ export function WhatsAppInbox() {
               </div>
             )}
 
-            {/* Caixa de Digitação / Respostas Rápidas */}
-            <div className="bg-white border-t border-slate-200 p-3">
-              {/* Quick Replies Menu Dropdown */}
-              {showQuickReplies && (
-                <div className="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto space-y-1">
-                  <div className="text-[10px] font-bold uppercase text-slate-400 px-2 py-1">
-                    Modelos de Respostas Rápidas
-                  </div>
-                  {quickReplies.map(qr => (
-                    <button
-                      key={qr.id}
-                      onClick={() => handleApplyQuickReply(qr.content)}
-                      className="w-full text-left p-2 hover:bg-emerald-50 rounded-lg text-xs transition"
-                    >
-                      <span className="font-bold text-emerald-700 font-mono">{qr.shortcut}</span> - {qr.title}
-                    </button>
-                  ))}
+            {/* Quick Replies Menu Dropdown */}
+            {showQuickReplies && (
+              <div className="bg-slate-50 border-t border-slate-200 p-2.5 max-h-48 overflow-y-auto space-y-1 shadow-inner">
+                <div className="text-[10px] font-bold uppercase text-slate-400 px-2 py-1">
+                  Modelos de Respostas Rápidas
                 </div>
-              )}
-
-              {/* Botões de Ação da Barra de Digitação */}
-              <div className="flex items-center justify-between pb-2 flex-wrap gap-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Seletor de Linha de Saída */}
-                  {!isInternalNote && (
-                    <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
-                      <span className="text-[10.5px] text-slate-500 font-bold uppercase">Disparar via:</span>
-                      <select
-                        value={sendingInstanceId}
-                        onChange={(e) => setSendingInstanceId(e.target.value)}
-                        className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
-                      >
-                        {instances.map(inst => (
-                          <option key={inst.id} value={inst.id}>
-                            {inst.type === 'COMPANY_CENTRAL' ? '🏢 Central: ' : '👤 Direto: '}
-                            {inst.name} ({inst.phoneNumber})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Alternador Nota Interna */}
+                {quickReplies.map(qr => (
                   <button
-                    type="button"
-                    onClick={() => setIsInternalNote(!isInternalNote)}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                      isInternalNote
-                        ? 'bg-amber-500 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
+                    key={qr.id}
+                    onClick={() => {
+                      handleApplyQuickReply(qr.content);
+                      setShowQuickReplies(false);
+                    }}
+                    className="w-full text-left p-2 hover:bg-indigo-50 rounded-xl text-xs transition cursor-pointer flex items-center justify-between"
                   >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>{isInternalNote ? 'Modo Nota Interna' : 'WhatsApp'}</span>
+                    <span className="font-bold text-[#3742AC] font-mono">{qr.shortcut}</span>
+                    <span className="text-slate-600 truncate ml-2">{qr.title}</span>
                   </button>
+                ))}
+              </div>
+            )}
 
-                  {/* Botão Forçar Análise com IA na Toolbar */}
-                  <button
-                    type="button"
-                    onClick={handleForceAIAnalysis}
-                    disabled={isAnalyzingAI}
-                    className="px-2.5 py-1 rounded-lg text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1 border border-emerald-300 transition active:scale-95 shadow-2xs cursor-pointer"
-                    title="Forçar extração inteligente de dados com IA Copilot"
-                  >
-                    <Sparkles className={`w-3.5 h-3.5 text-emerald-600 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-                    <span>{isAnalyzingAI ? 'Analisando...' : 'Analisar com IA'}</span>
-                  </button>
+            {/* Toolbar e Input Footer */}
+            <div className="bg-white border-t border-slate-200/80 p-3 sm:p-4 space-y-2.5 shadow-sm">
+              {/* Toolbar Superior Discreta */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Alternador Modo WhatsApp vs Nota Interna */}
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-full border border-slate-200/60 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setIsInternalNote(false)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        !isInternalNote
+                          ? 'bg-[#3742AC] text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      💬 WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsInternalNote(true)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        isInternalNote
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🔒 Nota Interna
+                    </button>
+                  </div>
 
                   {/* Respostas Rápidas */}
                   <button
                     type="button"
                     onClick={() => setShowQuickReplies(!showQuickReplies)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200"
+                    className="px-3 py-1 rounded-full text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 border border-slate-200/60 transition flex items-center gap-1 cursor-pointer"
                   >
                     <Zap className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Modelos Rápidos</span>
+                    <span>Modelos</span>
                   </button>
 
-                  {/* Menu de Anexos Dropdown */}
+                  {/* Menu de Anexos */}
                   <div className="relative">
                     <button
                       type="button"
                       onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border transition cursor-pointer ${
+                      className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border transition cursor-pointer ${
                         showAttachmentMenu || attachedMedia
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                          : 'text-slate-600 hover:bg-slate-100 border-slate-200'
+                          ? 'bg-indigo-50 text-[#3742AC] border-indigo-200'
+                          : 'text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 border-slate-200/60'
                       }`}
                     >
                       <Paperclip className="w-3.5 h-3.5" />
@@ -1997,67 +1731,44 @@ export function WhatsAppInbox() {
                       </div>
                     )}
                   </div>
-
-                  {/* Ação Z-API: Localização do Plantão */}
-                  <button
-                    type="button"
-                    onClick={handleSendLocation}
-                    disabled={isActionLoading}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95 cursor-pointer"
-                    title="Enviar Localização GPS do Plantão de Vendas"
-                  >
-                    <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                    <span className="hidden sm:inline">Localização</span>
-                  </button>
-
-                  {/* Ação Z-API: Cartão do Corretor */}
-                  <button
-                    type="button"
-                    onClick={handleSendContactCard}
-                    disabled={isActionLoading}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95 cursor-pointer"
-                    title="Enviar Cartão de Visitas do Corretor"
-                  >
-                    <UserCheck className="w-3.5 h-3.5 text-indigo-500" />
-                    <span className="hidden sm:inline">Cartão vCard</span>
-                  </button>
-
-                  {/* Ação Z-API: Book de Lançamento */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeConversation) {
-                        sendMessage(
-                          activeConversation.id,
-                          '📄 *Book Oficial*: Baixe a apresentação completa com plantas e memorial: https://crm.faithhubs.com/docs/book-imovel.pdf'
-                        );
-                      }
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200 transition active:scale-95 cursor-pointer"
-                    title="Enviar Apresentação e Planta do Imóvel"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="hidden sm:inline">Book PDF</span>
-                  </button>
                 </div>
+
+                {/* Linha de Envio (se houver mais de uma) */}
+                {instances.length > 1 && (
+                  <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-500">
+                    <span>Enviando por:</span>
+                    <select
+                      value={activeConversation.instanceId || instances[0].id}
+                      onChange={(e) => transferConversationInstance(activeConversation.id, e.target.value, false)}
+                      className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
+                    >
+                      {instances.map(inst => (
+                        <option key={inst.id} value={inst.id}>
+                          {inst.type === 'COMPANY_CENTRAL' ? '🏢 Central: ' : '👤 Direto: '}
+                          {inst.name} ({inst.phoneNumber})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
-              {/* Preview do Arquivo Anexado Pronto para Envio */}
+              {/* Preview do Arquivo Anexado */}
               {attachedMedia && (
-                <div className="mb-2 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between gap-3 animate-fadeIn">
+                <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3 animate-fadeIn">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                      {attachedMedia.type === 'IMAGE' ? <ImageIcon className="w-4 h-4" /> : attachedMedia.type === 'AUDIO' ? <Music className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                    <div className="w-8 h-8 rounded-xl bg-[#3742AC] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                      {attachedMedia.type === 'IMAGE' ? <ImageIcon className="w-4 h-4" /> : attachedMedia.type === 'AUDIO' ? <Music className="w-4 h-4" /> : <FileText className="w-4 h-4 text-rose-300" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-bold text-xs text-emerald-950 truncate">{attachedMedia.fileName}</p>
-                      <p className="text-[10px] text-emerald-700">{(attachedMedia.fileSize / 1024).toFixed(1)} KB • Pronto para disparo</p>
+                      <p className="font-bold text-xs text-indigo-950 truncate">{attachedMedia.fileName}</p>
+                      <p className="text-[10px] text-indigo-700">{(attachedMedia.fileSize / 1024).toFixed(1)} KB • Anexo pronto</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setAttachedMedia(null)}
-                    className="p-1 rounded-lg hover:bg-emerald-200 text-emerald-800 transition cursor-pointer"
+                    className="p-1.5 rounded-full hover:bg-indigo-200/80 text-indigo-800 transition cursor-pointer"
                     title="Remover anexo"
                   >
                     <X className="w-4 h-4" />
@@ -2065,33 +1776,25 @@ export function WhatsAppInbox() {
                 </div>
               )}
 
-              {/* Input Form */}
-              <form onSubmit={handleSend} className="flex items-end gap-2">
-                <textarea
-                  rows={2}
+              {/* Form de Envio */}
+              <form onSubmit={handleSend} className="flex items-center gap-2">
+                <input
+                  type="text"
                   placeholder={
                     isInternalNote
-                      ? 'Escreva uma nota interna sobre este lead (somente a equipe verá)...'
-                      : attachedMedia
-                        ? 'Adicione uma legenda ou mensagem para acompanhar o anexo... (Enter para enviar)'
-                        : 'Digite sua mensagem para o WhatsApp... (Enter para enviar)'
+                      ? 'Escreva uma nota interna (visível somente para a equipe)...'
+                      : 'Digite sua mensagem... (Pressione Enter para enviar)'
                   }
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend(e);
-                    }
-                  }}
-                  className={`flex-1 text-xs rounded-xl p-3 border focus:outline-none resize-none transition ${
+                  className={`flex-1 text-xs rounded-full px-4 py-2.5 border focus:outline-none transition ${
                     isInternalNote
-                      ? 'bg-amber-50/70 border-amber-300 focus:ring-1 focus:ring-amber-500 text-amber-950 placeholder-amber-700/60'
-                      : 'bg-slate-50 border-slate-200 focus:ring-1 focus:ring-emerald-500 text-slate-900'
+                      ? 'bg-amber-50/70 border-amber-300 focus:ring-2 focus:ring-amber-500/20 text-amber-950 placeholder-amber-700/60'
+                      : 'bg-slate-50 border-slate-200/90 focus:bg-white focus:ring-2 focus:ring-[#3742AC]/20 focus:border-[#3742AC] text-slate-900'
                   }`}
                 />
 
-                {/* Botão de Gravar Áudio / Microfone */}
+                {/* Botão Gravar Áudio */}
                 <button
                   type="button"
                   onClick={() => {
@@ -2118,24 +1821,26 @@ export function WhatsAppInbox() {
                       }
                     }
                   }}
-                  className={`p-3 rounded-xl transition shadow-xs active:scale-95 cursor-pointer ${
+                  className={`p-2.5 rounded-full transition shadow-xs active:scale-95 cursor-pointer ${
                     isRecordingVoice
                       ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse'
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                   }`}
-                  title={isRecordingVoice ? 'Parar e Enviar Áudio' : 'Gravar Mensagem de Voz'}
+                  title={isRecordingVoice ? 'Parar e Enviar Áudio' : 'Gravar Áudio'}
                 >
                   <Mic className="w-4 h-4" />
                 </button>
 
+                {/* Botão Enviar */}
                 <button
                   type="submit"
                   disabled={!messageInput.trim() && !attachedMedia}
-                  className={`p-3 rounded-xl transition shadow-md active:scale-95 disabled:opacity-40 cursor-pointer ${
+                  className={`p-2.5 rounded-full transition shadow-md shadow-indigo-950/10 active:scale-95 disabled:opacity-40 cursor-pointer ${
                     isInternalNote
                       ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-[#3742AC] hover:bg-[#2D368E] text-white'
                   }`}
+                  title="Enviar mensagem"
                 >
                   <Send className="w-4 h-4" />
                 </button>

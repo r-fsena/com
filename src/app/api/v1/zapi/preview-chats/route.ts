@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
 import { normalizePhoneNumber } from '@/lib/vcf-parser';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,10 +94,8 @@ export async function POST(req: NextRequest) {
     for (const chat of rawChats) {
       if (!chat) continue;
 
-      const chatIdStr = String(chat.phone || chat.id || '');
-      // Ignora grupos do WhatsApp
-      const isGroup = Boolean(chat.isGroup || chatIdStr.includes('@g.us') || chat.groupMetadata);
-      if (isGroup) continue;
+      // Ignora grupos e canais do WhatsApp (newsletters, comunidades, canais de transmissão)
+      if (isWhatsAppChannelOrGroup(chat)) continue;
 
       let cleanPhone = (chat.phone || chat.id || '').replace(/@.*$/, '').replace(/\D/g, '');
       let lid = chat.lid ? String(chat.lid).replace(/@.*$/, '').replace(/\D/g, '') : undefined;

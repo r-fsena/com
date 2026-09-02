@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -647,6 +648,19 @@ export function WhatsAppInbox() {
     }
 
     const contact = contacts.find(cnt => cnt.id === c.contactId);
+
+    // Filtra canais do WhatsApp (newsletters), grupos, transmissões e números de sistema
+    if (isWhatsAppChannelOrGroup({
+      id: c.id,
+      phone: contact?.phone || c.contactId,
+      name: contact?.name,
+      isGroup: (c as any).isGroup,
+      isNewsletter: (c as any).isNewsletter,
+      isChannel: (c as any).isChannel,
+    })) {
+      return false;
+    }
+
     const matchesSearch = !searchFilter.trim() || 
       (contact?.name.toLowerCase().includes(searchFilter.toLowerCase())) ||
       (contact?.phone.includes(searchFilter)) ||

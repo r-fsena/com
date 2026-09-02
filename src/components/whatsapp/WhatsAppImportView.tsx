@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useCRM } from '@/lib/crm-context';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 import { 
   Smartphone,
   FileSpreadsheet,
@@ -134,6 +135,7 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
   // Filtra chats pela busca, etiqueta e opção de "Apenas com nome"
   const filteredChats = useMemo(() => {
     return previewChats.filter(chat => {
+      if (isWhatsAppChannelOrGroup(chat)) return false;
       if (onlyWithName && !chat.hasRealName) return false;
       if (selectedLabelFilter !== 'ALL') {
         if (!chat.whatsappLabels || !chat.whatsappLabels.includes(selectedLabelFilter)) return false;

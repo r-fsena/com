@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 
 export async function processZapiWebhookRequest(
   request: NextRequest,
@@ -62,6 +63,16 @@ export async function processZapiWebhookRequest(
       } else {
         cleanPhone = lid;
       }
+    }
+
+    // 1.1 Ignora canais, newsletters, grupos e transmissões do WhatsApp
+    if (isWhatsAppChannelOrGroup(body) || isWhatsAppChannelOrGroup({ phone: cleanPhone, id: body.chatId || body.messageId })) {
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+        reason: 'Mensagem de canal/newsletter/grupo ignorada do CRM',
+        status: 'SUCCESS',
+      });
     }
 
     const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);

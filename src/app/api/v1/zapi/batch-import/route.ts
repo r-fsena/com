@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
 import { normalizePhoneNumber } from '@/lib/vcf-parser';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 import { serverCRMStore } from '@/lib/server-crm-store';
 
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
     // Processa os itens do lote em paralelo
     const results = await Promise.allSettled(
       items.map(async (item) => {
+        if (!item || isWhatsAppChannelOrGroup(item)) return null;
         const cleanPhone = (item.phone || '').replace(/\D/g, '');
         if (!cleanPhone || cleanPhone.length < 8) return null;
 

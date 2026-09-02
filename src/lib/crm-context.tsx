@@ -50,6 +50,7 @@ import {
   MOCK_MASTER_USERS,
   MOCK_SAAS_API_CONFIG
 } from './mock-data';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 
 interface CRMContextType {
   // Autenticação & Sessão Cognito
@@ -754,7 +755,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01');
+            parsed = parsed.filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && !isWhatsAppChannelOrGroup(c));
             return deduplicateContactList(parsed);
           }
         }
@@ -891,7 +892,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01');
+            parsed = parsed.filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
             return parsed;
           }
         }
@@ -2123,9 +2124,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       if (data.success) {
         if (Array.isArray(data.contacts) && data.contacts.length > 0) {
+          const validIncoming = data.contacts.filter((c: Contact) => !isWhatsAppChannelOrGroup(c));
           // Merge e higienização completa de contatos com resolução de LID para telefone real
           setContacts(prev => {
-            const combined = [...prev, ...data.contacts];
+            const cleanPrev = prev.filter(c => !isWhatsAppChannelOrGroup(c));
+            const combined = [...cleanPrev, ...validIncoming];
             const deduplicated = deduplicateContactList(combined);
             try {
               localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduplicated));
@@ -2137,10 +2140,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // 2. Merge de Conversas
         let finalConversations: Conversation[] = [];
         if (Array.isArray(data.conversations)) {
+          const validConvs = data.conversations.filter((c: Conversation) => !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
           setConversations(prev => {
-            const map = new Map(prev.map(c => [c.id, c]));
-            data.conversations.forEach((c: Conversation) => {
-              const old = map.get(c.id) || prev.find(x => x.contactId === c.contactId);
+            const cleanPrev = prev.filter(c => !isWhatsAppChannelOrGroup({ id: c.id, phone: c.contactId }));
+            const map = new Map(cleanPrev.map(c => [c.id, c]));
+            validConvs.forEach((c: Conversation) => {
+              const old = map.get(c.id) || cleanPrev.find(x => x.contactId === c.contactId);
               if (old) {
                 map.set(old.id, {
                   ...c,
@@ -2441,6 +2446,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
           data.messages.forEach((incoming: any) => {
+            if (isWhatsAppChannelOrGroup(incoming)) return;
             const rawPhone = incoming.phone.replace(/\D/g, '');
             const phoneSuffix = rawPhone.length >= 8 ? rawPhone.slice(-8) : rawPhone;
             const formattedPhone = incoming.phone.startsWith('+') ? incoming.phone : `+${incoming.phone}`;

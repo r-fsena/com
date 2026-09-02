@@ -23,7 +23,9 @@ import {
   ChevronRight,
   DollarSign,
   FileText,
-  Crown
+  Crown,
+  UserPlus,
+  Radio
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -83,8 +85,8 @@ export function Sidebar({
   const criticalAlertsCount = alerts.filter(a => !a.isDismissed && a.severity === 'CRITICAL').length;
   const isZapiConnected = instances.some(i => i.status === 'CONNECTED');
 
-  // Itens de navegação com suporte dinâmico a Feature Flags
-  const navItems = [
+  // 1. Visão Geral
+  const overviewItems = [
     {
       id: 'dashboard',
       label: 'Dashboard & Vendas',
@@ -92,6 +94,10 @@ export function Sidebar({
       badge: null,
       enabled: true,
     },
+  ];
+
+  // 2. Grupo WhatsApp
+  const whatsappNavItems = [
     {
       id: 'inbox',
       label: 'Inbox WhatsApp',
@@ -100,6 +106,25 @@ export function Sidebar({
       badgeColor: 'bg-emerald-600 text-white',
       enabled: true,
     },
+    {
+      id: 'whatsapp-import',
+      label: 'Importação de Contatos',
+      icon: UserPlus,
+      badge: null,
+      enabled: true,
+    },
+    {
+      id: 'whatsapp-connection',
+      label: 'Conexão & API',
+      icon: Radio,
+      badge: isZapiConnected ? 'Ao Vivo' : 'Offline',
+      badgeColor: isZapiConnected ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800',
+      enabled: true,
+    },
+  ];
+
+  // 3. Módulos Comerciais & Gestão
+  const crmNavItems = [
     {
       id: 'kanban',
       label: 'Funil & Negócios',
@@ -167,6 +192,46 @@ export function Sidebar({
       enabled: true,
     },
   ].filter(item => item.enabled);
+
+  const renderNavButton = (item: any) => {
+    const Icon = item.icon;
+    const isActive = currentTab === item.id;
+
+    return (
+      <button
+        key={item.id}
+        onClick={() => {
+          setCurrentTab(item.id);
+          onCloseMobile?.();
+        }}
+        className={`w-full flex items-center ${
+          isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+        } py-2.5 rounded-xl text-xs font-medium transition-all duration-150 group relative cursor-pointer ${
+          isActive
+            ? 'bg-emerald-600/20 text-emerald-300 font-semibold border border-emerald-500/30 shadow-xs'
+            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+        }`}
+        title={isCollapsed ? item.label : undefined}
+      >
+        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
+          <Icon className={`w-4 h-4 transition flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+          {!isCollapsed && <span className="truncate">{item.label}</span>}
+        </div>
+
+        {/* Badge Expandido */}
+        {!isCollapsed && item.badge && (
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.badgeColor || 'bg-slate-800 text-slate-300'}`}>
+            {item.badge}
+          </span>
+        )}
+
+        {/* Dot Badge quando Recolhido */}
+        {isCollapsed && item.badge && (
+          <span className="absolute top-1.5 right-2 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-950"></span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <>
@@ -255,52 +320,33 @@ export function Sidebar({
         </div>
 
       {/* Navigation List */}
-      <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto">
-        {!isCollapsed && (
-          <div className="px-2.5 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            Módulos Comerciais
-          </div>
-        )}
+      <nav className="flex-1 px-2.5 py-3 space-y-4 overflow-y-auto">
+        
+        {/* Seção 1: Visão Geral */}
+        <div className="space-y-1">
+          {overviewItems.map(renderNavButton)}
+        </div>
 
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentTab === item.id;
+        {/* Seção 2: Grupo WhatsApp */}
+        <div className="space-y-1 pt-1">
+          {!isCollapsed && (
+            <div className="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-400/90 flex items-center justify-between">
+              <span>WhatsApp</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isZapiConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+            </div>
+          )}
+          {whatsappNavItems.map(renderNavButton)}
+        </div>
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                setCurrentTab(item.id);
-                onCloseMobile?.();
-              }}
-              className={`w-full flex items-center ${
-                isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-              } py-2.5 rounded-xl text-xs font-medium transition-all duration-150 group relative cursor-pointer ${
-                isActive
-                  ? 'bg-emerald-600/20 text-emerald-300 font-semibold border border-emerald-500/30 shadow-xs'
-                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
-              }`}
-              title={isCollapsed ? item.label : undefined}
-            >
-              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <Icon className={`w-4 h-4 transition flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
-                {!isCollapsed && <span className="truncate">{item.label}</span>}
-              </div>
-
-              {/* Badge Expandido */}
-              {!isCollapsed && item.badge && (
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.badgeColor}`}>
-                  {item.badge}
-                </span>
-              )}
-
-              {/* Dot Badge quando Recolhido */}
-              {isCollapsed && item.badge && (
-                <span className="absolute top-1.5 right-2 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-950"></span>
-              )}
-            </button>
-          );
-        })}
+        {/* Seção 3: Módulos de Gestão & CRM */}
+        <div className="space-y-1 pt-1">
+          {!isCollapsed && (
+            <div className="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              Módulos Comerciais
+            </div>
+          )}
+          {crmNavItems.map(renderNavButton)}
+        </div>
       </nav>
 
       {/* Rodapé da Sidebar: Z-API Widget Mini + Usuário Logado */}

@@ -5,6 +5,8 @@ import { useCRM } from '@/lib/crm-context';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { WhatsAppInbox } from '@/components/inbox/WhatsAppInbox';
+import { WhatsAppImportView } from '@/components/whatsapp/WhatsAppImportView';
+import { WhatsAppConnectionView } from '@/components/whatsapp/WhatsAppConnectionView';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { ContactsList } from '@/components/contacts/ContactsList';
 import { TasksManager } from '@/components/tasks/TasksManager';
@@ -158,6 +160,10 @@ export default function CRMApp() {
             <main className="flex-1 flex overflow-hidden relative min-w-0">
               <ErrorBoundary>
                 {currentTab === 'inbox' && <WhatsAppInbox />}
+                {currentTab === 'whatsapp-import' && (
+                  <WhatsAppImportView onGoToInbox={() => setCurrentTab('inbox')} />
+                )}
+                {currentTab === 'whatsapp-connection' && <WhatsAppConnectionView />}
                 {currentTab === 'kanban' && (
                   <KanbanBoard
                     onOpenLeadModal={() => setIsNewLeadOpen(true)}

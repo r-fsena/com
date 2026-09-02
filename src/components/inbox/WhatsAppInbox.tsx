@@ -864,15 +864,6 @@ export function WhatsAppInbox() {
 
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-1 text-[11px] font-bold bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded-lg transition active:scale-95 shadow-2xs cursor-pointer"
-                title="Assistente de Importação com Filtros e Histórico"
-              >
-                <UserPlus className="w-3 h-3 text-emerald-400" />
-                <span>Importar</span>
-              </button>
-
-              <button
                 onClick={() => syncWhatsAppChats()}
                 disabled={isSyncingWhatsApp}
                 className="flex items-center gap-1.5 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg transition active:scale-95 disabled:opacity-50 cursor-pointer"

@@ -277,24 +277,15 @@ export function Sidebar({
               </button>
             </div>
           ) : (
-            <div>
+            <div className="space-y-3">
+              {/* Linha do Topo: Logo Brokiva em Destaque + Botão de Recolher */}
               <div className="flex items-center justify-between gap-2">
-                {/* Logo & Marca Brokiva com Tenant */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <img 
-                      src="/brand/brokiva-logo-dark.png" 
-                      alt="Brokiva — Relacionamentos que viram negócios" 
-                      className="h-8 w-auto object-contain max-w-[155px]" 
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-1.5 mt-1.5 pl-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                    <span className="text-[11px] font-bold text-slate-600 truncate" title={currentTenant.name}>
-                      {currentTenant.name}
-                    </span>
-                  </div>
+                <div className="flex-1 flex items-center min-w-0">
+                  <img 
+                    src="/brand/brokiva-logo-dark.png" 
+                    alt="Brokiva — Relacionamentos que viram negócios" 
+                    className="h-11 w-auto object-contain max-w-[180px] drop-shadow-2xs" 
+                  />
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -318,6 +309,14 @@ export function Sidebar({
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Tenant / Imobiliária Ativa com Indicador de Sessão */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border border-slate-150 rounded-xl">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span className="text-[11px] font-bold text-slate-700 truncate" title={currentTenant.name}>
+                  {currentTenant.name}
+                </span>
               </div>
             </div>
           )}

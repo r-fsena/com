@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
             .catch(() => [])
         )
       ),
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/labels`, { headers })
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/tags`, { headers })
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
     ]);

@@ -77,25 +77,27 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-tr from-slate-900 via-slate-800 to-emerald-950 p-6 text-white text-center relative">
+        <div className="bg-[#14213D] p-6 text-white text-center relative border-b border-white/10">
           <button
             onClick={onClose}
-            className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 rounded-lg"
+            className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 rounded-lg transition"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-900/50">
-            <Building2 className="w-6 h-6 text-slate-950" />
-          </div>
+          <img 
+            src="/brand/brokiva-logo-white.png" 
+            alt="Brokiva — Relacionamentos que viram negócios" 
+            className="h-9 w-auto mx-auto mb-3 object-contain"
+          />
 
-          <h2 className="text-base font-bold">
-            {mode === 'LOGIN' ? 'Autenticação de Usuário' :
+          <h2 className="text-sm font-bold text-white">
+            {mode === 'LOGIN' ? 'Acesso ao Painel Comercial' :
              mode === 'FORGOT_PASSWORD' ? 'Recuperação de Acesso' :
              'Onboarding da Imobiliária'}
           </h2>
-          <p className="text-xs text-slate-300 mt-0.5">
-            {mode === 'LOGIN' ? 'Acesse seu painel com isolamento seguro por tenant' :
+          <p className="text-[11px] text-slate-300 mt-0.5">
+            {mode === 'LOGIN' ? 'Acesse seu painel com segurança e sincronização de WhatsApp' :
              mode === 'FORGOT_PASSWORD' ? 'Enviaremos um código de verificação via SMS/E-mail' :
              'Cadastre sua imobiliária e comece a converter leads'}
           </p>

@@ -254,13 +254,17 @@ export function Sidebar({
         {/* Header com Tenant e Botão de Recolher/Expandir */}
         <div className="p-4 border-b border-slate-100">
           {isCollapsed ? (
-            <div className="flex flex-col items-center gap-2 w-full">
+            <div className="flex flex-col items-center gap-4">
               {/* Logo Centralizado no modo reduzido Brokiva */}
               <div 
-                className="w-10 h-10 rounded-2xl bg-[#3742AC] flex items-center justify-center text-white shadow-md shadow-indigo-900/20 font-extrabold text-sm"
+                className="w-10 h-10 rounded-2xl bg-white border border-slate-200/90 flex items-center justify-center p-1.5 shadow-2xs overflow-hidden"
                 title={`${currentTenant.name} • Brokiva CRM`}
               >
-                B
+                <img 
+                  src="/brand/brokiva-icon.png" 
+                  alt="Brokiva" 
+                  className="w-full h-full object-contain" 
+                />
               </div>
 
               {/* Botão de Expandir */}
@@ -275,22 +279,21 @@ export function Sidebar({
           ) : (
             <div>
               <div className="flex items-center justify-between gap-2">
-                {/* Logo & Marca da Imobiliária Ativa Brokiva */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-2xl bg-[#3742AC] flex items-center justify-center text-white shadow-md shadow-indigo-900/20 flex-shrink-0 font-extrabold text-sm tracking-tighter">
-                    B
+                {/* Logo & Marca Brokiva com Tenant */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <img 
+                      src="/brand/brokiva-logo-dark.png" 
+                      alt="Brokiva — Relacionamentos que viram negócios" 
+                      className="h-8 w-auto object-contain max-w-[155px]" 
+                    />
                   </div>
                   
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#3742AC] truncate">
-                        Brokiva
-                      </span>
-                    </div>
-                    <h2 className="text-xs font-bold text-slate-900 tracking-tight truncate" title={currentTenant.name}>
+                  <div className="flex items-center gap-1.5 mt-1.5 pl-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                    <span className="text-[11px] font-bold text-slate-600 truncate" title={currentTenant.name}>
                       {currentTenant.name}
-                    </h2>
+                    </span>
                   </div>
                 </div>
 

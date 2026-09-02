@@ -19,6 +19,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'Brokiva — Relacionamentos que viram negócios',
   description: 'CRM imobiliário especializado para organizar leads, acompanhar clientes e fechar mais negócios.',
+  icons: {
+    icon: '/brand/brokiva-icon.png',
+    shortcut: '/brand/brokiva-icon.png',
+    apple: '/brand/brokiva-icon.png',
+  },
 };
 
 export default function RootLayout({

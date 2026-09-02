@@ -56,6 +56,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
   const { 
     currentUser,
     instances,
+    contacts,
     importWhatsAppBatch,
     importFileContacts,
     currentPipeline
@@ -66,6 +67,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
   // Estados do WhatsApp Wizard
   const [historyDays, setHistoryDays] = useState<number>(30);
   const [onlyWithName, setOnlyWithName] = useState<boolean>(false);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEW_ONLY' | 'EXISTING_ONLY'>('ALL');
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>('ALL');
   const [availableLabels, setAvailableLabels] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -73,6 +75,36 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedPhoneSet, setSelectedPhoneSet] = useState<Set<string>>(new Set());
+
+  // Conjunto de telefones higienizados já cadastrados no CRM
+  const existingPhoneDigits = useMemo(() => {
+    return new Set(
+      contacts.map(c => (c.phone || '').replace(/\D/g, '')).filter(Boolean)
+    );
+  }, [contacts]);
+
+  const isChatInCRM = (phoneStr: string) => {
+    const digits = (phoneStr || '').replace(/\D/g, '');
+    if (!digits) return false;
+    for (const existing of Array.from(existingPhoneDigits)) {
+      if (existing === digits || existing.endsWith(digits) || digits.endsWith(existing)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Contadores dinâmicos de Novos Leads vs Já Importados
+  const counts = useMemo(() => {
+    const valid = previewChats.filter(c => !c.isGroup);
+    let newCount = 0;
+    let existingCount = 0;
+    valid.forEach(c => {
+      if (isChatInCRM(c.phone)) existingCount++;
+      else newCount++;
+    });
+    return { total: valid.length, newCount, existingCount };
+  }, [previewChats, existingPhoneDigits]);
   
   // Estados de Execução em Lotes (Batch Progress)
   const [isBatchImporting, setIsBatchImporting] = useState<boolean>(false);
@@ -116,8 +148,9 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
         if (Array.isArray(data.availableLabels)) {
           setAvailableLabels(data.availableLabels);
         }
-        // Pré-seleciona todos os contatos inicialmente
-        setSelectedPhoneSet(new Set(data.chats.map((c: WhatsAppChatPreview) => c.phone)));
+        // Pré-seleciona estritamente os contatos que AINDA NÃO estão no CRM (Novos Leads)
+        const newChats = data.chats.filter((c: WhatsAppChatPreview) => !isChatInCRM(c.phone));
+        setSelectedPhoneSet(new Set(newChats.map((c: WhatsAppChatPreview) => c.phone)));
       } else {
         setPreviewError(data.error || 'Nenhum chat individual encontrado no período selecionado.');
         setPreviewChats([]);
@@ -136,10 +169,14 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
     }
   }, [isOpen, activeTab, historyDays]);
 
-  // Filtra chats pela busca, etiqueta e opção de "Apenas com nome"
+  // Filtra chats pela busca, etiqueta, opção de "Apenas com nome" e status de importação
   const filteredChats = useMemo(() => {
     return previewChats.filter(chat => {
+      if (chat.isGroup) return false;
       if (onlyWithName && !chat.hasRealName) return false;
+      const isAlreadyImported = isChatInCRM(chat.phone);
+      if (statusFilter === 'NEW_ONLY' && isAlreadyImported) return false;
+      if (statusFilter === 'EXISTING_ONLY' && !isAlreadyImported) return false;
       if (selectedLabelFilter !== 'ALL') {
         if (!chat.whatsappLabels || !chat.whatsappLabels.includes(selectedLabelFilter)) return false;
       }
@@ -153,7 +190,7 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
         (chat.whatsappLabels && chat.whatsappLabels.some(l => l.toLowerCase().includes(term)))
       );
     });
-  }, [previewChats, onlyWithName, selectedLabelFilter, searchTerm]);
+  }, [previewChats, onlyWithName, statusFilter, selectedLabelFilter, searchTerm, existingPhoneDigits]);
 
   // Ações de Seleção
   const toggleSelectPhone = (phone: string) => {
@@ -163,6 +200,13 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
       else next.add(phone);
       return next;
     });
+  };
+
+  const handleSelectOnlyNew = () => {
+    const newPhones = filteredChats
+      .filter(c => !isChatInCRM(c.phone))
+      .map(c => c.phone);
+    setSelectedPhoneSet(new Set(newPhones));
   };
 
   const handleSelectAllFiltered = () => {
@@ -467,22 +511,62 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {/* Cabeçalho da Lista e Selecionar Todos */}
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSelectAllFiltered}
-                        className="text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
-                      >
-                        {filteredChats.every(c => selectedPhoneSet.has(c.phone)) ? 'Desmarcar Todos' : 'Selecionar Todos'}
-                      </button>
-                      <span>({selectedPhoneSet.size} de {filteredChats.length} selecionados)</span>
-                    </div>
+                  {/* Cabeçalho da Lista, Filtro de Status e Seleção */}
+                  <div className="space-y-2 pt-1 border-t border-slate-100">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      {/* Abas de Status */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter('ALL')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            statusFilter === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Todos ({counts.total})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter('NEW_ONLY')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                            statusFilter === 'NEW_ONLY' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-emerald-700 hover:text-emerald-800'
+                          }`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Novos ({counts.newCount})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter('EXISTING_ONLY')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                            statusFilter === 'EXISTING_ONLY' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <span>Já no CRM ({counts.existingCount})</span>
+                        </button>
+                      </div>
 
-                    <span className="text-[11px] text-slate-400 font-normal">
-                      Grupos de WhatsApp são desconsiderados automaticamente.
-                    </span>
+                      {/* Ações de Seleção */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSelectOnlyNew}
+                          className="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-1 rounded-lg font-bold transition cursor-pointer text-[11px] flex items-center gap-1"
+                          title="Marca apenas leads que ainda não estão no CRM"
+                        >
+                          <span>✦ Apenas Novos ({counts.newCount})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleSelectAllFiltered}
+                          className="text-slate-600 hover:text-slate-900 font-bold underline cursor-pointer text-[11px]"
+                        >
+                          {filteredChats.every(c => selectedPhoneSet.has(c.phone)) && filteredChats.length > 0 ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                        </button>
+                        <span className="font-bold text-slate-800 text-[11px]">({selectedPhoneSet.size} selecionados)</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Tabela de Conversas com Preview & Badges de Etiquetas */}
@@ -494,12 +578,17 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                     ) : (
                       filteredChats.map((chat) => {
                         const isSelected = selectedPhoneSet.has(chat.phone);
+                        const isAlreadyImported = isChatInCRM(chat.phone);
                         return (
                           <div
                             key={chat.phone}
                             onClick={() => toggleSelectPhone(chat.phone)}
                             className={`p-3 flex items-center justify-between gap-3 cursor-pointer transition ${
-                              isSelected ? 'bg-emerald-50/40' : 'hover:bg-slate-50'
+                              isSelected 
+                                ? 'bg-emerald-50/40' 
+                                : isAlreadyImported 
+                                ? 'bg-slate-50/30 hover:bg-slate-100/60 opacity-80' 
+                                : 'hover:bg-slate-50'
                             }`}
                           >
                             <div className="flex items-center gap-3 min-w-0">
@@ -516,16 +605,21 @@ export function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModa
                               />
                               <div className="min-w-0 space-y-0.5">
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="text-xs font-bold text-slate-900 truncate">
+                                  <span className={`text-xs font-bold truncate ${isAlreadyImported ? 'text-slate-700' : 'text-slate-900'}`}>
                                     {chat.name}
                                   </span>
-                                  {chat.hasRealName ? (
-                                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full shrink-0">
-                                      Agenda
+                                  {isAlreadyImported ? (
+                                    <span className="text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200/80 px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-1">
+                                      ✓ Já no CRM
                                     </span>
                                   ) : (
+                                    <span className="text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-1.5 py-0.2 rounded-full shrink-0 flex items-center gap-1 shadow-2xs">
+                                      ✦ Novo Lead
+                                    </span>
+                                  )}
+                                  {chat.hasRealName && (
                                     <span className="text-[9px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full shrink-0">
-                                      Chat
+                                      Agenda
                                     </span>
                                   )}
 

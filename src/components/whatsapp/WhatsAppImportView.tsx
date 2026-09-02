@@ -53,6 +53,7 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
     currentUser,
     users,
     instances,
+    contacts,
     importWhatsAppBatch,
     importFileContacts,
     activeSyncJob,
@@ -64,6 +65,7 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
   // Estados do WhatsApp Wizard
   const [historyDays, setHistoryDays] = useState<number>(30);
   const [onlyWithName, setOnlyWithName] = useState<boolean>(false);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEW_ONLY' | 'EXISTING_ONLY'>('ALL');
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>('ALL');
   const [availableLabels, setAvailableLabels] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -71,6 +73,36 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedPhoneSet, setSelectedPhoneSet] = useState<Set<string>>(new Set());
+
+  // Conjunto de telefones higienizados já cadastrados no CRM
+  const existingPhoneDigits = useMemo(() => {
+    return new Set(
+      contacts.map(c => (c.phone || '').replace(/\D/g, '')).filter(Boolean)
+    );
+  }, [contacts]);
+
+  const isChatInCRM = (phoneStr: string) => {
+    const digits = (phoneStr || '').replace(/\D/g, '');
+    if (!digits) return false;
+    for (const existing of Array.from(existingPhoneDigits)) {
+      if (existing === digits || existing.endsWith(digits) || digits.endsWith(existing)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Contadores dinâmicos de Novos Leads vs Já Importados
+  const counts = useMemo(() => {
+    const valid = previewChats.filter(c => !isWhatsAppChannelOrGroup(c));
+    let newCount = 0;
+    let existingCount = 0;
+    valid.forEach(c => {
+      if (isChatInCRM(c.phone)) existingCount++;
+      else newCount++;
+    });
+    return { total: valid.length, newCount, existingCount };
+  }, [previewChats, existingPhoneDigits]);
   
   // Estados de Execução em Lotes (Batch Progress)
   const [isBatchImporting, setIsBatchImporting] = useState<boolean>(false);
@@ -114,8 +146,9 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
         if (Array.isArray(data.availableLabels)) {
           setAvailableLabels(data.availableLabels);
         }
-        // Pré-seleciona todos os contatos inicialmente
-        setSelectedPhoneSet(new Set(data.chats.map((c: WhatsAppChatPreview) => c.phone)));
+        // Pré-seleciona estritamente os contatos que AINDA NÃO estão no CRM (Novos Leads)
+        const newChats = data.chats.filter((c: WhatsAppChatPreview) => !isChatInCRM(c.phone));
+        setSelectedPhoneSet(new Set(newChats.map((c: WhatsAppChatPreview) => c.phone)));
       } else {
         setPreviewError(data.error || 'Nenhuma conversa individual encontrada para o período selecionado.');
         setPreviewChats([]);
@@ -134,11 +167,14 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
     }
   }, [activeTab, historyDays]);
 
-  // Filtra chats pela busca, etiqueta e opção de "Apenas com nome"
+  // Filtra chats pela busca, etiqueta, opção de "Apenas com nome" e status de importação
   const filteredChats = useMemo(() => {
     return previewChats.filter(chat => {
       if (isWhatsAppChannelOrGroup(chat)) return false;
       if (onlyWithName && !chat.hasRealName) return false;
+      const isAlreadyImported = isChatInCRM(chat.phone);
+      if (statusFilter === 'NEW_ONLY' && isAlreadyImported) return false;
+      if (statusFilter === 'EXISTING_ONLY' && !isAlreadyImported) return false;
       if (selectedLabelFilter !== 'ALL') {
         if (!chat.whatsappLabels || !chat.whatsappLabels.includes(selectedLabelFilter)) return false;
       }
@@ -152,7 +188,7 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
         (chat.whatsappLabels && chat.whatsappLabels.some(l => l.toLowerCase().includes(term)))
       );
     });
-  }, [previewChats, onlyWithName, selectedLabelFilter, searchTerm]);
+  }, [previewChats, onlyWithName, statusFilter, selectedLabelFilter, searchTerm, existingPhoneDigits]);
 
   // Ações de Seleção
   const toggleSelectPhone = (phone: string) => {
@@ -162,6 +198,13 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
       else next.add(phone);
       return next;
     });
+  };
+
+  const handleSelectOnlyNew = () => {
+    const newPhones = filteredChats
+      .filter(c => !isChatInCRM(c.phone))
+      .map(c => c.phone);
+    setSelectedPhoneSet(new Set(newPhones));
   };
 
   const handleSelectAllFiltered = () => {
@@ -511,26 +554,64 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
                 </div>
               </div>
 
-              {/* Informações Rápidas e Selecionar Todos */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs">
-                <div className="flex items-center gap-3">
+              {/* Informações Rápidas e Ações de Seleção */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                {/* Abas de Status: Todos vs Novos vs Já no CRM */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('ALL')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      statusFilter === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Todos ({counts.total})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('NEW_ONLY')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      statusFilter === 'NEW_ONLY' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-emerald-700 hover:text-emerald-800'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Novos Leads ({counts.newCount})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('EXISTING_ONLY')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      statusFilter === 'EXISTING_ONLY' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>Já no CRM ({counts.existingCount})</span>
+                  </button>
+                </div>
+
+                {/* Botões de Ação de Seleção */}
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSelectOnlyNew}
+                    className="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/80 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[11px] flex items-center gap-1"
+                    title="Seleciona apenas os contatos que ainda não foram cadastrados no CRM"
+                  >
+                    <span>✦ Marcar Apenas Novos ({counts.newCount})</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleSelectAllFiltered}
-                    className="font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
+                    className="text-slate-600 hover:text-slate-900 font-bold px-2 py-1 underline cursor-pointer text-[11px]"
                   >
                     {filteredChats.every(c => selectedPhoneSet.has(c.phone)) && filteredChats.length > 0
                       ? 'Desmarcar Todos'
                       : 'Selecionar Todos'}
                   </button>
-                  <span className="font-bold text-slate-800">
-                    {selectedPhoneSet.size} de {filteredChats.length} contatos selecionados
-                  </span>
-                </div>
 
-                <div className="flex items-center gap-2 text-slate-500 text-[11px]">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Grupos de WhatsApp são descartados automaticamente para manter a base limpa.</span>
+                  <span className="font-bold text-slate-800 text-xs ml-1">
+                    {selectedPhoneSet.size} selecionados
+                  </span>
                 </div>
               </div>
             </div>
@@ -590,12 +671,17 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
                       ) : (
                         filteredChats.map((chat) => {
                           const isSelected = selectedPhoneSet.has(chat.phone);
+                          const isAlreadyImported = isChatInCRM(chat.phone);
                           return (
                             <tr
                               key={chat.phone}
                               onClick={() => toggleSelectPhone(chat.phone)}
                               className={`transition cursor-pointer ${
-                                isSelected ? 'bg-emerald-50/40 hover:bg-emerald-50/60' : 'hover:bg-slate-50/80'
+                                isSelected 
+                                  ? 'bg-emerald-50/40 hover:bg-emerald-50/60' 
+                                  : isAlreadyImported 
+                                  ? 'bg-slate-50/30 hover:bg-slate-100/60 opacity-80'
+                                  : 'hover:bg-slate-50/80'
                               }`}
                             >
                               <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -615,15 +701,20 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
                                     className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
                                   />
                                   <div>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-bold text-slate-900">{chat.name}</span>
-                                      {chat.hasRealName ? (
-                                        <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
-                                          Agenda
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`font-bold ${isAlreadyImported ? 'text-slate-700' : 'text-slate-900'}`}>{chat.name}</span>
+                                      {isAlreadyImported ? (
+                                        <span className="text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                          ✓ Já no CRM
                                         </span>
                                       ) : (
+                                        <span className="text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                                          ✦ Novo Lead
+                                        </span>
+                                      )}
+                                      {chat.hasRealName && (
                                         <span className="text-[9px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
-                                          Chat
+                                          Agenda
                                         </span>
                                       )}
                                     </div>

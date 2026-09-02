@@ -55,6 +55,8 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
     instances,
     importWhatsAppBatch,
     importFileContacts,
+    activeSyncJob,
+    startBackgroundSync,
   } = useCRM();
   
   const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'FILE'>('WHATSAPP');
@@ -369,6 +371,78 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
         {/* ========================================================================= */}
         {activeTab === 'WHATSAPP' && (
           <div className="space-y-6">
+            
+            {/* Banner de Sincronização Completa em Segundo Plano */}
+            <div className="bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 shadow-xl border border-indigo-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+              <div className="space-y-2 z-10 max-w-xl">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                    ⚡ Recomendado para Corretores
+                  </span>
+                  {activeSyncJob && (activeSyncJob.status === 'RUNNING' || activeSyncJob.status === 'PENDING') && (
+                    <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      <span>Processando no Servidor...</span>
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  Sincronização Completa em Segundo Plano
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Varre 100% das páginas de conversas e contatos do WhatsApp de uma só vez no servidor, sem risco de perder clientes. Você não precisa ficar esperando nesta tela: navegue livremente pelo CRM enquanto o Brokiva importa tudo.
+                </p>
+
+                {/* Barra de Progresso Ativa em Tempo Real */}
+                {activeSyncJob && (activeSyncJob.status === 'RUNNING' || activeSyncJob.status === 'PENDING') && (
+                  <div className="mt-3 bg-white/10 rounded-2xl p-3 border border-white/10 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>{activeSyncJob.currentStepText}</span>
+                      </span>
+                      <span className="font-mono text-white font-bold">{activeSyncJob.progress}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 rounded-full"
+                        style={{ width: `${activeSyncJob.progress}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-300">
+                      <span>Páginas lidas: <strong>{activeSyncJob.pagesScanned}</strong></span>
+                      <span>Conversas qualificadas: <strong className="text-emerald-400">{activeSyncJob.contactsImported}</strong></span>
+                    </div>
+                  </div>
+                )}
+
+                {activeSyncJob && activeSyncJob.status === 'COMPLETED' && (
+                  <div className="mt-2 text-xs font-bold text-emerald-400 flex items-center gap-1.5 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Última sincronização concluída: {activeSyncJob.contactsImported} contatos importados com sucesso!</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="z-10 shrink-0 flex flex-col items-center gap-2 w-full md:w-auto">
+                <button
+                  type="button"
+                  disabled={activeSyncJob?.status === 'RUNNING' || activeSyncJob?.status === 'PENDING'}
+                  onClick={async () => {
+                    await startBackgroundSync({ historyDays, importMode: 'CHATS' });
+                  }}
+                  className="w-full md:w-auto bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black px-7 py-3.5 rounded-full text-xs transition shadow-lg shadow-emerald-500/25 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className={`w-4 h-4 ${activeSyncJob?.status === 'RUNNING' ? 'animate-spin' : ''}`} />
+                  <span>
+                    {activeSyncJob?.status === 'RUNNING' ? 'Sincronizando em Segundo Plano...' : 'Sincronizar Tudo em Background'}
+                  </span>
+                </button>
+                <span className="text-[10px] text-slate-400 text-center">
+                  Executa no servidor sem travar a interface
+                </span>
+              </div>
+            </div>
             
             {/* Barra de Filtros e Painel de Controle */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4">

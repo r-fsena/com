@@ -185,6 +185,20 @@ interface CRMContextType {
   importWhatsAppBatch: (payload: { contacts: Contact[]; conversations: Conversation[]; messages: Message[] }) => void;
   importFileContacts: (records: any[], assignedBrokerId?: string, createDeals?: boolean) => { count: number };
 
+  // Motor de Sincronização em Segundo Plano (Background Sync Engine)
+  activeSyncJob: {
+    id: string;
+    status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+    progress: number;
+    pagesScanned: number;
+    totalChatsFound: number;
+    contactsImported: number;
+    currentStepText: string;
+    error?: string;
+  } | null;
+  startBackgroundSync: (options?: { historyDays?: number; importMode?: 'CHATS' | 'PHONEBOOK' | 'ALL' }) => Promise<string | null>;
+  dismissSyncJob: () => void;
+
   // Feature Flags & Módulos
   isFeatureEnabled: (feature: keyof TenantFeatureFlags) => boolean;
   updateTenantFeatureFlags: (flags: Partial<TenantFeatureFlags>) => void;
@@ -2101,6 +2115,89 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
+  const [activeSyncJob, setActiveSyncJob] = useState<{
+    id: string;
+    status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+    progress: number;
+    pagesScanned: number;
+    totalChatsFound: number;
+    contactsImported: number;
+    currentStepText: string;
+    error?: string;
+  } | null>(null);
+
+  const startBackgroundSync = async (options?: { historyDays?: number; importMode?: 'CHATS' | 'PHONEBOOK' | 'ALL' }): Promise<string | null> => {
+    try {
+      const brokerInst = instances.find(i => i.assignedUserId === currentUser.id) || instances[0];
+      const res = await fetch('/api/v1/zapi/background-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceId: brokerInst?.zapiInstanceId || brokerInst?.id,
+          historyDays: options?.historyDays ?? 0,
+          importMode: options?.importMode ?? 'CHATS',
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.job) {
+        setActiveSyncJob(data.job);
+        return data.job.id;
+      }
+    } catch (err) {
+      console.error('Falha ao disparar sincronização em background:', err);
+    }
+    return null;
+  };
+
+  const dismissSyncJob = () => {
+    setActiveSyncJob(null);
+  };
+
+  // Monitoramento Não-Intrusivo do Job de Sincronização em Segundo Plano
+  useEffect(() => {
+    if (!activeSyncJob || (activeSyncJob.status !== 'RUNNING' && activeSyncJob.status !== 'PENDING')) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/zapi/background-sync?jobId=${activeSyncJob.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.job) {
+          setActiveSyncJob(data.job);
+
+          // Quando o job termina, puxa o estado atualizado do servidor
+          if (data.job.status === 'COMPLETED') {
+            try {
+              const stateRes = await fetch('/api/v1/crm/state');
+              if (stateRes.ok) {
+                const sData = await stateRes.json();
+                if (sData.success && sData.state) {
+                  if (Array.isArray(sData.state.contacts)) {
+                    const validContacts = sData.state.contacts.filter((c: Contact) => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
+                    setContacts(validContacts);
+                    try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(validContacts)); } catch {}
+                  }
+                  if (Array.isArray(sData.state.conversations)) {
+                    const validConvs = sData.state.conversations.filter((c: Conversation) => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
+                    setConversations(validConvs);
+                    try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(validConvs)); } catch {}
+                  }
+                }
+              }
+            } catch (mergeErr) {
+              console.error('Erro ao atualizar estado local pós-sync:', mergeErr);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Erro no polling de background sync:', err);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [activeSyncJob?.id, activeSyncJob?.status]);
 
   const syncWhatsAppChats = async (targetInstanceId?: string, historyDays = 15): Promise<{ success: boolean; count: number }> => {
     try {
@@ -3217,6 +3314,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       resetCRMDatabase,
       importWhatsAppBatch,
       importFileContacts,
+      activeSyncJob,
+      startBackgroundSync,
+      dismissSyncJob,
       isFeatureEnabled,
       updateTenantFeatureFlags,
     }}>

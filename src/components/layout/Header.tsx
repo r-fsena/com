@@ -14,7 +14,8 @@ import {
   X, 
   Menu,
   Sparkles,
-  Calendar
+  Calendar,
+  RefreshCw
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -27,7 +28,7 @@ interface HeaderProps {
 }
 
 export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar }: HeaderProps) {
-  const { alerts, dismissAlert, contacts, currentUser, setActiveConversationId, conversations, currentTenant } = useCRM();
+  const { alerts, dismissAlert, contacts, currentUser, setActiveConversationId, conversations, currentTenant, activeSyncJob, dismissSyncJob } = useCRM();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAlertsPopover, setShowAlertsPopover] = useState(false);
 
@@ -90,6 +91,31 @@ export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenA
       {/* Lado Direito: Busca Arredondada Sovereign + Ações */}
       <div className="flex items-center gap-3 sm:gap-4 shrink-0">
         
+        {/* Indicador de Sincronização em Segundo Plano do WhatsApp */}
+        {activeSyncJob && (activeSyncJob.status === 'RUNNING' || activeSyncJob.status === 'PENDING') && (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xs animate-in fade-in">
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin shrink-0" />
+            <span className="hidden sm:inline">Sincronizando:</span>
+            <span className="font-mono text-emerald-950 font-extrabold">{activeSyncJob.contactsImported}</span>
+            <span className="text-[11px] text-emerald-600 font-medium hidden lg:inline">(Pág. {activeSyncJob.pagesScanned || 1})</span>
+          </div>
+        )}
+
+        {activeSyncJob && activeSyncJob.status === 'COMPLETED' && (
+          <div className="flex items-center gap-2 bg-emerald-600 text-white px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xs animate-in fade-in">
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span>{activeSyncJob.contactsImported} conversas sincronizadas!</span>
+            <button
+              type="button"
+              onClick={dismissSyncJob}
+              className="p-0.5 hover:bg-emerald-700 rounded-full transition ml-1 cursor-pointer"
+              title="Fechar aviso"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
         {/* Barra de Busca em Pílula Sovereign */}
         <div className="relative hidden md:block w-72 lg:w-80">
           <div className="relative">

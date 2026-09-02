@@ -181,7 +181,9 @@ export default function CRMApp() {
                 {currentTab === 'tasks' && <TasksManager />}
                 {currentTab === 'automations' && <AutomationManager />}
                 {currentTab === 'campaigns' && <CampaignManager />}
-                {currentTab === 'dashboard' && <SalesDashboard />}
+                {currentTab === 'dashboard' && (
+                  <SalesDashboard onOpenChat={handleOpenChatForContact} />
+                )}
                 {currentTab === 'copilot' && <CopilotManager />}
                 {currentTab === 'settings' && (
                   <SettingsManager onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)} />

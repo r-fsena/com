@@ -475,6 +475,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   stageDeals.map((deal) => {
                     const contact = contacts.find(c => c.id === deal.contactId);
                     const broker = users.find(u => u.id === deal.assignedUserId);
+                    const daysInactive = Math.floor((Date.now() - new Date(deal.updatedAt || deal.createdAt).getTime()) / (1000 * 60 * 60 * 24));
 
                     return (
                       <div
@@ -484,7 +485,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                         onMouseEnter={(e) => handleMouseEnterCard(e, deal.id)}
                         onMouseLeave={handleMouseLeaveCard}
                         onClick={() => handleOpenDealModal(deal)}
-                        className={`bg-white rounded-xl p-3.5 shadow-sm border transition duration-150 hover:shadow-md hover:border-emerald-500 group cursor-pointer relative ${
+                        className={`bg-white rounded-2xl p-3.5 shadow-xs border transition duration-150 hover:shadow-md hover:border-emerald-500 group cursor-pointer relative ${
                           stage.isWon ? 'border-emerald-300 bg-emerald-50/20' : 
                           stage.isLost ? 'border-rose-200 bg-rose-50/20 opacity-80' : 
                           'border-slate-200'
@@ -497,6 +498,14 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                           </span>
 
                           <div className="flex items-center gap-1">
+                            {/* Alerta de Inatividade SLA */}
+                            {deal.status === 'OPEN' && daysInactive >= 2 && (
+                              <span className="text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 animate-pulse" title={`Sem interação há ${daysInactive} dias`}>
+                                <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                <span>{daysInactive}d</span>
+                              </span>
+                            )}
+
                             {deal.status === 'WON' && (
                               <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
                                 🏆 Ganho
@@ -583,10 +592,11 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                                   e.stopPropagation();
                                   onOpenChat(contact.id);
                                 }}
-                                className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 text-[10px] font-bold py-0.5 px-2 rounded-lg transition active:scale-95 cursor-pointer shadow-2xs"
                                 title="Abrir conversa no WhatsApp"
                               >
-                                <MessageSquare className="w-3.5 h-3.5" />
+                                <MessageSquare className="w-3 h-3 text-emerald-600" />
+                                <span>WhatsApp</span>
                               </button>
                             )}
 

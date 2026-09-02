@@ -1183,20 +1183,45 @@ export function WhatsAppInbox() {
                       {activeContact.temperature === 'HOT' ? '🔥 Quente' : activeContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
                     </span>
 
+                    {/* Seletor de Etapa do Funil no Header com 1 Clique */}
                     {activeDeal ? (
-                      <span className="hidden sm:flex text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full items-center gap-1 shrink-0">
-                        <TrendingUp className="w-2.5 h-2.5 text-blue-600" />
-                        <span>Funil: {currentPipeline.stages.find(s => s.id === activeDeal.stageId)?.name || 'Ativo'}</span>
-                      </span>
-                    ) : isLeadQualified ? (
-                      <span className="hidden sm:flex text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full items-center gap-1 animate-pulse shrink-0">
-                        <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                        <span>Lead Qualificado</span>
-                      </span>
+                      <div className="hidden sm:flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-0.5 text-[10px] font-bold text-blue-900 shrink-0">
+                        <TrendingUp className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                        <select
+                          value={activeDeal.stageId}
+                          onChange={(e) => moveDealStage(activeDeal.id, e.target.value)}
+                          className="bg-transparent border-none text-[10px] font-bold text-blue-900 focus:outline-none cursor-pointer py-0"
+                          title="Alterar etapa do funil instantaneamente"
+                        >
+                          {currentPipeline.stages.map((st) => (
+                            <option key={st.id} value={st.id}>
+                              {st.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     ) : (
-                      <span className="hidden sm:inline-block text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full shrink-0">
-                        Em Triagem
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentPipeline.stages.length > 0) {
+                            createDeal({
+                              contactId: activeContact.id,
+                              pipelineId: currentPipeline.id,
+                              stageId: currentPipeline.stages[0].id,
+                              assignedUserId: currentUser.id,
+                              title: `Oportunidade • ${activeContact.name}`,
+                              expectedValue: activeContact.maxPropertyValue || 750000,
+                              manualProbability: 40,
+                            });
+                          }
+                        }}
+                        className="hidden sm:flex items-center gap-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-full px-2.5 py-0.5 text-[10px] font-bold transition cursor-pointer shrink-0"
+                        title="Criar negócio no Kanban em 1 clique"
+                      >
+                        <Plus className="w-2.5 h-2.5" />
+                        <span>+ Criar no Funil</span>
+                      </button>
                     )}
                   </div>
                   <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
@@ -1204,7 +1229,21 @@ export function WhatsAppInbox() {
               </div>
 
               {/* Ações do Header */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Botão Rápido de Agendar Visita */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultProp = activeContact.presentedProperties?.[0] || MOCK_CATALOG_PROPERTIES[0];
+                    handleScheduleVisitForProperty(defaultProp as any);
+                  }}
+                  className="hidden md:flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
+                  title="Agendar visita rápida para este lead"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Agendar Visita</span>
+                </button>
+
                 {/* Botão Perfil 360 / Drawer Toggle */}
                 <button
                   type="button"

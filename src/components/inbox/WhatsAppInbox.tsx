@@ -169,6 +169,8 @@ export function WhatsAppInbox() {
     addPresentedProperty,
     updatePresentedProperty,
     removePresentedProperty,
+    addBrokerNote,
+    removeBrokerNote,
     createTask,
     instances,
     activeInstanceId,
@@ -193,6 +195,7 @@ export function WhatsAppInbox() {
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showLeadDrawer, setShowLeadDrawer] = useState(false);
   const [showChatOptionsDropdown, setShowChatOptionsDropdown] = useState(false);
+  const [selectedNoteCategory, setSelectedNoteCategory] = useState<'GENERAL' | 'CALL' | 'VISIT' | 'FINANCIAL' | 'OBJECTION' | 'PROPOSAL'>('GENERAL');
   const [newTagInput, setNewTagInput] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
 
@@ -2678,36 +2681,150 @@ export function WhatsAppInbox() {
             </div>
 
             {/* ---------------------------------------------------- */}
-            {/* 4. ANOTAÇÕES DO CORRETOR                              */}
+            {/* 4. HISTÓRICO & TIMELINE DE INTERAÇÕES DO CORRETOR    */}
             {/* ---------------------------------------------------- */}
-            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+            <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-4 space-y-3.5">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Notebook className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Anotações do Corretor</span>
+                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Notebook className="w-3.5 h-3.5 text-[#3742AC]" />
+                  <span>Timeline de Interações do Corretor</span>
                 </h4>
+                <span className="text-[10px] font-bold bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full">
+                  {(activeContact.brokerNotes || []).length} { (activeContact.brokerNotes || []).length === 1 ? 'registro' : 'registros' }
+                </span>
               </div>
 
-              <textarea
-                rows={2}
-                placeholder="Observações internas sobre este cliente (ex: prefere visitas aos sábados de manhã)..."
-                value={brokerNote}
-                onChange={(e) => setBrokerNote(e.target.value)}
-                className="w-full text-[11px] bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none text-slate-800 placeholder-slate-400"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (brokerNote.trim() && activeConversation) {
-                    sendMessage(activeConversation.id, `📝 NOTA INTERNA: ${brokerNote.trim()}`, true);
-                    setBrokerNote('');
-                  }
-                }}
-                disabled={!brokerNote.trim()}
-                className="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white text-[11px] font-bold py-1.5 rounded-lg transition shadow-2xs cursor-pointer"
-              >
-                Salvar Nota na Linha do Tempo
-              </button>
+              {/* Categorias de Interação Rápidas */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteCategory('GENERAL')}
+                  className={`px-2 py-0.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer ${
+                    selectedNoteCategory === 'GENERAL' ? 'bg-[#3742AC] text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  📝 Geral
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteCategory('CALL')}
+                  className={`px-2 py-0.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer ${
+                    selectedNoteCategory === 'CALL' ? 'bg-blue-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  📞 Ligação
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteCategory('VISIT')}
+                  className={`px-2 py-0.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer ${
+                    selectedNoteCategory === 'VISIT' ? 'bg-amber-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  🤝 Reunião / Visita
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteCategory('FINANCIAL')}
+                  className={`px-2 py-0.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer ${
+                    selectedNoteCategory === 'FINANCIAL' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  💰 Financeiro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteCategory('OBJECTION')}
+                  className={`px-2 py-0.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer ${
+                    selectedNoteCategory === 'OBJECTION' ? 'bg-rose-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  ⚠️ Objeção
+                </button>
+              </div>
+
+              {/* Input de Nova Anotação */}
+              <div className="space-y-1.5">
+                <textarea
+                  rows={2}
+                  placeholder={`Registrar comentário sobre ${activeContact.name}...`}
+                  value={brokerNote}
+                  onChange={(e) => setBrokerNote(e.target.value)}
+                  className="w-full text-xs bg-white border border-slate-200/90 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#3742AC]/20 focus:border-[#3742AC] resize-none text-slate-800 placeholder-slate-400 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (brokerNote.trim() && activeContact) {
+                      addBrokerNote(activeContact.id, brokerNote.trim(), selectedNoteCategory);
+                      if (activeConversation) {
+                        sendMessage(activeConversation.id, `📝 [Anotação • ${selectedNoteCategory}]: ${brokerNote.trim()}`, true);
+                      }
+                      setBrokerNote('');
+                    }
+                  }}
+                  disabled={!brokerNote.trim()}
+                  className="w-full bg-[#3742AC] hover:bg-[#2D368E] disabled:opacity-40 text-white text-xs font-bold py-2 rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Salvar na Timeline</span>
+                </button>
+              </div>
+
+              {/* Lista Cronológica / Timeline */}
+              <div className="pt-2 border-t border-slate-200/60 space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {(!activeContact.brokerNotes || activeContact.brokerNotes.length === 0) ? (
+                  <div className="text-center py-4 text-slate-400">
+                    <Clock className="w-5 h-5 mx-auto mb-1 opacity-50" />
+                    <p className="text-[11px] font-medium">Nenhuma anotação registrada ainda.</p>
+                    <p className="text-[10px] text-slate-400">Comentários registrados ficarão salvos aqui com data e hora.</p>
+                  </div>
+                ) : (
+                  activeContact.brokerNotes.map((note) => {
+                    const categoryMeta = {
+                      CALL: { icon: '📞', label: 'Ligação Telefônica', color: 'bg-blue-50 text-blue-800 border-blue-200' },
+                      VISIT: { icon: '🤝', label: 'Reunião / Visita', color: 'bg-amber-50 text-amber-800 border-amber-200' },
+                      FINANCIAL: { icon: '💰', label: 'Financeiro / Proposta', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+                      OBJECTION: { icon: '⚠️', label: 'Objeção / Dúvida', color: 'bg-rose-50 text-rose-800 border-rose-200' },
+                      PROPOSAL: { icon: '📄', label: 'Proposta Comercial', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+                      GENERAL: { icon: '📝', label: 'Anotação Geral', color: 'bg-slate-50 text-slate-700 border-slate-200' },
+                    }[note.category || 'GENERAL'] || { icon: '📝', label: 'Anotação', color: 'bg-slate-50 text-slate-700 border-slate-200' };
+
+                    return (
+                      <div key={note.id} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs space-y-1.5 relative group">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${categoryMeta.color}`}>
+                              {categoryMeta.icon} {categoryMeta.label}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-700">
+                              {note.authorName}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {safeFormatDate(note.createdAt, "dd/MM 'às' HH:mm")}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeBrokerNote(activeContact.id, note.id)}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                              title="Remover anotação"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                          {note.content}
+                        </p>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             {/* ---------------------------------------------------- */}

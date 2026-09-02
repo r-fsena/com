@@ -117,6 +117,15 @@ export interface PresentedProperty {
   notes?: string;
 }
 
+export interface BrokerNote {
+  id: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  category?: 'GENERAL' | 'CALL' | 'VISIT' | 'FINANCIAL' | 'OBJECTION' | 'PROPOSAL';
+  createdAt: string;
+}
+
 export interface Contact {
   id: string;
   tenantId: string;
@@ -143,6 +152,9 @@ export interface Contact {
   
   // Imóveis / Unidades apresentadas ou em negociação
   presentedProperties?: PresentedProperty[];
+
+  // Histórico e Timeline de Anotações do Corretor
+  brokerNotes?: BrokerNote[];
 
   source: 'WHATSAPP' | 'INSTAGRAM_ADS' | 'FACEBOOK_ADS' | 'GOOGLE' | 'PORTAL_ZAP' | 'PORTAL_VIVAREAL' | 'INDICATION' | 'WEBSITE' | 'MANUAL';
   temperature: LeadTemperature;

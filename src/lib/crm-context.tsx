@@ -8,6 +8,7 @@ import {
   WhatsAppInstance, 
   Contact, 
   PresentedProperty,
+  BrokerNote,
   Pipeline, 
   PipelineStage,
   Deal, 
@@ -82,6 +83,8 @@ interface CRMContextType {
   addPresentedProperty: (contactId: string, property: Omit<PresentedProperty, 'id' | 'presentedAt'>) => void;
   updatePresentedProperty: (contactId: string, propertyId: string, updates: Partial<PresentedProperty>) => void;
   removePresentedProperty: (contactId: string, propertyId: string) => void;
+  addBrokerNote: (contactId: string, content: string, category?: BrokerNote['category']) => void;
+  removeBrokerNote: (contactId: string, noteId: string) => void;
 
   // Funis e Deals (Kanban)
   pipelines: Pipeline[];
@@ -1374,6 +1377,70 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return deal;
       });
       try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const addBrokerNote = (contactId: string, content: string, category?: BrokerNote['category']) => {
+    if (!content.trim()) return;
+    const newNote: BrokerNote = {
+      id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      content: content.trim(),
+      category: category || 'GENERAL',
+      createdAt: new Date().toISOString(),
+    };
+
+    setContacts(prev => {
+      const updated = prev.map(c => {
+        if (c.id === contactId) {
+          const list = c.brokerNotes || [];
+          return {
+            ...c,
+            brokerNotes: [newNote, ...list],
+            notesCount: list.length + 1,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return c;
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: updated }),
+        }).catch(() => {});
+      } catch {}
+      return updated;
+    });
+  };
+
+  const removeBrokerNote = (contactId: string, noteId: string) => {
+    setContacts(prev => {
+      const updated = prev.map(c => {
+        if (c.id === contactId && c.brokerNotes) {
+          const filtered = c.brokerNotes.filter(n => n.id !== noteId);
+          return {
+            ...c,
+            brokerNotes: filtered,
+            notesCount: filtered.length,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return c;
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: updated }),
+        }).catch(() => {});
+      } catch {}
       return updated;
     });
   };
@@ -3069,6 +3136,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       addPresentedProperty,
       updatePresentedProperty,
       removePresentedProperty,
+      addBrokerNote,
+      removeBrokerNote,
       pipelines: scopedPipelines,
       currentPipeline: effectiveCurrentPipeline,
       setCurrentPipeline,

@@ -769,7 +769,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }));
+            parsed = parsed
+              .filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
+              .map((c: Contact) => ({
+                ...c,
+                targetRegions: (c.targetRegions || []).filter(r => r !== 'Região Metropolitana' && r !== 'São Paulo' && r !== 'Geral'),
+              }));
             return deduplicateContactList(parsed);
           }
         }
@@ -1180,7 +1185,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         temperature: data.temperature || 'WARM',
         aiPriorityScore: data.aiPriorityScore || 70,
         tags: data.tags || ['Novo Lead'],
-        targetRegions: data.targetRegions || ['São Paulo'],
+        targetRegions: data.targetRegions || [],
         notesCount: 0,
         consentGiven: true,
         hasOptedOut: false,
@@ -2446,7 +2451,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         downPaymentAvailable: rec.downPaymentAvailable,
         maxPropertyValue: rec.maxPropertyValue,
         preferredPropertyType: rec.preferredPropertyType,
-        targetRegions: rec.targetRegions || ['Geral'],
+        targetRegions: rec.targetRegions || [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -2578,7 +2583,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 temperature: 'HOT',
                 aiPriorityScore: 85,
                 tags: ['Novo Lead WhatsApp', 'Z-API Live'],
-                targetRegions: ['Geral'],
+                targetRegions: [],
                 notesCount: 0,
                 consentGiven: true,
                 hasOptedOut: false,

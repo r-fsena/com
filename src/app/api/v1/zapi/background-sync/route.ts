@@ -213,7 +213,7 @@ async function runBackgroundSyncWorker(params: {
         consentGiven: true,
         consentDate: interactionIso,
         hasOptedOut: false,
-        targetRegions: ['Região Metropolitana'],
+        targetRegions: [],
         firstSyncedAt: nowIso,
         lastSyncedAt: nowIso,
         avatarUrl: chat.profilePictureUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=0D9488&color=fff`,

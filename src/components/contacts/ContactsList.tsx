@@ -264,8 +264,16 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
 
                     {/* Interesse */}
                     <td className="py-3 px-4">
-                      <p className="font-semibold text-slate-800">{contact.preferredPropertyType || 'Imóvel Geral'}</p>
-                      <p className="text-[11px] text-slate-500">{contact.targetRegions.join(', ')}</p>
+                      {contact.preferredPropertyType ? (
+                        <p className="font-semibold text-slate-800">
+                          {contact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : contact.preferredPropertyType === 'HOUSE' ? 'Casa' : contact.preferredPropertyType === 'STUDIO' ? 'Studio' : contact.preferredPropertyType === 'LAND' ? 'Terreno' : contact.preferredPropertyType === 'COMMERCIAL' ? 'Comercial' : 'Apartamento'}
+                        </p>
+                      ) : (
+                        <p className="text-slate-400 text-xs italic">Não informado</p>
+                      )}
+                      {contact.targetRegions && contact.targetRegions.length > 0 ? (
+                        <p className="text-[11px] text-slate-500">📍 {contact.targetRegions.join(', ')}</p>
+                      ) : null}
                     </td>
 
                     {/* Origem e Tags */}

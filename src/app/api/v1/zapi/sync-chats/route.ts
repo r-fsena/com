@@ -221,7 +221,7 @@ async function handleSyncChats(req: NextRequest) {
         whatsappLabels: resolvedLabels,
         firstSyncedAt: new Date().toISOString(),
         lastSyncedAt: new Date().toISOString(),
-        targetRegions: ['Região Metropolitana'],
+        targetRegions: [],
         notesCount: 0,
         consentGiven: true,
         consentDate: lastInteraction,

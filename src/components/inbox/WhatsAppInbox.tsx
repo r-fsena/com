@@ -2128,7 +2128,7 @@ export function WhatsAppInbox() {
                   hasPropertyInterest ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
                 }`}>
                   <span>{hasPropertyInterest ? '✓' : '○'}</span>
-                  <span className="truncate">🏢 {activeContact.preferredPropertyType ? (activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento') : 'Imóvel'}</span>
+                  <span className="truncate">🏢 {activeContact.preferredPropertyType ? (activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento') : 'Imóvel (Não inf.)'}</span>
                 </div>
 
                 <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
@@ -2142,7 +2142,7 @@ export function WhatsAppInbox() {
                   (activeContact.targetRegions || []).length > 0 ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
                 }`}>
                   <span>{(activeContact.targetRegions || []).length > 0 ? '✓' : '○'}</span>
-                  <span className="truncate">📍 {activeContact.targetRegions?.[0] || 'Região'}</span>
+                  <span className="truncate">📍 {(activeContact.targetRegions || []).length > 0 ? activeContact.targetRegions?.[0] : 'Região (Não inf.)'}</span>
                 </div>
 
                 <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
@@ -2578,11 +2578,12 @@ export function WhatsAppInbox() {
                   <span>Tipo de Imóvel de Interesse</span>
                 </label>
                 <select
-                  value={activeContact.preferredPropertyType || 'APARTMENT'}
-                  onChange={(e) => updateContact(activeContact.id, { preferredPropertyType: e.target.value as PropertyType })}
+                  value={activeContact.preferredPropertyType || ''}
+                  onChange={(e) => updateContact(activeContact.id, { preferredPropertyType: (e.target.value || undefined) as PropertyType | undefined })}
                   className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
                 >
-                  <option value="APARTMENT">Apartamento (Padrão)</option>
+                  <option value="">Não informado (Opcional)</option>
+                  <option value="APARTMENT">Apartamento</option>
                   <option value="PENTHOUSE">Cobertura / Penthouse</option>
                   <option value="HOUSE">Casa em Condomínio Fechado</option>
                   <option value="STUDIO">Studio / Loft Compacto</option>

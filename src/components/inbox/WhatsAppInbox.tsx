@@ -61,7 +61,7 @@ import {
   Radio,
   UserPlus
 } from 'lucide-react';
-import { safeFormatDate, formatWhatsAppDate } from '@/lib/date-utils';
+import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { PropertyType, PresentedProperty } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
@@ -249,15 +249,24 @@ export function WhatsAppInbox() {
   const [historyPage, setHistoryPage] = useState(1);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
+  // Conversas ordenadas estritamente pela mensagem mais recente (Top 1 = Hoje/Agora)
+  const sortedConversations = React.useMemo(() => {
+    return [...conversations].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return parseWhatsAppTimestamp(b.lastMessageAt) - parseWhatsAppTimestamp(a.lastMessageAt);
+    });
+  }, [conversations]);
+
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = React.useMemo(() => {
     if (activeConversationId) {
-      const found = conversations.find(c => c.id === activeConversationId);
+      const found = sortedConversations.find(c => c.id === activeConversationId);
       if (found) return found;
     }
-    const valid = conversations.find(c => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
-    return valid || conversations[0] || null;
-  }, [conversations, activeConversationId]);
+    const valid = sortedConversations.find(c => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
+    return valid || sortedConversations[0] || null;
+  }, [sortedConversations, activeConversationId]);
   
   const activeContact = React.useMemo(() => {
     if (!activeConversation) return contacts[0] || null;
@@ -642,7 +651,7 @@ export function WhatsAppInbox() {
     if (c.isArchived) return false;
 
     // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
-    const convInstance = instances.find(i => i.id === c.instanceId);
+    const convInstance = instances.find(i => i.id === c.instanceId || i.zapiInstanceId === c.instanceId);
     const isDirectLine = Boolean(convInstance && convInstance.type === 'BROKER_DIRECT');
     const isCentralLine = !isDirectLine; // Toda conversa padrão ou sem instância direta pertence à Central
 
@@ -654,7 +663,11 @@ export function WhatsAppInbox() {
       return false;
     }
 
-    const contact = contacts.find(cnt => cnt.id === c.contactId);
+    const contact = contacts.find(cnt => cnt.id === c.contactId) || contacts.find(cnt => {
+      const cDigits = (cnt.phone || '').replace(/\D/g, '');
+      const convDigits = (c.id || c.contactId || '').replace(/\D/g, '');
+      return cDigits && convDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits));
+    });
 
     // Filtra canais do WhatsApp (newsletters), grupos, transmissões e contatos da agenda sem nenhuma conversa
     if (!isRealWhatsAppConversation({
@@ -692,8 +705,8 @@ export function WhatsAppInbox() {
     if (!a.isPinned && b.isPinned) return 1;
 
     // Prioridade 2: Mensagem mais recente
-    const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-    const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+    const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
+    const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
     return timeB - timeA;
   });
 

@@ -168,7 +168,13 @@ async function runBackgroundSyncWorker(params: {
     const newConversations: Conversation[] = [];
     const nowIso = new Date().toISOString();
 
-    for (const [cleanPhone, chat] of Array.from(allValidChatsMap.entries())) {
+    const sortedEntries = Array.from(allValidChatsMap.entries()).sort(([, a], [, b]) => {
+      const timeA = parseWhatsAppTimestamp(a.lastMessageTime);
+      const timeB = parseWhatsAppTimestamp(b.lastMessageTime);
+      return timeB - timeA;
+    });
+
+    for (const [cleanPhone, chat] of sortedEntries) {
       const { display } = normalizePhoneNumber(cleanPhone);
       const contactId = `contact-zapi-${cleanPhone}`;
       const conversationId = `conv-zapi-${cleanPhone}`;

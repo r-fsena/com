@@ -51,6 +51,7 @@ import {
   MOCK_SAAS_API_CONFIG
 } from './mock-data';
 import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
+import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 interface CRMContextType {
   // Autenticação & Sessão Cognito
@@ -2250,16 +2251,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               const old = map.get(c.id) || cleanPrev.find(x => x.contactId === c.contactId);
               if (old) {
                 map.set(old.id, {
-                  ...c,
                   ...old,
-                  lastMessagePreview: old.lastMessagePreview || c.lastMessagePreview,
-                  lastMessageAt: old.lastMessageAt || c.lastMessageAt,
+                  ...c,
+                  lastMessagePreview: c.lastMessagePreview || old.lastMessagePreview,
+                  lastMessageAt: c.lastMessageAt || old.lastMessageAt,
                 });
               } else {
                 map.set(c.id, c);
               }
             });
-            const result = Array.from(map.values());
+            const result = Array.from(map.values()).sort((a, b) => {
+              return parseWhatsAppTimestamp(b.lastMessageAt) - parseWhatsAppTimestamp(a.lastMessageAt);
+            });
             finalConversations = result;
             try {
               localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result));

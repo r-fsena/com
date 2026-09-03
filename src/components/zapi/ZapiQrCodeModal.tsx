@@ -108,6 +108,18 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         if (data.phone) setConnectedPhone(data.phone);
         syncZapiInstance(id, data.phone);
         
+        // Auto-configuração dos Webhooks e notificações de envio
+        fetch('/api/v1/zapi/auto-configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceId: id,
+            token: t,
+            clientToken: ct,
+            tenantId: currentTenant.id,
+          }),
+        }).catch(() => {});
+
         // Auto-sincronização de leads, fotos e conversas
         syncWhatsAppChats(id).then(syncRes => {
           if (syncRes?.count) {

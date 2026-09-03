@@ -211,6 +211,16 @@ export class ZApiClient {
   }
 
   /**
+   * Configura para notificar mensagens enviadas pelo próprio celular (fromMe = true)
+   */
+  async configureNotifySentByMe(): Promise<ZApiResponse> {
+    return this.request('update-notify-sent-by-me', {
+      method: 'PUT',
+      body: JSON.stringify({ value: true }),
+    });
+  }
+
+  /**
    * Configura automaticamente todas as URLs de webhook e token de segurança na Z-API (Zero-Config)
    */
   async configureAllWebhooks(webhookUrl: string): Promise<{ success: boolean; errors?: string[] }> {
@@ -220,6 +230,7 @@ export class ZApiClient {
       this.configureWebhookStatus(webhookUrl),
       this.configureWebhookConnected(webhookUrl),
       this.configureWebhookDisconnected(webhookUrl),
+      this.configureNotifySentByMe(),
     ]);
 
     const errors: string[] = [];

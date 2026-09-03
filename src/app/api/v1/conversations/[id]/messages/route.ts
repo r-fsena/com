@@ -108,22 +108,7 @@ export async function POST(
       }
     }
 
-    // Registra a mensagem enviada no buffer global de webhooks
-    if (targetPhone) {
-      const rawTarget = targetPhone.replace(/\D/g, '');
-      webhookStore.addMessage({
-        id: externalMessageId,
-        tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
-        instanceId,
-        phone: rawTarget,
-        senderName: session?.userEmail ? 'Corretor' : 'Corretor',
-        content,
-        mediaType: (messageType.toLowerCase() as any),
-        mediaUrl,
-        fromMe: true,
-        timestamp: new Date().toISOString(),
-      });
-    }
+
 
     return NextResponse.json({
       id: externalMessageId,

@@ -2717,19 +2717,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               // 2. Se for mensagem enviada (fromMe = true), verifica se já enviamos no portal
               if (incoming.fromMe) {
                 const isAlreadyPresent = prevMsgs.some(m =>
-                  (m.conversationId === newMsg.conversationId || (phoneSuffix && m.conversationId.includes(phoneSuffix))) &&
                   m.senderType === 'USER' &&
-                  m.content.trim() === newMsg.content.trim()
+                  (m.content || '').trim() === (newMsg.content || '').trim() &&
+                  Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000
                 );
                 if (isAlreadyPresent) return prevMsgs;
               }
 
-              // 3. Evita duplicatas gerais de mesmo conteúdo e mesmo remetente em menos de 10s
+              // 3. Evita duplicatas gerais de mesmo conteúdo e mesmo remetente em menos de 60s
               const isDuplicateContent = prevMsgs.some(m =>
-                (m.conversationId === newMsg.conversationId || (phoneSuffix && m.conversationId.includes(phoneSuffix))) &&
                 m.senderType === newMsg.senderType &&
-                m.content.trim() === newMsg.content.trim() &&
-                Math.abs(new Date(m.timestamp).getTime() - new Date(newMsg.timestamp).getTime()) < 10000
+                (m.content || '').trim() === (newMsg.content || '').trim() &&
+                Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000
               );
               if (isDuplicateContent) return prevMsgs;
 
@@ -2762,7 +2761,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
           setMessages(prev => {
             const seenIds = new Set(prev.map(m => m.id));
-            const newOnes = data.messages.filter((m: any) => !seenIds.has(m.id));
+            const newOnes = data.messages.filter((m: any) => {
+              if (seenIds.has(m.id)) return false;
+              const isEcho = prev.some(existing => 
+                existing.senderType === m.senderType &&
+                (existing.content || '').trim() === (m.content || '').trim() &&
+                Math.abs(new Date(existing.timestamp || 0).getTime() - new Date(m.timestamp || 0).getTime()) < 60000
+              );
+              return !isEcho;
+            });
             if (newOnes.length === 0) return prev;
             const updated = [...prev, ...newOnes];
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}

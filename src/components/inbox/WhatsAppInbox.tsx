@@ -328,7 +328,30 @@ export function WhatsAppInbox() {
       return [syntheticMsg];
     }
 
-    return matched;
+    // Deduplica mensagens idênticas enviadas pelo mesmo lado no mesmo intervalo (evita duplicatas de eco de webhook / sync)
+    const deduped: Message[] = [];
+    for (const msg of matched) {
+      const msgContent = (msg.content || '').trim();
+      const msgTime = new Date(msg.timestamp || 0).getTime();
+      
+      const existingIdx = deduped.findIndex(existing => {
+        if (existing.senderType !== msg.senderType) return false;
+        if ((existing.content || '').trim() !== msgContent) return false;
+        const exTime = new Date(existing.timestamp || 0).getTime();
+        return Math.abs(exTime - msgTime) < 60000;
+      });
+
+      if (existingIdx === -1) {
+        deduped.push(msg);
+      } else {
+        // Se já existe e a mensagem existente é genérica ("Corretor"), substitui pela que tem o nome real do corretor
+        if (deduped[existingIdx].senderName === 'Corretor' && msg.senderName && msg.senderName !== 'Corretor') {
+          deduped[existingIdx] = msg;
+        }
+      }
+    }
+
+    return deduped;
   }, [messages, activeConversation, activeContact]);
 
   const activeInsight = React.useMemo(() => {

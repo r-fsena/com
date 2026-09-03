@@ -2799,7 +2799,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
             return updated;
           });
-        }
+        // Ingestão imediata de atualizações enviadas pela extensão para o servidor
+        try {
+          const stateRes = await fetch('/api/v1/crm/state');
+          if (stateRes.ok) {
+            const stateData = await stateRes.json();
+            if (stateData.success && Array.isArray(stateData.messages) && stateData.messages.length > 0) {
+              setMessages(prev => {
+                const merged = deduplicateMessages([...prev, ...stateData.messages]);
+                if (merged.length !== prev.length) {
+                  try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
+                  return merged;
+                }
+                return prev;
+              });
+            }
+          }
+        } catch {}
       } catch {}
     }, 5000);
 

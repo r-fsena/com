@@ -157,10 +157,16 @@
     const headerTitleSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
     const contactName = headerTitleSpan ? (headerTitleSpan.getAttribute('title') || headerTitleSpan.innerText).trim() : 'Contato WhatsApp';
 
-    // 2. Busca balões de mensagem com múltiplos seletores tolerantes
-    const messageElements = Array.from(main.querySelectorAll(
-      'div[data-testid="msg-container"], div.message-in, div.message-out, div[data-id], div[class*="message-"]'
+    // 2. Busca mensagens por múltiplos seletores resilientes do WhatsApp Web
+    let messageElements = Array.from(main.querySelectorAll(
+      'div[data-testid="msg-container"], div.message-in, div.message-out, div[data-id], div[class*="message-"], div.copyable-text'
     ));
+
+    // Fallback: seletor baseado em copyable-text ou selectable-text
+    if (messageElements.length === 0) {
+      const copyableNodes = Array.from(main.querySelectorAll('.copyable-text, [data-pre-plain-text], .selectable-text'));
+      messageElements = copyableNodes.map(node => node.closest('div[role="row"]') || node.parentElement || node);
+    }
 
     console.log(`[Brokiva] Encontrados ${messageElements.length} elementos de mensagem em #main`);
 
@@ -227,9 +233,12 @@
     const messages = [];
     messageElements.forEach((el, index) => {
       const dataId = el.getAttribute('data-id') || '';
+      const prePlain = el.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || el.getAttribute('data-pre-plain-text') || '';
       const isFromMe = el.classList.contains('message-out') || 
                        el.closest('.message-out') !== null || 
-                       dataId.startsWith('true_');
+                       dataId.startsWith('true_') ||
+                       prePlain.includes('Você:') ||
+                       prePlain.includes('You:');
 
       const textNode = el.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
       let content = textNode ? textNode.innerText.trim() : (el.innerText || '').trim();
@@ -251,11 +260,19 @@
 
       if (!content) return;
 
+      let msgTime = new Date().toISOString();
+      if (prePlain) {
+        const timeMatch = prePlain.match(/\[(.*?)\]/);
+        if (timeMatch && timeMatch[1]) {
+          msgTime = timeMatch[1];
+        }
+      }
+
       messages.push({
         id: dataId || `wpp-ext-${resolvedPhone}-${index}`,
         content,
         fromMe: isFromMe,
-        timestamp: new Date().toISOString(),
+        timestamp: msgTime,
         messageType,
       });
     });
@@ -429,14 +446,15 @@
 
       ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
         clickable.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+        titleSpan.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
       });
 
-      // Aguarda 750ms para o WhatsApp renderizar os balões
-      await new Promise(r => setTimeout(r, 750));
+      // Aguarda 950ms para o WhatsApp renderizar os balões
+      await new Promise(r => setTimeout(r, 950));
 
       // Extrai dados reais com mensagens
       const chatData = extractActiveChatData();
-      if (chatData && chatData.phone && chatData.messages.length > 0) {
+      if (chatData && chatData.phone) {
         syncedChats.push(chatData);
 
         logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${chatData.messages.length} msgs de ${chatData.name} (${chatData.phone})`);
@@ -447,7 +465,7 @@
           data: { chats: [chatData] }
         });
       } else {
-        logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${name}: 0 mensagens detectadas após abertura`);
+        logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${name}: Não foi possível resolver identificador do contato`);
       }
 
       // Atualiza barra de progresso

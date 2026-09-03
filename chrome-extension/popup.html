@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Sovereign CRM Sync</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body {
+      width: 320px;
+      padding: 16px;
+      background: #0f172a;
+      color: white;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 12px;
+    }
+    .logo-badge {
+      width: 32px;
+      height: 32px;
+      background: #059669;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 16px;
+    }
+    h1 {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    p.sub {
+      font-size: 10px;
+      color: #94a3b8;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: white;
+      font-size: 12px;
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: #059669;
+    }
+    .btn {
+      width: 100%;
+      background: #059669;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s ease;
+    }
+    .btn:hover {
+      background: #047857;
+    }
+    .btn-portal {
+      background: #334155;
+      margin-top: 6px;
+    }
+    .btn-portal:hover {
+      background: #475569;
+    }
+    .status {
+      font-size: 10px;
+      color: #34d399;
+      text-align: center;
+      margin-top: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-badge">S</div>
+    <div>
+      <h1>Sovereign CRM</h1>
+      <p class="sub">WhatsApp Sync & Copiloto IA</p>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="crmUrl">URL do CRM:</label>
+    <input type="text" id="crmUrl" value="https://crm.faithhubs.com" placeholder="https://crm.faithhubs.com">
+  </div>
+
+  <div class="form-group">
+    <label for="tenantId">ID do Espaço / Imobiliária:</label>
+    <input type="text" id="tenantId" value="tenant-amabile-barbarotti" placeholder="tenant-id">
+  </div>
+
+  <div class="form-group">
+    <label for="brokerName">Nome do Corretor:</label>
+    <input type="text" id="brokerName" value="Rafael Sena" placeholder="Seu nome completo">
+  </div>
+
+  <button id="saveBtn" class="btn">Salvar Configurações</button>
+  <button id="openPortalBtn" class="btn btn-portal">↗ Abrir Portal do CRM</button>
+
+  <p id="statusMsg" class="status">✓ Configurações salvas com sucesso!</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

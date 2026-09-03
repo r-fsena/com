@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Sovereign CRM - WhatsApp Sync & Copiloto IA",
+  "version": "1.0.0",
+  "description": "Sincronizador de histórico completo de mensagens, perfil 360 do lead e Copiloto de IA para corretores no WhatsApp Web.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://crm.faithhubs.com/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sovereign CRM Sync"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sidebar.html", "content.css"],
+      "matches": ["https://web.whatsapp.com/*"]
+    }
+  ]
+}

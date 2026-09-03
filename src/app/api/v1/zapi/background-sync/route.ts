@@ -166,6 +166,7 @@ async function runBackgroundSyncWorker(params: {
     // 3. Monta Contatos e Conversas no Padrão do CRM
     const newContacts: Contact[] = [];
     const newConversations: Conversation[] = [];
+    const newMessages: Message[] = [];
     const nowIso = new Date().toISOString();
 
     const sortedEntries = Array.from(allValidChatsMap.entries()).sort(([, a], [, b]) => {
@@ -233,9 +234,22 @@ async function runBackgroundSyncWorker(params: {
         status: 'OPEN',
         assignedUserId: assignedUserId || undefined,
         lastMessageAt: interactionIso,
-        lastMessagePreview: chat.lastMessage || 'Conversa importada via WhatsApp',
+        lastMessagePreview: chat.lastMessage || `Conversa ativa no WhatsApp com ${resolvedName}`,
         unreadCount: Number(chat.unread || chat.messagesUnread || 0),
         slaBreached: false,
+      });
+
+      newMessages.push({
+        id: `msg-sync-${cleanPhone}`,
+        tenantId,
+        conversationId,
+        senderType: 'CONTACT',
+        senderName: resolvedName,
+        messageType: 'TEXT',
+        content: chat.lastMessage || `Conversa ativa no WhatsApp com ${resolvedName}`,
+        status: 'DELIVERED',
+        isInternalNote: false,
+        timestamp: interactionIso,
       });
     }
 
@@ -243,6 +257,7 @@ async function runBackgroundSyncWorker(params: {
     serverCRMStore.updateState({
       contacts: newContacts,
       conversations: newConversations,
+      messages: newMessages,
     });
 
     syncJobStore.updateJob(jobId, {
@@ -257,6 +272,9 @@ async function runBackgroundSyncWorker(params: {
         totalContacts: newContacts.length,
         totalConversations: newConversations.length,
       },
+      resultContacts: newContacts,
+      resultConversations: newConversations,
+      resultMessages: newMessages,
     });
   } catch (err: any) {
     console.error('[BackgroundSync] Falha no job:', err);

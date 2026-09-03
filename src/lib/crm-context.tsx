@@ -2173,24 +2173,55 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (data.success && data.job) {
           setActiveSyncJob(data.job);
 
-          // Quando o job termina, puxa o estado atualizado do servidor
+          // Quando o job termina, aplica imediatamente os contatos, conversas e mensagens gerados
           if (data.job.status === 'COMPLETED') {
             try {
-              const stateRes = await fetch('/api/v1/crm/state');
-              if (stateRes.ok) {
-                const sData = await stateRes.json();
-                if (sData.success && sData.state) {
-                  if (Array.isArray(sData.state.contacts)) {
-                    const validContacts = sData.state.contacts.filter((c: Contact) => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
-                    setContacts(validContacts);
-                    try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(validContacts)); } catch {}
-                  }
-                  if (Array.isArray(sData.state.conversations)) {
-                    const validConvs = sData.state.conversations.filter((c: Conversation) => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
-                    setConversations(validConvs);
-                    try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(validConvs)); } catch {}
-                  }
-                }
+              if (Array.isArray(data.job.resultContacts) && data.job.resultContacts.length > 0) {
+                const validContacts = data.job.resultContacts.filter((c: Contact) => 
+                  isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt })
+                );
+                setContacts(prev => {
+                  const combined = deduplicateContactList([...validContacts, ...prev]);
+                  try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(combined)); } catch {}
+                  return combined;
+                });
+              }
+
+              if (Array.isArray(data.job.resultConversations) && data.job.resultConversations.length > 0) {
+                const validConvs = data.job.resultConversations.filter((c: Conversation) => 
+                  isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt })
+                );
+                setConversations(prev => {
+                  const map = new Map(prev.map(c => [c.id, c]));
+                  validConvs.forEach((c: Conversation) => {
+                    const old = map.get(c.id) || prev.find(x => x.contactId === c.contactId);
+                    if (old) {
+                      map.set(old.id, {
+                        ...old,
+                        ...c,
+                        lastMessagePreview: c.lastMessagePreview || old.lastMessagePreview,
+                        lastMessageAt: c.lastMessageAt || old.lastMessageAt,
+                      });
+                    } else {
+                      map.set(c.id, c);
+                    }
+                  });
+                  const sorted = Array.from(map.values()).sort((a, b) => 
+                    parseWhatsAppTimestamp(b.lastMessageAt) - parseWhatsAppTimestamp(a.lastMessageAt)
+                  );
+                  try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(sorted)); } catch {}
+                  return sorted;
+                });
+              }
+
+              if (Array.isArray(data.job.resultMessages) && data.job.resultMessages.length > 0) {
+                setMessages(prev => {
+                  const existingIds = new Set(prev.map(m => m.id));
+                  const newMsgs = data.job.resultMessages.filter((m: Message) => !existingIds.has(m.id));
+                  const combined = [...prev, ...newMsgs];
+                  try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(combined)); } catch {}
+                  return combined;
+                });
               }
             } catch (mergeErr) {
               console.error('Erro ao atualizar estado local pós-sync:', mergeErr);

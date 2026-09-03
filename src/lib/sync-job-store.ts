@@ -16,6 +16,9 @@ export interface SyncJob {
     totalContacts: number;
     totalConversations: number;
   };
+  resultContacts?: any[];
+  resultConversations?: any[];
+  resultMessages?: any[];
 }
 
 declare global {

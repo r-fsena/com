@@ -16,8 +16,37 @@ export function parseWhatsAppTimestamp(raw: any): number {
       const num = Number(trimmed);
       return num < 1e12 ? num * 1000 : num;
     }
+
+    // Trata formato data-pre-plain-text: "14:50, 03/09/2026"
+    const brMatch1 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (brMatch1) {
+      const hours = Number(brMatch1[1]);
+      const minutes = Number(brMatch1[2]);
+      const seconds = brMatch1[3] ? Number(brMatch1[3]) : 0;
+      const day = Number(brMatch1[4]);
+      const month = Number(brMatch1[5]) - 1;
+      let year = Number(brMatch1[6]);
+      if (year < 100) year += 2000;
+      const d = new Date(year, month, day, hours, minutes, seconds);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+
+    // Trata formato "03/09/2026, 14:50"
+    const brMatch2 = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (brMatch2) {
+      const day = Number(brMatch2[1]);
+      const month = Number(brMatch2[2]) - 1;
+      let year = Number(brMatch2[3]);
+      if (year < 100) year += 2000;
+      const hours = Number(brMatch2[4]);
+      const minutes = Number(brMatch2[5]);
+      const seconds = brMatch2[6] ? Number(brMatch2[6]) : 0;
+      const d = new Date(year, month, day, hours, minutes, seconds);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+
     const parsed = new Date(trimmed).getTime();
-    return isNaN(parsed) ? 0 : parsed;
+    return isNaN(parsed) ? Date.now() : parsed;
   }
   return 0;
 }

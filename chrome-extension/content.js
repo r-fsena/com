@@ -174,7 +174,22 @@
     let resolvedPhone = '';
     let resolvedLid = '';
 
-    // Método A: Atributos data-id (false_554898379087@c.us_... ou false_111518894127202@lid_...)
+    // Método A: Busca telefone real no Header do WhatsApp Web (+55 (11) 99600-0862)
+    const headerElement = main.querySelector('header');
+    if (headerElement) {
+      const headerText = headerElement.innerText || '';
+      const phoneMatch = headerText.match(/\+?55\s?\(?\d{2}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
+                         headerText.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
+      if (phoneMatch) {
+        const cleanHeaderDigits = phoneMatch[0].replace(/\D/g, '');
+        if (cleanHeaderDigits.length >= 10 && cleanHeaderDigits.length <= 13) {
+          resolvedPhone = cleanHeaderDigits;
+          console.log(`[Brokiva] Telefone extraído com sucesso do header: ${resolvedPhone}`);
+        }
+      }
+    }
+
+    // Método B: Atributos data-id (false_554898379087@c.us_... ou false_34919856757946@lid_...)
     for (const el of messageElements) {
       const dataId = el.getAttribute('data-id') || el.closest('[data-id]')?.getAttribute('data-id') || '';
       if (dataId.includes('@g.us')) {
@@ -187,39 +202,39 @@
           resolvedLid = `${lidMatch[1]}@lid`;
         }
       }
-      const match = dataId.match(/_(\d{8,15})@/);
-      if (match && match[1]) {
-        resolvedPhone = match[1];
-        break;
+      // Apenas aceita @c.us como telefone se ainda não achou no header
+      if (!resolvedPhone && dataId.includes('@c.us')) {
+        const cUsMatch = dataId.match(/_(\d{10,13})@c\.us/);
+        if (cUsMatch && cUsMatch[1]) {
+          resolvedPhone = cUsMatch[1];
+        }
       }
     }
 
-    // Método B: Avatar no header (img src com u=telefone)
-    if (!resolvedPhone || resolvedPhone.length > 13) {
+    // Método C: Avatar no header (img src com u=telefone)
+    if (!resolvedPhone) {
       const avatarImg = main.querySelector('header img[src]');
       if (avatarImg) {
         const src = avatarImg.getAttribute('src') || '';
         const match = src.match(/u=(\d{8,15})%40/) || src.match(/(\d{10,14})/);
-        if (match && match[1]) resolvedPhone = match[1];
+        if (match && match[1] && match[1].length <= 13) resolvedPhone = match[1];
       }
     }
 
-    // Método C: Se o próprio nome do contato for número
-    if (!resolvedPhone || resolvedPhone.length > 13) {
+    // Método D: Se o próprio nome do contato for número
+    if (!resolvedPhone) {
       const digits = contactName.replace(/\D/g, '');
       if (digits.length >= 8 && digits.length <= 13) {
         resolvedPhone = digits;
       }
     }
 
-    // Método D: Subtítulo do header (muitas vezes contém o número real formatado)
-    if (!resolvedPhone || resolvedPhone.length > 13) {
-      const subtitle = main.querySelector('header span[title*="+"], header div.copyable-text, header span[dir="auto"]')?.innerText || '';
-      const digits = subtitle.replace(/\D/g, '');
-      if (digits.length >= 8 && digits.length <= 13) resolvedPhone = digits;
+    // Se ainda não tiver telefone mas tem LID, usa o LID temporariamente como identificador
+    if (!resolvedPhone && resolvedLid) {
+      resolvedPhone = resolvedLid.replace(/\D/g, '');
     }
 
-    // Se ainda não tiver telefone, mas temos LID ou nome, gera identificador estável para não descartar mensagens
+    // Fallback estável para não descartar mensagens
     if (!resolvedPhone) {
       const hash = Math.abs(contactName.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
       resolvedPhone = `5548${String(hash).padStart(8, '0').slice(-8)}`;
@@ -264,7 +279,19 @@
       if (prePlain) {
         const timeMatch = prePlain.match(/\[(.*?)\]/);
         if (timeMatch && timeMatch[1]) {
-          msgTime = timeMatch[1];
+          const rawTime = timeMatch[1].trim();
+          const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+          if (brMatch) {
+            const h = Number(brMatch[1]), m = Number(brMatch[2]), s = brMatch[3] ? Number(brMatch[3]) : 0;
+            const d = Number(brMatch[4]), mo = Number(brMatch[5]) - 1;
+            let y = Number(brMatch[6]);
+            if (y < 100) y += 2000;
+            const dt = new Date(y, mo, d, h, m, s);
+            if (!isNaN(dt.getTime())) msgTime = dt.toISOString();
+          } else {
+            const dt = new Date(rawTime);
+            if (!isNaN(dt.getTime())) msgTime = dt.toISOString();
+          }
         }
       }
 

@@ -4,6 +4,7 @@ import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
+import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,7 +107,11 @@ export async function POST(req: NextRequest) {
 
       // 1. Processa mensagens do chat
       let lastMsgText = chat.lastMessagePreview || '';
-      let lastMsgTime = chat.lastMessageAt ? new Date(chat.lastMessageAt).toISOString() : nowIso;
+      let lastMsgTime = nowIso;
+      if (chat.lastMessageAt) {
+        const ms = parseWhatsAppTimestamp(chat.lastMessageAt);
+        if (ms > 0) lastMsgTime = new Date(ms).toISOString();
+      }
 
       if (Array.isArray(chat.messages) && chat.messages.length > 0) {
         chat.messages.forEach((m, idx) => {
@@ -115,14 +120,8 @@ export async function POST(req: NextRequest) {
 
           let mTimestamp = nowIso;
           if (m.timestamp) {
-            const timeNum = Number(m.timestamp);
-            if (!isNaN(timeNum) && timeNum > 1000000000) {
-              mTimestamp = new Date(timeNum > 1000000000000 ? timeNum : timeNum * 1000).toISOString();
-            } else {
-              try {
-                mTimestamp = new Date(m.timestamp).toISOString();
-              } catch {}
-            }
+            const ms = parseWhatsAppTimestamp(m.timestamp);
+            if (ms > 0) mTimestamp = new Date(ms).toISOString();
           }
 
           const mId = m.id || `ext-msg-${cleanPhone}-${idx}-${Date.now()}`;

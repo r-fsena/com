@@ -2799,6 +2799,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
             return updated;
           });
+        }
+
         // Ingestão imediata de atualizações enviadas pela extensão para o servidor
         try {
           const stateRes = await fetch('/api/v1/crm/state');

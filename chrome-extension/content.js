@@ -402,6 +402,70 @@
     }
   }
 
+  function findChatScrollContainer() {
+    const main = document.querySelector('#main');
+    if (!main) return null;
+    const candidates = main.querySelectorAll('div');
+    for (const el of candidates) {
+      if (el.scrollHeight > el.clientHeight && el.clientHeight > 200) {
+        const style = window.getComputedStyle(el);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+          return el;
+        }
+      }
+    }
+    return document.querySelector('#main div[tabindex="-1"]') ||
+           document.querySelector('#main .copyable-area')?.parentElement ||
+           document.querySelector('#main div[role="application"]');
+  }
+
+  async function deepScrollChatHistory(targetScrolls = 8) {
+    const scrollContainer = findChatScrollContainer();
+    if (!scrollContainer) return;
+
+    const badge = document.getElementById('sovereign-sync-badge');
+    let lastCount = 0;
+
+    for (let i = 0; i < targetScrolls; i++) {
+      scrollContainer.scrollTop = 0;
+      if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
+      await new Promise(r => setTimeout(r, 450));
+
+      const currentCount = document.querySelectorAll('#main .copyable-text, #main [data-pre-plain-text]').length;
+      if (currentCount === lastCount && i >= 3) {
+        break; // Topo da conversa atingido
+      }
+      lastCount = currentCount;
+    }
+  }
+
+  async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid) {
+    if (phoneOrLid && phoneOrLid.length <= 13 && phoneOrLid.startsWith('55')) {
+      return phoneOrLid;
+    }
+    try {
+      const config = await chrome.storage.local.get(['crmUrl']);
+      const crmUrl = config.crmUrl || 'https://crm.faithhubs.com';
+      const res = await fetch(`${crmUrl}/api/v1/crm/state`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.contacts)) {
+          const found = data.contacts.find(c => 
+            c.name && c.name.toLowerCase().trim() === contactName.toLowerCase().trim()
+          );
+          if (found && found.phone) {
+            const clean = found.phone.replace(/\D/g, '');
+            if (clean.length >= 10 && clean.length <= 13) {
+              console.log(`[Brokiva] Resolvido telefone real do CRM para ${contactName}: ${clean}`);
+              return clean;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+    return phoneOrLid;
+  }
+
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
   async function syncCurrentActiveChat() {
     const badge = document.getElementById('sovereign-sync-badge');
@@ -409,16 +473,8 @@
 
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_START', 'Iniciando leitura da conversa aberta...');
 
-    // Rola para cima suavemente para o WhatsApp carregar mensagens anteriores da memória
-    const chatContainer = document.querySelector('#main div[tabindex="-1"][data-tab="6"]') || 
-                          document.querySelector('#main .copyable-area')?.parentElement ||
-                          document.querySelector('#main div[role="application"]');
-    if (chatContainer) {
-      for (let s = 0; s < 3; s++) {
-        chatContainer.scrollTop = 0;
-        await new Promise(r => setTimeout(r, 350));
-      }
-    }
+    // Rola para cima profundamente para carregar todo o histórico anterior
+    await deepScrollChatHistory(8);
 
     const chatData = extractActiveChatData();
     if (!chatData || !chatData.phone || chatData.messages.length === 0) {
@@ -427,6 +483,9 @@
       if (badge) badge.innerText = 'Pronto';
       return;
     }
+
+    // Se o telefone extraído for LID, consulta o CRM pelo nome do contato para casar o telefone real
+    chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
 
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
     if (badge) badge.innerText = 'Salvando...';

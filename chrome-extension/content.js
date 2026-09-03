@@ -30,7 +30,9 @@
           <div class="sovereign-brand">
             <div class="sovereign-brand-icon">B</div>
             <div>
-              <div class="sovereign-title">Brokiva</div>
+              <div class="sovereign-title" style="display:flex; align-items:center;">
+                Brokiva <span style="font-size:10px; background:#059669; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.1</span>
+              </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
           </div>

@@ -71,11 +71,18 @@ export async function POST(req: NextRequest) {
       const defaultContactId = `contact-zapi-${cleanPhone}`;
       const defaultConversationId = `conv-zapi-${cleanPhone}`;
 
-      // Localiza se já existe contato ou conversa prévia com esse número no CRM
+      // Localiza se já existe contato ou conversa prévia com esse número, LID ou nome no CRM
       const currentState = serverCRMStore.getState();
       const existingContact = currentState.contacts.find(c => {
         const cDigits = (c.phone || '').replace(/\D/g, '');
-        return cDigits && (cDigits.endsWith(cleanPhone) || cleanPhone.endsWith(cDigits));
+        const matchPhone = cDigits && (cDigits.endsWith(cleanPhone) || cleanPhone.endsWith(cDigits));
+        const matchLid = (chat.lid && c.lid && (c.lid === chat.lid || c.lid.includes(chat.lid))) ||
+                         (c.lid && rawDigits && c.lid.includes(rawDigits));
+        const matchName = chat.name && c.name && 
+                          !chat.name.startsWith('+') && 
+                          !c.name.startsWith('+') && 
+                          c.name.toLowerCase().trim() === chat.name.toLowerCase().trim();
+        return matchPhone || matchLid || matchName;
       });
       const existingConv = currentState.conversations.find(cv => {
         return cv.id === defaultConversationId || (existingContact && cv.contactId === existingContact.id);

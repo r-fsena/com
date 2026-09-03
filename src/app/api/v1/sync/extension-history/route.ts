@@ -171,14 +171,21 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 2. Contato
+      // 2. Contato: Garante separação estrita entre telefone e LID
+      const isCleanPhoneLid = cleanPhone.length > 13 || (cleanPhone.length >= 14 && cleanPhone.startsWith('1'));
+      const resolvedPhone = existingContact?.phone && !existingContact.phone.includes('@lid') && existingContact.phone.replace(/\D/g, '').length <= 13
+        ? existingContact.phone
+        : (isCleanPhoneLid ? (existingContact?.phone || `+${cleanPhone}`) : `+${cleanPhone}`);
+      
+      const resolvedLid = chat.lid || existingContact?.lid || (isCleanPhoneLid ? `${cleanPhone}@lid` : undefined);
+
       newContacts.push({
         id: contactId,
         tenantId,
         name: contactName,
-        phone: `+${cleanPhone}`,
-        lid: chat.lid,
-        avatarUrl: chat.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`,
+        phone: resolvedPhone,
+        lid: resolvedLid,
+        avatarUrl: chat.avatarUrl || existingContact?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`,
         assignedUserId: brokerUserId || undefined,
         source: 'WHATSAPP',
         temperature: 'WARM',

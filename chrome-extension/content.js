@@ -201,7 +201,9 @@
     };
   }
 
-  // 3. Atualiza UI do Lead Ativo
+  let lastLeadSignature = '';
+
+  // 3. Atualiza UI do Lead Ativo de forma segura e leve
   function updateActiveLeadUI() {
     const main = document.querySelector('#main');
     const nameElem = document.getElementById('sovereign-lead-name');
@@ -212,24 +214,32 @@
     if (!nameElem || !phoneElem) return;
 
     if (!main) {
-      nameElem.innerText = 'Nenhum chat selecionado';
-      phoneElem.innerText = 'Abra uma conversa no WhatsApp';
-      if (avatarElem) avatarElem.innerText = '?';
-      if (syncCurrentBtn) syncCurrentBtn.innerHTML = `<span>📥 Salvar Histórico Desta Conversa</span>`;
+      if (lastLeadSignature !== 'none') {
+        lastLeadSignature = 'none';
+        nameElem.innerText = 'Nenhum chat selecionado';
+        phoneElem.innerText = 'Abra uma conversa no WhatsApp';
+        if (avatarElem) avatarElem.innerText = '?';
+        if (syncCurrentBtn) syncCurrentBtn.innerHTML = `<span>📥 Salvar Histórico Desta Conversa</span>`;
+      }
       return;
     }
 
     const chatData = extractActiveChatData();
     if (chatData && chatData.phone) {
-      nameElem.innerText = chatData.name || 'Contato WhatsApp';
-      phoneElem.innerText = `+${chatData.phone} (${chatData.messages.length} msgs carregadas)`;
-      if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
-      if (syncCurrentBtn) {
-        syncCurrentBtn.innerHTML = `<span>📥 Salvar ${chatData.messages.length} Mensagens no CRM</span>`;
+      const sig = `${chatData.phone}-${chatData.messages.length}`;
+      if (lastLeadSignature !== sig) {
+        lastLeadSignature = sig;
+        nameElem.innerText = chatData.name || 'Contato WhatsApp';
+        phoneElem.innerText = `+${chatData.phone} (${chatData.messages.length} msgs carregadas)`;
+        if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
+        if (syncCurrentBtn) {
+          syncCurrentBtn.innerHTML = `<span>📥 Salvar ${chatData.messages.length} Mensagens no CRM</span>`;
+        }
       }
     } else {
       const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
-      if (headerTitle) {
+      if (headerTitle && lastLeadSignature !== headerTitle) {
+        lastLeadSignature = headerTitle;
         nameElem.innerText = headerTitle;
         phoneElem.innerText = 'Conversa aberta (clique abaixo para ler mensagens)';
         if (avatarElem) avatarElem.innerText = headerTitle.charAt(0).toUpperCase();
@@ -429,19 +439,12 @@
     if (root) root.classList.remove('open');
   }
 
-  // 8. Inicialização & Observador de Mudança de Conversas
+  // 8. Inicialização Segura (Sem loops no DOM)
   function init() {
     injectSidebar();
 
-    // Observa mudanças no DOM do chat para atualizar o lead ativo
-    const observer = new MutationObserver(() => {
-      updateActiveLeadUI();
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    // Atualização periódica leve para garantir que o lead ativo esteja sempre sincronizado na UI
-    setInterval(updateActiveLeadUI, 1200);
+    // Verificação periódica segura a cada 1.5s sem travar o navegador
+    setInterval(updateActiveLeadUI, 1500);
   }
 
   // Aguarda carregamento do WhatsApp Web

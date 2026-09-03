@@ -85,6 +85,17 @@
             </button>
             <div id="sovereign-ai-suggestions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
           </div>
+
+          <!-- Card de Logs & Telemetria CloudWatch -->
+          <div class="sovereign-card" style="background:#0f172a; border:1px solid #334155; color:#cbd5e1;">
+            <div class="sovereign-card-title" style="color:#94a3b8; display:flex; justify-content:space-between;">
+              <span>CloudWatch Logs (Extensão)</span>
+              <span id="sovereign-logs-count" style="font-size:10px; color:#34d399;">● Ativo</span>
+            </div>
+            <div id="sovereign-live-logs" style="font-family:monospace; font-size:10px; max-height:130px; overflow-y:auto; background:#020617; padding:8px; border-radius:8px; color:#e2e8f0; display:flex; flex-direction:column; gap:4px; border:1px solid #1e293b;">
+              <div style="color:#64748b;">[Aguardando comando...]</div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -104,6 +115,34 @@
     batchSyncBtn.addEventListener('click', () => executeBatchHistoryScan());
     syncCurrentBtn.addEventListener('click', () => syncCurrentActiveChat());
     aiBtn.addEventListener('click', () => triggerAiSuggestion());
+  }
+
+  // Registrador de Telemetria e Logs para a UI e CloudWatch
+  function logToConsoleAndCloudWatch(level, event, message, details = {}) {
+    const timeStr = new Date().toLocaleTimeString();
+    console.log(`[Brokiva CloudWatch][${level}] ${event}: ${message}`, details);
+
+    // Atualiza container visual de logs na Sidebar
+    const container = document.getElementById('sovereign-live-logs');
+    if (container) {
+      const line = document.createElement('div');
+      line.style.color = level === 'ERROR' ? '#f43f5e' : level === 'WARN' ? '#f59e0b' : '#38bdf8';
+      line.innerText = `[${timeStr}] ${message}`;
+      container.appendChild(line);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // Envia evento de log para o background despachar ao CloudWatch
+    try {
+      chrome.runtime.sendMessage({
+        action: 'LOG_EVENT',
+        data: {
+          level,
+          event,
+          details: { message, ...details }
+        }
+      });
+    } catch {}
   }
 
   // 2. Extrai dados da conversa ativa no WhatsApp Web
@@ -276,6 +315,8 @@
     const badge = document.getElementById('sovereign-sync-badge');
     if (badge) badge.innerText = 'Carregando histórico...';
 
+    logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_START', 'Iniciando leitura da conversa aberta...');
+
     // Rola para cima suavemente para o WhatsApp carregar mensagens anteriores da memória
     const chatContainer = document.querySelector('#main div[tabindex="-1"][data-tab="6"]') || 
                           document.querySelector('#main .copyable-area')?.parentElement ||
@@ -289,11 +330,13 @@
 
     const chatData = extractActiveChatData();
     if (!chatData || !chatData.phone || chatData.messages.length === 0) {
+      logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_EMPTY', `Conversa sem mensagens ou não identificada. (Phone: ${chatData?.phone || 'n/d'}, Msgs: ${chatData?.messages?.length || 0})`);
       alert('Abra uma conversa com mensagens no WhatsApp antes de sincronizar.');
       if (badge) badge.innerText = 'Pronto';
       return;
     }
 
+    logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
     if (badge) badge.innerText = 'Salvando...';
 
     chrome.runtime.sendMessage({
@@ -301,6 +344,7 @@
       data: { chats: [chatData] }
     }, (response) => {
       if (response && response.success) {
+        logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_SUCCESS', `✓ Sucesso! ${chatData.messages.length} msgs enviadas para Brokiva`);
         if (badge) {
           badge.innerText = `✓ ${chatData.messages.length} msgs`;
           badge.style.background = '#dcfce7';
@@ -308,6 +352,7 @@
         }
         alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!`);
       } else {
+        logToConsoleAndCloudWatch('ERROR', 'SYNC_SINGLE_FAILED', `Falha ao sincronizar: ${response?.error || 'Erro desconhecido'}`);
         if (badge) badge.innerText = 'Erro';
         console.error('[Brokiva] Erro ao sincronizar conversa atual:', response?.error);
       }
@@ -331,6 +376,8 @@
       progressStatus.innerText = 'Iniciando varredura e leitura dos chats...';
     }
 
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', 'Varredura em lote acionada pelo corretor');
+
     // Localiza spans de título na lista lateral do WhatsApp Web
     const titleNodes = Array.from(document.querySelectorAll('#pane-side span[title]'))
       .filter(span => {
@@ -342,9 +389,10 @@
                span.offsetHeight > 0;
       });
 
-    console.log(`[Brokiva] Localizados ${titleNodes.length} chats para sincronização`);
+    logToConsoleAndCloudWatch('INFO', 'CHATS_DISCOVERED', `Localizados ${titleNodes.length} chats para sincronização`);
 
     if (titleNodes.length === 0) {
+      logToConsoleAndCloudWatch('WARN', 'NO_CHATS_FOUND', 'Nenhum chat visível encontrado no #pane-side');
       alert('Nenhum chat visível no WhatsApp Web. Certifique-se de que o WhatsApp Web está aberto.');
       isSyncing = false;
       if (btn) btn.disabled = false;
@@ -364,6 +412,8 @@
         progressStatus.innerText = `Abrindo e lendo histórico (${i + 1}/${total}): ${name}...`;
       }
 
+      logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo (${i + 1}/${total}): ${name}`);
+
       // Clica para abrir a conversa usando múltiplos eventos de ponteiro
       const clickable = titleSpan.closest('div[role="gridcell"], div[role="row"], div._ak8l') || 
                         titleSpan.parentElement?.parentElement || 
@@ -381,11 +431,15 @@
       if (chatData && chatData.phone && chatData.messages.length > 0) {
         syncedChats.push(chatData);
 
+        logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${chatData.messages.length} msgs de ${chatData.name} (${chatData.phone})`);
+
         // Envia imediatamente cada chat para a API da Brokiva
         chrome.runtime.sendMessage({
           action: 'SYNC_BATCH_CHATS',
           data: { chats: [chatData] }
         });
+      } else {
+        logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${name}: 0 mensagens detectadas após abertura`);
       }
 
       // Atualiza barra de progresso
@@ -399,6 +453,8 @@
       progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e históricos completos sincronizados com a Brokiva!`;
       progressStatus.style.color = '#059669';
     }
+
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura finalizada: ${syncedChats.length}/${total} chats sincronizados com a nuvem`);
   }
 
   // 6. Copiloto de IA: Sugere e insere resposta com 1 clique no WhatsApp Web

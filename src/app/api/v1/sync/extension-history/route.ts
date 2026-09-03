@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,6 +207,21 @@ export async function POST(req: NextRequest) {
       contacts: newContacts,
       conversations: newConversations,
       messages: newMessages,
+    });
+
+    // Registra log estruturado no CloudWatch
+    await recordExtensionLog({
+      timestamp: Date.now(),
+      level: 'INFO',
+      event: 'BATCH_SYNC_INGESTED',
+      tenantId,
+      brokerName,
+      messagesCount: importedMessagesCount,
+      details: {
+        contactsCount: importedContactsCount,
+        chatsReceived: chats.length,
+        contactsSample: newContacts.slice(0, 5).map(c => ({ name: c.name, phone: c.phone })),
+      },
     });
 
     return NextResponse.json({

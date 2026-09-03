@@ -24,6 +24,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Mantém porta aberta para resposta assíncrona
   }
 
+  if (request.action === 'LOG_EVENT') {
+    handleForwardLog(request.data);
+    return false;
+  }
+
   if (request.action === 'GET_AI_SUGGESTION') {
     handleGetAiSuggestion(request.data)
       .then(result => sendResponse({ success: true, result }))
@@ -31,6 +36,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+async function handleForwardLog(logData) {
+  try {
+    const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerName']);
+    const crmUrl = config.crmUrl || DEFAULT_CRM_URL;
+    fetch(`${crmUrl}/api/v1/telemetry/extension-logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        timestamp: Date.now(),
+        tenantId: config.tenantId || DEFAULT_TENANT_ID,
+        brokerName: config.brokerName || 'Corretor',
+        ...logData,
+      }),
+    }).catch(() => {});
+  } catch {}
+}
 
 async function handleBatchSync(data) {
   const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerUserId', 'brokerName']);
@@ -46,6 +68,17 @@ async function handleBatchSync(data) {
     chats: data.chats || [],
   };
 
+  handleForwardLog({
+    level: 'INFO',
+    event: 'DISPATCHING_BATCH_SYNC',
+    details: {
+      chatsCount: (data.chats || []).length,
+      samplePhone: data.chats?.[0]?.phone,
+      sampleName: data.chats?.[0]?.name,
+      sampleMsgs: data.chats?.[0]?.messages?.length,
+    }
+  });
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -54,10 +87,22 @@ async function handleBatchSync(data) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    handleForwardLog({
+      level: 'ERROR',
+      event: 'BATCH_SYNC_HTTP_ERROR',
+      details: { status: response.status, errorText }
+    });
     throw new Error(`HTTP ${response.status}: ${errorText}`);
   }
 
-  return await response.json();
+  const result = await response.json();
+  handleForwardLog({
+    level: 'INFO',
+    event: 'BATCH_SYNC_SUCCESS_ACK',
+    details: result
+  });
+
+  return result;
 }
 
 async function handleGetAiSuggestion(data) {

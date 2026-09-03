@@ -164,15 +164,22 @@
 
     console.log(`[Brokiva] Encontrados ${messageElements.length} elementos de mensagem em #main`);
 
-    // 3. Localiza telefone do contato
+    // 3. Localiza telefone do contato e LID
     let resolvedPhone = '';
+    let resolvedLid = '';
 
-    // Método A: Atributos data-id (false_554898379087@c.us_...)
+    // Método A: Atributos data-id (false_554898379087@c.us_... ou false_111518894127202@lid_...)
     for (const el of messageElements) {
       const dataId = el.getAttribute('data-id') || el.closest('[data-id]')?.getAttribute('data-id') || '';
       if (dataId.includes('@g.us')) {
         console.log('[Brokiva] Grupo detectado, ignorando');
         return null;
+      }
+      if (dataId.includes('@lid')) {
+        const lidMatch = dataId.match(/_(\d{8,18})@lid/);
+        if (lidMatch && lidMatch[1]) {
+          resolvedLid = `${lidMatch[1]}@lid`;
+        }
       }
       const match = dataId.match(/_(\d{8,15})@/);
       if (match && match[1]) {
@@ -182,7 +189,7 @@
     }
 
     // Método B: Avatar no header (img src com u=telefone)
-    if (!resolvedPhone) {
+    if (!resolvedPhone || resolvedPhone.length > 13) {
       const avatarImg = main.querySelector('header img[src]');
       if (avatarImg) {
         const src = avatarImg.getAttribute('src') || '';
@@ -192,21 +199,21 @@
     }
 
     // Método C: Se o próprio nome do contato for número
-    if (!resolvedPhone) {
+    if (!resolvedPhone || resolvedPhone.length > 13) {
       const digits = contactName.replace(/\D/g, '');
-      if (digits.length >= 8 && digits.length <= 15) {
+      if (digits.length >= 8 && digits.length <= 13) {
         resolvedPhone = digits;
       }
     }
 
-    // Método D: Subtítulo do header
-    if (!resolvedPhone) {
-      const subtitle = main.querySelector('header span[title*="+"], header div.copyable-text')?.innerText || '';
+    // Método D: Subtítulo do header (muitas vezes contém o número real formatado)
+    if (!resolvedPhone || resolvedPhone.length > 13) {
+      const subtitle = main.querySelector('header span[title*="+"], header div.copyable-text, header span[dir="auto"]')?.innerText || '';
       const digits = subtitle.replace(/\D/g, '');
-      if (digits.length >= 8 && digits.length <= 15) resolvedPhone = digits;
+      if (digits.length >= 8 && digits.length <= 13) resolvedPhone = digits;
     }
 
-    // Se ainda não tiver telefone, gera identificador estável para não descartar mensagens
+    // Se ainda não tiver telefone, mas temos LID ou nome, gera identificador estável para não descartar mensagens
     if (!resolvedPhone) {
       const hash = Math.abs(contactName.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
       resolvedPhone = `5548${String(hash).padStart(8, '0').slice(-8)}`;
@@ -257,6 +264,7 @@
 
     return {
       phone: resolvedPhone,
+      lid: resolvedLid || undefined,
       name: contactName,
       messages,
       lastMessagePreview: messages.length > 0 ? messages[messages.length - 1].content : '',

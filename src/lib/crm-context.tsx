@@ -50,7 +50,7 @@ import {
   MOCK_MASTER_USERS,
   MOCK_SAAS_API_CONFIG
 } from './mock-data';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 interface CRMContextType {
@@ -206,12 +206,7 @@ interface CRMContextType {
 }
 
 export function normalizePhoneKey(phone: string | undefined): string {
-  if (!phone) return '';
-  const digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('55') && digits.length >= 12) {
-    return digits.slice(2); // Normaliza para DDD + Número (ex: 4891079478)
-  }
-  return digits;
+  return canonicalPhoneKey(phone);
 }
 
 export function isLidNumber(phoneOrId: string | undefined): boolean {

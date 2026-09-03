@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
-import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 
 export const dynamic = 'force-dynamic';
@@ -72,11 +72,12 @@ export async function POST(req: NextRequest) {
       const defaultContactId = `contact-zapi-${cleanPhone}`;
       const defaultConversationId = `conv-zapi-${cleanPhone}`;
 
-      // Localiza se já existe contato ou conversa prévia com esse número, LID ou nome no CRM
+      // Localiza se já existe contato ou conversa prévia com esse número (com ou sem 9º dígito), LID ou nome no CRM
       const currentState = serverCRMStore.getState();
       const existingContact = currentState.contacts.find(c => {
-        const cDigits = (c.phone || '').replace(/\D/g, '');
-        const matchPhone = cDigits && (cDigits.endsWith(cleanPhone) || cleanPhone.endsWith(cDigits));
+        const matchPhone = arePhonesEquivalent(c.phone, rawDigits) || 
+                           arePhonesEquivalent(c.phone, cleanPhone) ||
+                           arePhonesEquivalent(c.phone, chat.phone);
         const matchLid = (chat.lid && c.lid && (c.lid === chat.lid || c.lid.includes(chat.lid))) ||
                          (c.lid && rawDigits && c.lid.includes(rawDigits));
         const matchName = chat.name && c.name && 
@@ -85,8 +86,15 @@ export async function POST(req: NextRequest) {
                           c.name.toLowerCase().trim() === chat.name.toLowerCase().trim();
         return matchPhone || matchLid || matchName;
       });
+
       const existingConv = currentState.conversations.find(cv => {
-        return cv.id === defaultConversationId || (existingContact && cv.contactId === existingContact.id);
+        const convDigits = cv.id.replace(/\D/g, '') || cv.contactId.replace(/\D/g, '');
+        const matchConvPhone = arePhonesEquivalent(convDigits, rawDigits) || 
+                               arePhonesEquivalent(convDigits, cleanPhone) ||
+                               arePhonesEquivalent(convDigits, chat.phone);
+        return cv.id === defaultConversationId || 
+               matchConvPhone || 
+               (existingContact && (cv.contactId === existingContact.id || cv.id.includes(existingContact.id)));
       });
 
       const contactId = existingContact ? existingContact.id : defaultContactId;

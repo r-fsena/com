@@ -62,6 +62,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
+import { arePhonesEquivalent } from '@/lib/whatsapp-filter';
 import { PropertyType, PresentedProperty, Message } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
@@ -276,12 +277,11 @@ export function WhatsAppInbox() {
     const byId = contacts.find(c => c.id === activeConversation.contactId);
     if (byId) return byId;
 
-    // 2. Match por telefone limpo na conversa
+    // 2. Match por telefone equivalente na conversa (com ou sem 9º dígito e com máscaras)
     const convDigits = activeConversation.id.replace(/\D/g, '') || activeConversation.contactId.replace(/\D/g, '');
     if (convDigits) {
       const byPhone = contacts.find(c => {
-        const cDigits = c.phone.replace(/\D/g, '');
-        return cDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits));
+        return arePhonesEquivalent(c.phone, convDigits);
       });
       if (byPhone) return byPhone;
     }
@@ -293,19 +293,23 @@ export function WhatsAppInbox() {
     if (!activeConversation) return [];
     const convId = activeConversation.id;
     const cleanPhone = activeContact?.phone ? activeContact.phone.replace(/\D/g, '') : convId.replace(/\D/g, '');
-    const phoneSuffix = cleanPhone.length >= 8 ? cleanPhone.slice(-8) : cleanPhone;
     const cleanLid = activeContact?.lid ? activeContact.lid.replace(/\D/g, '') : '';
 
     const matched = messages
       .filter(m => {
         if (m.conversationId === convId) return true;
         if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
-        if (cleanPhone && cleanPhone.length >= 8 && m.conversationId.includes(cleanPhone)) return true;
-        if (phoneSuffix && phoneSuffix.length >= 8 && m.conversationId.includes(phoneSuffix)) return true;
+        
+        const mConvDigits = m.conversationId.replace(/\D/g, '');
+        if (mConvDigits && cleanPhone && arePhonesEquivalent(mConvDigits, cleanPhone)) return true;
+        if (mConvDigits && activeContact && arePhonesEquivalent(mConvDigits, activeContact.phone)) return true;
         if (cleanLid && cleanLid.length >= 8 && m.conversationId.includes(cleanLid)) return true;
+
         const mPhone = (m as any).phone ? String((m as any).phone).replace(/\D/g, '') : '';
-        if (mPhone && phoneSuffix && mPhone.endsWith(phoneSuffix)) return true;
+        if (mPhone && cleanPhone && arePhonesEquivalent(mPhone, cleanPhone)) return true;
+        if (mPhone && activeContact && arePhonesEquivalent(mPhone, activeContact.phone)) return true;
         if (mPhone && cleanLid && mPhone.includes(cleanLid)) return true;
+
         return false;
       })
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());

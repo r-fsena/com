@@ -1031,6 +1031,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         ]);
         if (mergedMsgs.length > 0) {
           setMessages(mergedMsgs);
+          try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(mergedMsgs)); } catch {}
         }
 
         // Insights

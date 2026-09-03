@@ -68,11 +68,25 @@ export async function POST(req: NextRequest) {
         cleanPhone = `55${cleanPhone}`;
       }
 
-      const contactId = `contact-zapi-${cleanPhone}`;
-      const conversationId = `conv-zapi-${cleanPhone}`;
+      const defaultContactId = `contact-zapi-${cleanPhone}`;
+      const defaultConversationId = `conv-zapi-${cleanPhone}`;
+
+      // Localiza se já existe contato ou conversa prévia com esse número no CRM
+      const currentState = serverCRMStore.getState();
+      const existingContact = currentState.contacts.find(c => {
+        const cDigits = (c.phone || '').replace(/\D/g, '');
+        return cDigits && (cDigits.endsWith(cleanPhone) || cleanPhone.endsWith(cDigits));
+      });
+      const existingConv = currentState.conversations.find(cv => {
+        return cv.id === defaultConversationId || (existingContact && cv.contactId === existingContact.id);
+      });
+
+      const contactId = existingContact ? existingContact.id : defaultContactId;
+      const conversationId = existingConv ? existingConv.id : defaultConversationId;
+
       const contactName = chat.name && !chat.name.startsWith('+') && !chat.name.startsWith('WhatsApp')
         ? chat.name.trim()
-        : `WhatsApp ${cleanPhone.slice(-4)}`;
+        : (existingContact?.name || `WhatsApp ${cleanPhone.slice(-4)}`);
 
       // 1. Processa mensagens do chat
       let lastMsgText = chat.lastMessagePreview || '';

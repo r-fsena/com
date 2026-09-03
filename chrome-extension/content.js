@@ -108,37 +108,72 @@
 
   // 2. Extrai dados da conversa ativa no WhatsApp Web
   function extractActiveChatData() {
-    const mainHeader = document.querySelector('#main header');
-    if (!mainHeader) return null;
+    const main = document.querySelector('#main');
+    if (!main) return null;
 
-    // Nome / Telefone no topo do chat
-    const titleElem = mainHeader.querySelector('span[title], div[role="button"] span');
-    const rawTitle = titleElem ? titleElem.innerText.trim() : '';
+    // Busca todos os balões de mensagem com data-id
+    const messageElements = Array.from(main.querySelectorAll('div[data-id]'));
+    if (messageElements.length === 0) return null;
 
-    // Extrai número ou limpa
-    const phoneDigits = rawTitle.replace(/\D/g, '');
-    let resolvedPhone = phoneDigits;
-    let resolvedName = rawTitle;
+    let resolvedPhone = '';
+    let isGroup = false;
 
-    // Se o título for um nome em vez de número
-    if (phoneDigits.length < 8) {
-      // Tenta achar detalhes no perfil
-      resolvedPhone = currentActivePhone || '55' + Math.floor(1000000000 + Math.random() * 9000000000);
-    } else {
-      currentActivePhone = phoneDigits;
-      currentActiveName = rawTitle;
+    // Descobre o telefone a partir do data-id das mensagens: format: false_554898379087@c.us_...
+    for (const el of messageElements) {
+      const dataId = el.getAttribute('data-id') || '';
+      if (dataId.includes('@g.us')) {
+        isGroup = true;
+        break;
+      }
+      const match = dataId.match(/_(\d{8,15})@/);
+      if (match && match[1]) {
+        resolvedPhone = match[1];
+        break;
+      }
     }
 
-    // Extrai mensagens renderizadas na tela
-    const messageElements = document.querySelectorAll('#main div.message-in, #main div.message-out');
+    if (isGroup) return null; // Ignora grupos automaticamente
+
+    // Nome no header
+    const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
+
+    // Se não achou telefone pelo data-id, tenta pelo header se for número
+    if (!resolvedPhone) {
+      const headerDigits = headerTitle.replace(/\D/g, '');
+      if (headerDigits.length >= 8) resolvedPhone = headerDigits;
+    }
+
+    if (!resolvedPhone) return null;
+
+    currentActivePhone = resolvedPhone;
+    currentActiveName = headerTitle || `WhatsApp ${resolvedPhone.slice(-4)}`;
+
+    // Extrai todas as mensagens da tela
     const messages = [];
-
     messageElements.forEach((el, index) => {
-      const isFromMe = el.classList.contains('message-out');
-      const textElem = el.querySelector('.selectable-text, .copyable-text span, div[data-pre-plain-text]');
-      const content = textElem ? textElem.innerText.trim() : '';
+      const dataId = el.getAttribute('data-id') || '';
+      const isFromMe = dataId.startsWith('true_') || el.classList.contains('message-out');
 
-      // Tenta extrair timestamp do atributo pre-plain-text: "[14:32, 03/09/2026] Nome: "
+      // Texto da mensagem
+      const textNode = el.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text');
+      let content = textNode ? textNode.innerText.trim() : '';
+
+      // Tipo de mídia
+      let messageType = 'TEXT';
+      if (el.querySelector('audio')) {
+        messageType = 'AUDIO';
+        content = content || '🎵 Mensagem de Voz';
+      } else if (el.querySelector('img[src*="blob:"], img[src*="data:"]')) {
+        messageType = 'IMAGE';
+        content = content || '📷 Foto';
+      } else if (el.querySelector('span[data-icon*="document"], a[download]')) {
+        messageType = 'DOCUMENT';
+        content = content || '📄 Documento';
+      }
+
+      if (!content) return;
+
+      // Timestamp aproximado ou do pre-plain-text
       const prePlain = el.querySelector('div[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
       let msgTime = new Date().toISOString();
       if (prePlain) {
@@ -148,20 +183,18 @@
         }
       }
 
-      if (content) {
-        messages.push({
-          id: `wpp-ext-${Date.now()}-${index}`,
-          content,
-          fromMe: isFromMe,
-          timestamp: msgTime,
-          messageType: 'TEXT',
-        });
-      }
+      messages.push({
+        id: dataId || `wpp-ext-${resolvedPhone}-${index}`,
+        content,
+        fromMe: isFromMe,
+        timestamp: msgTime,
+        messageType,
+      });
     });
 
     return {
       phone: resolvedPhone,
-      name: resolvedName,
+      name: currentActiveName,
       messages,
       lastMessagePreview: messages.length > 0 ? messages[messages.length - 1].content : '',
       lastMessageAt: messages.length > 0 ? messages[messages.length - 1].timestamp : new Date().toISOString(),
@@ -170,29 +203,63 @@
 
   // 3. Atualiza UI do Lead Ativo
   function updateActiveLeadUI() {
-    const chatData = extractActiveChatData();
+    const main = document.querySelector('#main');
     const nameElem = document.getElementById('sovereign-lead-name');
     const phoneElem = document.getElementById('sovereign-lead-phone');
     const avatarElem = document.getElementById('sovereign-lead-avatar');
+    const syncCurrentBtn = document.getElementById('sovereign-sync-current-btn');
 
     if (!nameElem || !phoneElem) return;
 
-    if (chatData && chatData.phone) {
-      nameElem.innerText = chatData.name || 'Contato WhatsApp';
-      phoneElem.innerText = `+${chatData.phone}`;
-      if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
-    }
-  }
-
-  // 4. Sincroniza apenas a conversa atual
-  function syncCurrentActiveChat() {
-    const chatData = extractActiveChatData();
-    if (!chatData || !chatData.phone) {
-      alert('Abra uma conversa no WhatsApp antes de sincronizar.');
+    if (!main) {
+      nameElem.innerText = 'Nenhum chat selecionado';
+      phoneElem.innerText = 'Abra uma conversa no WhatsApp';
+      if (avatarElem) avatarElem.innerText = '?';
+      if (syncCurrentBtn) syncCurrentBtn.innerHTML = `<span>📥 Salvar Histórico Desta Conversa</span>`;
       return;
     }
 
+    const chatData = extractActiveChatData();
+    if (chatData && chatData.phone) {
+      nameElem.innerText = chatData.name || 'Contato WhatsApp';
+      phoneElem.innerText = `+${chatData.phone} (${chatData.messages.length} msgs carregadas)`;
+      if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
+      if (syncCurrentBtn) {
+        syncCurrentBtn.innerHTML = `<span>📥 Salvar ${chatData.messages.length} Mensagens no CRM</span>`;
+      }
+    } else {
+      const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
+      if (headerTitle) {
+        nameElem.innerText = headerTitle;
+        phoneElem.innerText = 'Conversa aberta (clique abaixo para ler mensagens)';
+        if (avatarElem) avatarElem.innerText = headerTitle.charAt(0).toUpperCase();
+      }
+    }
+  }
+
+  // 4. Sincroniza apenas a conversa atual com carregamento paginado
+  async function syncCurrentActiveChat() {
     const badge = document.getElementById('sovereign-sync-badge');
+    if (badge) badge.innerText = 'Carregando histórico...';
+
+    // Rola para cima 3 vezes suavemente para o WhatsApp carregar mensagens anteriores da memória
+    const chatContainer = document.querySelector('#main div[tabindex="-1"][data-tab="6"]') || 
+                          document.querySelector('#main .copyable-area')?.parentElement ||
+                          document.querySelector('#main div[role="application"]');
+    if (chatContainer) {
+      for (let s = 0; s < 3; s++) {
+        chatContainer.scrollTop = 0;
+        await new Promise(r => setTimeout(r, 350));
+      }
+    }
+
+    const chatData = extractActiveChatData();
+    if (!chatData || !chatData.phone || chatData.messages.length === 0) {
+      alert('Abra uma conversa com mensagens no WhatsApp antes de sincronizar.');
+      if (badge) badge.innerText = 'Pronto';
+      return;
+    }
+
     if (badge) badge.innerText = 'Salvando...';
 
     chrome.runtime.sendMessage({
@@ -201,18 +268,19 @@
     }, (response) => {
       if (response && response.success) {
         if (badge) {
-          badge.innerText = '✓ Sincronizado';
+          badge.innerText = `✓ ${chatData.messages.length} msgs`;
           badge.style.background = '#dcfce7';
           badge.style.color = '#15803d';
         }
+        alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!`);
       } else {
         if (badge) badge.innerText = 'Erro';
-        console.error('[Sovereign CRM] Erro ao sincronizar conversa atual:', response?.error);
+        console.error('[Brokiva] Erro ao sincronizar conversa atual:', response?.error);
       }
     });
   }
 
-  // 5. Varredura Automática Paginada (Batch History Scan)
+  // 5. Varredura Automática Paginada (Clica e Lê cada Conversa)
   async function executeBatchHistoryScan() {
     if (isSyncing) return;
     isSyncing = true;
@@ -226,11 +294,11 @@
     if (progressBar) progressBar.style.display = 'block';
     if (progressStatus) {
       progressStatus.style.display = 'block';
-      progressStatus.innerText = 'Iniciando varredura suave de chats...';
+      progressStatus.innerText = 'Iniciando varredura e leitura dos chats...';
     }
 
     // Localiza lista de conversas no painel lateral do WhatsApp Web
-    const chatListPane = document.querySelector('#pane-side, div[aria-label="Lista de conversas"]');
+    const chatListPane = document.querySelector('#pane-side');
     if (!chatListPane) {
       alert('Lista de conversas do WhatsApp não encontrada.');
       isSyncing = false;
@@ -238,71 +306,54 @@
       return;
     }
 
-    // Coleta conversas visíveis e itens de chat
-    const chatElements = Array.from(chatListPane.querySelectorAll('div[role="listitem"], div[role="gridcell"]'));
-    const total = Math.min(chatElements.length, 50); // Lote de até 50 chats por vez
-    const extractedChats = [];
+    // Coleta elementos clicáveis da lista de chats
+    const chatElements = Array.from(chatListPane.querySelectorAll('div[role="listitem"], div[role="row"], div[tabindex="-1"]'))
+      .filter(el => el.querySelector('span[title]') && !el.innerText.includes('Arquivadas'));
 
-    // Inclui a conversa ativa imediatamente
-    const active = extractActiveChatData();
-    if (active) extractedChats.push(active);
+    const total = Math.min(chatElements.length, 30);
+    const syncedChats = [];
 
     for (let i = 0; i < total; i++) {
       const el = chatElements[i];
       if (!el) continue;
 
       const titleNode = el.querySelector('span[title]');
-      const name = titleNode ? titleNode.getAttribute('title') || titleNode.innerText : '';
-      const lastMsgNode = el.querySelector('span[title], div span.selectable-text');
-      const preview = lastMsgNode ? lastMsgNode.innerText : '';
+      const name = titleNode ? titleNode.getAttribute('title') || titleNode.innerText : `Chat ${i + 1}`;
 
-      const phoneCandidate = name.replace(/\D/g, '');
-      if (name && (phoneCandidate.length >= 8 || !name.includes('Grupo'))) {
-        extractedChats.push({
-          phone: phoneCandidate || '5548' + Math.floor(90000000 + Math.random() * 9999999),
-          name: name,
-          lastMessagePreview: preview || 'Conversa ativa no WhatsApp',
-          lastMessageAt: new Date().toISOString(),
-          messages: [
-            {
-              id: `ext-batch-${Date.now()}-${i}`,
-              content: preview || 'Conversa sincronizada via Extensão',
-              fromMe: false,
-              timestamp: new Date().toISOString(),
-              messageType: 'TEXT',
-            }
-          ]
+      if (progressStatus) {
+        progressStatus.innerText = `Abrindo e lendo histórico (${i + 1}/${total}): ${name}...`;
+      }
+
+      // Clica para abrir a conversa
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      el.click();
+
+      // Aguarda 500ms para o WhatsApp renderizar os balões
+      await new Promise(r => setTimeout(r, 500));
+
+      // Extrai dados reais com mensagens
+      const chatData = extractActiveChatData();
+      if (chatData && chatData.phone && chatData.messages.length > 0) {
+        syncedChats.push(chatData);
+
+        // Envia imediatamente cada chat para a API da Brokiva
+        chrome.runtime.sendMessage({
+          action: 'SYNC_BATCH_CHATS',
+          data: { chats: [chatData] }
         });
       }
 
-      // Atualiza barra de progresso visual
+      // Atualiza barra de progresso
       const pct = Math.round(((i + 1) / total) * 100);
       if (progressFill) progressFill.style.width = `${pct}%`;
-      if (progressStatus) progressStatus.innerText = `Processando chat ${i + 1} de ${total}...`;
-
-      // Delay humano suave de 150ms para evitar qualquer trava
-      await new Promise(r => setTimeout(r, 150));
     }
 
-    // Envia o lote para a API do CRM
-    if (progressStatus) progressStatus.innerText = 'Enviando histórico para o CRM...';
-
-    chrome.runtime.sendMessage({
-      action: 'SYNC_BATCH_CHATS',
-      data: { chats: extractedChats }
-    }, (res) => {
-      isSyncing = false;
-      if (btn) btn.disabled = false;
-      if (progressStatus) {
-        if (res && res.success) {
-          progressStatus.innerText = `🎉 Sucesso! ${extractedChats.length} conversas sincronizadas com o CRM!`;
-          progressStatus.style.color = '#059669';
-        } else {
-          progressStatus.innerText = `Erro: ${res?.error || 'Falha de comunicação'}`;
-          progressStatus.style.color = '#e11d48';
-        }
-      }
-    });
+    isSyncing = false;
+    if (btn) btn.disabled = false;
+    if (progressStatus) {
+      progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e históricos completos sincronizados com a Brokiva!`;
+      progressStatus.style.color = '#059669';
+    }
   }
 
   // 6. Copiloto de IA: Sugere e insere resposta com 1 clique no WhatsApp Web
@@ -388,6 +439,9 @@
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
+
+    // Atualização periódica leve para garantir que o lead ativo esteja sempre sincronizado na UI
+    setInterval(updateActiveLeadUI, 1200);
   }
 
   // Aguarda carregamento do WhatsApp Web

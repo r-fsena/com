@@ -54,6 +54,22 @@ export interface TenantFeatureFlags {
   lgpdCompliance: boolean;             // Gestão de consentimento e opt-out LGPD
 }
 
+export type AIProvider = 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'PLATFORM_DEFAULT';
+export type AITone = 'CONSULTATIVE' | 'CLOSER' | 'ELEGANT' | 'FRIENDLY';
+export type AIObjective = 'AGENDAR_VISITA' | 'SIMULAR_FINANCIAMENTO' | 'QUALIFICAR' | 'EQUILIBRADO';
+
+export interface TenantAIConfig {
+  provider: AIProvider;
+  apiKey?: string;
+  model?: string;
+  tone: AITone;
+  objective: AIObjective;
+  customInstructions?: string;
+  temperature?: number;
+  maxTokens?: number;
+  enabled: boolean;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -70,6 +86,7 @@ export interface Tenant {
   asaasApiKey?: string;
   asaasWalletId?: string;
   featureFlags?: TenantFeatureFlags;
+  aiConfig?: TenantAIConfig;
   businessHours: {
     start: string;
     end: string;

@@ -42,7 +42,7 @@ import {
   SlidersHorizontal,
   Bot
 } from 'lucide-react';
-import { UserRole, User, TenantFeatureFlags } from '@/types/crm';
+import { UserRole, User, TenantFeatureFlags, TenantAIConfig, AIProvider, AITone, AIObjective } from '@/types/crm';
 
 interface SettingsManagerProps {
   onOpenQrCodeModal?: () => void;
@@ -65,12 +65,64 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     resetCRMDatabase
   } = useCRM();
   
-  // 6 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Módulos (Feature Flags)
-  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'FLAGS'>('TENANT');
+  // 7 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Módulos (Feature Flags), Inteligência Artificial
+  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'FLAGS' | 'AI'>('TENANT');
   const [flagsSavedMessage, setFlagsSavedMessage] = useState<string | null>(null);
   const [isResettingData, setIsResettingData] = useState(false);
   const [resetDataSuccess, setResetDataSuccess] = useState(false);
   const [showConfirmResetDataModal, setShowConfirmResetDataModal] = useState(false);
+
+  // Estados de IA (Copiloto Multiprovedor BYOK)
+  const [aiConfigState, setAiConfigState] = useState<TenantAIConfig>({
+    provider: currentTenant.aiConfig?.provider || 'PLATFORM_DEFAULT',
+    apiKey: currentTenant.aiConfig?.apiKey || '',
+    model: currentTenant.aiConfig?.model || 'gpt-4o-mini',
+    tone: currentTenant.aiConfig?.tone || 'CONSULTATIVE',
+    objective: currentTenant.aiConfig?.objective || 'EQUILIBRADO',
+    customInstructions: currentTenant.aiConfig?.customInstructions || '',
+    enabled: currentTenant.aiConfig?.enabled ?? true,
+  });
+  const [showAiApiKey, setShowAiApiKey] = useState(false);
+  const [isTestingAiKey, setIsTestingAiKey] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [saveAiSuccess, setSaveAiSuccess] = useState(false);
+
+  const handleTestAiConnection = async () => {
+    setIsTestingAiKey(true);
+    setAiTestResult(null);
+    try {
+      const res = await fetch('/api/v1/ai/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiConfigState.provider,
+          apiKey: aiConfigState.apiKey,
+          model: aiConfigState.model,
+        }),
+      });
+      const data = await res.json();
+      setAiTestResult({
+        success: data.success,
+        message: data.message || data.error || 'Teste de conexão concluído.',
+      });
+    } catch (err: any) {
+      setAiTestResult({
+        success: false,
+        message: `Falha ao conectar com o provedor: ${err.message}`,
+      });
+    } finally {
+      setIsTestingAiKey(false);
+    }
+  };
+
+  const handleSaveAiConfig = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    updateTenant({
+      aiConfig: aiConfigState,
+    });
+    setSaveAiSuccess(true);
+    setTimeout(() => setSaveAiSuccess(false), 3000);
+  };
 
   // Estados locais da Empresa
   const [companyName, setCompanyName] = useState(currentTenant.name);
@@ -408,6 +460,22 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           <span>6. Módulos & Features (Flags)</span>
           <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-extrabold">
             Ativo
+          </span>
+        </button>
+
+        {/* 7. INTELIGÊNCIA ARTIFICIAL (COPILOTO) */}
+        <button
+          onClick={() => setActiveTab('AI')}
+          className={`py-3.5 border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'AI'
+              ? 'border-indigo-600 text-indigo-700 font-bold'
+              : 'border-transparent hover:text-slate-800'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
+          <span>7. Inteligência Artificial (Copiloto)</span>
+          <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-extrabold flex items-center gap-1">
+            <span>BYOK</span>
           </span>
         </button>
       </div>
@@ -1685,6 +1753,371 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               ))}
             </div>
           </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* SUBMENU 7: INTELIGÊNCIA ARTIFICIAL (COPILOTO MULTIPROVEDOR BYOK)         */}
+        {/* ========================================================================= */}
+        {activeTab === 'AI' && (
+          <form onSubmit={handleSaveAiConfig} className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-8">
+            {/* Header da Aba */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">Configuração de IA do Espaço (Copiloto)</h3>
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 px-2 py-0.5 rounded-full">
+                    Tenant: {currentTenant.name}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
+                  Conecte a inteligência artificial favorita da sua imobiliária com chave própria (BYOK). Reduza custos para zero e personalize o tom de voz e os argumentos de vendas do seu time de corretores.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {saveAiSuccess && (
+                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Configurações salvas!</span>
+                  </span>
+                )}
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition active:scale-95 flex items-center gap-2 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Salvar Configurações de IA</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Status do Módulo */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold text-slate-900">Ativar Copiloto de IA no Inbox</h4>
+                <p className="text-[11px] text-slate-500">
+                  Quando ativo, sugere respostas de vendas e qualifica os 4 pilares do lead em tempo real.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiConfigState(prev => ({ ...prev, enabled: !prev.enabled }))}
+                className={`w-12 h-7 rounded-full transition relative cursor-pointer ${
+                  aiConfigState.enabled ? 'bg-indigo-600' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`w-5 h-5 rounded-full bg-white shadow-xs absolute top-1 transition-transform ${
+                    aiConfigState.enabled ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Seleção do Provedor de IA */}
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-slate-900 block">
+                1. Escolha o Provedor de Inteligência Artificial:
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Opção OpenAI */}
+                <div
+                  onClick={() => setAiConfigState(prev => ({
+                    ...prev,
+                    provider: 'OPENAI',
+                    model: prev.provider === 'OPENAI' ? prev.model : 'gpt-4o-mini',
+                  }))}
+                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
+                    aiConfigState.provider === 'OPENAI'
+                      ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      OA
+                    </span>
+                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
+                      Mais Popular
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900">OpenAI (ChatGPT)</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Modelos <strong>GPT-4o Mini</strong> e <strong>GPT-4o</strong>. Ultra rápido e com fração de centavo por conversa.
+                  </p>
+                </div>
+
+                {/* Opção Anthropic Claude */}
+                <div
+                  onClick={() => setAiConfigState(prev => ({
+                    ...prev,
+                    provider: 'ANTHROPIC',
+                    model: prev.provider === 'ANTHROPIC' ? prev.model : 'claude-3-5-haiku-20241022',
+                  }))}
+                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
+                    aiConfigState.provider === 'ANTHROPIC'
+                      ? 'border-amber-500 bg-amber-50/40 ring-2 ring-amber-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      CL
+                    </span>
+                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md">
+                      Alta Persuasão
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900">Anthropic (Claude)</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Modelos <strong>Claude 3.5 Haiku</strong> e <strong>Sonnet</strong>. Excelente sofisticação em redação comercial.
+                  </p>
+                </div>
+
+                {/* Opção Google Gemini */}
+                <div
+                  onClick={() => setAiConfigState(prev => ({
+                    ...prev,
+                    provider: 'GEMINI',
+                    model: prev.provider === 'GEMINI' ? prev.model : 'gemini-1.5-flash',
+                  }))}
+                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
+                    aiConfigState.provider === 'GEMINI'
+                      ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      GE
+                    </span>
+                    <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-md">
+                      Econômico
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900">Google Gemini</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Modelos <strong>Gemini 1.5 Flash</strong> e <strong>Pro</strong>. Custo quase zero e tier gratuito generoso.
+                  </p>
+                </div>
+
+                {/* Opção Nativa da Plataforma */}
+                <div
+                  onClick={() => setAiConfigState(prev => ({
+                    ...prev,
+                    provider: 'PLATFORM_DEFAULT',
+                    model: 'default-semantic',
+                  }))}
+                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
+                    aiConfigState.provider === 'PLATFORM_DEFAULT'
+                      ? 'border-purple-500 bg-purple-50/40 ring-2 ring-purple-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      CRM
+                    </span>
+                    <span className="text-[9px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded-md">
+                      Sem Chave
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900">Nativo da Plataforma</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Motor de inferência local sem custos adicionais. Pronto para uso imediato.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Credenciais e Modelo (quando não for Nativo) */}
+            {aiConfigState.provider !== 'PLATFORM_DEFAULT' && (
+              <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-indigo-600" />
+                  <h4 className="text-xs font-bold text-slate-900">Chave de Acesso & Modelo ({aiConfigState.provider})</h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Campo de API Key */}
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Chave de API (API Key do Provedor):
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAiApiKey ? 'text' : 'password'}
+                        value={aiConfigState.apiKey || ''}
+                        onChange={(e) => setAiConfigState(prev => ({ ...prev, apiKey: e.target.value }))}
+                        placeholder={
+                          aiConfigState.provider === 'OPENAI'
+                            ? 'sk-proj-...'
+                            : aiConfigState.provider === 'ANTHROPIC'
+                            ? 'sk-ant-api03-...'
+                            : 'AIzaSy...'
+                        }
+                        className="w-full bg-white text-xs rounded-xl pl-3 pr-24 py-2.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowAiApiKey(!showAiApiKey)}
+                          className="p-1.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                          title={showAiApiKey ? 'Ocultar' : 'Exibir'}
+                        >
+                          {showAiApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isTestingAiKey || !aiConfigState.apiKey}
+                          onClick={handleTestAiConnection}
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-indigo-200/80 transition cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {isTestingAiKey ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              <span>Testando...</span>
+                            </>
+                          ) : (
+                            <span>Testar</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Sua chave é armazenada de forma isolada para este espaço ({currentTenant.name}) e nunca é compartilhada com outras imobiliárias.
+                    </p>
+                  </div>
+
+                  {/* Seletor de Modelo */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Modelo Específico:
+                    </label>
+                    <select
+                      value={aiConfigState.model || ''}
+                      onChange={(e) => setAiConfigState(prev => ({ ...prev, model: e.target.value }))}
+                      className="w-full bg-white text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {aiConfigState.provider === 'OPENAI' && (
+                        <>
+                          <option value="gpt-4o-mini">gpt-4o-mini (Recomendado / Mais Rápido & Econômico)</option>
+                          <option value="gpt-4o">gpt-4o (Máxima Capacidade de Raciocínio)</option>
+                        </>
+                      )}
+                      {aiConfigState.provider === 'ANTHROPIC' && (
+                        <>
+                          <option value="claude-3-5-haiku-20241022">claude-3-5-haiku (Recomendado / Ágil)</option>
+                          <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet (Topo de Linha)</option>
+                        </>
+                      )}
+                      {aiConfigState.provider === 'GEMINI' && (
+                        <>
+                          <option value="gemini-1.5-flash">gemini-1.5-flash (Recomendado / Custo Mínimo)</option>
+                          <option value="gemini-1.5-pro">gemini-1.5-pro (Raciocínio Profundo)</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Feedback do Teste de Conexão */}
+                {aiTestResult && (
+                  <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+                    aiTestResult.success
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}>
+                    {aiTestResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    )}
+                    <span>{aiTestResult.message}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Persona & Estratégia Comercial da Imobiliária */}
+            <div className="space-y-4 pt-2 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+                <span>2. Personalização Comercial & Tom de Voz</span>
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Tom de Voz */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Tom de Voz dos Corretores:
+                  </label>
+                  <select
+                    value={aiConfigState.tone}
+                    onChange={(e) => setAiConfigState(prev => ({ ...prev, tone: e.target.value as AITone }))}
+                    className="w-full bg-white text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="CONSULTATIVE">🎯 Consultivo & Especialista (Recomendado para Vendas Consultivas)</option>
+                    <option value="CLOSER">⚡ Focado em Fechamento (Direto e focado em marcar visitas)</option>
+                    <option value="ELEGANT">💎 Sofisticado & Exclusivo (Ideal para Imóveis de Alto Padrão)</option>
+                    <option value="FRIENDLY">🤝 Amigável & Descontraído (Acolhedor e caloroso)</option>
+                  </select>
+                </div>
+
+                {/* Foco Comercial Principal */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Objetivo Principal do Copiloto:
+                  </label>
+                  <select
+                    value={aiConfigState.objective}
+                    onChange={(e) => setAiConfigState(prev => ({ ...prev, objective: e.target.value as AIObjective }))}
+                    className="w-full bg-white text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="EQUILIBRADO">⚖️ Equilibrado (Responde dúvidas e avança para visita ou simulação)</option>
+                    <option value="AGENDAR_VISITA">📅 Prioridade: Agendar Visita Presencial no Decorado</option>
+                    <option value="SIMULAR_FINANCIAMENTO">🏦 Prioridade: Coleta de Renda/Entrada para Simulação</option>
+                    <option value="QUALIFICAR">🔍 Prioridade: Triagem e Mapeamento Completo dos 4 Pilares</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Instruções Personalizadas da Imobiliária (Prompt do Corretor) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Diretrizes e Regras Específicas da Imobiliária (Instruções Adicionais):
+                </label>
+                <textarea
+                  rows={4}
+                  value={aiConfigState.customInstructions || ''}
+                  onChange={(e) => setAiConfigState(prev => ({ ...prev, customInstructions: e.target.value }))}
+                  placeholder="Exemplo: Somos especialistas no litoral catarinense (Balneário Camboriú e Itapema). Sempre mencione que facilitamos o parcelamento direto com a construtora em até 100x e aceitamos permuta sob análise. Não dê descontos maiores que 5% sem consulta prévia."
+                  className="w-full bg-white text-xs rounded-xl p-3 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Essas regras são injetadas automaticamente no cérebro da IA para todas as conversas deste espaço imobiliário.
+                </p>
+              </div>
+            </div>
+
+            {/* Rodapé de Ação */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>Dados de conversas analisados sob estrito sigilo e conformidade LGPD.</span>
+              </div>
+              <button
+                type="submit"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-xs transition active:scale-95 flex items-center gap-2 cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>Salvar Configurações de IA</span>
+              </button>
+            </div>
+          </form>
         )}
       </div>
 

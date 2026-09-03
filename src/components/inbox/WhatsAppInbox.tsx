@@ -181,7 +181,8 @@ export function WhatsAppInbox() {
     isSyncingWhatsApp,
     resetCRMDatabase,
     loadChatHistory,
-    isFeatureEnabled
+    isFeatureEnabled,
+    currentTenant
   } = useCRM();
 
   const [showResetModal, setShowResetModal] = useState(false);
@@ -443,6 +444,11 @@ export function WhatsAppInbox() {
           }];
         }
 
+        if (currentTenant?.aiConfig && currentTenant.aiConfig.enabled === false) {
+          setIsAnalyzingAI(false);
+          return;
+        }
+
         if (chatHistory.length === 0) return;
 
         const res = await fetch('/api/v1/ai/copilot', {
@@ -451,6 +457,16 @@ export function WhatsAppInbox() {
           body: JSON.stringify({
             chatHistory,
             brokerName: currentUser.name || 'Corretor',
+            contactContext: {
+              name: activeContact.name,
+              tags: activeContact.tags,
+              monthlyIncome: activeContact.monthlyIncome,
+              downPaymentAvailable: activeContact.downPaymentAvailable,
+              maxPropertyValue: activeContact.maxPropertyValue,
+              preferredPropertyType: activeContact.preferredPropertyType,
+              targetRegions: activeContact.targetRegions,
+            },
+            aiConfig: currentTenant?.aiConfig,
           }),
         });
 
@@ -575,6 +591,16 @@ export function WhatsAppInbox() {
         body: JSON.stringify({
           chatHistory,
           brokerName: currentUser.name || 'Corretor',
+          contactContext: {
+            name: activeContact.name,
+            tags: activeContact.tags,
+            monthlyIncome: activeContact.monthlyIncome,
+            downPaymentAvailable: activeContact.downPaymentAvailable,
+            maxPropertyValue: activeContact.maxPropertyValue,
+            preferredPropertyType: activeContact.preferredPropertyType,
+            targetRegions: activeContact.targetRegions,
+          },
+          aiConfig: currentTenant?.aiConfig,
         }),
       });
 

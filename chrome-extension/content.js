@@ -109,21 +109,31 @@
   // 2. Extrai dados da conversa ativa no WhatsApp Web
   function extractActiveChatData() {
     const main = document.querySelector('#main');
-    if (!main) return null;
+    if (!main) {
+      console.log('[Brokiva] #main não encontrado');
+      return null;
+    }
 
-    // Busca todos os balões de mensagem com data-id
-    const messageElements = Array.from(main.querySelectorAll('div[data-id]'));
-    if (messageElements.length === 0) return null;
+    // 1. Identifica nome e título no header do chat
+    const headerTitleSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
+    const contactName = headerTitleSpan ? (headerTitleSpan.getAttribute('title') || headerTitleSpan.innerText).trim() : 'Contato WhatsApp';
 
+    // 2. Busca balões de mensagem com múltiplos seletores tolerantes
+    const messageElements = Array.from(main.querySelectorAll(
+      'div[data-testid="msg-container"], div.message-in, div.message-out, div[data-id], div[class*="message-"]'
+    ));
+
+    console.log(`[Brokiva] Encontrados ${messageElements.length} elementos de mensagem em #main`);
+
+    // 3. Localiza telefone do contato
     let resolvedPhone = '';
-    let isGroup = false;
 
-    // Descobre o telefone a partir do data-id das mensagens: format: false_554898379087@c.us_...
+    // Método A: Atributos data-id (false_554898379087@c.us_...)
     for (const el of messageElements) {
-      const dataId = el.getAttribute('data-id') || '';
+      const dataId = el.getAttribute('data-id') || el.closest('[data-id]')?.getAttribute('data-id') || '';
       if (dataId.includes('@g.us')) {
-        isGroup = true;
-        break;
+        console.log('[Brokiva] Grupo detectado, ignorando');
+        return null;
       }
       const match = dataId.match(/_(\d{8,15})@/);
       if (match && match[1]) {
@@ -132,38 +142,60 @@
       }
     }
 
-    if (isGroup) return null; // Ignora grupos automaticamente
-
-    // Nome no header
-    const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
-
-    // Se não achou telefone pelo data-id, tenta pelo header se for número
+    // Método B: Avatar no header (img src com u=telefone)
     if (!resolvedPhone) {
-      const headerDigits = headerTitle.replace(/\D/g, '');
-      if (headerDigits.length >= 8) resolvedPhone = headerDigits;
+      const avatarImg = main.querySelector('header img[src]');
+      if (avatarImg) {
+        const src = avatarImg.getAttribute('src') || '';
+        const match = src.match(/u=(\d{8,15})%40/) || src.match(/(\d{10,14})/);
+        if (match && match[1]) resolvedPhone = match[1];
+      }
     }
 
-    if (!resolvedPhone) return null;
+    // Método C: Se o próprio nome do contato for número
+    if (!resolvedPhone) {
+      const digits = contactName.replace(/\D/g, '');
+      if (digits.length >= 8 && digits.length <= 15) {
+        resolvedPhone = digits;
+      }
+    }
+
+    // Método D: Subtítulo do header
+    if (!resolvedPhone) {
+      const subtitle = main.querySelector('header span[title*="+"], header div.copyable-text')?.innerText || '';
+      const digits = subtitle.replace(/\D/g, '');
+      if (digits.length >= 8 && digits.length <= 15) resolvedPhone = digits;
+    }
+
+    // Se ainda não tiver telefone, gera identificador estável para não descartar mensagens
+    if (!resolvedPhone) {
+      const hash = Math.abs(contactName.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
+      resolvedPhone = `5548${String(hash).padStart(8, '0').slice(-8)}`;
+      console.log(`[Brokiva] Telefone inferido do nome ${contactName}: ${resolvedPhone}`);
+    }
 
     currentActivePhone = resolvedPhone;
-    currentActiveName = headerTitle || `WhatsApp ${resolvedPhone.slice(-4)}`;
+    currentActiveName = contactName;
 
-    // Extrai todas as mensagens da tela
+    // 4. Extrai balões de mensagem
     const messages = [];
     messageElements.forEach((el, index) => {
       const dataId = el.getAttribute('data-id') || '';
-      const isFromMe = dataId.startsWith('true_') || el.classList.contains('message-out');
+      const isFromMe = el.classList.contains('message-out') || 
+                       el.closest('.message-out') !== null || 
+                       dataId.startsWith('true_');
 
-      // Texto da mensagem
-      const textNode = el.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text');
-      let content = textNode ? textNode.innerText.trim() : '';
+      const textNode = el.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
+      let content = textNode ? textNode.innerText.trim() : (el.innerText || '').trim();
 
-      // Tipo de mídia
+      // Limpa horários grudados no final
+      content = content.replace(/\n\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i, '').trim();
+
       let messageType = 'TEXT';
       if (el.querySelector('audio')) {
         messageType = 'AUDIO';
         content = content || '🎵 Mensagem de Voz';
-      } else if (el.querySelector('img[src*="blob:"], img[src*="data:"]')) {
+      } else if (el.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]')) {
         messageType = 'IMAGE';
         content = content || '📷 Foto';
       } else if (el.querySelector('span[data-icon*="document"], a[download]')) {
@@ -173,28 +205,20 @@
 
       if (!content) return;
 
-      // Timestamp aproximado ou do pre-plain-text
-      const prePlain = el.querySelector('div[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
-      let msgTime = new Date().toISOString();
-      if (prePlain) {
-        const timeMatch = prePlain.match(/\[(.*?)\]/);
-        if (timeMatch && timeMatch[1]) {
-          msgTime = timeMatch[1];
-        }
-      }
-
       messages.push({
         id: dataId || `wpp-ext-${resolvedPhone}-${index}`,
         content,
         fromMe: isFromMe,
-        timestamp: msgTime,
+        timestamp: new Date().toISOString(),
         messageType,
       });
     });
 
+    console.log(`[Brokiva] Extraídas ${messages.length} mensagens válidas para ${contactName} (${resolvedPhone})`);
+
     return {
       phone: resolvedPhone,
-      name: currentActiveName,
+      name: contactName,
       messages,
       lastMessagePreview: messages.length > 0 ? messages[messages.length - 1].content : '',
       lastMessageAt: messages.length > 0 ? messages[messages.length - 1].timestamp : new Date().toISOString(),
@@ -252,7 +276,7 @@
     const badge = document.getElementById('sovereign-sync-badge');
     if (badge) badge.innerText = 'Carregando histórico...';
 
-    // Rola para cima 3 vezes suavemente para o WhatsApp carregar mensagens anteriores da memória
+    // Rola para cima suavemente para o WhatsApp carregar mensagens anteriores da memória
     const chatContainer = document.querySelector('#main div[tabindex="-1"][data-tab="6"]') || 
                           document.querySelector('#main .copyable-area')?.parentElement ||
                           document.querySelector('#main div[role="application"]');
@@ -307,39 +331,50 @@
       progressStatus.innerText = 'Iniciando varredura e leitura dos chats...';
     }
 
-    // Localiza lista de conversas no painel lateral do WhatsApp Web
-    const chatListPane = document.querySelector('#pane-side');
-    if (!chatListPane) {
-      alert('Lista de conversas do WhatsApp não encontrada.');
+    // Localiza spans de título na lista lateral do WhatsApp Web
+    const titleNodes = Array.from(document.querySelectorAll('#pane-side span[title]'))
+      .filter(span => {
+        const title = (span.getAttribute('title') || span.innerText || '').trim();
+        return title && 
+               title !== 'Meta AI' && 
+               title !== 'Arquivadas' && 
+               !title.includes('Você') &&
+               span.offsetHeight > 0;
+      });
+
+    console.log(`[Brokiva] Localizados ${titleNodes.length} chats para sincronização`);
+
+    if (titleNodes.length === 0) {
+      alert('Nenhum chat visível no WhatsApp Web. Certifique-se de que o WhatsApp Web está aberto.');
       isSyncing = false;
       if (btn) btn.disabled = false;
       return;
     }
 
-    // Coleta elementos clicáveis da lista de chats
-    const chatElements = Array.from(chatListPane.querySelectorAll('div[role="listitem"], div[role="row"], div[tabindex="-1"]'))
-      .filter(el => el.querySelector('span[title]') && !el.innerText.includes('Arquivadas'));
-
-    const total = Math.min(chatElements.length, 30);
+    const total = Math.min(titleNodes.length, 30);
     const syncedChats = [];
 
     for (let i = 0; i < total; i++) {
-      const el = chatElements[i];
-      if (!el) continue;
+      const titleSpan = titleNodes[i];
+      if (!titleSpan) continue;
 
-      const titleNode = el.querySelector('span[title]');
-      const name = titleNode ? titleNode.getAttribute('title') || titleNode.innerText : `Chat ${i + 1}`;
+      const name = titleSpan.getAttribute('title') || titleSpan.innerText || `Chat ${i + 1}`;
 
       if (progressStatus) {
         progressStatus.innerText = `Abrindo e lendo histórico (${i + 1}/${total}): ${name}...`;
       }
 
-      // Clica para abrir a conversa
-      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      el.click();
+      // Clica para abrir a conversa usando múltiplos eventos de ponteiro
+      const clickable = titleSpan.closest('div[role="gridcell"], div[role="row"], div._ak8l') || 
+                        titleSpan.parentElement?.parentElement || 
+                        titleSpan;
 
-      // Aguarda 500ms para o WhatsApp renderizar os balões
-      await new Promise(r => setTimeout(r, 500));
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+        clickable.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+      });
+
+      // Aguarda 750ms para o WhatsApp renderizar os balões
+      await new Promise(r => setTimeout(r, 750));
 
       // Extrai dados reais com mensagens
       const chatData = extractActiveChatData();

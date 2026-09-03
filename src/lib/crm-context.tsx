@@ -934,12 +934,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
-  // Função para remover mensagens duplicadas e limpar placeholders genéricos
+  // Função para remover mensagens duplicadas, limpar placeholders genéricos e corrigir lado do remetente
   const deduplicateMessages = (msgs: Message[]): Message[] => {
-    const seen = new Set<string>();
-    return msgs.filter(m => {
+    const map = new Map<string, Message>();
+    msgs.forEach(m => {
       const content = (m.content || '').trim();
       if (
+        !content ||
         content === 'Mensagem recebida pelo WhatsApp' ||
         content === 'Olá! Conversa sincronizada do WhatsApp.' ||
         content === 'Conversa sincronizada do WhatsApp.' ||
@@ -949,14 +950,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         content.includes('Separei opções que atendem exatamente ao seu perfil') ||
         content.includes('Busco apartamento de 2 a 3 dormitórios')
       ) {
-        return false;
+        return;
       }
       const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
-      const key = `${m.conversationId}-${m.senderType}-${content}-${timeKey}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+      const key = `${m.conversationId}-${content}-${timeKey}`;
+      const existing = map.get(key);
+
+      if (!existing) {
+        map.set(key, m);
+      } else {
+        // Se a mensagem já existia marcada erroneamente como CONTACT e agora veio como USER, corrige para USER!
+        if (existing.senderType === 'CONTACT' && m.senderType === 'USER') {
+          map.set(key, m);
+        }
+      }
     });
+
+    return Array.from(map.values());
   };
 
   // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima e novos dispositivos)

@@ -129,13 +129,22 @@ export const serverCRMStore = {
   },
 
   mergeMessages(oldMsgs: Message[], newMsgs: Message[]): Message[] {
-    const seen = new Set<string>();
+    const map = new Map<string, Message>();
     const all = [...oldMsgs, ...newMsgs];
-    return all.filter(m => {
-      const key = `${m.conversationId}-${m.senderType}-${(m.content || '').trim()}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+    all.forEach(m => {
+      const content = (m.content || '').trim();
+      const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
+      const key = `${m.conversationId}-${content}-${timeKey}`;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, m);
+      } else {
+        // Promove de CONTACT para USER caso venha nova versão com identificação correta
+        if (existing.senderType === 'CONTACT' && m.senderType === 'USER') {
+          map.set(key, m);
+        }
+      }
     });
+    return Array.from(map.values());
   }
 };

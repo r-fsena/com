@@ -247,13 +247,53 @@
     // 4. Extrai balões de mensagem
     const messages = [];
     messageElements.forEach((el, index) => {
-      const dataId = el.getAttribute('data-id') || '';
-      const prePlain = el.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || el.getAttribute('data-pre-plain-text') || '';
-      const isFromMe = el.classList.contains('message-out') || 
-                       el.closest('.message-out') !== null || 
-                       dataId.startsWith('true_') ||
-                       prePlain.includes('Você:') ||
-                       prePlain.includes('You:');
+      const container = el.closest('[data-id]') || el.closest('div[role="row"]') || el;
+      const dataId = container.getAttribute('data-id') || el.getAttribute('data-id') || '';
+      
+      const prePlain = container.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || 
+                       el.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || 
+                       container.getAttribute('data-pre-plain-text') || '';
+
+      // Indicadores robustos de mensagem enviada pelo usuário (corretor/dono do WhatsApp):
+      // A) data-id começa com true_ (padrão absoluto do WhatsApp Web)
+      // B) Ícone de confirmação de envio/leitura (somente mensagens enviadas têm checkmark!)
+      // C) Posição horizontal no lado direito da tela (centro do balão > centro do chat)
+      // D) Classe message-out em si ou em ancestrais
+      // E) data-pre-plain-text com "Você:" ou "You:"
+      const hasCheckmark = container.querySelector(
+        'span[data-icon*="check"], span[data-icon="msg-time"], span[data-testid*="check"], span[aria-label*="Lida"], span[aria-label*="Entregue"], span[aria-label*="Enviada"], span[aria-label*="Read"], span[aria-label*="Delivered"], span[aria-label*="Sent"]'
+      ) !== null;
+
+      const hasMessageOutClass = container.classList.contains('message-out') || 
+                                 container.closest('.message-out') !== null || 
+                                 (container.getAttribute('class') || '').includes('message-out');
+
+      let isRightAligned = false;
+      try {
+        const mainRect = main.getBoundingClientRect();
+        const boxRect = (container.querySelector('.selectable-text') || container).getBoundingClientRect();
+        const boxCenter = boxRect.left + (boxRect.width / 2);
+        const mainCenter = mainRect.left + (mainRect.width / 2);
+        if (boxCenter > mainCenter) {
+          isRightAligned = true;
+        }
+      } catch (e) {}
+
+      let isFromMe = false;
+      if (dataId.startsWith('true_')) {
+        isFromMe = true;
+      } else if (dataId.startsWith('false_')) {
+        // Se o data-id diz explicitamente false_, mas tem checkmark de envio, confia no checkmark
+        isFromMe = hasCheckmark;
+      } else {
+        // Fallback quando não há data-id no container
+        isFromMe = hasCheckmark || isRightAligned || hasMessageOutClass || prePlain.includes('Você:') || prePlain.includes('You:');
+      }
+
+      // Validação cruzada com checkmark: se tem checkmark de envio, é garantidamente do dono do WhatsApp
+      if (hasCheckmark) {
+        isFromMe = true;
+      }
 
       const textNode = el.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
       let content = textNode ? textNode.innerText.trim() : (el.innerText || '').trim();

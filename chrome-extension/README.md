@@ -1,6 +1,8 @@
-# Sovereign CRM - Extensão Chrome para WhatsApp Web
+# Brokiva — Extensão Chrome para WhatsApp Web
 
-A **Extensão Sovereign CRM** transforma o WhatsApp Web oficial (`web.whatsapp.com`) em um terminal comercial de alta performance com **Sincronização de Histórico Completo**, **Perfil 360º do Lead** e **Copiloto de Inteligência Artificial** com inserção de respostas persuasivas em 1 clique.
+A **Extensão Brokiva** transforma o WhatsApp Web oficial (`web.whatsapp.com`) em um terminal comercial de alta performance com **Sincronização de Histórico Completo**, **Perfil 360º do Lead** e **Copiloto de Inteligência Artificial** com inserção de respostas persuasivas em 1 clique.
+
+> **Brokiva — Relacionamentos que viram negócios.**
 
 ---
 
@@ -17,14 +19,14 @@ A **Extensão Sovereign CRM** transforma o WhatsApp Web oficial (`web.whatsapp.c
    ```text
    /Users/rafaelsena/Desktop/Projetos-apps/CRM /chrome-extension
    ```
-6. Pronto! O ícone verde do **Sovereign CRM** aparecerá na sua barra de extensões do Chrome.
+6. Pronto! O ícone da **Brokiva** aparecerá na sua barra de extensões do Chrome.
 
 ---
 
 ## 💻 Como Usar no Dia a Dia
 
 1. Abra o seu [WhatsApp Web](https://web.whatsapp.com).
-2. Você verá uma aba verde flutuante no canto superior direito da tela com o símbolo do **Sovereign CRM**.
+2. Você verá uma aba verde flutuante no canto superior direito da tela com o símbolo da **Brokiva**.
 3. **⚡ Sincronizar Histórico Completo:**
    * Clique no botão **"⚡ Sincronizar Histórico Completo"**.
    * A extensão fará a leitura paginada de todas as suas conversas ativas e enviará todo o histórico de mensagens direto para o seu CRM (`crm.faithhubs.com`).

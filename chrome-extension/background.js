@@ -1,5 +1,5 @@
 /**
- * Background Service Worker - Sovereign CRM Sync
+ * Background Service Worker - Brokiva CRM Sync
  */
 
 const DEFAULT_CRM_URL = 'https://crm.faithhubs.com';

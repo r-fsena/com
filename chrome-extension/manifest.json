@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sovereign CRM - WhatsApp Sync & Copiloto IA",
+  "name": "Brokiva — CRM Imobiliário & WhatsApp Sync",
   "version": "1.0.0",
-  "description": "Sincronizador de histórico completo de mensagens, perfil 360 do lead e Copiloto de IA para corretores no WhatsApp Web.",
+  "description": "Extensão oficial Brokiva: Sincronização de histórico completo, gestão de leads e Copiloto de IA para corretores no WhatsApp Web.",
   "permissions": [
     "storage",
     "activeTab"
@@ -25,7 +25,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Sovereign CRM Sync"
+    "default_title": "Brokiva CRM Sync"
   },
   "web_accessible_resources": [
     {

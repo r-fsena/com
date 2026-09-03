@@ -1,12 +1,12 @@
 /**
- * Sovereign CRM - Content Script for WhatsApp Web (web.whatsapp.com)
+ * Brokiva — Content Script for WhatsApp Web (web.whatsapp.com)
  * Scrapes messages, executes paginated batch sync, injects CRM sidebar and Copilot.
  */
 
 (function() {
   'use strict';
 
-  console.log('[Sovereign CRM] Extension loaded on WhatsApp Web.');
+  console.log('[Brokiva] Extension loaded on WhatsApp Web.');
 
   let isSyncing = false;
   let currentActivePhone = '';
@@ -19,7 +19,7 @@
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
-      <div id="sovereign-toggle-btn" title="Abrir Sovereign CRM">
+      <div id="sovereign-toggle-btn" title="Abrir Brokiva">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
@@ -28,10 +28,10 @@
       <div class="sovereign-panel">
         <div class="sovereign-header">
           <div class="sovereign-brand">
-            <div class="sovereign-brand-icon">S</div>
+            <div class="sovereign-brand-icon">B</div>
             <div>
-              <div class="sovereign-title">Sovereign CRM</div>
-              <div class="sovereign-subtitle">WhatsApp Sync & Copilot</div>
+              <div class="sovereign-title">Brokiva</div>
+              <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
           </div>
           <button id="sovereign-close-btn" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:18px;">✕</button>
@@ -76,7 +76,7 @@
 
           <!-- Card do Copiloto de IA -->
           <div class="sovereign-ai-card">
-            <div class="sovereign-ai-badge">✦ Copiloto Sovereign IA</div>
+            <div class="sovereign-ai-badge">✦ Copiloto Brokiva IA</div>
             <p style="font-size:11px; color:#cbd5e1; margin-bottom:10px;">
               Analisa o momento do cliente e gera respostas persuasivas com 1 clique.
             </p>

@@ -62,7 +62,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
-import { PropertyType, PresentedProperty } from '@/types/crm';
+import { PropertyType, PresentedProperty, Message } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
 const MOCK_CATALOG_PROPERTIES = [
@@ -296,7 +296,7 @@ export function WhatsAppInbox() {
     const phoneSuffix = cleanPhone.length >= 8 ? cleanPhone.slice(-8) : cleanPhone;
     const cleanLid = activeContact?.lid ? activeContact.lid.replace(/\D/g, '') : '';
 
-    return messages
+    const matched = messages
       .filter(m => {
         if (m.conversationId === convId) return true;
         if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
@@ -309,6 +309,26 @@ export function WhatsAppInbox() {
         return false;
       })
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+
+    // Se não há mensagens gravadas ainda, mas a conversa possui um preview real de última mensagem,
+    // sintetiza a mensagem inicial para que o chat não fique vazio
+    if (matched.length === 0 && activeConversation.lastMessagePreview && activeConversation.lastMessagePreview !== '📱 Conversa sincronizada via WhatsApp') {
+      const syntheticMsg: Message = {
+        id: `synthetic-${activeConversation.id}`,
+        tenantId: activeConversation.tenantId,
+        conversationId: activeConversation.id,
+        senderType: 'CONTACT',
+        senderName: activeContact?.name || 'Cliente',
+        messageType: 'TEXT',
+        content: activeConversation.lastMessagePreview,
+        status: 'DELIVERED',
+        isInternalNote: false,
+        timestamp: activeConversation.lastMessageAt || new Date().toISOString(),
+      };
+      return [syntheticMsg];
+    }
+
+    return matched;
   }, [messages, activeConversation, activeContact]);
 
   const activeInsight = React.useMemo(() => {

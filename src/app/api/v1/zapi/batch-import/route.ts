@@ -133,6 +133,22 @@ export async function POST(req: NextRequest) {
           console.warn(`Aviso: falha ao buscar histórico de mensagens para ${cleanPhone}:`, err);
         }
 
+        if (itemMessages.length === 0) {
+          const initialText = item.lastMessagePreview || `Conversa ativa no WhatsApp com ${contactName}`;
+          itemMessages.push({
+            id: `msg-initial-${cleanPhone}-${Date.now()}`,
+            tenantId,
+            conversationId,
+            senderType: 'CONTACT',
+            senderName: contactName,
+            messageType: 'TEXT',
+            content: initialText,
+            status: 'DELIVERED',
+            isInternalNote: false,
+            timestamp: lastMsgAt,
+          });
+        }
+
         const combinedTags = Array.from(new Set([
           'Lead WhatsApp',
           'Importação em Lote',

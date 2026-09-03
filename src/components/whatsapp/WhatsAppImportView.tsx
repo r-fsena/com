@@ -63,7 +63,7 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
   const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'FILE'>('WHATSAPP');
   
   // Estados do WhatsApp Wizard
-  const [historyDays, setHistoryDays] = useState<number>(30);
+  const [historyDays, setHistoryDays] = useState<number>(0);
   const [onlyWithName, setOnlyWithName] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEW_ONLY' | 'EXISTING_ONLY'>('ALL');
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>('ALL');
@@ -503,11 +503,11 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
                       onChange={(e) => setHistoryDays(Number(e.target.value))}
                       className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
                     >
-                      <option value={7}>Últimos 7 dias</option>
-                      <option value={15}>Últimos 15 dias</option>
-                      <option value={30}>Últimos 30 dias</option>
+                      <option value={0}>Todo o Histórico (Todos os Leads)</option>
                       <option value={90}>Últimos 90 dias</option>
-                      <option value={0}>Todo o Histórico</option>
+                      <option value={30}>Últimos 30 dias</option>
+                      <option value={15}>Últimos 15 dias</option>
+                      <option value={7}>Últimos 7 dias</option>
                     </select>
                   </div>
 

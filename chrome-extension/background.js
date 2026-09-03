@@ -102,6 +102,24 @@ async function handleBatchSync(data) {
     details: result
   });
 
+  // Notifica abas do CRM abertas para injetar as mensagens instantaneamente na tela
+  try {
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        if (tab.url && (tab.url.includes('faithhubs.com') || tab.url.includes('localhost'))) {
+          chrome.tabs.sendMessage(tab.id, {
+            action: 'BROKIVA_NEW_SYNCED_MESSAGES',
+            data: {
+              messages: result.resultMessages || [],
+              contacts: result.resultContacts || [],
+              conversations: result.resultConversations || [],
+            }
+          }).catch(() => {});
+        }
+      });
+    });
+  } catch (err) {}
+
   return result;
 }
 

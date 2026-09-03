@@ -21,6 +21,11 @@
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://crm.faithhubs.com/*", "http://localhost:3000/*"],
+      "js": ["crm-bridge.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

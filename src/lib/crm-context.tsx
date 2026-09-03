@@ -1056,6 +1056,48 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     initializeCRMState();
   }, []);
 
+  // Listener em tempo real para sincronizações recebidas diretamente da Extensão Brokiva
+  useEffect(() => {
+    const handleExtensionDirectSync = (event: MessageEvent) => {
+      if (event.data?.type === 'BROKIVA_EXTENSION_SYNC' && event.data?.data) {
+        console.log('[Brokiva CRM] Mensagens sincronizadas recebidas da extensão:', event.data.data);
+        const { messages: incomingMsgs, contacts: incomingContacts, conversations: incomingConvs } = event.data.data;
+
+        if (Array.isArray(incomingMsgs) && incomingMsgs.length > 0) {
+          setMessages(prev => {
+            const merged = deduplicateMessages([...prev, ...incomingMsgs]);
+            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
+            return merged;
+          });
+        }
+
+        if (Array.isArray(incomingContacts) && incomingContacts.length > 0) {
+          setContacts(prev => {
+            const merged = deduplicateContactList([...prev, ...incomingContacts]);
+            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
+            return merged;
+          });
+        }
+
+        if (Array.isArray(incomingConvs) && incomingConvs.length > 0) {
+          setConversations(prev => {
+            const map = new Map(prev.map(c => [c.id, c]));
+            incomingConvs.forEach((c: any) => {
+              const existing = map.get(c.id);
+              map.set(c.id, existing ? { ...existing, ...c } : c);
+            });
+            const updated = Array.from(map.values());
+            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+      }
+    };
+
+    window.addEventListener('message', handleExtensionDirectSync);
+    return () => window.removeEventListener('message', handleExtensionDirectSync);
+  }, []);
+
   // Salva no localStorage quando o estado mudar (somente APÓS hidratação para nunca sobrescrever)
   useEffect(() => {
     if (!isHydratedRef.current) return;

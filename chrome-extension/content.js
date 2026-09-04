@@ -31,7 +31,7 @@
             <div class="sovereign-brand-icon">B</div>
             <div>
               <div class="sovereign-title" style="display:flex; align-items:center;">
-                Brokiva <span style="font-size:10px; background:#059669; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.1</span>
+                Brokiva <span style="font-size:10px; background:#059669; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.2</span>
               </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
@@ -191,24 +191,26 @@
       }
     }
 
-    // Método B: Atributos data-id (false_554898379087@c.us_... ou false_34919856757946@lid_...)
-    for (const el of messageElements) {
-      const dataId = el.getAttribute('data-id') || el.closest('[data-id]')?.getAttribute('data-id') || '';
+    // Método B: Atributos data-id em elementos de #main (suporta @c.us, @s.whatsapp.net e @lid)
+    const allDataIdElements = main.querySelectorAll('[data-id]');
+    for (const el of allDataIdElements) {
+      const dataId = el.getAttribute('data-id') || '';
       if (dataId.includes('@g.us')) {
         console.log('[Brokiva] Grupo detectado, ignorando');
         return null;
       }
-      if (dataId.includes('@lid')) {
-        const lidMatch = dataId.match(/_(\d{8,18})@lid/);
+      if (!resolvedLid && dataId.includes('@lid')) {
+        const lidMatch = dataId.match(/_(\d{8,18})@lid/) || dataId.match(/(\d{8,18})@lid/);
         if (lidMatch && lidMatch[1]) {
           resolvedLid = `${lidMatch[1]}@lid`;
         }
       }
-      // Apenas aceita @c.us como telefone se ainda não achou no header
-      if (!resolvedPhone && dataId.includes('@c.us')) {
-        const cUsMatch = dataId.match(/_(\d{10,13})@c\.us/);
-        if (cUsMatch && cUsMatch[1]) {
-          resolvedPhone = cUsMatch[1];
+      // Suporta tanto @c.us quanto @s.whatsapp.net
+      if (!resolvedPhone && (dataId.includes('@c.us') || dataId.includes('@s.whatsapp.net'))) {
+        const phoneMatch = dataId.match(/_(\d{10,15})@(c\.us|s\.whatsapp\.net)/) ||
+                           dataId.match(/(\d{10,15})@(c\.us|s\.whatsapp\.net)/);
+        if (phoneMatch && phoneMatch[1]) {
+          resolvedPhone = phoneMatch[1];
         }
       }
     }
@@ -231,16 +233,9 @@
       }
     }
 
-    // Se ainda não tiver telefone mas tem LID, usa o LID temporariamente como identificador
+    // Se ainda não tiver telefone mas tem LID, usa os dígitos do LID temporariamente
     if (!resolvedPhone && resolvedLid) {
       resolvedPhone = resolvedLid.replace(/\D/g, '');
-    }
-
-    // Fallback estável para não descartar mensagens
-    if (!resolvedPhone) {
-      const hash = Math.abs(contactName.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
-      resolvedPhone = `5548${String(hash).padStart(8, '0').slice(-8)}`;
-      console.log(`[Brokiva] Telefone inferido do nome ${contactName}: ${resolvedPhone}`);
     }
 
     currentActivePhone = resolvedPhone;
@@ -441,31 +436,86 @@
     }
   }
 
+  async function extractPhoneFromContactDrawer() {
+    try {
+      const headerBtn = document.querySelector('#main header div[role="button"], #main header span[title]');
+      if (!headerBtn) return null;
+
+      headerBtn.click();
+      await new Promise(r => setTimeout(r, 380));
+
+      const sidePanel = document.querySelector('div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"]');
+      let foundPhone = null;
+      if (sidePanel) {
+        const text = sidePanel.innerText || '';
+        const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
+                           text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
+        if (phoneMatch) {
+          foundPhone = phoneMatch[0].replace(/\D/g, '');
+        }
+      }
+
+      const closeBtn = document.querySelector('div[tabindex="-1"] span[data-icon="x"]')?.closest('button') ||
+                       document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar"], div[tabindex="-1"] button[aria-label*="Close"]');
+      if (closeBtn) closeBtn.click();
+      await new Promise(r => setTimeout(r, 150));
+
+      return foundPhone;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid) {
-    if (phoneOrLid && phoneOrLid.length <= 13 && phoneOrLid.startsWith('55')) {
+    const isSynthetic = phoneOrLid && (phoneOrLid.includes('554863562855') || phoneOrLid.startsWith('55486356'));
+    if (!isSynthetic && phoneOrLid && phoneOrLid.length >= 10 && phoneOrLid.length <= 13 && phoneOrLid.startsWith('55')) {
       return phoneOrLid;
     }
+
+    // 1. Pergunta ao background worker (que consulta abas abertas do CRM e storage local)
     try {
-      const config = await chrome.storage.local.get(['crmUrl']);
-      const crmUrl = config.crmUrl || 'https://crm.faithhubs.com';
-      const res = await fetch(`${crmUrl}/api/v1/crm/state`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.contacts)) {
-          const found = data.contacts.find(c => 
-            c.name && c.name.toLowerCase().trim() === contactName.toLowerCase().trim()
-          );
-          if (found && found.phone) {
-            const clean = found.phone.replace(/\D/g, '');
-            if (clean.length >= 10 && clean.length <= 13) {
-              console.log(`[Brokiva] Resolvido telefone real do CRM para ${contactName}: ${clean}`);
-              return clean;
-            }
+      const res = await new Promise(resolve => {
+        chrome.runtime.sendMessage({
+          action: 'RESOLVE_CONTACT_BY_NAME',
+          data: { name: contactName, lid: phoneOrLid }
+        }, resp => {
+          if (chrome.runtime.lastError) resolve(null);
+          else resolve(resp?.result);
+        });
+      });
+      if (res && res.phone) {
+        console.log(`[Brokiva] Telefone resolvido pelo CRM para ${contactName}: ${res.phone}`);
+        return res.phone;
+      }
+    } catch (e) {}
+
+    // 2. Consulta cache local diretamente no storage sincronizado pelo crm-bridge
+    try {
+      const storage = await chrome.storage.local.get(['brokivaCrmContacts']);
+      const list = storage.brokivaCrmContacts || [];
+      if (Array.isArray(list) && contactName) {
+        const norm = contactName.toLowerCase().trim();
+        const found = list.find(c => c.name && c.name.toLowerCase().trim() === norm);
+        if (found && found.phone) {
+          const clean = found.phone.replace(/\D/g, '');
+          if (clean.length >= 10 && clean.length <= 13) {
+            console.log(`[Brokiva] Telefone extraído do cache de contatos CRM para ${contactName}: ${clean}`);
+            return clean;
           }
         }
       }
     } catch (e) {}
-    return phoneOrLid;
+
+    // 3. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial
+    try {
+      const drawerPhone = await extractPhoneFromContactDrawer();
+      if (drawerPhone && drawerPhone.length >= 10 && drawerPhone.length <= 13) {
+        console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para ${contactName}: ${drawerPhone}`);
+        return drawerPhone.startsWith('55') ? drawerPhone : `55${drawerPhone}`;
+      }
+    } catch (e) {}
+
+    return isSynthetic ? (phoneOrLid.replace(/\D/g, '') || '') : phoneOrLid;
   }
 
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
@@ -582,6 +632,9 @@
 
       // Extrai dados reais com mensagens
       const chatData = extractActiveChatData();
+      if (chatData) {
+        chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
+      }
       if (chatData && chatData.phone) {
         syncedChats.push(chatData);
 

@@ -295,10 +295,37 @@ export function WhatsAppInbox() {
     const cleanPhone = activeContact?.phone ? activeContact.phone.replace(/\D/g, '') : convId.replace(/\D/g, '');
     const cleanLid = activeContact?.lid ? activeContact.lid.replace(/\D/g, '') : '';
 
+    // Mapeia todos os contatos que possuem o mesmo nome ou telefone do contato ativo
+    const relatedContactIds = new Set<string>();
+    if (activeContact) {
+      relatedContactIds.add(activeContact.id);
+      const activeNormName = (activeContact.name || '').toLowerCase().trim();
+      contacts.forEach(c => {
+        if (c.id === activeContact.id) return;
+        if (activeNormName && !activeNormName.startsWith('+') && !activeNormName.startsWith('whatsapp') && c.name && c.name.toLowerCase().trim() === activeNormName) {
+          relatedContactIds.add(c.id);
+        }
+        if (cleanPhone && c.phone && arePhonesEquivalent(c.phone, cleanPhone)) {
+          relatedContactIds.add(c.id);
+        }
+      });
+    }
+
+    // Mapeia todas as conversas relacionadas a esses contatos
+    const relatedConvIds = new Set<string>();
+    relatedConvIds.add(convId);
+    conversations.forEach(cv => {
+      if (relatedContactIds.has(cv.contactId)) {
+        relatedConvIds.add(cv.id);
+      }
+    });
+
     const matched = messages
       .filter(m => {
+        if (relatedConvIds.has(m.conversationId)) return true;
         if (m.conversationId === convId) return true;
         if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
+        if (activeContact && relatedContactIds.has(m.conversationId.replace('conv-', ''))) return true;
         
         const mConvDigits = m.conversationId.replace(/\D/g, '');
         if (mConvDigits && cleanPhone && arePhonesEquivalent(mConvDigits, cleanPhone)) return true;
@@ -309,6 +336,14 @@ export function WhatsAppInbox() {
         if (mPhone && cleanPhone && arePhonesEquivalent(mPhone, cleanPhone)) return true;
         if (mPhone && activeContact && arePhonesEquivalent(mPhone, activeContact.phone)) return true;
         if (mPhone && cleanLid && mPhone.includes(cleanLid)) return true;
+
+        // Se a mensagem possui o mesmo nome de remetente do contato ativo
+        if (activeContact?.name && m.senderName && 
+            !activeContact.name.startsWith('+') && 
+            !m.senderName.startsWith('+') && 
+            m.senderName.toLowerCase().trim() === activeContact.name.toLowerCase().trim()) {
+          return true;
+        }
 
         return false;
       })
@@ -356,7 +391,7 @@ export function WhatsAppInbox() {
     }
 
     return deduped;
-  }, [messages, activeConversation, activeContact]);
+  }, [messages, activeConversation, activeContact, contacts, conversations]);
 
   const activeInsight = React.useMemo(() => {
     if (activeConversation && aiInsights[activeConversation.id]) return aiInsights[activeConversation.id];

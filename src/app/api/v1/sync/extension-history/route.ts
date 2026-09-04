@@ -99,7 +99,12 @@ export async function POST(req: NextRequest) {
       });
 
       const contactId = existingContact ? existingContact.id : defaultContactId;
-      const conversationId = existingConv ? existingConv.id : defaultConversationId;
+      if (existingContact?.phone && existingContact.phone.replace(/\D/g, '').length <= 13) {
+        cleanPhone = existingContact.phone.replace(/\D/g, '');
+      }
+      const conversationId = existingConv 
+        ? existingConv.id 
+        : (existingContact ? (existingContact.phone ? `conv-zapi-${existingContact.phone.replace(/\D/g, '')}` : `conv-${existingContact.id}`) : defaultConversationId);
 
       const contactName = chat.name && !chat.name.startsWith('+') && !chat.name.startsWith('WhatsApp')
         ? chat.name.trim()

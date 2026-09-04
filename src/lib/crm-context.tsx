@@ -219,6 +219,7 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
   const phoneMap = new Map<string, Contact>();
   const lidMap = new Map<string, Contact>();
   const idMap = new Map<string, Contact>();
+  const nameMap = new Map<string, Contact>();
   const result: Contact[] = [];
 
   list.forEach(contact => {
@@ -233,17 +234,27 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
 
     const pKey = !isLid ? normalizePhoneKey(contact.phone) : '';
     const lidKey = contact.lid ? contact.lid.replace(/\D/g, '') : (isLid ? clean : '');
+    const normName = contact.name && !contact.name.startsWith('+') && !contact.name.startsWith('WhatsApp') && contact.name !== 'Lead WhatsApp' && contact.name !== 'Cliente'
+      ? contact.name.toLowerCase().trim()
+      : '';
 
     const existing = (pKey ? phoneMap.get(pKey) : null) 
       || (lidKey ? lidMap.get(lidKey) : null) 
-      || idMap.get(contact.id);
+      || idMap.get(contact.id)
+      || (normName ? nameMap.get(normName) : null);
 
     if (existing) {
-      // Prefere o telefone real (não-LID)
+      // Prefere o telefone real (não-LID e não-sintético gerado por hash legado)
       const existingIsLid = isLidNumber(existing.phone);
-      const chosenPhone = (!existingIsLid && existing.phone) ? existing.phone : ((!isLid && contact.phone) ? contact.phone : existing.phone);
+      const isSyntheticA = existing.phone && (existing.phone.includes('554863562855') || existing.id.includes('554863562855'));
+      const isSyntheticB = contact.phone && (contact.phone.includes('554863562855') || contact.id.includes('554863562855'));
+
+      const chosenPhone = (!existingIsLid && !isSyntheticA && existing.phone) 
+        ? existing.phone 
+        : ((!isLid && !isSyntheticB && contact.phone) ? contact.phone : existing.phone);
+
       const chosenLid = existing.lid || contact.lid || (existingIsLid ? existing.phone.replace(/\D/g, '') : (isLid ? clean : undefined));
-      const chosenId = chosenPhone && !isLidNumber(chosenPhone) ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` : existing.id;
+      const chosenId = chosenPhone && !isLidNumber(chosenPhone) && !isSyntheticA ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` : existing.id;
 
       const merged: Contact = {
         ...existing,
@@ -267,6 +278,7 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       const realPKey = normalizePhoneKey(chosenPhone);
       if (realPKey && !isLidNumber(chosenPhone)) phoneMap.set(realPKey, merged);
       if (chosenLid) lidMap.set(chosenLid.replace(/\D/g, ''), merged);
+      if (normName) nameMap.set(normName, merged);
       idMap.set(merged.id, merged);
 
       const idx = result.findIndex(c => c.id === existing.id || c.id === contact.id);
@@ -274,6 +286,7 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
     } else {
       if (pKey) phoneMap.set(pKey, contact);
       if (lidKey) lidMap.set(lidKey, contact);
+      if (normName) nameMap.set(normName, contact);
       idMap.set(contact.id, contact);
       result.push(contact);
     }

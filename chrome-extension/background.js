@@ -35,6 +35,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  if (request.action === 'RESOLVE_CONTACT_BY_NAME') {
+    handleResolveContact(request.data)
+      .then(result => sendResponse({ success: true, result }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 async function handleForwardLog(logData) {
@@ -144,4 +151,53 @@ async function handleGetAiSuggestion(data) {
   }
 
   return await response.json();
+}
+
+async function handleResolveContact({ name, lid }) {
+  if (!name) return null;
+  const normName = name.toLowerCase().trim();
+
+  // 1. Checa cache local sincronizado pelo crm-bridge
+  try {
+    const storage = await chrome.storage.local.get(['brokivaCrmContacts']);
+    const cached = storage.brokivaCrmContacts || [];
+    if (Array.isArray(cached) && cached.length > 0) {
+      const found = cached.find(c => c.name && c.name.toLowerCase().trim() === normName);
+      if (found && found.phone) {
+        const clean = found.phone.replace(/\D/g, '');
+        if (clean.length >= 10 && clean.length <= 13) {
+          return { phone: clean, lid: found.lid || lid, name: found.name };
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2. Consulta abas ativas do CRM via crm-bridge
+  try {
+    const tabs = await new Promise(r => chrome.tabs.query({}, r));
+    for (const tab of tabs) {
+      if (tab.url && (tab.url.includes('faithhubs.com') || tab.url.includes('localhost'))) {
+        try {
+          const res = await new Promise(r => {
+            chrome.tabs.sendMessage(tab.id, { action: 'GET_CRM_CONTACTS' }, resp => {
+              if (chrome.runtime.lastError) r(null);
+              else r(resp);
+            });
+          });
+          if (res && Array.isArray(res.contacts)) {
+            chrome.storage.local.set({ brokivaCrmContacts: res.contacts });
+            const found = res.contacts.find(c => c.name && c.name.toLowerCase().trim() === normName);
+            if (found && found.phone) {
+              const clean = found.phone.replace(/\D/g, '');
+              if (clean.length >= 10 && clean.length <= 13) {
+                return { phone: clean, lid: found.lid || lid, name: found.name };
+              }
+            }
+          }
+        } catch (err) {}
+      }
+    }
+  } catch (err) {}
+
+  return null;
 }

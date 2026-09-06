@@ -241,10 +241,10 @@ export function Sidebar({
           isOpenOnMobile ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
         }`}
       >
-        {/* Header com Tenant e Botão de Recolher/Expandir */}
+        {/* Header com Tenant e Logo Brokiva */}
         <div className="p-4 border-b border-slate-100">
           {isCollapsed ? (
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex justify-center">
               {/* Logo Centralizado no modo reduzido Brokiva */}
               <div 
                 className="w-10 h-10 rounded-2xl bg-white border border-slate-200/90 flex items-center justify-center p-1.5 shadow-2xs overflow-hidden cursor-default"
@@ -263,25 +263,6 @@ export function Sidebar({
                   className="w-full h-full object-contain" 
                 />
               </div>
-
-              {/* Botão de Expandir */}
-              <button
-                onClick={() => {
-                  setHoveredTooltip(null);
-                  toggleCollapsed();
-                }}
-                onMouseEnter={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setHoveredTooltip({
-                    label: 'Expandir menu lateral',
-                    top: rect.top + rect.height / 2,
-                  });
-                }}
-                onMouseLeave={() => setHoveredTooltip(null)}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl transition cursor-pointer shadow-2xs"
-              >
-                <PanelLeftOpen className="w-4 h-4 text-[#3742AC]" />
-              </button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -359,10 +340,11 @@ export function Sidebar({
         </div>
       </nav>
 
-      {/* Rodapé da Sidebar: Z-API Widget Mini + Perfil */}
+      {/* Rodapé da Sidebar: Z-API Widget + Botão Expandir/Recolher */}
       <div className="p-3 border-t border-slate-100 bg-slate-50/50 space-y-2">
         {isCollapsed ? (
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-2">
+            {/* 1. Ícone de Integração do WhatsApp (Z-API Gateway) */}
             <button
               onClick={() => {
                 setHoveredTooltip(null);
@@ -380,6 +362,25 @@ export function Sidebar({
             >
               <QrCode className="w-4 h-4 text-[#3742AC]" />
               <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${isZapiConnected ? 'bg-emerald-500 ring-2 ring-white' : 'bg-rose-500'}`} />
+            </button>
+
+            {/* 2. Ícone para Abrir / Expandir a Sidebar (Abaixo do ícone do WhatsApp) */}
+            <button
+              onClick={() => {
+                setHoveredTooltip(null);
+                toggleCollapsed();
+              }}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setHoveredTooltip({
+                  label: 'Expandir menu lateral',
+                  top: rect.top + rect.height / 2,
+                });
+              }}
+              onMouseLeave={() => setHoveredTooltip(null)}
+              className="p-2 rounded-2xl bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-500 hover:text-slate-900 transition cursor-pointer shadow-2xs"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-[#3742AC]" />
             </button>
           </div>
         ) : (
@@ -412,6 +413,16 @@ export function Sidebar({
                 </button>
               )}
             </div>
+
+            {/* Botão de Recolher no Rodapé (Desktop) */}
+            <button
+              onClick={toggleCollapsed}
+              className="mt-2 w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer border border-transparent hover:border-slate-200/60"
+              title="Recolher menu lateral"
+            >
+              <PanelLeftClose className="w-3.5 h-3.5 text-slate-400" />
+              <span>Recolher menu</span>
+            </button>
           </div>
         )}
       </div>

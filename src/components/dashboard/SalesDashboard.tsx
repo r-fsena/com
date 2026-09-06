@@ -27,8 +27,10 @@ import {
   ChevronRight,
   Filter,
   Layers,
-  Phone
+  Phone,
+  Sliders
 } from 'lucide-react';
+import { GoalsEngineModal } from './GoalsEngineModal';
 
 interface SalesDashboardProps {
   onOpenChat?: (contactId: string) => void;
@@ -46,12 +48,17 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
     tasks, 
     proposals,
     currentUser,
-    openChatForContact 
+    openChatForContact,
+    getGoalsProgress
   } = useCRM();
 
   const [activeTableTab, setActiveTableTab] = useState<'ALL' | 'WHATSAPP' | 'DEALS' | 'WON'>('ALL');
   const [tableSearch, setTableSearch] = useState('');
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
+  const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
+
+  // Motor de Metas & Acompanhamento
+  const currentGoals = getGoalsProgress();
 
   // Métricas Principais
   const totalVGV = deals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
@@ -59,9 +66,9 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
   const wonDeals = deals.filter(d => d.status === 'WON');
   const wonVGV = wonDeals.reduce((acc, d) => acc + d.expectedValue, 0);
 
-  // Meta Mensal Estimada (ex: R$ 5.000.000)
-  const monthlyTargetVGV = 5000000;
-  const targetPercent = Math.min(Math.round((wonVGV / monthlyTargetVGV) * 100), 100) || 45;
+  // Meta Mensal Calculada pelo Motor de Metas
+  const monthlyTargetVGV = currentGoals.monthlyVGV.target;
+  const targetPercent = currentGoals.monthlyVGV.percentage;
 
   // Leads com Mensagem Não Respondida
   const unreadConversations = conversations.filter(c => (c.unreadCount || 0) > 0);
@@ -403,21 +410,32 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
           <div className="sovereign-card p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-extrabold text-slate-900">Strategic Target</h3>
-                <p className="text-xs text-slate-400">Meta mensal de VGV</p>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Target className="w-4 h-4 text-[#3742AC]" />
+                  Metas & Performance
+                </h3>
+                <p className="text-xs text-slate-400 capitalize">
+                  {currentGoals.monthName} • Meta R$ {(currentGoals.monthlyVGV.target / 1000000).toFixed(1)}M
+                </p>
               </div>
               <button 
                 type="button" 
-                className="text-slate-400 hover:text-slate-700 p-1"
-                title="Opções"
+                onClick={() => setIsGoalsModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition"
+                title="Configurar Metas"
               >
-                <MoreVertical className="w-4 h-4" />
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Configurar</span>
               </button>
             </div>
 
             {/* Semicircular Radial Progress */}
-            <div className="relative flex flex-col items-center justify-center py-2">
-              <svg className="w-48 h-28" viewBox="0 0 100 55">
+            <div 
+              className="relative flex flex-col items-center justify-center py-2 cursor-pointer group"
+              onClick={() => setIsGoalsModalOpen(true)}
+              title="Clique para ver detalhes das metas"
+            >
+              <svg className="w-48 h-28 group-hover:scale-105 transition-transform" viewBox="0 0 100 55">
                 {/* Arco de fundo */}
                 <path
                   d="M 10 50 A 40 40 0 0 1 90 50"
@@ -430,10 +448,14 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
                 <path
                   d="M 10 50 A 40 40 0 0 1 90 50"
                   fill="none"
-                  stroke="#3742AC"
+                  stroke={
+                    targetPercent >= 100 ? '#10B981' :
+                    targetPercent >= 70 ? '#3742AC' :
+                    targetPercent >= 40 ? '#F59E0B' : '#EF4444'
+                  }
                   strokeWidth="8"
                   strokeDasharray="126"
-                  strokeDashoffset={126 - (126 * targetPercent) / 100}
+                  strokeDashoffset={Math.max(0, 126 - (126 * Math.min(targetPercent, 100)) / 100)}
                   strokeLinecap="round"
                   className="transition-all duration-1000 ease-out"
                 />
@@ -445,31 +467,60 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
                   {targetPercent}%
                 </span>
                 <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
-                  Progresso da Meta
+                  Progresso VGV
+                </span>
+                <span className="text-[11px] font-bold text-slate-700 font-mono">
+                  R$ {(currentGoals.monthlyVGV.achieved / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k / R$ {(currentGoals.monthlyVGV.target / 1000000).toFixed(1)}M
                 </span>
               </div>
             </div>
 
             {/* 3 Mini Indicadores Circulares Sovereign */}
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
-              <div className="p-2 rounded-2xl bg-orange-50/60 border border-orange-100/60">
+              <div 
+                className="p-2 rounded-2xl bg-orange-50/60 border border-orange-100/60 cursor-pointer hover:bg-orange-100/60 transition"
+                onClick={() => setIsGoalsModalOpen(true)}
+              >
                 <span className="w-2.5 h-2.5 rounded-full bg-orange-500 mx-auto block mb-1" />
-                <span className="text-xs font-bold text-slate-900 font-mono block">{totalLeads}</span>
-                <span className="text-[9px] text-slate-500 font-medium">Leads</span>
+                <span className="text-xs font-bold text-slate-900 font-mono block">
+                  {currentGoals.leads.achieved} / {currentGoals.leads.target}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium">Leads ({currentGoals.leads.percentage}%)</span>
               </div>
 
-              <div className="p-2 rounded-2xl bg-amber-50/60 border border-amber-100/60">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 mx-auto block mb-1" />
-                <span className="text-xs font-bold text-slate-900 font-mono block">{pendingTasks.length}</span>
-                <span className="text-[9px] text-slate-500 font-medium">Visitas</span>
+              <div 
+                className="p-2 rounded-2xl bg-indigo-50/60 border border-indigo-100/60 cursor-pointer hover:bg-indigo-100/60 transition"
+                onClick={() => setIsGoalsModalOpen(true)}
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-[#3742AC] mx-auto block mb-1" />
+                <span className="text-xs font-bold text-slate-900 font-mono block">
+                  {currentGoals.clients.achieved} / {currentGoals.clients.target}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium">Clientes ({currentGoals.clients.percentage}%)</span>
               </div>
 
-              <div className="p-2 rounded-2xl bg-emerald-50/60 border border-emerald-100/60">
+              <div 
+                className="p-2 rounded-2xl bg-emerald-50/60 border border-emerald-100/60 cursor-pointer hover:bg-emerald-100/60 transition"
+                onClick={() => setIsGoalsModalOpen(true)}
+              >
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mx-auto block mb-1" />
-                <span className="text-xs font-bold text-slate-900 font-mono block">{wonDeals.length}</span>
-                <span className="text-[9px] text-slate-500 font-medium">Ganhos</span>
+                <span className="text-xs font-bold text-slate-900 font-mono block">
+                  {currentGoals.wonDeals.achieved} / {currentGoals.wonDeals.target}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium">Vendas ({currentGoals.wonDeals.percentage}%)</span>
               </div>
             </div>
+
+            {/* Botão de Ação Direta */}
+            <button
+              type="button"
+              onClick={() => setIsGoalsModalOpen(true)}
+              className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50/70 border border-slate-200/80 hover:border-indigo-200 rounded-xl text-xs font-bold text-slate-700 hover:text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer"
+            >
+              <Target className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
+              <span>Ver Motor & Tabela Anual de Metas</span>
+              <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-[#3742AC]" />
+            </button>
           </div>
 
           {/* 2. DARK ACCENT CALENDAR / SCHEDULE WIDGET (SOVEREIGN NAVY) */}
@@ -540,6 +591,12 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
         </div>
 
       </div>
+
+      {/* Modal Motor de Metas & Performance */}
+      <GoalsEngineModal
+        isOpen={isGoalsModalOpen}
+        onClose={() => setIsGoalsModalOpen(false)}
+      />
 
     </div>
   );

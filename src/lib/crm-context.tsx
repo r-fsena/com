@@ -27,7 +27,11 @@ import {
   SaaSPlan,
   MasterUser,
   SaaSApiConfig,
-  TenantFeatureFlags
+  TenantFeatureFlags,
+  MonthlyGoal,
+  TenantGoalsConfig,
+  GoalProgressItem,
+  GoalsProgressSummary
 } from '@/types/crm';
 import { 
   MOCK_TENANTS, 
@@ -203,6 +207,12 @@ interface CRMContextType {
   // Feature Flags & Módulos
   isFeatureEnabled: (feature: keyof TenantFeatureFlags) => boolean;
   updateTenantFeatureFlags: (flags: Partial<TenantFeatureFlags>) => void;
+
+  // Motor de Metas & Performance
+  goalsConfig: TenantGoalsConfig;
+  updateMonthlyGoal: (monthKey: string, goal: Partial<MonthlyGoal>) => void;
+  updateAnnualTarget: (annualVGV: number) => void;
+  getGoalsProgress: (monthKey?: string) => GoalsProgressSummary;
 }
 
 export function normalizePhoneKey(phone: string | undefined): string {
@@ -293,6 +303,33 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
   });
 
   return result;
+}
+
+export function getDefaultGoalsConfig(tenantId: string = 'tenant-amabile-barbarotti'): TenantGoalsConfig {
+  const currentYear = new Date().getFullYear();
+  const months: Record<string, MonthlyGoal> = {};
+
+  for (let m = 1; m <= 12; m++) {
+    const padMonth = String(m).padStart(2, '0');
+    const monthKey = `${currentYear}-${padMonth}`;
+    months[monthKey] = {
+      monthKey,
+      year: currentYear,
+      month: m,
+      targetMonthlyVGV: 4500000,
+      targetWonDealsCount: 4,
+      targetLeads: 50,
+      targetClients: 35,
+      notes: `Meta de performance comercial ${padMonth}/${currentYear}`,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    tenantId,
+    annualVGVTarget: 50000000,
+    monthlyGoals: months,
+  };
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -469,6 +506,69 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       return updatedList;
     });
     try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(updatedTenant)); } catch {}
+  };
+
+  // -------------------------------------------------------------
+  // MOTOR DE METAS & PERFORMANCE COMERCIAL
+  // -------------------------------------------------------------
+  const [goalsConfig, setGoalsConfig] = useState<TenantGoalsConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_goals');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.monthlyGoals) {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return getDefaultGoalsConfig();
+  });
+
+  const updateMonthlyGoal = (monthKey: string, partialGoal: Partial<MonthlyGoal>) => {
+    setGoalsConfig(prev => {
+      const existing = prev.monthlyGoals[monthKey] || {
+        monthKey,
+        year: Number(monthKey.split('-')[0]) || new Date().getFullYear(),
+        month: Number(monthKey.split('-')[1]) || (new Date().getMonth() + 1),
+        targetMonthlyVGV: 4500000,
+        targetWonDealsCount: 4,
+        targetLeads: 50,
+        targetClients: 35,
+      };
+
+      const updated: TenantGoalsConfig = {
+        ...prev,
+        monthlyGoals: {
+          ...prev.monthlyGoals,
+          [monthKey]: {
+            ...existing,
+            ...partialGoal,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      };
+
+      try {
+        localStorage.setItem('vanguard_crm_goals', JSON.stringify(updated));
+      } catch {}
+
+      return updated;
+    });
+  };
+
+  const updateAnnualTarget = (annualVGV: number) => {
+    setGoalsConfig(prev => {
+      const updated: TenantGoalsConfig = {
+        ...prev,
+        annualVGVTarget: annualVGV,
+      };
+      try {
+        localStorage.setItem('vanguard_crm_goals', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
   
   const [users, setUsers] = useState<User[]>(() => {
@@ -3368,6 +3468,111 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return quickReplies.filter(q => q.tenantId === currentTenant.id);
   }, [quickReplies, currentTenant.id]);
 
+  const getGoalsProgress = (targetMonthKey?: string): GoalsProgressSummary => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthNum = now.getMonth() + 1;
+    const currentPadMonth = String(currentMonthNum).padStart(2, '0');
+    const monthKey = targetMonthKey || `${currentYear}-${currentPadMonth}`;
+
+    const [yStr, mStr] = monthKey.split('-');
+    const year = Number(yStr) || currentYear;
+    const month = Number(mStr) || currentMonthNum;
+
+    const goal: MonthlyGoal = goalsConfig.monthlyGoals[monthKey] || {
+      monthKey,
+      year,
+      month,
+      targetMonthlyVGV: 4500000,
+      targetWonDealsCount: 4,
+      targetLeads: 50,
+      targetClients: 35,
+      notes: `Meta de performance comercial ${String(month).padStart(2, '0')}/${year}`,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. VGV e Vendas Fechadas do Mês
+    const monthWonDeals = scopedDeals.filter(d => {
+      if (d.status !== 'WON') return false;
+      const dDate = d.closedAt || d.createdAt || d.updatedAt || '';
+      return dDate.startsWith(monthKey);
+    });
+
+    const monthAchievedVGV = monthWonDeals.reduce((acc, d) => acc + (d.expectedValue || 0), 0);
+    const monthWonDealsCount = monthWonDeals.length;
+
+    // 2. Novos Leads criados no Mês
+    const monthLeadsCount = scopedContacts.filter(c => {
+      const cDate = c.createdAt || c.firstSyncedAt || '';
+      return cDate.startsWith(monthKey);
+    }).length;
+
+    // 3. Clientes Atendidos no Mês (com conversas ativas ou interações no mês)
+    const monthClientsCount = scopedConversations.filter(cv => {
+      const cvDate = cv.lastMessageAt || '';
+      return cvDate.startsWith(monthKey);
+    }).length || Math.min(scopedContacts.length, Math.max(monthLeadsCount, 1));
+
+    // 4. VGV Acumulado no Ano
+    const yearWonDeals = scopedDeals.filter(d => {
+      if (d.status !== 'WON') return false;
+      const dDate = d.closedAt || d.createdAt || d.updatedAt || '';
+      return dDate.startsWith(String(year));
+    });
+    const annualAchievedVGV = yearWonDeals.reduce((acc, d) => acc + (d.expectedValue || 0), 0);
+    const annualTargetVGV = goalsConfig.annualVGVTarget || 50000000;
+    const annualPercentage = annualTargetVGV > 0 ? Math.round((annualAchievedVGV / annualTargetVGV) * 100) : 0;
+    const annualRemaining = Math.max(0, annualTargetVGV - annualAchievedVGV);
+
+    // Cálculos de Progresso
+    const calcItem = (achieved: number, target: number, unit?: string, prefix?: string): GoalProgressItem => {
+      const pct = target > 0 ? Math.round((achieved / target) * 100) : 0;
+      let status: 'EXCEEDED' | 'ON_TRACK' | 'ATTENTION' | 'CRITICAL' = 'CRITICAL';
+      if (pct >= 100) status = 'EXCEEDED';
+      else if (pct >= 80) status = 'ON_TRACK';
+      else if (pct >= 50) status = 'ATTENTION';
+
+      return {
+        target,
+        achieved,
+        percentage: pct,
+        remaining: Math.max(0, target - achieved),
+        status,
+        unit,
+        prefix,
+      };
+    };
+
+    // Run-rate diário do mês
+    const isCurrentMonth = monthKey === `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const dayOfMonth = isCurrentMonth ? Math.max(1, now.getDate()) : new Date(year, month, 0).getDate();
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const dailyRunRateVGV = monthAchievedVGV > 0 ? Math.round(monthAchievedVGV / dayOfMonth) : 0;
+    const projectedMonthEndVGV = isCurrentMonth 
+      ? Math.round(dailyRunRateVGV * daysInMonth) 
+      : monthAchievedVGV;
+
+    const monthDateObj = new Date(year, month - 1, 1);
+    const rawMonthName = monthDateObj.toLocaleDateString('pt-BR', { month: 'long' });
+    const monthName = rawMonthName.charAt(0).toUpperCase() + rawMonthName.slice(1);
+
+    return {
+      monthKey,
+      monthName,
+      year,
+      annualTargetVGV,
+      annualAchievedVGV,
+      annualPercentage,
+      annualRemaining,
+      monthlyVGV: calcItem(monthAchievedVGV, goal.targetMonthlyVGV, undefined, 'R$ '),
+      wonDeals: calcItem(monthWonDealsCount, goal.targetWonDealsCount, 'contratos'),
+      leads: calcItem(monthLeadsCount, goal.targetLeads, 'leads'),
+      clients: calcItem(monthClientsCount, goal.targetClients, 'clientes'),
+      dailyRunRateVGV,
+      projectedMonthEndVGV,
+    };
+  };
+
   const scopedUsers = useMemo(() => {
     return users.filter(u => 
       u.role === 'SUPERADMIN' || 
@@ -3482,6 +3687,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       dismissSyncJob,
       isFeatureEnabled,
       updateTenantFeatureFlags,
+      goalsConfig,
+      updateMonthlyGoal,
+      updateAnnualTarget,
+      getGoalsProgress,
     }}>
       {children}
     </CRMContext.Provider>

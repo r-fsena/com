@@ -540,3 +540,50 @@ export interface SaaSApiConfig {
   googleGeminiApiKey?: string;
 }
 
+// -------------------------------------------------------------
+// MOTOR DE METAS & PERFORMANCE COMERCIAL
+// -------------------------------------------------------------
+export interface MonthlyGoal {
+  monthKey: string;            // '2026-09' (YYYY-MM)
+  year: number;                // 2026
+  month: number;               // 1-12
+  targetMonthlyVGV: number;    // Meta de VGV no mês (R$)
+  targetWonDealsCount: number; // Meta de Vendas Fechadas (unidades)
+  targetLeads: number;         // Meta de Novos Leads captados
+  targetClients: number;       // Meta de Clientes Atendidos/Em negociação
+  notes?: string;              // Observações estratégicas
+  updatedAt?: string;
+}
+
+export interface TenantGoalsConfig {
+  tenantId: string;
+  annualVGVTarget: number;     // Meta anual de VGV (ex: R$ 36.000.000)
+  monthlyGoals: Record<string, MonthlyGoal>; // Chave YYYY-MM
+}
+
+export interface GoalProgressItem {
+  target: number;
+  achieved: number;
+  percentage: number;
+  remaining: number;
+  status: 'EXCEEDED' | 'ON_TRACK' | 'ATTENTION' | 'CRITICAL';
+  unit?: string;
+  prefix?: string;
+}
+
+export interface GoalsProgressSummary {
+  monthKey: string;
+  monthName: string;
+  year: number;
+  annualTargetVGV: number;
+  annualAchievedVGV: number;
+  annualPercentage: number;
+  annualRemaining: number;
+  monthlyVGV: GoalProgressItem;
+  wonDeals: GoalProgressItem;
+  leads: GoalProgressItem;
+  clients: GoalProgressItem;
+  dailyRunRateVGV: number;
+  projectedMonthEndVGV: number;
+}
+

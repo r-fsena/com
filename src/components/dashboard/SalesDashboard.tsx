@@ -85,18 +85,22 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
   // Motor de Metas & Acompanhamento
   const currentGoals = getGoalsProgress();
 
-  // Métricas Principais
-  const totalVGV = deals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
-  const totalLeads = contacts.length;
-  const wonDeals = deals.filter(d => d.status === 'WON');
+  // Métricas Principais (Exclusivo para Leads Comerciais - ignora contatos pessoais)
+  const commercialContacts = useMemo(() => contacts.filter(c => !c.isPersonal), [contacts]);
+  const commercialContactIds = useMemo(() => new Set(commercialContacts.map(c => c.id)), [commercialContacts]);
+
+  const commercialDeals = useMemo(() => deals.filter(d => commercialContactIds.has(d.contactId)), [deals, commercialContactIds]);
+  const totalVGV = commercialDeals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
+  const totalLeads = commercialContacts.length;
+  const wonDeals = commercialDeals.filter(d => d.status === 'WON');
   const wonVGV = wonDeals.reduce((acc, d) => acc + d.expectedValue, 0);
 
   // Meta Mensal Calculada pelo Motor de Metas
   const monthlyTargetVGV = currentGoals.monthlyVGV.target;
   const targetPercent = currentGoals.monthlyVGV.percentage;
 
-  // Leads com Mensagem Não Respondida
-  const unreadConversations = conversations.filter(c => (c.unreadCount || 0) > 0);
+  // Leads com Mensagem Não Respondida (Apenas Comerciais)
+  const unreadConversations = conversations.filter(c => (c.unreadCount || 0) > 0 && commercialContactIds.has(c.contactId) && !c.isPersonal);
 
   // Radar de Inatividade & Pareamento Emergencial
   const urgentRadar = getUrgentContactsRadar();
@@ -131,11 +135,11 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
     );
   }, [urgentRadar, criticalUnanswered, staleDeals, activeTableTab, tableSearch]);
 
-  // Filtragem da Lista de Oportunidades
+  // Filtragem da Lista de Oportunidades (Apenas Comerciais)
   const filteredDealsList = useMemo(() => {
-    if (!tableSearch.trim()) return deals;
+    if (!tableSearch.trim()) return commercialDeals;
     const term = tableSearch.toLowerCase();
-    return deals.filter(deal => {
+    return commercialDeals.filter(deal => {
       const contact = contacts.find(c => c.id === deal.contactId);
       return (
         deal.title.toLowerCase().includes(term) ||
@@ -143,7 +147,7 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
         contact?.phone.includes(term)
       );
     });
-  }, [deals, contacts, tableSearch]);
+  }, [commercialDeals, contacts, tableSearch]);
 
   // Paginação Inteligente
   const isRadarMode = activeTableTab !== 'DEALS';

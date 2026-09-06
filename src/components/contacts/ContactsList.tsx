@@ -20,7 +20,9 @@ import {
   FileSpreadsheet,
   Sparkles,
   Smartphone,
-  RefreshCw
+  RefreshCw,
+  UserCheck,
+  UserMinus
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -32,8 +34,9 @@ interface ContactsListProps {
 }
 
 export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
-  const { contacts, deleteContact, users, syncWhatsAppChats, isSyncingWhatsApp, getContactUrgencyAnalysis } = useCRM();
+  const { contacts, deleteContact, users, syncWhatsAppChats, isSyncingWhatsApp, getContactUrgencyAnalysis, toggleContactPersonal } = useCRM();
   const [search, setSearch] = useState('');
+  const [contactTypeFilter, setContactTypeFilter] = useState<'LEADS' | 'PERSONAL' | 'ALL'>('LEADS');
   const [temperatureFilter, setTemperatureFilter] = useState('ALL');
   const [sourceFilter, setSourceFilter] = useState('ALL');
   const [inactivityFilter, setInactivityFilter] = useState<'ALL' | 'UNANSWERED' | 'OVER_48H' | 'OVER_7D'>('ALL');
@@ -54,7 +57,14 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
     }
   };
 
+  const totalLeadsCount = contacts.filter(c => !c.isPersonal).length;
+  const totalPersonalCount = contacts.filter(c => !!c.isPersonal).length;
+
   const filtered = contacts.filter(c => {
+    // Filtro por tipo (Comercial vs Pessoal)
+    if (contactTypeFilter === 'LEADS' && c.isPersonal) return false;
+    if (contactTypeFilter === 'PERSONAL' && !c.isPersonal) return false;
+
     const matchesSearch = !search.trim() || 
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.phone.includes(search) ||
@@ -117,8 +127,16 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
           <div className="flex items-center gap-2">
             <h1 className="text-base font-bold text-slate-900">Leads & Contatos Imobiliários</h1>
             <span className="text-xs font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-              {filtered.length} contatos
+              {filtered.length} exibidos
             </span>
+            <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+              {totalLeadsCount} leads comerciais
+            </span>
+            {totalPersonalCount > 0 && (
+              <span className="text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full">
+                👤 {totalPersonalCount} pessoais
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Base de dados unificada com perfil financeiro 360º, consentimento LGPD e importação de planilhas
@@ -181,6 +199,17 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
             className="w-full bg-slate-50 text-xs rounded-xl pl-9 pr-3 py-2 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
         </div>
+
+        {/* Tipo de Contato (Lead Comercial vs Pessoal) */}
+        <select
+          value={contactTypeFilter}
+          onChange={(e) => setContactTypeFilter(e.target.value as any)}
+          className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none cursor-pointer font-medium"
+        >
+          <option value="LEADS">🎯 Leads Comerciais ({totalLeadsCount})</option>
+          <option value="PERSONAL">👤 Contatos Pessoais ({totalPersonalCount})</option>
+          <option value="ALL">🌐 Todos ({contacts.length})</option>
+        </select>
 
         {/* Temperature Filter */}
         <select
@@ -257,17 +286,23 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
                           className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200"
                         />
                         <div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-slate-900 group-hover:text-emerald-700">
                               {contact.name}
                             </span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                              contact.temperature === 'HOT' ? 'bg-rose-100 text-rose-700' :
-                              contact.temperature === 'WARM' ? 'bg-amber-100 text-amber-700' :
-                              'bg-slate-100 text-slate-600'
-                            }`}>
-                              {contact.temperature === 'HOT' ? '🔥 Quente' : contact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
-                            </span>
+                            {contact.isPersonal ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                👤 Pessoal (Não Lead)
+                              </span>
+                            ) : (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                contact.temperature === 'HOT' ? 'bg-rose-100 text-rose-700' :
+                                contact.temperature === 'WARM' ? 'bg-amber-100 text-amber-700' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {contact.temperature === 'HOT' ? '🔥 Quente' : contact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] text-slate-500 font-mono mt-0.5">{contact.phone}</p>
                         </div>
@@ -404,6 +439,20 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
                           {(urgency?.isUnansweredByTeam || urgency?.urgencyLevel === 'HIGH_STALE_DEAL') && (
                             <span>Chamar</span>
                           )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            toggleContactPersonal(contact.id);
+                            showToast(contact.isPersonal ? '🎉 Contato promovido a Lead Comercial!' : '👤 Marcado como Contato Pessoal (ignorado nas métricas)');
+                          }}
+                          className={`p-1.5 rounded-lg transition ${
+                            contact.isPersonal 
+                              ? 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50' 
+                              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                          }`}
+                          title={contact.isPersonal ? 'Promover para Lead Comercial' : 'Marcar como Contato Pessoal (Não afeta métricas)'}
+                        >
+                          {contact.isPersonal ? <UserCheck className="w-4 h-4" /> : <UserMinus className="w-4 h-4" />}
                         </button>
                         <button
                           onClick={() => deleteContact(contact.id)}

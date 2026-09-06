@@ -190,6 +190,9 @@ export interface Contact {
   consentDate?: string;
   hasOptedOut: boolean;
   
+  // Flag para contatos pessoais (amigos/família) - não entra nas métricas e nem no funil
+  isPersonal?: boolean;
+
   lastClientInteractionAt?: string;
   lastTeamInteractionAt?: string;
   createdAt: string;
@@ -280,6 +283,7 @@ export interface Conversation {
   slaBreachReason?: string;
   isPinned?: boolean;
   isArchived?: boolean;
+  isPersonal?: boolean;
 }
 
 export interface AIResponseOption {

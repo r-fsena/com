@@ -89,6 +89,7 @@ interface CRMContextType {
   addContact: (contact: Partial<Contact>) => Contact;
   updateContact: (id: string, updates: Partial<Contact>) => void;
   deleteContact: (id: string) => void;
+  toggleContactPersonal: (contactId: string) => void;
   addPresentedProperty: (contactId: string, property: Omit<PresentedProperty, 'id' | 'presentedAt'>) => void;
   updatePresentedProperty: (contactId: string, propertyId: string, updates: Partial<PresentedProperty>) => void;
   removePresentedProperty: (contactId: string, propertyId: string) => void;
@@ -1483,6 +1484,51 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setContacts(prev => {
       const updated = prev.filter(c => c.id !== id);
       try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const toggleContactPersonal = (contactId: string) => {
+    let nextPersonalState = false;
+
+    setContacts(prev => {
+      const updated = prev.map(c => {
+        if (c.id === contactId) {
+          nextPersonalState = !c.isPersonal;
+          return {
+            ...c,
+            isPersonal: nextPersonalState,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return c;
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: updated }),
+        }).catch(() => {});
+      } catch {}
+      return updated;
+    });
+
+    setConversations(prev => {
+      const updated = prev.map(conv => {
+        if (conv.contactId === contactId) {
+          return {
+            ...conv,
+            isPersonal: nextPersonalState,
+          };
+        }
+        return conv;
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   };
@@ -3518,9 +3564,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. VGV e Vendas Fechadas do Mês
+    // 1. VGV e Vendas Fechadas do Mês (apenas contatos comerciais)
     const monthWonDeals = scopedDeals.filter(d => {
       if (d.status !== 'WON') return false;
+      const contact = scopedContacts.find(c => c.id === d.contactId);
+      if (contact?.isPersonal) return false;
       const dDate = d.closedAt || d.createdAt || d.updatedAt || '';
       return dDate.startsWith(monthKey);
     });
@@ -3528,17 +3576,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const monthAchievedVGV = monthWonDeals.reduce((acc, d) => acc + (d.expectedValue || 0), 0);
     const monthWonDealsCount = monthWonDeals.length;
 
-    // 2. Novos Leads criados no Mês
+    // 2. Novos Leads criados no Mês (exclui contatos pessoais)
     const monthLeadsCount = scopedContacts.filter(c => {
+      if (c.isPersonal) return false;
       const cDate = c.createdAt || c.firstSyncedAt || '';
       return cDate.startsWith(monthKey);
     }).length;
 
-    // 3. Clientes Atendidos no Mês (com conversas ativas ou interações no mês)
+    // 3. Clientes Atendidos no Mês (com conversas ativas ou interações no mês, exclui contatos pessoais)
     const monthClientsCount = scopedConversations.filter(cv => {
+      const contact = scopedContacts.find(c => c.id === cv.contactId);
+      if (contact?.isPersonal || cv.isPersonal) return false;
       const cvDate = cv.lastMessageAt || '';
       return cvDate.startsWith(monthKey);
-    }).length || Math.min(scopedContacts.length, Math.max(monthLeadsCount, 1));
+    }).length || Math.min(scopedContacts.filter(c => !c.isPersonal).length, Math.max(monthLeadsCount, 1));
 
     // 4. VGV Acumulado no Ano
     const yearWonDeals = scopedDeals.filter(d => {
@@ -3685,11 +3736,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     conversationId?: string
   ): ContactUrgencyAnalysis | null => {
     const contact = scopedContacts.find(c => c.id === contactId);
-    if (!contact) return null;
+    if (!contact || contact.isPersonal) return null;
 
     const conv = conversationId 
       ? scopedConversations.find(c => c.id === conversationId)
       : scopedConversations.find(c => c.contactId === contactId);
+
+    if (conv?.isPersonal) return null;
 
     const deal = dealId 
       ? scopedDeals.find(d => d.id === dealId)
@@ -3907,6 +3960,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       addContact,
       updateContact,
       deleteContact,
+      toggleContactPersonal,
       addPresentedProperty,
       updatePresentedProperty,
       removePresentedProperty,

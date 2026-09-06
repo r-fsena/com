@@ -59,7 +59,8 @@ import {
   Music,
   StopCircle,
   Radio,
-  UserPlus
+  UserPlus,
+  UserMinus
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { arePhonesEquivalent } from '@/lib/whatsapp-filter';
@@ -168,6 +169,7 @@ export function WhatsAppInbox() {
     currentPipeline,
     quickReplies,
     updateContact,
+    toggleContactPersonal,
     addPresentedProperty,
     updatePresentedProperty,
     removePresentedProperty,
@@ -189,7 +191,7 @@ export function WhatsAppInbox() {
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED' | 'EMERGENCY'>('ALL');
+  const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED' | 'EMERGENCY' | 'PERSONAL'>('ALL');
   const [instanceFilter, setInstanceFilter] = useState<'ALL' | 'CENTRAL' | 'DIRECT'>('ALL');
   const [sendingInstanceId, setSendingInstanceId] = useState<string>(activeInstanceId);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
@@ -810,11 +812,15 @@ export function WhatsAppInbox() {
       if (!hasTag) return false;
     }
 
-    if (filterTab === 'UNASSIGNED') return !c.assignedUserId;
-    if (filterTab === 'MINE') return c.assignedUserId === currentUser.id;
-    if (filterTab === 'PENDING_TEAM') return c.status === 'PENDING_TEAM';
-    if (filterTab === 'SLA_BREACHED') return c.slaBreached;
+    const isContactPersonal = Boolean(contact?.isPersonal || c.isPersonal);
+
+    if (filterTab === 'PERSONAL') return isContactPersonal;
+    if (filterTab === 'UNASSIGNED') return !c.assignedUserId && !isContactPersonal;
+    if (filterTab === 'MINE') return c.assignedUserId === currentUser.id && !isContactPersonal;
+    if (filterTab === 'PENDING_TEAM') return c.status === 'PENDING_TEAM' && !isContactPersonal;
+    if (filterTab === 'SLA_BREACHED') return c.slaBreached && !isContactPersonal;
     if (filterTab === 'EMERGENCY') {
+      if (isContactPersonal) return false;
       const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
       return urgency && urgency.urgencyLevel !== 'HEALTHY';
     }
@@ -838,8 +844,15 @@ export function WhatsAppInbox() {
   });
 
   const emergencyConversationsCount = conversations.filter(c => {
+    const contact = contacts.find(cnt => cnt.id === c.contactId);
+    if (contact?.isPersonal || c.isPersonal) return false;
     const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
     return urgency && urgency.urgencyLevel !== 'HEALTHY';
+  }).length;
+
+  const personalConversationsCount = conversations.filter(c => {
+    const contact = contacts.find(cnt => cnt.id === c.contactId);
+    return Boolean(contact?.isPersonal || c.isPersonal);
   }).length;
 
   const handleSend = (e: React.FormEvent) => {
@@ -1058,10 +1071,10 @@ export function WhatsAppInbox() {
           </div>
 
           {/* Filter Pills Simplificados */}
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-full border border-slate-200/60">
+          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-full border border-slate-200/60 overflow-x-auto no-scrollbar">
             <button
               onClick={() => setFilterTab('ALL')}
-              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition cursor-pointer ${
+              className={`flex-1 py-1 px-2 text-center rounded-full text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 filterTab === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
@@ -1069,7 +1082,7 @@ export function WhatsAppInbox() {
             </button>
             <button
               onClick={() => setFilterTab('UNASSIGNED')}
-              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition cursor-pointer ${
+              className={`flex-1 py-1 px-2 text-center rounded-full text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 filterTab === 'UNASSIGNED' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
@@ -1077,15 +1090,31 @@ export function WhatsAppInbox() {
             </button>
             <button
               onClick={() => setFilterTab('MINE')}
-              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition cursor-pointer ${
+              className={`flex-1 py-1 px-2 text-center rounded-full text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 filterTab === 'MINE' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               Minhas
             </button>
             <button
+              onClick={() => setFilterTab('PERSONAL')}
+              className={`py-1 px-2.5 text-center rounded-full text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
+                filterTab === 'PERSONAL' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-500 hover:text-slate-900'
+              }`}
+              title="Conversas pessoais (não comerciais)"
+            >
+              <span>👤 Pessoais</span>
+              {personalConversationsCount > 0 && (
+                <span className={`text-[9px] px-1 py-0.2 rounded-full font-extrabold ${
+                  filterTab === 'PERSONAL' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {personalConversationsCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setFilterTab('EMERGENCY')}
-              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+              className={`py-1 px-2.5 text-center rounded-full text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                 filterTab === 'EMERGENCY' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-rose-700'
               }`}
               title="Clientes aguardando resposta da equipe ou negociações esfriando"
@@ -1117,6 +1146,7 @@ export function WhatsAppInbox() {
               const contact = contacts.find(c => c.id === conv.contactId) || contacts.find(c => c.phone.replace(/\D/g, '') === conv.id.replace(/\D/g, ''));
               const isSelected = conv.id === activeConversation?.id;
               const urgency = getContactUrgencyAnalysis(conv.contactId, undefined, conv.id);
+              const isContactPersonal = Boolean(contact?.isPersonal || conv.isPersonal);
 
               return (
                 <button
@@ -1132,6 +1162,8 @@ export function WhatsAppInbox() {
                       ? 'bg-rose-50/30 border-l-4 border-rose-500 hover:bg-rose-50/50'
                       : urgency?.urgencyLevel === 'HIGH_STALE_DEAL'
                       ? 'border-l-4 border-amber-400 hover:bg-slate-50'
+                      : isContactPersonal
+                      ? 'bg-slate-50/40 hover:bg-slate-100/60'
                       : 'hover:bg-slate-50'
                   }`}
                 >
@@ -1142,7 +1174,7 @@ export function WhatsAppInbox() {
                       alt={contact?.name}
                       className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200"
                     />
-                    {contact?.temperature === 'HOT' && (
+                    {contact?.temperature === 'HOT' && !isContactPersonal && (
                       <span className="absolute -bottom-1 -right-1 text-xs" title="Lead Quente">
                         🔥
                       </span>
@@ -1152,9 +1184,16 @@ export function WhatsAppInbox() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#3742AC]' : 'text-slate-900'}`}>
-                        {contact?.name || 'Lead WhatsApp'}
-                      </h3>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#3742AC]' : 'text-slate-900'}`}>
+                          {contact?.name || 'Lead WhatsApp'}
+                        </h3>
+                        {isContactPersonal && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-200/80 text-slate-600 border border-slate-300 shrink-0">
+                            👤 Pessoal
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1 font-sans">
                         {formatWhatsAppDate(conv.lastMessageAt)}
                       </span>
@@ -1243,11 +1282,15 @@ export function WhatsAppInbox() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-slate-900 truncate">{activeContact.name}</h2>
-                    {activeContact.temperature === 'HOT' && (
+                    {activeContact.isPersonal ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 flex items-center gap-1 shrink-0">
+                        👤 Pessoal
+                      </span>
+                    ) : activeContact.temperature === 'HOT' ? (
                       <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
                         🔥 Quente
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
                 </div>
@@ -1256,8 +1299,32 @@ export function WhatsAppInbox() {
               {/* Ações do Header (Apenas as Essenciais) */}
               <div className="flex items-center gap-2 shrink-0">
                 
-                {/* 1. Seletor de Etapa do Funil com 1 Clique */}
-                {activeDeal ? (
+                {/* Botão de Alternância Lead Comercial vs Contato Pessoal */}
+                <button
+                  type="button"
+                  onClick={() => toggleContactPersonal(activeContact.id)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                    activeContact.isPersonal
+                      ? 'bg-slate-800 text-white border-slate-900 hover:bg-slate-700'
+                      : 'bg-white text-slate-600 border-slate-200/80 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                  title={activeContact.isPersonal ? "Clique para converter em Lead Comercial" : "Marcar como Contato Pessoal (não afeta métricas do CRM)"}
+                >
+                  {activeContact.isPersonal ? (
+                    <>
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Tornar Lead</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserMinus className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="hidden sm:inline">Não é Lead</span>
+                    </>
+                  )}
+                </button>
+
+                {/* 1. Seletor de Etapa do Funil com 1 Clique (Apenas para Leads Comerciais) */}
+                {!activeContact.isPersonal && (activeDeal ? (
                   <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200/90 rounded-full px-3 py-1 text-xs font-semibold text-slate-800">
                     <span className="text-slate-400 text-[11px]">Etapa:</span>
                     <select
@@ -1294,7 +1361,7 @@ export function WhatsAppInbox() {
                     <Plus className="w-3.5 h-3.5" />
                     <span>+ Funil</span>
                   </button>
-                )}
+                ))}
 
                 {/* 2. Link WhatsApp Web Oficial */}
                 <a
@@ -1335,6 +1402,26 @@ export function WhatsAppInbox() {
                   {showChatOptionsDropdown && (
                     <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-slate-200/90 py-1.5 z-50 text-xs divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                       <div className="py-1">
+                        <button
+                          onClick={() => {
+                            toggleContactPersonal(activeContact.id);
+                            setShowChatOptionsDropdown(false);
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-semibold transition"
+                        >
+                          {activeContact.isPersonal ? (
+                            <>
+                              <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Converter em Lead Comercial</span>
+                            </>
+                          ) : (
+                            <>
+                              <UserMinus className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Marcar como Pessoal (Não é Lead)</span>
+                            </>
+                          )}
+                        </button>
+
                         <button
                           onClick={() => {
                             handleForceAIAnalysis();
@@ -1402,8 +1489,25 @@ export function WhatsAppInbox() {
               </div>
             </div>
 
-            {/* SLA Alert Banner (se houver atraso) */}
-            {activeConversation.slaBreached && (
+            {/* Banner Informativo de Contato Pessoal */}
+            {activeContact.isPersonal && (
+              <div className="bg-slate-100/95 border-b border-slate-200 px-4 py-1.5 text-xs text-slate-600 flex items-center justify-between z-10 shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-bold text-slate-800 shrink-0">👤 Contato Pessoal:</span>
+                  <span className="text-slate-500 truncate">Esta conversa não afeta as métricas comerciais, metas de vendas ou alertas de vácuo do CRM.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleContactPersonal(activeContact.id)}
+                  className="text-xs font-bold text-[#3742AC] hover:underline cursor-pointer ml-3 shrink-0"
+                >
+                  Converter em Lead Comercial
+                </button>
+              </div>
+            )}
+
+            {/* SLA Alert Banner (se houver atraso e não for pessoal) */}
+            {!activeContact.isPersonal && activeConversation.slaBreached && (
               <div className="bg-rose-500 text-white text-xs px-4 py-1.5 flex items-center justify-between font-medium shadow-xs">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />

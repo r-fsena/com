@@ -89,12 +89,18 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
-  // Quantidade de negócios em inatividade / esfriando
-  const staleDealsCount = deals.filter(d => d.status === 'OPEN' && getDealUrgencyAnalysis(d).urgencyLevel !== 'HEALTHY').length;
+  // Quantidade de negócios em inatividade / esfriando (exclui contatos pessoais)
+  const staleDealsCount = deals.filter(d => {
+    if (d.status !== 'OPEN') return false;
+    const c = contacts.find(contact => contact.id === d.contactId);
+    if (c?.isPersonal) return false;
+    return getDealUrgencyAnalysis(d).urgencyLevel !== 'HEALTHY';
+  }).length;
 
-  // Filtragem de deals
+  // Filtragem de deals (apenas leads comerciais, contatos pessoais nunca entram no funil)
   const filteredDeals = deals.filter(deal => {
     const contact = contacts.find(c => c.id === deal.contactId);
+    if (contact?.isPersonal) return false;
     
     // Filtro por Oportunidades Paradas / Esfriando
     if (filterStaleOnly) {

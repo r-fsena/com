@@ -266,7 +266,7 @@ export function Sidebar({
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Linha do Topo: Logo Brokiva em Destaque + Botão de Recolher */}
+              {/* Linha do Topo: Logo Brokiva em Destaque */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 flex items-center min-w-0">
                   <img 
@@ -276,27 +276,16 @@ export function Sidebar({
                   />
                 </div>
 
-                <div className="flex items-center gap-1">
-                  {/* Botão de Recolher no Desktop */}
+                {/* Botão Fechar exclusivamente no Mobile Drawer */}
+                {onCloseMobile && (
                   <button
-                    onClick={toggleCollapsed}
-                    className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer flex-shrink-0 hidden md:block"
-                    title="Reduzir menu lateral"
+                    onClick={onCloseMobile}
+                    className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer flex-shrink-0 md:hidden"
+                    title="Fechar menu lateral"
                   >
-                    <PanelLeftClose className="w-4 h-4" />
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
-
-                  {/* Botão Fechar no Mobile Drawer */}
-                  {onCloseMobile && (
-                    <button
-                      onClick={onCloseMobile}
-                      className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer flex-shrink-0 md:hidden"
-                      title="Fechar menu lateral"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Tenant / Imobiliária Ativa com Indicador de Sessão */}

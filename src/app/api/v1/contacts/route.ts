@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
       id: `contact-${Date.now()}`,
       tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
       ...data,
+      isPersonal: false,
       aiPriorityScore: 75,
       consentGiven: true,
       hasOptedOut: false,

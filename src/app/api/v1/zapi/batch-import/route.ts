@@ -176,6 +176,7 @@ export async function POST(req: NextRequest) {
           consentGiven: true,
           consentDate: lastMsgAt,
           hasOptedOut: false,
+          isPersonal: false,
           lastClientInteractionAt: lastMsgAt,
           createdAt: lastMsgAt,
           updatedAt: lastMsgAt,
@@ -192,6 +193,7 @@ export async function POST(req: NextRequest) {
           lastMessagePreview: lastPreview,
           lastMessageAt: lastMsgAt,
           slaBreached: false,
+          isPersonal: false,
         };
 
         return {

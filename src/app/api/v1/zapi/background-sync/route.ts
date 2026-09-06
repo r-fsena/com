@@ -220,6 +220,7 @@ async function runBackgroundSyncWorker(params: {
         consentGiven: true,
         consentDate: interactionIso,
         hasOptedOut: false,
+        isPersonal: false,
         targetRegions: [],
         firstSyncedAt: nowIso,
         lastSyncedAt: nowIso,
@@ -237,6 +238,7 @@ async function runBackgroundSyncWorker(params: {
         lastMessagePreview: chat.lastMessage || `Conversa ativa no WhatsApp com ${resolvedName}`,
         unreadCount: Number(chat.unread || chat.messagesUnread || 0),
         slaBreached: false,
+        isPersonal: false,
       });
 
       newMessages.push({

@@ -208,6 +208,7 @@ export async function POST(req: NextRequest) {
         consentGiven: true,
         consentDate: lastMsgTime,
         hasOptedOut: false,
+        isPersonal: false,
         lastClientInteractionAt: lastMsgTime,
         createdAt: lastMsgTime,
         updatedAt: nowIso,
@@ -230,6 +231,7 @@ export async function POST(req: NextRequest) {
         lastMessagePreview: cleanPreview,
         lastMessageAt: lastMsgTime,
         slaBreached: false,
+        isPersonal: false,
       });
     }
 

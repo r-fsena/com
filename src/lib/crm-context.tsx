@@ -936,6 +936,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               .filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
               .map((c: Contact) => ({
                 ...c,
+                isPersonal: c.isPersonal === true ? true : false,
                 targetRegions: (c.targetRegions || []).filter(r => r !== 'Região Metropolitana' && r !== 'São Paulo' && r !== 'Geral'),
               }));
             return deduplicateContactList(parsed);
@@ -980,19 +981,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try {
         const saved = localStorage.getItem('vanguard_crm_instances');
         if (saved) {
-          let parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed
-              .filter((i: WhatsAppInstance) => i.tenantId !== 'tenant-vanguard-01' && i.id !== 'inst-lucas' && i.id !== 'inst-juliana')
-              .map((i: WhatsAppInstance) => {
-                if (i.zapiInstanceId === '3F1B67FC8139425171C79ED390C0144C' || !i.zapiInstanceId || i.zapiInstanceId.startsWith('INST-')) {
-                  return { ...i, zapiInstanceId: '3F8144490C66805B4E3FD64A35E2F2DC' };
-                }
-                return i;
-              });
-            try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(parsed)); } catch {}
-            if (parsed.length > 0) return parsed;
-          }
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
         }
       } catch {}
     }
@@ -1180,13 +1170,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (serverData && Array.isArray(serverData.contacts) && serverData.contacts.length > 0) {
           setContacts(prev => {
             const list = parsedLocalContacts || prev;
-            const combined = [...list, ...serverData.contacts];
+            const combined = [...list, ...serverData.contacts].map((c: any) => ({
+              ...c,
+              isPersonal: c.isPersonal === true ? true : false,
+            }));
             const deduped = deduplicateContactList(combined);
             try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped)); } catch {}
             return deduped;
           });
         } else if (parsedLocalContacts && parsedLocalContacts.length > 0) {
-          const deduped = deduplicateContactList(parsedLocalContacts);
+          const mapped = parsedLocalContacts.map((c: any) => ({
+            ...c,
+            isPersonal: c.isPersonal === true ? true : false,
+          }));
+          const deduped = deduplicateContactList(mapped);
           setContacts(deduped);
           try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped)); } catch {}
         }
@@ -1200,9 +1197,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         // Conversas
         if (parsedLocalConvs && parsedLocalConvs.length > 0) {
-          setConversations(parsedLocalConvs);
+          const mappedConvs = parsedLocalConvs.map((cv: any) => ({
+            ...cv,
+            isPersonal: cv.isPersonal === true ? true : false,
+          }));
+          setConversations(mappedConvs);
         } else if (serverData && Array.isArray(serverData.conversations) && serverData.conversations.length > 0) {
-          setConversations(serverData.conversations);
+          const mappedConvs = serverData.conversations.map((cv: any) => ({
+            ...cv,
+            isPersonal: cv.isPersonal === true ? true : false,
+          }));
+          setConversations(mappedConvs);
         }
 
         // Mensagens
@@ -1417,6 +1422,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         notesCount: 0,
         consentGiven: true,
         hasOptedOut: false,
+        isPersonal: data.isPersonal !== undefined ? data.isPersonal : false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...data,
@@ -1454,6 +1460,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           slaBreached: false,
           isPinned: false,
           isArchived: false,
+          isPersonal: contactToUse.isPersonal ?? false,
         };
 
         const updated = [newConv, ...prev];
@@ -2534,7 +2541,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           // Merge e higienização completa de contatos com resolução de LID para telefone real
           setContacts(prev => {
             const cleanPrev = prev.filter(c => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
-            const combined = [...cleanPrev, ...validIncoming];
+            const mappedIncoming = validIncoming.map((c: Contact) => ({
+              ...c,
+              isPersonal: c.isPersonal === true ? true : false,
+            }));
+            const combined = [...cleanPrev, ...mappedIncoming];
             const deduplicated = deduplicateContactList(combined);
             try {
               localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduplicated));
@@ -2556,11 +2567,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 map.set(old.id, {
                   ...old,
                   ...c,
+                  isPersonal: old.isPersonal === true ? true : false,
                   lastMessagePreview: c.lastMessagePreview || old.lastMessagePreview,
                   lastMessageAt: c.lastMessageAt || old.lastMessageAt,
                 });
               } else {
-                map.set(c.id, c);
+                map.set(c.id, {
+                  ...c,
+                  isPersonal: c.isPersonal === true ? true : false,
+                });
               }
             });
             const result = Array.from(map.values()).sort((a, b) => {
@@ -2753,6 +2768,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         consentGiven: true,
         consentDate: new Date().toISOString(),
         hasOptedOut: false,
+        isPersonal: false,
         monthlyIncome: rec.monthlyIncome,
         downPaymentAvailable: rec.downPaymentAvailable,
         maxPropertyValue: rec.maxPropertyValue,
@@ -2893,6 +2909,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 notesCount: 0,
                 consentGiven: true,
                 hasOptedOut: false,
+                isPersonal: false,
                 lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
                 lastTeamInteractionAt: new Date().toISOString(),
                 createdAt: new Date().toISOString(),
@@ -2946,6 +2963,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 lastMessagePreview: incoming.content,
                 lastMessageAt: incoming.timestamp || new Date().toISOString(),
                 slaBreached: false,
+                isPersonal: false,
               };
               const updated = [newConv, ...prevConvs].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
               try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}

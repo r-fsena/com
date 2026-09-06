@@ -190,9 +190,8 @@ export interface Contact {
   consentDate?: string;
   hasOptedOut: boolean;
   
-  // Flag para contatos pessoais (amigos/família) - não entra nas métricas e nem no funil
+  // Flag de contato pessoal: false por padrão (Lead Comercial). true = Pessoal / Não interfere em métricas
   isPersonal?: boolean;
-
   lastClientInteractionAt?: string;
   lastTeamInteractionAt?: string;
   createdAt: string;

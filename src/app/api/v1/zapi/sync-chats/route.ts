@@ -226,6 +226,7 @@ async function handleSyncChats(req: NextRequest) {
         consentGiven: true,
         consentDate: lastInteraction,
         hasOptedOut: false,
+        isPersonal: false,
         lastClientInteractionAt: lastInteraction,
         lastTeamInteractionAt: lastInteraction,
         createdAt: lastInteraction,
@@ -256,6 +257,7 @@ async function handleSyncChats(req: NextRequest) {
         lastMessagePreview: lastMessageText,
         lastMessageAt: lastMsgDate,
         slaBreached: false,
+        isPersonal: false,
       };
     });
 

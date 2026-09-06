@@ -44,6 +44,19 @@ export const serverCRMStore = {
     if (global.__SERVER_CRM_STATE__.messages?.some(m => isWhatsAppSystemMessage(m.content))) {
       global.__SERVER_CRM_STATE__.messages = global.__SERVER_CRM_STATE__.messages.filter(m => !isWhatsAppSystemMessage(m.content));
     }
+    // Garante que todo contato seja tratado como lead comercial (isPersonal: false) por padrão
+    if (global.__SERVER_CRM_STATE__.contacts) {
+      global.__SERVER_CRM_STATE__.contacts = global.__SERVER_CRM_STATE__.contacts.map(c => ({
+        ...c,
+        isPersonal: c.isPersonal === true ? true : false,
+      }));
+    }
+    if (global.__SERVER_CRM_STATE__.conversations) {
+      global.__SERVER_CRM_STATE__.conversations = global.__SERVER_CRM_STATE__.conversations.map(c => ({
+        ...c,
+        isPersonal: c.isPersonal === true ? true : false,
+      }));
+    }
     return global.__SERVER_CRM_STATE__;
   },
 
@@ -121,6 +134,7 @@ export const serverCRMStore = {
           targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(c.targetRegions || [])])),
           presentedProperties: c.presentedProperties || existing.presentedProperties,
           assignedUserId: c.assignedUserId || existing.assignedUserId,
+          isPersonal: c.isPersonal !== undefined ? c.isPersonal : (existing.isPersonal ?? false),
           updatedAt: new Date().toISOString(),
         };
 
@@ -132,6 +146,7 @@ export const serverCRMStore = {
       } else {
         const withTimestamps: Contact = {
           ...c,
+          isPersonal: c.isPersonal ?? false,
           firstSyncedAt: c.firstSyncedAt || new Date().toISOString(),
           lastSyncedAt: c.lastSyncedAt || new Date().toISOString(),
         };

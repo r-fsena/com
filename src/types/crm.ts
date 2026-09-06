@@ -585,5 +585,9 @@ export interface GoalsProgressSummary {
   clients: GoalProgressItem;
   dailyRunRateVGV: number;
   projectedMonthEndVGV: number;
+  pipelineTotalVGV?: number;
+  pipelineWeightedVGV?: number;
+  projectionConfidence?: 'HIGH' | 'MEDIUM' | 'ESTIMATED';
+  projectionMethod?: string;
 }
 

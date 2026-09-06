@@ -485,36 +485,77 @@ export function GoalsManager({ initialTab = 'OVERVIEW', initialMonth }: GoalsMan
 
           </div>
 
-          {/* Banner de Projeção & Velocidade (Run-Rate) */}
-          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 p-6 rounded-3xl text-white border border-indigo-900 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-indigo-300">
-                  Motor de Projeção & Velocidade (Run-Rate)
-                </span>
+          {/* Banner de Projeção & Velocidade (Run-Rate + Funil Ponderado) */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 sm:p-7 rounded-3xl text-white border border-indigo-900/80 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-300">
+                    Motor Preditivo Imobiliário • Projeção de Fechamento ({MONTH_NAMES[selectedMonth - 1]})
+                  </span>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    progress.projectionConfidence === 'HIGH' 
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : progress.projectionConfidence === 'MEDIUM'
+                      ? 'bg-indigo-500/20 text-indigo-200 border-indigo-500/30'
+                      : 'bg-amber-500/20 text-amber-200 border-amber-500/30'
+                  }`}>
+                    {progress.projectionConfidence === 'HIGH' ? 'Precisão Alta' : progress.projectionConfidence === 'MEDIUM' ? 'Precisão Média' : 'Estimativa Preditiva'}
+                  </span>
+                </div>
+                <h4 className="text-xl sm:text-2xl font-black text-white flex items-center gap-3">
+                  Projeção Estimada: <span className="text-emerald-400 font-mono">{formatCurrency(progress.projectedMonthEndVGV)}</span>
+                </h4>
+                <p className="text-xs text-indigo-200/90 leading-relaxed">
+                  {progress.projectedMonthEndVGV >= progress.monthlyVGV.target ? (
+                    <span className="text-emerald-300 font-semibold">✨ Mantendo a velocidade e conversão dos negócios ativos no funil, a meta mensal será batida ou superada!</span>
+                  ) : (
+                    <span className="text-amber-300 font-semibold">⚠️ É necessário acelerar o fechamento de propostas em mesa para cobrir o saldo de {formatCurrency(progress.monthlyVGV.remaining)}.</span>
+                  )}
+                </p>
               </div>
-              <h4 className="text-base sm:text-lg font-extrabold text-white">
-                Projeção estimada de fechamento: <span className="text-emerald-400 font-mono">{formatCurrency(progress.projectedMonthEndVGV)}</span>
-              </h4>
-              <p className="text-xs text-indigo-200">
-                Velocidade diária calculada: <strong className="text-white font-mono">{formatCurrency(progress.dailyRunRateVGV)}/dia</strong>.
-                {progress.projectedMonthEndVGV >= progress.monthlyVGV.target ? (
-                  <span className="text-emerald-300 ml-1 font-semibold">✨ Mantendo esse ritmo, a meta mensal será superada!</span>
-                ) : (
-                  <span className="text-amber-300 ml-1 font-semibold">⚠️ É necessário acelerar fechamentos para atingir a meta até o final do mês.</span>
-                )}
-              </p>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('SETTINGS')}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2 border border-white/10 cursor-pointer shrink-0 self-start sm:self-auto"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Ajustar Metas do Mês</span>
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('SETTINGS')}
-              className="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2 border border-white/10 cursor-pointer shrink-0"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>Ajustar Metas do Mês</span>
-            </button>
+            {/* 4 Mini Métricas da Inteligência Preditiva */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-white/10 text-xs">
+              <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+                <span className="text-[10px] uppercase font-bold text-indigo-300 block">1. VGV Já Fechado</span>
+                <span className="text-sm font-black text-white font-mono">{formatCurrency(progress.monthlyVGV.achieved)}</span>
+                <span className="text-[10px] text-emerald-400 block mt-0.5">100% garantido</span>
+              </div>
+
+              <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+                <span className="text-[10px] uppercase font-bold text-indigo-300 block">2. Funil em Aberto</span>
+                <span className="text-sm font-black text-white font-mono">{formatCurrency(progress.pipelineTotalVGV || 0)}</span>
+                <span className="text-[10px] text-slate-300 block mt-0.5">Oportunidades ativas</span>
+              </div>
+
+              <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+                <span className="text-[10px] uppercase font-bold text-indigo-300 block">3. Funil Ponderado</span>
+                <span className="text-sm font-black text-amber-300 font-mono">{formatCurrency(progress.pipelineWeightedVGV || 0)}</span>
+                <span className="text-[10px] text-amber-200/70 block mt-0.5">Ponderado por probabilidade</span>
+              </div>
+
+              <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+                <span className="text-[10px] uppercase font-bold text-indigo-300 block">4. Velocidade Diária</span>
+                <span className="text-sm font-black text-indigo-100 font-mono">{formatCurrency(progress.dailyRunRateVGV)}/dia</span>
+                <span className="text-[10px] text-indigo-300 block mt-0.5">Ritmo atual de vendas</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-indigo-300/80 pt-1 flex items-center gap-1.5">
+              <span>🧠 <strong>Modelo Preditivo Ativo:</strong> Combina contratos fechados + probabilidade real de conversão por estágio do funil (Propostas 80%, Visitas 50%, Qualificação 15%) + velocidade de vendas do mês.</span>
+            </div>
           </div>
 
           {/* Anotações Estratégicas do Mês */}

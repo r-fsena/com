@@ -3543,14 +3543,86 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       };
     };
 
+    // 5. Inteligência Preditiva de Funil Imobiliário (Weighted Pipeline Forecast)
+    const openDeals = scopedDeals.filter(d => d.status === 'OPEN');
+    const pipelineTotalVGV = openDeals.reduce((sum, d) => sum + (d.expectedValue || 0), 0);
+
+    let pipelineWeightedVGV = 0;
+    let monthClosableWeightedVGV = 0;
+
+    openDeals.forEach(deal => {
+      const val = deal.expectedValue || 0;
+      if (val <= 0) return;
+
+      // Probabilidade do negócio e fator de fechamento no mês corrente
+      let prob = 20;
+      let monthClosureFactor = 0.3;
+
+      if (deal.manualProbability && deal.manualProbability > 0) {
+        prob = deal.manualProbability;
+        monthClosureFactor = prob >= 70 ? 0.85 : prob >= 40 ? 0.55 : 0.25;
+      } else if (deal.aiProbabilityScore && deal.aiProbabilityScore > 0) {
+        prob = deal.aiProbabilityScore;
+        monthClosureFactor = prob >= 70 ? 0.85 : prob >= 40 ? 0.55 : 0.25;
+      } else {
+        // Probabilidade padrão do funil imobiliário Sovereign por estágio
+        switch (deal.stageId) {
+          case 'stage-6': // Proposta em Mesa
+            prob = 80;
+            monthClosureFactor = 0.90;
+            break;
+          case 'stage-5': // Visita Agendada
+            prob = 50;
+            monthClosureFactor = 0.65;
+            break;
+          case 'stage-4': // Imóveis Apresentados
+            prob = 30;
+            monthClosureFactor = 0.40;
+            break;
+          case 'stage-3': // Em Qualificação
+            prob = 15;
+            monthClosureFactor = 0.20;
+            break;
+          case 'stage-1': // Novo Lead
+          case 'stage-2': // Primeiro Contato
+          default:
+            prob = 8;
+            monthClosureFactor = 0.10;
+            break;
+        }
+      }
+
+      const weightedValue = Math.round(val * (prob / 100));
+      pipelineWeightedVGV += weightedValue;
+      monthClosableWeightedVGV += Math.round(weightedValue * monthClosureFactor);
+    });
+
     // Run-rate diário do mês
     const isCurrentMonth = monthKey === `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const dayOfMonth = isCurrentMonth ? Math.max(1, now.getDate()) : new Date(year, month, 0).getDate();
     const daysInMonth = new Date(year, month, 0).getDate();
+    const daysRemaining = Math.max(0, daysInMonth - dayOfMonth);
     const dailyRunRateVGV = monthAchievedVGV > 0 ? Math.round(monthAchievedVGV / dayOfMonth) : 0;
-    const projectedMonthEndVGV = isCurrentMonth 
-      ? Math.round(dailyRunRateVGV * daysInMonth) 
-      : monthAchievedVGV;
+
+    // Cálculo da Projeção de Fim de Mês Inteligente:
+    let projectedMonthEndVGV = monthAchievedVGV;
+
+    if (isCurrentMonth) {
+      if (monthAchievedVGV > 0 && dailyRunRateVGV > 0) {
+        // Combinação Híbrida: Realizado + Média Ponderada (Run-Rate Linear dos dias restantes + Funil Ponderado)
+        const linearRemaining = dailyRunRateVGV * daysRemaining;
+        const closableRemaining = Math.round((linearRemaining * 0.4) + (monthClosableWeightedVGV * 0.6));
+        projectedMonthEndVGV = monthAchievedVGV + closableRemaining;
+      } else {
+        // Início do mês ou sem vendas ainda: Projeção orientada pelo pipeline ponderado fechável
+        projectedMonthEndVGV = monthClosableWeightedVGV > 0 
+          ? monthClosableWeightedVGV 
+          : Math.round(goal.targetMonthlyVGV * 0.6);
+      }
+    }
+
+    const projectionConfidence: 'HIGH' | 'MEDIUM' | 'ESTIMATED' = 
+      openDeals.length >= 5 ? 'HIGH' : openDeals.length >= 2 ? 'MEDIUM' : 'ESTIMATED';
 
     const monthDateObj = new Date(year, month - 1, 1);
     const rawMonthName = monthDateObj.toLocaleDateString('pt-BR', { month: 'long' });
@@ -3570,6 +3642,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       clients: calcItem(monthClientsCount, goal.targetClients, 'clientes'),
       dailyRunRateVGV,
       projectedMonthEndVGV,
+      pipelineTotalVGV,
+      pipelineWeightedVGV,
+      projectionConfidence,
+      projectionMethod: 'WEIGHTED_PIPELINE_HYBRID'
     };
   };
 

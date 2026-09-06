@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { 
   DollarSign, 
@@ -38,6 +38,8 @@ interface SalesDashboardProps {
   onNavigateToGoals?: () => void;
 }
 
+export type TableTab = 'RADAR_ALL' | 'RADAR_VACUO' | 'RADAR_STALE' | 'DEALS';
+
 export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboardProps) {
   const { 
     contacts, 
@@ -55,8 +57,10 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
     getUrgentContactsRadar
   } = useCRM();
 
-  const [activeTableTab, setActiveTableTab] = useState<'ALL' | 'WHATSAPP' | 'DEALS' | 'WON'>('ALL');
+  const [activeTableTab, setActiveTableTab] = useState<TableTab>('RADAR_ALL');
   const [tableSearch, setTableSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const ITEMS_PER_PAGE = 8;
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
 
@@ -66,6 +70,16 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
     } else {
       setIsGoalsModalOpen(true);
     }
+  };
+
+  const handleTabChange = (tab: TableTab) => {
+    setActiveTableTab(tab);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (val: string) => {
+    setTableSearch(val);
+    setCurrentPage(1);
   };
 
   // Motor de Metas & Acompanhamento
@@ -98,26 +112,46 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
     else openChatForContact(contactId);
   };
 
-  // Filtragem da Tabela Soberana
-  const filteredDealsList = deals.filter(deal => {
-    const contact = contacts.find(c => c.id === deal.contactId);
-    if (activeTableTab === 'WHATSAPP') {
-      const conv = conversations.find(cv => cv.contactId === contact?.id);
-      if (!conv) return false;
-    } else if (activeTableTab === 'DEALS') {
-      if (deal.status !== 'OPEN') return false;
-    } else if (activeTableTab === 'WON') {
-      if (deal.status !== 'WON') return false;
+  // Filtragem da Lista do Radar
+  const filteredRadarList = useMemo(() => {
+    let list = urgentRadar;
+    if (activeTableTab === 'RADAR_VACUO') {
+      list = criticalUnanswered;
+    } else if (activeTableTab === 'RADAR_STALE') {
+      list = staleDeals;
     }
 
-    if (!tableSearch.trim()) return true;
+    if (!tableSearch.trim()) return list;
     const term = tableSearch.toLowerCase();
-    return (
-      deal.title.toLowerCase().includes(term) ||
-      contact?.name.toLowerCase().includes(term) ||
-      contact?.phone.includes(term)
+    return list.filter(item => 
+      item.contactName.toLowerCase().includes(term) ||
+      item.contactPhone.includes(term) ||
+      (item.dealTitle && item.dealTitle.toLowerCase().includes(term)) ||
+      item.urgencyReason.toLowerCase().includes(term)
     );
-  });
+  }, [urgentRadar, criticalUnanswered, staleDeals, activeTableTab, tableSearch]);
+
+  // Filtragem da Lista de Oportunidades
+  const filteredDealsList = useMemo(() => {
+    if (!tableSearch.trim()) return deals;
+    const term = tableSearch.toLowerCase();
+    return deals.filter(deal => {
+      const contact = contacts.find(c => c.id === deal.contactId);
+      return (
+        deal.title.toLowerCase().includes(term) ||
+        contact?.name.toLowerCase().includes(term) ||
+        contact?.phone.includes(term)
+      );
+    });
+  }, [deals, contacts, tableSearch]);
+
+  // Paginação Inteligente
+  const isRadarMode = activeTableTab !== 'DEALS';
+  const totalItems = isRadarMode ? filteredRadarList.length : filteredDealsList.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRadarList = filteredRadarList.slice((safeCurrentPage - 1) * ITEMS_PER_PAGE, safeCurrentPage * ITEMS_PER_PAGE);
+  const paginatedDealsList = filteredDealsList.slice((safeCurrentPage - 1) * ITEMS_PER_PAGE, safeCurrentPage * ITEMS_PER_PAGE);
 
   // Dias do Mês para o Calendário Sovereign
   const currentMonthName = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -241,188 +275,381 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* COLUNA ESQUERDA (8 COLUNAS): TABELA SOVEREIGN RECENT DEALS */}
+        {/* COLUNA ESQUERDA (8 COLUNAS): RADAR DE AÇÃO IMEDIATA (SOBERANIA OPERACIONAL) */}
         <div className="lg:col-span-8 sovereign-card p-6 sm:p-7 space-y-5">
           
           {/* Header da Tabela com Tabs em Pílula */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h3 className="text-base font-extrabold text-slate-900">Recent Deals</h3>
-              <p className="text-xs text-slate-400">Acompanhamento de oportunidades e clientes recentes</p>
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <Flame className="w-5 h-5 text-rose-600 animate-pulse" />
+                <span>Radar de Ação Imediata</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Acompanhamento prioritário de clientes no vácuo, negociações esfriando e SLAs críticos
+              </p>
             </div>
 
             {/* Pill Tabs Switcher */}
-            <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-full border border-slate-200/60">
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1 rounded-full border border-slate-200/60">
               <button
                 type="button"
-                onClick={() => setActiveTableTab('ALL')}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                  activeTableTab === 'ALL'
+                onClick={() => handleTabChange('RADAR_ALL')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTableTab === 'RADAR_ALL'
                     ? 'bg-[#3742AC] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                All
+                <span>🚨 Todos no Radar</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  activeTableTab === 'RADAR_ALL' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+                }`}>
+                  {urgentRadar.length}
+                </span>
               </button>
+
               <button
                 type="button"
-                onClick={() => setActiveTableTab('WHATSAPP')}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                  activeTableTab === 'WHATSAPP'
-                    ? 'bg-[#3742AC] text-white shadow-xs'
+                onClick={() => handleTabChange('RADAR_VACUO')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTableTab === 'RADAR_VACUO'
+                    ? 'bg-rose-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                WhatsApp
+                <span>🔴 No Vácuo</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  activeTableTab === 'RADAR_VACUO' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+                }`}>
+                  {criticalUnanswered.length}
+                </span>
               </button>
+
               <button
                 type="button"
-                onClick={() => setActiveTableTab('DEALS')}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                onClick={() => handleTabChange('RADAR_STALE')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTableTab === 'RADAR_STALE'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>⚠️ Esfriando</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  activeTableTab === 'RADAR_STALE' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {staleDeals.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTabChange('DEALS')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                   activeTableTab === 'DEALS'
-                    ? 'bg-[#3742AC] text-white shadow-xs'
+                    ? 'bg-slate-800 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Active Deals
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTableTab('WON')}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                  activeTableTab === 'WON'
-                    ? 'bg-[#3742AC] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Closed Won
+                <span>💼 Recent Deals</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  activeTableTab === 'DEALS' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {deals.length}
+                </span>
               </button>
             </div>
           </div>
 
-          {/* Barra de Busca da Tabela */}
-          <div className="flex items-center justify-between gap-3 pt-2">
-            <div className="relative w-full sm:w-64">
+          {/* Barra de Busca e Paginação da Tabela */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="relative w-full sm:w-72">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Filtrar por nome ou imóvel..."
+                placeholder={isRadarMode ? "Buscar por lead, telefone ou motivo..." : "Buscar oportunidade ou lead..."}
                 value={tableSearch}
-                onChange={(e) => setTableSearch(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200/80 rounded-full pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
               />
             </div>
 
-            <span className="text-xs font-semibold text-slate-400">
-              {filteredDealsList.length} itens encontrados
-            </span>
+            <div className="flex items-center gap-3 text-xs font-semibold text-slate-500">
+              <span>
+                Mostrando <strong className="text-slate-900">{totalItems === 0 ? 0 : (safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}</strong>-
+                <strong className="text-slate-900">{Math.min(safeCurrentPage * ITEMS_PER_PAGE, totalItems)}</strong> de <strong className="text-slate-900">{totalItems}</strong>
+              </span>
+
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage <= 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    className="p-1 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition"
+                    title="Página anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-600" />
+                  </button>
+                  <span className="text-[11px] font-mono px-1">
+                    {safeCurrentPage}/{totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage >= totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    className="p-1 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition"
+                    title="Próxima página"
+                  >
+                    <ChevronRight className="w-4 h-4 text-slate-600" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Tabela de Dados Sovereign */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                <tr>
-                  <th className="py-3 px-2">Negócio / Oportunidade</th>
-                  <th className="py-3 px-2">Cliente / Lead</th>
-                  <th className="py-3 px-2">Corretor</th>
-                  <th className="py-3 px-2">Valor (R$)</th>
-                  <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2 text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/80">
-                {filteredDealsList.length === 0 ? (
+          {/* Tabela de Dados: Modo Radar vs Modo Deals */}
+          {isRadarMode ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-slate-400">
-                      Nenhuma oportunidade encontrada nesta visualização.
-                    </td>
+                    <th className="py-3 px-2">Cliente / Lead</th>
+                    <th className="py-3 px-2">Gravidade & Tempo</th>
+                    <th className="py-3 px-2">Diagnóstico & Sugestão</th>
+                    <th className="py-3 px-2">Oportunidade / Funil</th>
+                    <th className="py-3 px-2">Corretor</th>
+                    <th className="py-3 px-2 text-right">Ação Imediata</th>
                   </tr>
-                ) : (
-                  filteredDealsList.slice(0, 7).map((deal) => {
-                    const contact = contacts.find(c => c.id === deal.contactId);
-                    const broker = users.find(u => u.id === deal.assignedUserId);
-                    const stage = currentPipeline.stages.find(s => s.id === deal.stageId);
+                </thead>
+                <tbody className="divide-y divide-slate-100/80">
+                  {paginatedRadarList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        <div className="max-w-xs mx-auto text-center space-y-1">
+                          <Check className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                          <p className="font-bold text-slate-700">Tudo em dia!</p>
+                          <p className="text-[11px] text-slate-400">Nenhum cliente necessita de ação imediata nesta visualização.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedRadarList.map((item) => {
+                      const contact = contacts.find(c => c.id === item.contactId);
+                      const broker = users.find(u => u.id === item.assignedUserId);
 
-                    return (
-                      <tr 
-                        key={deal.id}
-                        className="hover:bg-slate-50/80 transition cursor-pointer group"
-                        onClick={() => handleGoToChat(contact?.id)}
-                      >
-                        <td className="py-3.5 px-2">
-                          <div className="font-bold text-slate-900 group-hover:text-[#3742AC] transition">
-                            {deal.title}
-                          </div>
-                          <span className="text-[10.5px] text-slate-400">
-                            {stage?.name || 'Em atendimento'}
-                          </span>
-                        </td>
-
-                        <td className="py-3.5 px-2">
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
-                              alt={contact?.name}
-                              className="w-7 h-7 rounded-full object-cover border border-slate-200"
-                            />
-                            <div>
-                              <span className="font-semibold text-slate-800 block truncate max-w-[130px]">
-                                {contact?.name || 'Lead WhatsApp'}
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                {contact?.phone}
-                              </span>
+                      return (
+                        <tr
+                          key={item.contactId}
+                          className={`transition cursor-pointer group ${
+                            item.urgencyLevel === 'CRITICAL_UNANSWERED'
+                              ? 'bg-rose-50/40 hover:bg-rose-50/80'
+                              : item.urgencyLevel === 'HIGH_STALE_DEAL'
+                              ? 'bg-amber-50/30 hover:bg-amber-50/70'
+                              : 'hover:bg-slate-50/80'
+                          }`}
+                          onClick={() => handleGoToChat(item.contactId)}
+                        >
+                          {/* Cliente / Lead */}
+                          <td className="py-3.5 px-2">
+                            <div className="flex items-center gap-2.5">
+                              <img
+                                src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(item.contactName)}
+                                alt={item.contactName}
+                                className="w-8 h-8 rounded-full object-cover border border-slate-200 ring-1 ring-white shrink-0"
+                              />
+                              <div>
+                                <span className="font-bold text-slate-900 group-hover:text-[#3742AC] transition block truncate max-w-[140px]">
+                                  {item.contactName}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {item.contactPhone}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        <td className="py-3.5 px-2 text-slate-600 font-medium">
-                          {broker?.name.split(' ')[0] || 'Corretor'}
-                        </td>
+                          {/* Gravidade & Tempo */}
+                          <td className="py-3.5 px-2">
+                            <div className="space-y-1">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                item.urgencyLevel === 'CRITICAL_UNANSWERED'
+                                  ? 'bg-rose-600 text-white shadow-xs'
+                                  : item.urgencyLevel === 'HIGH_STALE_DEAL'
+                                  ? 'bg-amber-500 text-white'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {item.urgencyLevel === 'CRITICAL_UNANSWERED' && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                )}
+                                {item.urgencyLevel === 'CRITICAL_UNANSWERED' ? '🚨 No Vácuo' : '⏱️ Esfriando'}
+                              </span>
+                              <p className="text-[10.5px] font-bold text-slate-700">
+                                {item.formattedTimeAgo}
+                              </p>
+                            </div>
+                          </td>
 
-                        <td className="py-3.5 px-2 font-mono font-bold text-slate-900">
-                          R$ {deal.expectedValue.toLocaleString('pt-BR')}
-                        </td>
+                          {/* Diagnóstico & Sugestão */}
+                          <td className="py-3.5 px-2 max-w-[210px]">
+                            <p className="font-semibold text-slate-800 text-[11px] truncate">
+                              {item.urgencyReason}
+                            </p>
+                            <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                              👉 {item.suggestedAction}
+                            </p>
+                          </td>
 
-                        <td className="py-3.5 px-2">
-                          {deal.status === 'WON' ? (
-                            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span>Fechado</span>
+                          {/* Oportunidade / Funil */}
+                          <td className="py-3.5 px-2">
+                            {item.dealTitle ? (
+                              <div>
+                                <span className="font-bold text-slate-900 block truncate max-w-[130px] text-[11.5px]">
+                                  {item.dealTitle}
+                                </span>
+                                <span className="text-[10px] text-slate-500">
+                                  {item.stageName || 'Funil'} {item.dealValue ? `• R$ ${item.dealValue.toLocaleString('pt-BR')}` : ''}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[11px] italic">Contato WhatsApp</span>
+                            )}
+                          </td>
+
+                          {/* Corretor */}
+                          <td className="py-3.5 px-2 text-slate-600 font-medium">
+                            {broker?.name.split(' ')[0] || 'Corretor'}
+                          </td>
+
+                          {/* Ação Imediata */}
+                          <td className="py-3.5 px-2 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleGoToChat(item.contactId);
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 ml-auto shadow-2xs transition cursor-pointer active:scale-95"
+                              title="Responder pelo WhatsApp"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>Falar</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  <tr>
+                    <th className="py-3 px-2">Negócio / Oportunidade</th>
+                    <th className="py-3 px-2">Cliente / Lead</th>
+                    <th className="py-3 px-2">Corretor</th>
+                    <th className="py-3 px-2">Valor (R$)</th>
+                    <th className="py-3 px-2">Status</th>
+                    <th className="py-3 px-2 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100/80">
+                  {paginatedDealsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-10 text-center text-slate-400">
+                        Nenhuma oportunidade encontrada nesta visualização.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedDealsList.map((deal) => {
+                      const contact = contacts.find(c => c.id === deal.contactId);
+                      const broker = users.find(u => u.id === deal.assignedUserId);
+                      const stage = currentPipeline.stages.find(s => s.id === deal.stageId);
+
+                      return (
+                        <tr 
+                          key={deal.id}
+                          className="hover:bg-slate-50/80 transition cursor-pointer group"
+                          onClick={() => handleGoToChat(contact?.id)}
+                        >
+                          <td className="py-3.5 px-2">
+                            <div className="font-bold text-slate-900 group-hover:text-[#3742AC] transition">
+                              {deal.title}
+                            </div>
+                            <span className="text-[10.5px] text-slate-400">
+                              {stage?.name || 'Em atendimento'}
                             </span>
-                          ) : deal.status === 'LOST' ? (
-                            <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full w-fit block">
-                              Perdido
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold bg-indigo-50 text-[#3742AC] border border-indigo-100 px-2.5 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#3742AC] animate-pulse" />
-                              <span>Ativo</span>
-                            </span>
-                          )}
-                        </td>
+                          </td>
 
-                        <td className="py-3.5 px-2 text-right">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleGoToChat(contact?.id);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-[#3742AC] hover:bg-indigo-50 rounded-xl transition cursor-pointer"
-                            title="Abrir no WhatsApp"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                          <td className="py-3.5 px-2">
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
+                                alt={contact?.name}
+                                className="w-7 h-7 rounded-full object-cover border border-slate-200"
+                              />
+                              <div>
+                                <span className="font-semibold text-slate-800 block truncate max-w-[130px]">
+                                  {contact?.name || 'Lead WhatsApp'}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {contact?.phone}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-2 text-slate-600 font-medium">
+                            {broker?.name.split(' ')[0] || 'Corretor'}
+                          </td>
+
+                          <td className="py-3.5 px-2 font-mono font-bold text-slate-900">
+                            R$ {deal.expectedValue.toLocaleString('pt-BR')}
+                          </td>
+
+                          <td className="py-3.5 px-2">
+                            {deal.status === 'WON' ? (
+                              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 w-fit">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Fechado</span>
+                              </span>
+                            ) : deal.status === 'LOST' ? (
+                              <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full w-fit block">
+                                Perdido
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold bg-indigo-50 text-[#3742AC] border border-indigo-100 px-2.5 py-0.5 rounded-full flex items-center gap-1 w-fit">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#3742AC] animate-pulse" />
+                                <span>Ativo</span>
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-2 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleGoToChat(contact?.id);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-[#3742AC] hover:bg-indigo-50 rounded-xl transition cursor-pointer"
+                              title="Abrir no WhatsApp"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
         </div>
 
@@ -546,94 +773,7 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
             </button>
           </div>
 
-          {/* 2. RADAR DE AÇÃO IMEDIATA / CONTATOS EMERGENCIAIS */}
-          <div className="sovereign-card p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Flame className="w-4 h-4 text-rose-600 animate-pulse" />
-                  Radar de Ação Imediata
-                </h3>
-                <p className="text-xs text-slate-400">Leads no vácuo e negociações esfriando</p>
-              </div>
-              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                urgentRadar.length > 0 
-                  ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' 
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              }`}>
-                {urgentRadar.length > 0 ? `${urgentRadar.length} no Radar` : '100% em dia'}
-              </span>
-            </div>
-
-            {urgentRadar.length === 0 ? (
-              <div className="text-center py-5 px-3 bg-emerald-50/50 rounded-2xl border border-emerald-100/60">
-                <Check className="w-6 h-6 text-emerald-600 mx-auto mb-1.5" />
-                <p className="text-xs font-bold text-emerald-900">Atendimento 100% em dia!</p>
-                <p className="text-[11px] text-emerald-700/80 mt-0.5">
-                  Nenhum cliente sem resposta e nenhuma proposta esfriando no funil.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {urgentRadar.slice(0, 4).map((item) => (
-                  <div
-                    key={item.contactId}
-                    className={`p-3 rounded-2xl border transition flex flex-col gap-2 ${
-                      item.urgencyLevel === 'CRITICAL_UNANSWERED'
-                        ? 'bg-rose-50/60 border-rose-200/80 hover:bg-rose-50'
-                        : item.urgencyLevel === 'HIGH_STALE_DEAL'
-                        ? 'bg-amber-50/60 border-amber-200/80 hover:bg-amber-50'
-                        : 'bg-slate-50 border-slate-200/70 hover:bg-slate-100/70'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs text-slate-900 truncate">
-                            {item.contactName}
-                          </span>
-                          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
-                            item.urgencyLevel === 'CRITICAL_UNANSWERED'
-                              ? 'bg-rose-600 text-white'
-                              : item.urgencyLevel === 'HIGH_STALE_DEAL'
-                              ? 'bg-amber-500 text-white'
-                              : 'bg-slate-200 text-slate-700'
-                          }`}>
-                            {item.urgencyLevel === 'CRITICAL_UNANSWERED' ? '🚨 No Vácuo' : '⏱️ Esfriando'}
-                          </span>
-                        </div>
-                        {item.dealTitle && (
-                          <span className="text-[11px] text-slate-600 font-medium block truncate mt-0.5">
-                            {item.dealTitle} • {item.stageName}
-                          </span>
-                        )}
-                        <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
-                          {item.urgencyReason}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleGoToChat(item.contactId)}
-                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 shrink-0 transition shadow-2xs cursor-pointer active:scale-95"
-                        title="Responder pelo WhatsApp"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Falar</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pt-1 border-t border-slate-200/40">
-                      <span>Última interação: <strong className="text-slate-700">{item.formattedTimeAgo}</strong></span>
-                      <span className="font-mono text-slate-500">{item.contactPhone}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 3. DARK ACCENT CALENDAR / SCHEDULE WIDGET (SOVEREIGN NAVY) */}
+          {/* 2. DARK ACCENT CALENDAR / SCHEDULE WIDGET (SOVEREIGN NAVY) */}
           <div className="sovereign-navy-card p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 import { 
@@ -197,6 +197,7 @@ export function WhatsAppInbox() {
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [messageInput, setMessageInput] = useState('');
+  const messageTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showLeadDrawer, setShowLeadDrawer] = useState(false);
@@ -213,6 +214,14 @@ export function WhatsAppInbox() {
   const [editedMonthlyIncome, setEditedMonthlyIncome] = useState<string>('');
   const [editedDownPayment, setEditedDownPayment] = useState<string>('');
   const [editedMaxBudget, setEditedMaxBudget] = useState<string>('');
+
+  // Auto-ajuste de altura da caixa de texto conforme digitação e quebras de linha
+  useEffect(() => {
+    if (messageTextareaRef.current) {
+      messageTextareaRef.current.style.height = 'auto';
+      messageTextareaRef.current.style.height = `${Math.min(messageTextareaRef.current.scrollHeight, 130)}px`;
+    }
+  }, [messageInput]);
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
   const [newRegionInput, setNewRegionInput] = useState('');
   const [brokerNote, setBrokerNote] = useState('');
@@ -855,8 +864,8 @@ export function WhatsAppInbox() {
     return Boolean(contact?.isPersonal || c.isPersonal);
   }).length;
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSend = (e?: React.FormEvent | React.KeyboardEvent) => {
+    e?.preventDefault();
     if ((!messageInput.trim() && !attachedMedia) || !activeConversation) return;
 
     if (attachedMedia) {
@@ -881,6 +890,9 @@ export function WhatsAppInbox() {
 
     setMessageInput('');
     setIsInternalNote(false);
+    if (messageTextareaRef.current) {
+      messageTextareaRef.current.style.height = 'auto';
+    }
   };
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>, mediaType: 'IMAGE' | 'AUDIO' | 'DOCUMENT') => {
@@ -2097,17 +2109,29 @@ export function WhatsAppInbox() {
               )}
 
               {/* Form de Envio */}
-              <form onSubmit={handleSend} className="flex items-center gap-2">
-                <input
-                  type="text"
+              <form onSubmit={handleSend} className="flex items-end gap-2">
+                <textarea
+                  ref={messageTextareaRef}
+                  rows={1}
                   placeholder={
                     isInternalNote
-                      ? 'Escreva uma nota interna (visível somente para a equipe)...'
-                      : 'Digite sua mensagem... (Pressione Enter para enviar)'
+                      ? 'Escreva uma nota interna (visível somente para a equipe)... (Shift+Enter pula linha)'
+                      : 'Digite sua mensagem... (Enter envia, Shift+Enter pula linha)'
                   }
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  className={`flex-1 text-xs rounded-full px-4 py-2.5 border focus:outline-none transition ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (e.shiftKey) {
+                        // Permite a quebra de linha nativa do textarea
+                        return;
+                      }
+                      // Enter normal: envia a mensagem
+                      e.preventDefault();
+                      handleSend(e);
+                    }
+                  }}
+                  className={`flex-1 text-xs rounded-2xl px-4 py-2.5 border focus:outline-none transition resize-none max-h-32 min-h-[40px] leading-relaxed custom-scrollbar ${
                     isInternalNote
                       ? 'bg-amber-50/70 border-amber-300 focus:ring-2 focus:ring-amber-500/20 text-amber-950 placeholder-amber-700/60'
                       : 'bg-slate-50 border-slate-200/90 focus:bg-white focus:ring-2 focus:ring-[#3742AC]/20 focus:border-[#3742AC] text-slate-900'

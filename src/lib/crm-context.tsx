@@ -62,6 +62,7 @@ import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 interface CRMContextType {
   // Autenticação & Sessão Cognito
   isAuthenticated: boolean;
+  isAuthReady: boolean;
   login: (email: string, role?: string) => void;
   logout: () => void;
 
@@ -342,7 +343,19 @@ export function getDefaultGoalsConfig(tenantId: string = 'tenant-amabile-barbaro
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_auth_session');
+        if (saved) {
+          const session = JSON.parse(saved);
+          return Boolean(session?.userEmail);
+        }
+      } catch {}
+    }
+    return false;
+  });
   const [tenants, setTenants] = useState<Tenant[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -843,14 +856,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem('vanguard_auth_session');
       if (saved) {
         const session = JSON.parse(saved);
-        if (session.userEmail) {
+        if (session?.userEmail) {
           const u = users.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
           if (u) setCurrentUser(u);
           setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
         }
+      } else {
+        setIsAuthenticated(false);
       }
     } catch {
-      // Ignora erro de localStorage
+      setIsAuthenticated(false);
+    } finally {
+      setIsAuthReady(true);
     }
   }, [users]);
 
@@ -3864,6 +3883,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   return (
     <CRMContext.Provider value={{
       isAuthenticated,
+      isAuthReady,
       login,
       logout,
       tenants,

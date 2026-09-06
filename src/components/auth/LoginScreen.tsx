@@ -222,32 +222,6 @@ export function LoginScreen() {
                 </div>
               )}
 
-              {/* Card de Acesso Rápido Master */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-sm">
-                    👑
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                      Admin Master
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-medium">Root</span>
-                    </div>
-                    <div className="text-[11px] text-slate-300 font-mono">
-                      rafael@faithhubs.com
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleQuickMasterLogin}
-                  disabled={isLoading}
-                  className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition shadow-sm hover:scale-102 active:scale-98 cursor-pointer shrink-0"
-                >
-                  Entrar Direto →
-                </button>
-              </div>
-
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">
@@ -263,7 +237,7 @@ export function LoginScreen() {
                         setEmail(e.target.value);
                         if (error) setError(null);
                       }}
-                      placeholder="rafael@faithhubs.com"
+                      placeholder="seu.email@imobiliaria.com.br"
                       className="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
                       autoComplete="email"
                     />

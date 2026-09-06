@@ -26,9 +26,10 @@ import { AuthModal } from '@/components/auth/AuthModal';
 import { LoginScreen } from '@/components/auth/LoginScreen';
 import { GoalsManager } from '@/components/goals/GoalsManager';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { Building2 } from 'lucide-react';
 
 export default function CRMApp() {
-  const { openChatForContact, isAuthenticated, currentUser, currentTenant, setCurrentTenant, logout, isFeatureEnabled } = useCRM();
+  const { openChatForContact, isAuthenticated, isAuthReady, currentUser, currentTenant, setCurrentTenant, logout, isFeatureEnabled } = useCRM();
 
   const isMasterAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.role === 'ADMIN_MASTER';
 
@@ -92,6 +93,20 @@ export default function CRMApp() {
       setViewMode('TENANT_CRM');
     }
   }, [isMasterAdmin]);
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-white select-none">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-xl shadow-emerald-500/20 animate-pulse">
+          <Building2 className="w-6 h-6 text-slate-950" />
+        </div>
+        <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-slate-400 tracking-wider font-mono">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <span>Carregando workspace...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginScreen />;

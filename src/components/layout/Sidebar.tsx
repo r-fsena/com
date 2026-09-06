@@ -9,23 +9,19 @@ import {
   CheckSquare, 
   Send, 
   BarChart3, 
-  Settings, 
   Building2, 
   Wifi, 
-  Sparkles,
-  Bot,
-  Zap,
-  QrCode,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  ChevronLeft,
-  ChevronRight,
-  DollarSign,
-  FileText,
-  Crown,
-  UserPlus,
-  Radio,
+  Zap, 
+  QrCode, 
+  PanelLeftClose, 
+  PanelLeftOpen, 
+  ChevronLeft, 
+  ChevronRight, 
+  DollarSign, 
+  FileText, 
+  Crown, 
+  UserPlus, 
+  Radio, 
   Target
 } from 'lucide-react';
 
@@ -53,7 +49,6 @@ export function Sidebar({
     currentUser, 
     conversations, 
     instances, 
-    alerts, 
     tasks, 
     isFeatureEnabled
   } = useCRM();
@@ -83,7 +78,6 @@ export function Sidebar({
 
   const totalUnreadMessages = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
   const pendingTasksCount = tasks.filter(t => !t.isCompleted).length;
-  const criticalAlertsCount = alerts.filter(a => !a.isDismissed && a.severity === 'CRITICAL').length;
   const isZapiConnected = instances.some(i => i.status === 'CONNECTED');
 
   // 1. Visão Geral Sovereign
@@ -182,22 +176,6 @@ export function Sidebar({
       icon: Zap,
       badge: null,
       enabled: isFeatureEnabled('automations'),
-    },
-    {
-      id: 'copilot',
-      label: 'IA Copiloto',
-      icon: Bot,
-      badge: 'IA',
-      badgeColor: 'bg-[#3742AC] text-white',
-      enabled: isFeatureEnabled('aiCopilot'),
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: Settings,
-      badge: criticalAlertsCount > 0 ? criticalAlertsCount : null,
-      badgeColor: 'bg-rose-500 text-white',
-      enabled: true,
     },
   ].filter(item => item.enabled);
 

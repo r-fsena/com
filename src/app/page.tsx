@@ -42,7 +42,7 @@ export default function CRMApp() {
         }
       } catch {}
     }
-    return 'SAAS_MASTER';
+    return 'TENANT_CRM';
   });
 
   const [currentTab, setCurrentTabState] = useState<string>(() => {
@@ -52,7 +52,7 @@ export default function CRMApp() {
         if (saved) return saved;
       } catch {}
     }
-    return 'inbox';
+    return 'dashboard';
   });
 
   const setCurrentTab = (tab: string) => {
@@ -62,7 +62,25 @@ export default function CRMApp() {
     } catch {}
   };
 
-  // Se a aba ativa atual foi desativada por Feature Flag, redireciona suavemente para 'inbox'
+  // Quando o usuário faz login ou altera a autenticação, sincroniza a aba e o modo
+  React.useEffect(() => {
+    if (isAuthenticated && typeof window !== 'undefined') {
+      try {
+        const savedTab = localStorage.getItem('vanguard_crm_current_tab');
+        if (savedTab) {
+          setCurrentTabState(savedTab);
+        } else {
+          setCurrentTabState('dashboard');
+        }
+        const savedMode = localStorage.getItem('faithhubs_view_mode');
+        if (savedMode === 'SAAS_MASTER' || savedMode === 'TENANT_CRM') {
+          setViewMode(savedMode);
+        }
+      } catch {}
+    }
+  }, [isAuthenticated]);
+
+  // Se a aba ativa atual foi desativada por Feature Flag, redireciona suavemente para 'dashboard'
   React.useEffect(() => {
     if (
       (currentTab === 'proposals' && !isFeatureEnabled('proposals')) ||
@@ -70,7 +88,7 @@ export default function CRMApp() {
       (currentTab === 'campaigns' && !isFeatureEnabled('campaigns')) ||
       (currentTab === 'automations' && !isFeatureEnabled('automations'))
     ) {
-      setCurrentTab('inbox');
+      setCurrentTab('dashboard');
     }
   }, [currentTab, isFeatureEnabled]);
 

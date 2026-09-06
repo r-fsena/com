@@ -894,11 +894,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     try {
       localStorage.setItem('vanguard_auth_session', JSON.stringify({ userEmail: targetUser.email, userId: targetUser.id }));
-      if (targetUser.role === 'SUPERADMIN' || targetUser.role === 'ADMIN_MASTER') {
-        localStorage.setItem('faithhubs_view_mode', 'SAAS_MASTER');
-      } else {
-        localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
-      }
+      // Ao logar na plataforma, sempre direciona para a tela de Dashboard & Vendas e modo CRM
+      localStorage.setItem('vanguard_crm_current_tab', 'dashboard');
+      localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
 
       // Sincroniza sessão no servidor com HttpOnly Cookie
       fetch('/api/v1/auth/session', {
@@ -918,6 +916,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     try {
       localStorage.removeItem('vanguard_auth_session');
+      // Ao deslogar, reseta a próxima entrada para o Dashboard & Vendas
+      localStorage.setItem('vanguard_crm_current_tab', 'dashboard');
+      localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
       fetch('/api/v1/auth/session', { method: 'DELETE' }).catch(() => {});
     } catch {}
     setIsAuthenticated(false);

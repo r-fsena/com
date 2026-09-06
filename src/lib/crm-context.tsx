@@ -115,6 +115,16 @@ interface CRMContextType {
   updateInstance: (instanceId: string, updates: Partial<WhatsAppInstance>) => void;
   deleteInstance: (instanceId: string) => void;
   refreshLiveZapiStatus: () => Promise<boolean>;
+  isZapiConnected: boolean;
+  zapiLiveDetails: {
+    connected: boolean;
+    phone?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    deviceModel?: string;
+    battery?: number;
+    isBusiness?: boolean;
+  } | null;
   transferConversationInstance: (conversationId: string, targetInstanceId: string, sendTransitionMessage?: boolean) => void;
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -992,6 +1002,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const [activeInstanceId, setActiveInstanceId] = useState<string>(() => {
     return MOCK_INSTANCES[0]?.id || 'inst-amabile-central';
   });
+
+  const [isZapiConnected, setIsZapiConnected] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vanguard_crm_zapi_connected') === 'true';
+    }
+    return false;
+  });
+
+  const [zapiLiveDetails, setZapiLiveDetails] = useState<{
+    connected: boolean;
+    phone?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    deviceModel?: string;
+    battery?: number;
+    isBusiness?: boolean;
+  } | null>(null);
 
   const createInstance = (data: Partial<WhatsAppInstance>): WhatsAppInstance => {
     const newInst: WhatsAppInstance = {
@@ -2824,21 +2851,55 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch('/api/v1/zapi/status');
       const data = await res.json();
-      if (data.success && data.connected) {
+      const connected = Boolean(data.success && data.connected);
+      setIsZapiConnected(connected);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vanguard_crm_zapi_connected', connected ? 'true' : 'false');
+      }
+
+      if (connected) {
+        setZapiLiveDetails({
+          connected: true,
+          phone: data.phone,
+          name: data.name,
+          avatarUrl: data.avatarUrl,
+          deviceModel: data.deviceModel,
+          battery: data.battery,
+          isBusiness: data.isBusiness,
+        });
+
         setInstances(prev => {
           const updated = prev.map(i => ({
             ...i,
             status: 'CONNECTED' as const,
             phoneNumber: data.phone || i.phoneNumber,
+            name: data.name || i.name,
             lastSyncAt: new Date().toISOString()
           }));
           try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
           return updated;
         });
         return true;
+      } else {
+        setZapiLiveDetails({
+          connected: false,
+          phone: data.phone,
+          name: data.name,
+        });
+
+        setInstances(prev => {
+          const updated = prev.map(i => ({
+            ...i,
+            status: 'DISCONNECTED' as const,
+            lastSyncAt: new Date().toISOString()
+          }));
+          try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        return false;
       }
-      return false;
     } catch {
+      setIsZapiConnected(false);
       return false;
     }
   };
@@ -4000,6 +4061,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updateInstance,
       deleteInstance,
       refreshLiveZapiStatus,
+      isZapiConnected,
+      zapiLiveDetails,
       transferConversationInstance,
       conversations: scopedConversations,
       activeConversationId: effectiveActiveConversationId,

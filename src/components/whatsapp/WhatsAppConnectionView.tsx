@@ -30,16 +30,19 @@ export function WhatsAppConnectionView() {
     instances, 
     updateInstance,
     refreshLiveZapiStatus,
-    syncZapiInstance, 
+    isZapiConnected: crmZapiConnected,
+    zapiLiveDetails,
+    syncWhatsAppChats, 
     resetCRMDatabase,
     isSyncingWhatsApp 
   } = useCRM();
 
+  const activeInstance = instances[0];
   const [instanceIdInput, setInstanceIdInput] = useState('');
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
-  // Estados detalhados de status ao vivo
+  // Estados detalhados de status ao vivo sincronizados com o contexto global
   const [liveDetails, setLiveDetails] = useState<{
     connected: boolean;
     phone: string;
@@ -48,12 +51,25 @@ export function WhatsAppConnectionView() {
     deviceModel?: string;
     battery?: number;
     isBusiness?: boolean;
-  } | null>(null);
+  } | null>(() => {
+    if (zapiLiveDetails) {
+      return {
+        connected: Boolean(zapiLiveDetails.connected),
+        phone: zapiLiveDetails.phone || activeInstance?.phoneNumber || '+55 (48) 8877-4408',
+        name: zapiLiveDetails.name || activeInstance?.name || 'Rafael Sena',
+        avatarUrl: zapiLiveDetails.avatarUrl || null,
+        deviceModel: zapiLiveDetails.deviceModel || 'Smartphone',
+        battery: zapiLiveDetails.battery || 100,
+        isBusiness: Boolean(zapiLiveDetails.isBusiness),
+      };
+    }
+    return null;
+  });
 
   // Estados do QR Code ao vivo
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [isLoadingQr, setIsLoadingQr] = useState(false);
-  const [isQrConnected, setIsQrConnected] = useState(false);
+  const [isQrConnected, setIsQrConnected] = useState<boolean>(Boolean(crmZapiConnected || activeInstance?.status === 'CONNECTED'));
 
   // Teste de Envio
   const [testPhone, setTestPhone] = useState('554888774408');
@@ -74,8 +90,28 @@ export function WhatsAppConnectionView() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
 
-  const activeInstance = instances[0];
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
+
+  // Busca inicial do QR Code caso a linha esteja desconectada
+  const fetchFreshQrCode = async () => {
+    setIsLoadingQr(true);
+    try {
+      const qrRes = await fetch('/api/v1/zapi/qr-code');
+      const qrData = await qrRes.json();
+      if (qrData.success) {
+        if (qrData.connected) {
+          setIsQrConnected(true);
+          setQrCodeData(null);
+        } else if (qrData.qrCode) {
+          setQrCodeData(qrData.qrCode);
+        }
+      }
+    } catch {
+      console.warn('Falha ao buscar QR Code');
+    } finally {
+      setIsLoadingQr(false);
+    }
+  };
 
   // Consulta e sincronização de status em tempo real
   const handleRefreshAllStatus = async () => {
@@ -85,6 +121,7 @@ export function WhatsAppConnectionView() {
       const data = await res.json();
       if (data.success) {
         const isConn = Boolean(data.connected);
+        setIsQrConnected(isConn);
         setLiveDetails({
           connected: isConn,
           phone: data.phone || '+55 (48) 8877-4408',
@@ -96,7 +133,6 @@ export function WhatsAppConnectionView() {
         });
 
         if (isConn) {
-          setIsQrConnected(true);
           setQrCodeData(null);
           updateInstance(activeInstance?.id || 'inst-amabile-central', {
             status: 'CONNECTED',
@@ -105,14 +141,14 @@ export function WhatsAppConnectionView() {
             lastSyncAt: new Date().toISOString(),
           });
         } else {
-          setIsQrConnected(false);
-          const qrRes = await fetch('/api/v1/zapi/qr-code');
-          const qrData = await qrRes.json();
-          if (qrData.success && qrData.qrCode) {
-            setQrCodeData(qrData.qrCode);
-          }
+          updateInstance(activeInstance?.id || 'inst-amabile-central', {
+            status: 'DISCONNECTED',
+            lastSyncAt: new Date().toISOString(),
+          });
+          await fetchFreshQrCode();
         }
       }
+      await refreshLiveZapiStatus();
     } catch {
       console.warn('Falha ao checar status da Z-API');
     } finally {
@@ -125,9 +161,41 @@ export function WhatsAppConnectionView() {
       setInstanceIdInput(activeInstance.zapiInstanceId || activeInstance.id || '');
     }
     handleRefreshAllStatus();
-  }, [activeInstance]);
+  }, []);
 
-  const isConnected = Boolean(liveDetails?.connected || isQrConnected || activeInstance?.status === 'CONNECTED');
+  const isConnected = Boolean(liveDetails?.connected ?? (isQrConnected || crmZapiConnected || activeInstance?.status === 'CONNECTED'));
+
+  // Polling em segundo plano enquanto desconectado para auto-detecção instantânea da leitura do QR Code
+  useEffect(() => {
+    if (isConnected) return;
+    if (!qrCodeData) {
+      fetchFreshQrCode();
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/v1/zapi/status');
+        const data = await res.json();
+        if (data.success && data.connected) {
+          setIsQrConnected(true);
+          setQrCodeData(null);
+          setLiveDetails({
+            connected: true,
+            phone: data.phone || '+55 (48) 8877-4408',
+            name: data.name || 'Rafael Sena',
+            avatarUrl: data.avatarUrl || null,
+            deviceModel: data.deviceModel || 'iPhone',
+            battery: data.battery || 100,
+            isBusiness: Boolean(data.isBusiness),
+          });
+          await refreshLiveZapiStatus();
+        }
+      } catch {}
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [isConnected, qrCodeData]);
+
   const displayPhone = liveDetails?.phone || activeInstance?.phoneNumber || '+55 (48) 8877-4408';
   const displayName = liveDetails?.name || activeInstance?.name || 'Rafael Sena';
   const displayDevice = liveDetails?.deviceModel || 'Apple iPhone';
@@ -364,20 +432,35 @@ export function WhatsAppConnectionView() {
             </div>
           </div>
 
-          {/* Card do QR Code / Aparelho Conectado */}
+          {/* Card do QR Code / Aparelho Conectado (Central Unificada) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col items-center justify-center text-center space-y-4">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
-              <QrCode className="w-4 h-4 text-[#3742AC]" />
-              <span>Status do Pareamento</span>
+            <div className="flex items-center justify-between w-full border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+                <QrCode className="w-4 h-4 text-[#3742AC]" />
+                <span>{isConnected ? 'Aparelho Conectado' : 'Pareamento via QR Code'}</span>
+              </div>
+              {!isConnected && (
+                <button
+                  type="button"
+                  onClick={fetchFreshQrCode}
+                  disabled={isLoadingQr}
+                  className="text-[11px] font-bold text-[#3742AC] hover:text-[#2D368E] hover:bg-indigo-50 px-2.5 py-1 rounded-xl transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Recarregar QR Code"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoadingQr ? 'animate-spin' : ''}`} />
+                  <span>Recarregar</span>
+                </button>
+              )}
             </div>
 
-            {isLoadingQr ? (
-              <div className="py-12 space-y-2">
-                <RefreshCw className="w-8 h-8 text-[#3742AC] animate-spin mx-auto" />
-                <p className="text-xs text-slate-400">Verificando conexão com WhatsApp...</p>
+            {isLoadingQr && !qrCodeData && !isConnected ? (
+              <div className="py-12 space-y-3">
+                <RefreshCw className="w-9 h-9 text-[#3742AC] animate-spin mx-auto" />
+                <p className="text-xs font-semibold text-slate-600">Gerando QR Code oficial da Z-API...</p>
+                <p className="text-[11px] text-slate-400">Aguarde alguns instantes</p>
               </div>
             ) : isConnected ? (
-              <div className="py-4 space-y-4 w-full">
+              <div className="py-2 space-y-4 w-full">
                 <div className="relative mx-auto w-20 h-20">
                   <img
                     src={liveDetails?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=3742AC&color=fff`}
@@ -392,44 +475,86 @@ export function WhatsAppConnectionView() {
                 <div>
                   <h4 className="text-base font-extrabold text-slate-900">{displayName}</h4>
                   <p className="text-xs text-slate-500 font-mono mt-0.5">{displayPhone}</p>
-                  <div className="flex items-center justify-center gap-1.5 mt-2">
+                  <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
                     <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       <span>{displayDevice} • Sessão Ativa</span>
                     </span>
+                    {liveDetails?.battery !== undefined && (
+                      <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <BatteryCharging className="w-3 h-3 text-emerald-600" />
+                        <span>{liveDetails.battery}%</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Sua conta do WhatsApp está 100% pareada e funcional. Mensagens em tempo real, mídias e contatos estão integrados ao CRM.
+                  Sua conta do WhatsApp está 100% pareada e operacional. Mensagens, fotos e áudios são sincronizados em tempo real com o CRM.
                 </p>
 
-                <div className="pt-2 flex items-center justify-center gap-2">
+                <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => syncWhatsAppChats()}
+                    disabled={isSyncingWhatsApp}
+                    className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingWhatsApp ? 'Sincronizando...' : 'Sincronizar Mensagens'}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowConfirmDisconnect(true)}
                     className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Desconectar Linha</span>
+                    <span>Desconectar</span>
                   </button>
                 </div>
               </div>
             ) : qrCodeData ? (
-              <div className="space-y-3">
-                <img
-                  src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
-                  alt="QR Code WhatsApp"
-                  className="w-48 h-48 rounded-2xl border border-slate-200 p-2 shadow-xs mx-auto"
-                />
-                <p className="text-xs text-slate-500">
-                  Abra o WhatsApp no celular ➔ Aparelhos Conectados ➔ Conectar Aparelho.
-                </p>
+              <div className="space-y-4 w-full">
+                <div className="relative inline-block mx-auto bg-white p-3 rounded-2xl border-2 border-indigo-100 shadow-sm">
+                  <img
+                    src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
+                    alt="QR Code WhatsApp"
+                    className="w-52 h-52 rounded-xl mx-auto object-contain"
+                  />
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full shadow-xs whitespace-nowrap flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                    <span>Aguardando leitura do celular...</span>
+                  </div>
+                </div>
+
+                {/* Passo a Passo Ilustrado */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 text-left text-xs space-y-2 mt-2">
+                  <span className="font-bold text-slate-800 block text-[11px] uppercase tracking-wider">Como Conectar:</span>
+                  <div className="flex items-start gap-2 text-slate-600 text-[11px]">
+                    <span className="w-4 h-4 rounded-full bg-indigo-100 text-[#3742AC] font-bold flex items-center justify-center shrink-0 text-[10px]">1</span>
+                    <span>Abra o WhatsApp no seu smartphone</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-slate-600 text-[11px]">
+                    <span className="w-4 h-4 rounded-full bg-indigo-100 text-[#3742AC] font-bold flex items-center justify-center shrink-0 text-[10px]">2</span>
+                    <span>Toque no Menu (ou Ajustes) e escolha <b>Aparelhos Conectados</b></span>
+                  </div>
+                  <div className="flex items-start gap-2 text-slate-600 text-[11px]">
+                    <span className="w-4 h-4 rounded-full bg-indigo-100 text-[#3742AC] font-bold flex items-center justify-center shrink-0 text-[10px]">3</span>
+                    <span>Toque em <b>Conectar um Aparelho</b> e aponte para este QR Code</span>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="py-8 space-y-3">
                 <Smartphone className="w-10 h-10 text-slate-300 mx-auto" />
-                <p className="text-xs text-slate-500">Nenhum QR Code pendente no momento.</p>
+                <p className="text-xs text-slate-500 font-medium">Nenhum QR Code pendente no momento.</p>
+                <button
+                  type="button"
+                  onClick={fetchFreshQrCode}
+                  className="text-xs font-bold text-[#3742AC] hover:underline"
+                >
+                  Gerar novo QR Code
+                </button>
               </div>
             )}
           </div>

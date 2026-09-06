@@ -20,7 +20,6 @@ import { FinancialDashboard } from '@/components/financial/FinancialDashboard';
 import { TenantManager } from '@/components/tenants/TenantManager';
 import { SaaSAdminHub } from '@/components/saas-master/SaaSAdminHub';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
-import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { LoginScreen } from '@/components/auth/LoginScreen';
@@ -100,7 +99,6 @@ export default function CRMApp() {
   };
 
   const [isZapiSimulatorOpen, setIsZapiSimulatorOpen] = useState(false);
-  const [isQrCodeModalOpen, setIsQrCodeModalOpen] = useState(false);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -185,7 +183,6 @@ export default function CRMApp() {
               setIsMobileSidebarOpen(false);
             }}
             onOpenZapiSimulator={() => setIsZapiSimulatorOpen(true)}
-            onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)}
             onGoToMasterPortal={() => handleSetViewMode('SAAS_MASTER')}
             isOpenOnMobile={isMobileSidebarOpen}
             onCloseMobile={() => setIsMobileSidebarOpen(false)}
@@ -237,7 +234,7 @@ export default function CRMApp() {
                 {currentTab === 'goals' && <GoalsManager />}
                 {currentTab === 'copilot' && <CopilotManager />}
                 {currentTab === 'settings' && (
-                  <SettingsManager onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)} />
+                  <SettingsManager onOpenQrCodeModal={() => setCurrentTab('whatsapp-connection')} />
                 )}
               </ErrorBoundary>
             </main>
@@ -248,11 +245,6 @@ export default function CRMApp() {
       <ZapiSimulatorModal
         isOpen={isZapiSimulatorOpen}
         onClose={() => setIsZapiSimulatorOpen(false)}
-      />
-
-      <ZapiQrCodeModal
-        isOpen={isQrCodeModalOpen}
-        onClose={() => setIsQrCodeModalOpen(false)}
       />
 
       <NewLeadModal

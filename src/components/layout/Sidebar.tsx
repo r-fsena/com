@@ -53,26 +53,19 @@ export function Sidebar({
     isFeatureEnabled
   } = useCRM();
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('vanguard_sidebar_collapsed');
-      if (saved !== null) {
-        setIsCollapsed(saved === 'true');
-      }
-    } catch {
-      // Ignora erro no SSR
-    }
-  }, []);
+  // O menu lateral inicia sempre recuado/fechado por padrão para um visual ultra clean
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const [hoveredTooltip, setHoveredTooltip] = useState<{
+    label: string;
+    badge?: string | number | null;
+    top: number;
+  } | null>(null);
 
   const toggleCollapsed = () => {
     const nextState = !isCollapsed;
     setIsCollapsed(nextState);
-    try {
-      localStorage.setItem('vanguard_sidebar_collapsed', String(nextState));
-    } catch {
-      // Ignora erro
+    if (nextState) {
+      setHoveredTooltip(null);
     }
   };
 
@@ -187,9 +180,21 @@ export function Sidebar({
       <button
         key={item.id}
         onClick={() => {
+          setHoveredTooltip(null);
           setCurrentTab(item.id);
           onCloseMobile?.();
         }}
+        onMouseEnter={(e) => {
+          if (isCollapsed) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setHoveredTooltip({
+              label: item.label,
+              badge: item.badge,
+              top: rect.top + rect.height / 2,
+            });
+          }
+        }}
+        onMouseLeave={() => setHoveredTooltip(null)}
         className={`w-full flex items-center ${
           isCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'
         } py-2.5 rounded-2xl text-xs font-semibold transition-all duration-150 group relative cursor-pointer ${
@@ -197,7 +202,6 @@ export function Sidebar({
             ? 'bg-[#3742AC] text-white shadow-md shadow-indigo-950/10'
             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
         }`}
-        title={isCollapsed ? item.label : undefined}
       >
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
           <Icon className={`w-4 h-4 transition flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'}`} />
@@ -230,6 +234,7 @@ export function Sidebar({
       )}
 
       <aside 
+        onMouseLeave={() => setHoveredTooltip(null)}
         className={`${
           isCollapsed ? 'w-20' : 'w-64'
         } bg-white text-slate-700 flex flex-col flex-shrink-0 border-r border-slate-200/80 select-none transition-all duration-200 ease-in-out fixed md:static inset-y-0 left-0 z-50 md:z-auto ${
@@ -242,8 +247,15 @@ export function Sidebar({
             <div className="flex flex-col items-center gap-4">
               {/* Logo Centralizado no modo reduzido Brokiva */}
               <div 
-                className="w-10 h-10 rounded-2xl bg-white border border-slate-200/90 flex items-center justify-center p-1.5 shadow-2xs overflow-hidden"
-                title={`${currentTenant.name} • Brokiva CRM`}
+                className="w-10 h-10 rounded-2xl bg-white border border-slate-200/90 flex items-center justify-center p-1.5 shadow-2xs overflow-hidden cursor-default"
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHoveredTooltip({
+                    label: `${currentTenant.name} • Brokiva CRM`,
+                    top: rect.top + rect.height / 2,
+                  });
+                }}
+                onMouseLeave={() => setHoveredTooltip(null)}
               >
                 <img 
                   src="/brand/brokiva-icon.png" 
@@ -254,9 +266,19 @@ export function Sidebar({
 
               {/* Botão de Expandir */}
               <button
-                onClick={toggleCollapsed}
+                onClick={() => {
+                  setHoveredTooltip(null);
+                  toggleCollapsed();
+                }}
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHoveredTooltip({
+                    label: 'Expandir menu lateral',
+                    top: rect.top + rect.height / 2,
+                  });
+                }}
+                onMouseLeave={() => setHoveredTooltip(null)}
                 className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl transition cursor-pointer shadow-2xs"
-                title="Expandir menu lateral"
               >
                 <PanelLeftOpen className="w-4 h-4 text-[#3742AC]" />
               </button>
@@ -342,9 +364,19 @@ export function Sidebar({
         {isCollapsed ? (
           <div className="flex justify-center">
             <button
-              onClick={onOpenQrCodeModal}
+              onClick={() => {
+                setHoveredTooltip(null);
+                onOpenQrCodeModal?.();
+              }}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setHoveredTooltip({
+                  label: `Z-API Gateway (${isZapiConnected ? 'Online / Conectado' : 'Offline / Clique para vincular'})`,
+                  top: rect.top + rect.height / 2,
+                });
+              }}
+              onMouseLeave={() => setHoveredTooltip(null)}
               className="p-2 rounded-2xl bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-600 hover:text-slate-900 transition cursor-pointer relative shadow-2xs"
-              title={`Z-API Gateway (${isZapiConnected ? 'Online / Conectado' : 'Offline / Clique para vincular'})`}
             >
               <QrCode className="w-4 h-4 text-[#3742AC]" />
               <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${isZapiConnected ? 'bg-emerald-500 ring-2 ring-white' : 'bg-rose-500'}`} />
@@ -385,6 +417,25 @@ export function Sidebar({
       </div>
 
       </aside>
+
+      {/* Legenda Flutuante (Tooltip) quando o Menu Lateral estiver Recuado */}
+      {isCollapsed && hoveredTooltip && (
+        <div 
+          className="fixed left-[84px] -translate-y-1/2 z-[9999] pointer-events-none hidden md:flex items-center drop-shadow-md animate-in fade-in zoom-in-95 duration-100"
+          style={{ top: `${hoveredTooltip.top}px` }}
+        >
+          {/* Indicador Triangular */}
+          <div className="w-2 h-2 bg-slate-900 rotate-45 -mr-1 border-l border-b border-slate-700/60 shrink-0" />
+          <div className="bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded-xl whitespace-nowrap flex items-center gap-2 border border-slate-700/60 shadow-xl shadow-slate-950/20 backdrop-blur-md">
+            <span>{hoveredTooltip.label}</span>
+            {hoveredTooltip.badge && (
+              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#3742AC] text-white">
+                {hoveredTooltip.badge}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

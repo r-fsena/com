@@ -190,11 +190,8 @@ export function Sidebar({
         onMouseEnter={(e) => {
           if (isCollapsed) {
             const rect = e.currentTarget.getBoundingClientRect();
-            const statusSuffix = item.statusDot 
-              ? (item.statusDot === 'green' ? ' (🟢 Conectado)' : ' (🔴 Desconectado)')
-              : '';
             setHoveredTooltip({
-              label: `${item.label}${statusSuffix}`,
+              label: item.label,
               badge: item.badge,
               top: rect.top + rect.height / 2,
             });

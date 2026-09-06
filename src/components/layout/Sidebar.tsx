@@ -25,7 +25,8 @@ import {
   FileText,
   Crown,
   UserPlus,
-  Radio
+  Radio,
+  Target
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -92,6 +93,13 @@ export function Sidebar({
       id: 'dashboard',
       label: 'Dashboard & Vendas',
       icon: BarChart3,
+      badge: null,
+      enabled: true,
+    },
+    {
+      id: 'goals',
+      label: 'Metas & Performance',
+      icon: Target,
       badge: null,
       enabled: true,
     },

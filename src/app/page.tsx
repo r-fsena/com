@@ -24,6 +24,7 @@ import { ZapiQrCodeModal } from '@/components/zapi/ZapiQrCodeModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { LoginScreen } from '@/components/auth/LoginScreen';
+import { GoalsManager } from '@/components/goals/GoalsManager';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 export default function CRMApp() {
@@ -194,8 +195,12 @@ export default function CRMApp() {
                 {currentTab === 'automations' && isFeatureEnabled('automations') && <AutomationManager />}
                 {currentTab === 'campaigns' && isFeatureEnabled('campaigns') && <CampaignManager />}
                 {currentTab === 'dashboard' && (
-                  <SalesDashboard onOpenChat={handleOpenChatForContact} />
+                  <SalesDashboard 
+                    onOpenChat={handleOpenChatForContact} 
+                    onNavigateToGoals={() => setCurrentTab('goals')}
+                  />
                 )}
+                {currentTab === 'goals' && <GoalsManager />}
                 {currentTab === 'copilot' && <CopilotManager />}
                 {currentTab === 'settings' && (
                   <SettingsManager onOpenQrCodeModal={() => setIsQrCodeModalOpen(true)} />

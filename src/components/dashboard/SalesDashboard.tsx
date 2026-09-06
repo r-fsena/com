@@ -34,9 +34,10 @@ import { GoalsEngineModal } from './GoalsEngineModal';
 
 interface SalesDashboardProps {
   onOpenChat?: (contactId: string) => void;
+  onNavigateToGoals?: () => void;
 }
 
-export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
+export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboardProps) {
   const { 
     contacts, 
     deals, 
@@ -56,6 +57,14 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
   const [tableSearch, setTableSearch] = useState('');
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
+
+  const handleOpenGoals = () => {
+    if (onNavigateToGoals) {
+      onNavigateToGoals();
+    } else {
+      setIsGoalsModalOpen(true);
+    }
+  };
 
   // Motor de Metas & Acompanhamento
   const currentGoals = getGoalsProgress();
@@ -420,8 +429,8 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
               </div>
               <button 
                 type="button" 
-                onClick={() => setIsGoalsModalOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition"
+                onClick={handleOpenGoals}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
                 title="Configurar Metas"
               >
                 <Sliders className="w-3.5 h-3.5" />
@@ -432,8 +441,8 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
             {/* Semicircular Radial Progress */}
             <div 
               className="relative flex flex-col items-center justify-center py-2 cursor-pointer group"
-              onClick={() => setIsGoalsModalOpen(true)}
-              title="Clique para ver detalhes das metas"
+              onClick={handleOpenGoals}
+              title="Clique para abrir o painel de metas"
             >
               <svg className="w-48 h-28 group-hover:scale-105 transition-transform" viewBox="0 0 100 55">
                 {/* Arco de fundo */}
@@ -479,7 +488,7 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
               <div 
                 className="p-2 rounded-2xl bg-orange-50/60 border border-orange-100/60 cursor-pointer hover:bg-orange-100/60 transition"
-                onClick={() => setIsGoalsModalOpen(true)}
+                onClick={handleOpenGoals}
               >
                 <span className="w-2.5 h-2.5 rounded-full bg-orange-500 mx-auto block mb-1" />
                 <span className="text-xs font-bold text-slate-900 font-mono block">
@@ -490,7 +499,7 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
 
               <div 
                 className="p-2 rounded-2xl bg-indigo-50/60 border border-indigo-100/60 cursor-pointer hover:bg-indigo-100/60 transition"
-                onClick={() => setIsGoalsModalOpen(true)}
+                onClick={handleOpenGoals}
               >
                 <span className="w-2.5 h-2.5 rounded-full bg-[#3742AC] mx-auto block mb-1" />
                 <span className="text-xs font-bold text-slate-900 font-mono block">
@@ -501,7 +510,7 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
 
               <div 
                 className="p-2 rounded-2xl bg-emerald-50/60 border border-emerald-100/60 cursor-pointer hover:bg-emerald-100/60 transition"
-                onClick={() => setIsGoalsModalOpen(true)}
+                onClick={handleOpenGoals}
               >
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mx-auto block mb-1" />
                 <span className="text-xs font-bold text-slate-900 font-mono block">
@@ -514,11 +523,11 @@ export function SalesDashboard({ onOpenChat }: SalesDashboardProps) {
             {/* Botão de Ação Direta */}
             <button
               type="button"
-              onClick={() => setIsGoalsModalOpen(true)}
+              onClick={handleOpenGoals}
               className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50/70 border border-slate-200/80 hover:border-indigo-200 rounded-xl text-xs font-bold text-slate-700 hover:text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer"
             >
               <Target className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
-              <span>Ver Motor & Tabela Anual de Metas</span>
+              <span>Abrir Motor de Metas no Menu</span>
               <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-[#3742AC]" />
             </button>
           </div>

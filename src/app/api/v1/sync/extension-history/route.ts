@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
-import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
@@ -112,6 +112,9 @@ export async function POST(req: NextRequest) {
 
       // 1. Processa mensagens do chat
       let lastMsgText = chat.lastMessagePreview || '';
+      if (isWhatsAppSystemMessage(lastMsgText)) {
+        lastMsgText = '';
+      }
       let lastMsgTime = nowIso;
       if (chat.lastMessageAt) {
         const ms = parseWhatsAppTimestamp(chat.lastMessageAt);
@@ -122,6 +125,7 @@ export async function POST(req: NextRequest) {
         chat.messages.forEach((m, idx) => {
           const mContent = (m.content || '').trim();
           if (!mContent && !m.mediaUrl) return;
+          if (isWhatsAppSystemMessage(mContent)) return;
 
           let mTimestamp = nowIso;
           if (m.timestamp) {
@@ -154,13 +158,17 @@ export async function POST(req: NextRequest) {
           });
 
           importedMessagesCount++;
-          lastMsgText = mContent || lastMsgText;
+          lastMsgText = mContent;
           lastMsgTime = mTimestamp;
         });
       }
 
       // Se nenhuma mensagem foi incluída no array, cria mensagem de interação
       if (newMessages.filter(m => m.conversationId === conversationId).length === 0) {
+        const initialText = (lastMsgText && !isWhatsAppSystemMessage(lastMsgText))
+          ? lastMsgText
+          : `Conversa ativa no WhatsApp com ${contactName}`;
+
         newMessages.push({
           id: `ext-msg-initial-${cleanPhone}-${Date.now()}`,
           tenantId,
@@ -168,7 +176,7 @@ export async function POST(req: NextRequest) {
           senderType: 'CONTACT',
           senderName: contactName,
           messageType: 'TEXT',
-          content: lastMsgText || `Conversa ativa no WhatsApp com ${contactName}`,
+          content: initialText,
           status: 'DELIVERED',
           isInternalNote: false,
           timestamp: lastMsgTime,
@@ -207,6 +215,10 @@ export async function POST(req: NextRequest) {
       importedContactsCount++;
 
       // 3. Conversa
+      const cleanPreview = (lastMsgText && !isWhatsAppSystemMessage(lastMsgText)) 
+        ? lastMsgText 
+        : 'Conversa sincronizada via Extensão Chrome';
+
       newConversations.push({
         id: conversationId,
         tenantId,
@@ -215,11 +227,12 @@ export async function POST(req: NextRequest) {
         assignedUserId: brokerUserId || undefined,
         status: 'PENDING_TEAM',
         unreadCount: 0,
-        lastMessagePreview: lastMsgText || 'Conversa sincronizada via Extensão Chrome',
+        lastMessagePreview: cleanPreview,
         lastMessageAt: lastMsgTime,
         slaBreached: false,
       });
     }
+
 
     // Atualiza estado do servidor centralizado
     serverCRMStore.updateState({

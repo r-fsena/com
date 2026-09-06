@@ -27,7 +27,7 @@ import { LoginScreen } from '@/components/auth/LoginScreen';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 export default function CRMApp() {
-  const { openChatForContact, isAuthenticated, currentUser, currentTenant, setCurrentTenant, logout } = useCRM();
+  const { openChatForContact, isAuthenticated, currentUser, currentTenant, setCurrentTenant, logout, isFeatureEnabled } = useCRM();
 
   const isMasterAdmin = currentUser?.role === 'SUPERADMIN' || currentUser?.role === 'ADMIN_MASTER';
 
@@ -59,6 +59,18 @@ export default function CRMApp() {
       localStorage.setItem('vanguard_crm_current_tab', tab);
     } catch {}
   };
+
+  // Se a aba ativa atual foi desativada por Feature Flag, redireciona suavemente para 'inbox'
+  React.useEffect(() => {
+    if (
+      (currentTab === 'proposals' && !isFeatureEnabled('proposals')) ||
+      (currentTab === 'financial' && !isFeatureEnabled('asaasBilling')) ||
+      (currentTab === 'campaigns' && !isFeatureEnabled('campaigns')) ||
+      (currentTab === 'automations' && !isFeatureEnabled('automations'))
+    ) {
+      setCurrentTab('inbox');
+    }
+  }, [currentTab, isFeatureEnabled]);
 
   const handleSetViewMode = (mode: 'SAAS_MASTER' | 'TENANT_CRM') => {
     setViewMode(mode);
@@ -176,11 +188,11 @@ export default function CRMApp() {
                     onOpenChat={handleOpenChatForContact}
                   />
                 )}
-                {currentTab === 'proposals' && <ProposalManager />}
-                {currentTab === 'financial' && <FinancialDashboard />}
+                {currentTab === 'proposals' && isFeatureEnabled('proposals') && <ProposalManager />}
+                {currentTab === 'financial' && isFeatureEnabled('asaasBilling') && <FinancialDashboard />}
                 {currentTab === 'tasks' && <TasksManager />}
-                {currentTab === 'automations' && <AutomationManager />}
-                {currentTab === 'campaigns' && <CampaignManager />}
+                {currentTab === 'automations' && isFeatureEnabled('automations') && <AutomationManager />}
+                {currentTab === 'campaigns' && isFeatureEnabled('campaigns') && <CampaignManager />}
                 {currentTab === 'dashboard' && (
                   <SalesDashboard onOpenChat={handleOpenChatForContact} />
                 )}

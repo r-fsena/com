@@ -31,7 +31,7 @@
             <div class="sovereign-brand-icon">B</div>
             <div>
               <div class="sovereign-title" style="display:flex; align-items:center;">
-                Brokiva <span style="font-size:10px; background:#059669; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.2</span>
+                Brokiva <span style="font-size:10px; background:#059669; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.3</span>
               </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
@@ -147,6 +147,45 @@
     } catch {}
   }
 
+  // 1.1 Filtro de mensagens do sistema, criptografia e avisos automáticos do WhatsApp
+  function isWhatsAppSystemMessage(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase().trim();
+    return (
+      lower.includes('criptografia de ponta a ponta') ||
+      lower.includes('end-to-end encrypt') ||
+      lower.includes('cifrado de extremo a extremo') ||
+      lower.includes('somente as pessoas que fazem parte da conversa') ||
+      (lower.includes('mensagens e ligações') && lower.includes('protegidas')) ||
+      (lower.includes('mensagens e ligacoes') && lower.includes('protegidas')) ||
+      (lower.includes('mensagens e chamadas') && lower.includes('protegidas')) ||
+      (lower.includes('messages and calls') && lower.includes('encrypted')) ||
+      (lower.includes('clique para saber mais') && (lower.includes('cripto') || lower.includes('protegid') || lower.includes('conversa'))) ||
+      lower.includes('protegidas com a criptografia') ||
+      lower.includes('ninguém fora desta conversa') ||
+      lower.includes('ninguem fora desta conversa') ||
+      lower.includes('no one outside of this chat') ||
+      lower.includes('mensagens temporárias') ||
+      lower.includes('mensagens temporarias') ||
+      lower.includes('disappearing messages') ||
+      lower.includes('mensajes temporales') ||
+      lower.includes('código de segurança') ||
+      lower.includes('codigo de seguranca') ||
+      lower.includes('security code') ||
+      lower.includes('conta comercial oficial') ||
+      (lower.includes('esta conversa é com') && lower.includes('conta comercial')) ||
+      (lower.includes('esta conversa e com') && lower.includes('conta comercial')) ||
+      lower.includes('official business account') ||
+      lower.includes('esta empresa usa o serviço seguro da meta') ||
+      lower.includes('esta empresa usa o servico seguro da meta') ||
+      lower.includes('você bloqueou este contato') ||
+      lower.includes('voce bloqueou este contato') ||
+      lower.includes('você desbloqueou este contato') ||
+      lower.includes('voce desbloqueou este contato') ||
+      lower.includes('you blocked this contact')
+    );
+  }
+
   // 2. Extrai dados da conversa ativa no WhatsApp Web
   function extractActiveChatData() {
     const main = document.querySelector('#main');
@@ -247,6 +286,13 @@
       const container = el.closest('[data-id]') || el.closest('div[role="row"]') || el;
       const dataId = container.getAttribute('data-id') || el.getAttribute('data-id') || '';
       
+      // Filtro 1: Ignora containers de aviso de sistema/criptografia do WhatsApp Web
+      const isSystemContainer = container.closest('[data-testid*="system"]') !== null ||
+                                container.querySelector('span[data-icon="lock-small"], span[data-icon="lock"]') !== null ||
+                                el.querySelector('span[data-icon="lock-small"], span[data-icon="lock"]') !== null ||
+                                (container.getAttribute('class') || '').includes('system');
+      if (isSystemContainer) return;
+
       const prePlain = container.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || 
                        el.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || 
                        container.getAttribute('data-pre-plain-text') || '';
@@ -298,6 +344,9 @@
       // Limpa horários grudados no final
       content = content.replace(/\n\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i, '').trim();
 
+      // Filtro 2: Ignora qualquer aviso de sistema (criptografia, mensagens temporárias, etc.)
+      if (!content || isWhatsAppSystemMessage(content)) return;
+
       let messageType = 'TEXT';
       if (el.querySelector('audio')) {
         messageType = 'AUDIO';
@@ -310,7 +359,7 @@
         content = content || '📄 Documento';
       }
 
-      if (!content) return;
+      if (!content || isWhatsAppSystemMessage(content)) return;
 
       let msgTime = new Date().toISOString();
       if (prePlain) {
@@ -341,15 +390,19 @@
       });
     });
 
-    console.log(`[Brokiva] Extraídas ${messages.length} mensagens válidas para ${contactName} (${resolvedPhone})`);
+    // Filtra mensagens finais garantindo ausência de avisos de sistema
+    const validContentMsgs = messages.filter(m => m.content && !isWhatsAppSystemMessage(m.content));
+    const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
+
+    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens válidas para ${contactName} (${resolvedPhone})`);
 
     return {
       phone: resolvedPhone,
       lid: resolvedLid || undefined,
       name: contactName,
-      messages,
-      lastMessagePreview: messages.length > 0 ? messages[messages.length - 1].content : '',
-      lastMessageAt: messages.length > 0 ? messages[messages.length - 1].timestamp : new Date().toISOString(),
+      messages: validContentMsgs,
+      lastMessagePreview: lastMsg ? lastMsg.content : '',
+      lastMessageAt: lastMsg ? lastMsg.timestamp : new Date().toISOString(),
     };
   }
 

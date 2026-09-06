@@ -1672,10 +1672,34 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                       badge: 'Imóveis',
                     },
                     {
+                      key: 'proposals' as keyof TenantFeatureFlags,
+                      title: 'Propostas Comerciais & Aceite Digital',
+                      description: 'Gere propostas personalizadas, envie o link de aceite via WhatsApp e receba com baixa automática.',
+                      badge: 'Comercial',
+                    },
+                    {
                       key: 'leadImportExport' as keyof TenantFeatureFlags,
                       title: 'Importação & Migração de Planilhas CSV',
                       description: 'Permite carregar arquivos .CSV com validação de dados ou exportar a base de contatos.',
                       badge: 'Migração',
+                    },
+                  ],
+                },
+                {
+                  category: '⚡ Campanhas & Automações de Atendimento',
+                  description: 'Recursos de disparo em lote, fluxos condicionais e réguas de relacionamento.',
+                  items: [
+                    {
+                      key: 'campaigns' as keyof TenantFeatureFlags,
+                      title: 'Campanhas em Lote',
+                      description: 'Disparos e campanhas segmentadas em massa para listas de contatos no WhatsApp.',
+                      badge: 'Marketing',
+                    },
+                    {
+                      key: 'automations' as keyof TenantFeatureFlags,
+                      title: 'Automações & Regras',
+                      description: 'Gatilhos automáticos, distribuição de leads e regras condicionais por tempo ou tag.',
+                      badge: 'Automação',
                     },
                   ],
                 },

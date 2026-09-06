@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
-import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 
 export async function processZapiWebhookRequest(
   request: NextRequest,
@@ -147,6 +147,16 @@ export async function processZapiWebhookRequest(
         received: true,
         ignored: true,
         reason: 'Evento de status/presença sem texto',
+        status: 'SUCCESS',
+      });
+    }
+
+    // Se for aviso do sistema, criptografia ou notificação automática do WhatsApp, descarta
+    if (isWhatsAppSystemMessage(content)) {
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+        reason: 'Aviso de sistema/segurança ignorado do CRM',
         status: 'SUCCESS',
       });
     }

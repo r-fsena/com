@@ -37,6 +37,8 @@ export interface TenantFeatureFlags {
   whatsappVoiceTranscription: boolean; // Transcrição de áudios com IA
   whatsappLabelsSync: boolean;         // Captura de Etiquetas do WhatsApp Business
   whatsappMultiBroker: boolean;        // Linhas individuais dedicadas por corretor
+  campaigns?: boolean;                 // Campanhas em Lote
+  automations?: boolean;               // Automações & Regras de Atendimento
 
   // Inteligência Artificial
   aiCopilot: boolean;                  // Copiloto de IA e sugestões de respostas
@@ -48,6 +50,7 @@ export interface TenantFeatureFlags {
   financialQualification: boolean;     // Perfil financeiro 360º (Renda, Entrada, Financiamento)
   presentedProperties: boolean;        // Registro de Imóveis apresentados na negociação
   leadImportExport: boolean;           // Importação e Exportação de planilhas CSV
+  proposals?: boolean;                 // Propostas Comerciais & Aceite Digital
 
   // Cobrança & Compliance
   asaasBilling: boolean;               // Cobrança de mensalidades e faturas via Asaas

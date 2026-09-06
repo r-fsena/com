@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -322,6 +322,8 @@ export function WhatsAppInbox() {
 
     const matched = messages
       .filter(m => {
+        if (!m.content || isWhatsAppSystemMessage(m.content)) return false;
+
         if (relatedConvIds.has(m.conversationId)) return true;
         if (m.conversationId === convId) return true;
         if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
@@ -350,8 +352,13 @@ export function WhatsAppInbox() {
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
 
     // Se não há mensagens gravadas ainda, mas a conversa possui um preview real de última mensagem,
-    // sintetiza a mensagem inicial para que o chat não fique vazio
-    if (matched.length === 0 && activeConversation.lastMessagePreview && activeConversation.lastMessagePreview !== '📱 Conversa sincronizada via WhatsApp') {
+    // sintetiza a mensagem inicial para que o chat não fique vazio (nunca sintetiza mensagens de sistema/criptografia)
+    if (
+      matched.length === 0 && 
+      activeConversation.lastMessagePreview && 
+      activeConversation.lastMessagePreview !== '📱 Conversa sincronizada via WhatsApp' &&
+      !isWhatsAppSystemMessage(activeConversation.lastMessagePreview)
+    ) {
       const syntheticMsg: Message = {
         id: `synthetic-${activeConversation.id}`,
         tenantId: activeConversation.tenantId,
@@ -1115,10 +1122,13 @@ export function WhatsAppInbox() {
 
                     {/* Preview da Mensagem */}
                     {(() => {
-                      const convMsgs = messages.filter(m => m.conversationId === conv.id && !m.isInternalNote && m.content);
+                      const convMsgs = messages.filter(m => m.conversationId === conv.id && !m.isInternalNote && m.content && !isWhatsAppSystemMessage(m.content));
                       const latest = convMsgs.length > 0 ? convMsgs[convMsgs.length - 1] : null;
+                      const rawPreview = (conv.lastMessagePreview && !isWhatsAppSystemMessage(conv.lastMessagePreview) && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber'))
+                        ? conv.lastMessagePreview
+                        : '📱 Conversa sincronizada';
                       const preview = latest?.content 
-                        || (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : (conv.lastMessagePreview && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber') ? conv.lastMessagePreview : '📱 Conversa sincronizada'));
+                        || (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : rawPreview);
                       return (
                         <p className={`text-[11px] truncate mb-1 leading-relaxed ${conv.unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
                           {preview}

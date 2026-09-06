@@ -50,7 +50,7 @@ import {
   MOCK_MASTER_USERS,
   MOCK_SAAS_API_CONFIG
 } from './mock-data';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, canonicalPhoneKey, arePhonesEquivalent, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 interface CRMContextType {
@@ -306,7 +306,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const cleanList = parsed.filter((t: Tenant) => t.id !== 'tenant-horizonte-02' && t.id !== 'tenant-alphaville-03' && t.id !== 'tenant-vanguard-01');
+            const cleanList = parsed
+              .filter((t: Tenant) => t.id !== 'tenant-horizonte-02' && t.id !== 'tenant-alphaville-03' && t.id !== 'tenant-vanguard-01')
+              .map((t: Tenant) => {
+                if (t.id === 'tenant-amabile-barbarotti') {
+                  return {
+                    ...t,
+                    featureFlags: {
+                      ...(t.featureFlags || DEFAULT_FEATURE_FLAGS),
+                      proposals: false,
+                      asaasBilling: false,
+                      campaigns: false,
+                      automations: false,
+                    },
+                  };
+                }
+                return t;
+              });
             if (cleanList.length > 0) return cleanList;
           }
         }
@@ -322,6 +338,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.id !== 'tenant-horizonte-02' && parsed.id !== 'tenant-alphaville-03' && parsed.id !== 'tenant-vanguard-01') {
+            if (parsed.id === 'tenant-amabile-barbarotti') {
+              parsed.featureFlags = {
+                ...(parsed.featureFlags || DEFAULT_FEATURE_FLAGS),
+                proposals: false,
+                asaasBilling: false,
+                campaigns: false,
+                automations: false,
+              };
+              try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(parsed)); } catch {}
+            }
             return parsed;
           }
         }
@@ -920,7 +946,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
+            parsed = parsed
+              .filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }))
+              .map((c: Conversation) => {
+                if (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) {
+                  return { ...c, lastMessagePreview: 'Conversa sincronizada via WhatsApp' };
+                }
+                return c;
+              });
             return parsed;
           }
         }
@@ -938,7 +971,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((m: Message) => m.tenantId !== 'tenant-vanguard-01');
+            parsed = parsed.filter((m: Message) => m.tenantId !== 'tenant-vanguard-01' && !isWhatsAppSystemMessage(m.content));
+            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
             return parsed;
           }
         }
@@ -947,13 +981,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
-  // Função para remover mensagens duplicadas, limpar placeholders genéricos e corrigir lado do remetente
+  // Função para remover mensagens duplicadas, limpar placeholders genéricos, avisos de sistema e corrigir lado do remetente
   const deduplicateMessages = (msgs: Message[]): Message[] => {
     const map = new Map<string, Message>();
     msgs.forEach(m => {
       const content = (m.content || '').trim();
       if (
         !content ||
+        isWhatsAppSystemMessage(content) ||
         content === 'Mensagem recebida pelo WhatsApp' ||
         content === 'Olá! Conversa sincronizada do WhatsApp.' ||
         content === 'Conversa sincronizada do WhatsApp.' ||
@@ -1107,7 +1142,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             const map = new Map(prev.map(c => [c.id, c]));
             incomingConvs.forEach((c: any) => {
               const existing = map.get(c.id);
-              map.set(c.id, existing ? { ...existing, ...c } : c);
+              const preview = (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview))
+                ? 'Conversa sincronizada via WhatsApp'
+                : c.lastMessagePreview;
+              map.set(c.id, existing ? { ...existing, ...c, lastMessagePreview: preview || existing.lastMessagePreview } : { ...c, lastMessagePreview: preview });
             });
             const updated = Array.from(map.values());
             try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}

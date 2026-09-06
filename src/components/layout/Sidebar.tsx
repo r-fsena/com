@@ -138,7 +138,7 @@ export function Sidebar({
       label: 'Propostas Comerciais',
       icon: FileText,
       badge: null,
-      enabled: true,
+      enabled: isFeatureEnabled('proposals'),
     },
     {
       id: 'financial',
@@ -167,14 +167,14 @@ export function Sidebar({
       label: 'Campanhas em Lote',
       icon: Send,
       badge: null,
-      enabled: true,
+      enabled: isFeatureEnabled('campaigns'),
     },
     {
       id: 'automations',
       label: 'Automações & Regras',
       icon: Zap,
       badge: null,
-      enabled: true,
+      enabled: isFeatureEnabled('automations'),
     },
     {
       id: 'copilot',

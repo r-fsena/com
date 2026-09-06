@@ -27,6 +27,8 @@ export const DEFAULT_FEATURE_FLAGS = {
   whatsappVoiceTranscription: true,
   whatsappLabelsSync: true,
   whatsappMultiBroker: true,
+  campaigns: true,
+  automations: true,
 
   // Inteligência Artificial
   aiCopilot: true,
@@ -38,6 +40,7 @@ export const DEFAULT_FEATURE_FLAGS = {
   financialQualification: true,
   presentedProperties: true,
   leadImportExport: true,
+  proposals: true,
 
   // Cobrança & Compliance
   asaasBilling: true,
@@ -62,7 +65,13 @@ export const MOCK_TENANTS: Tenant[] = [
     maxBrokers: 15,
     maxInstances: 3,
     asaasApiKey: 'asaas_secret_key_amabile_production',
-    featureFlags: { ...DEFAULT_FEATURE_FLAGS },
+    featureFlags: { 
+      ...DEFAULT_FEATURE_FLAGS,
+      proposals: false,
+      asaasBilling: false,
+      campaigns: false,
+      automations: false,
+    },
     businessHours: {
       start: '08:30',
       end: '19:00',

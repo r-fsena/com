@@ -1,4 +1,5 @@
 import { Contact, Deal, Conversation, Message, AIInsight } from '@/types/crm';
+import { isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 
 export interface ServerCRMState {
   contacts: Contact[];
@@ -39,6 +40,10 @@ export const serverCRMStore = {
         aiInsights: INITIAL_INSIGHTS,
       };
     }
+    // Higieniza mensagens caso existam avisos de sistema prévios
+    if (global.__SERVER_CRM_STATE__.messages?.some(m => isWhatsAppSystemMessage(m.content))) {
+      global.__SERVER_CRM_STATE__.messages = global.__SERVER_CRM_STATE__.messages.filter(m => !isWhatsAppSystemMessage(m.content));
+    }
     return global.__SERVER_CRM_STATE__;
   },
 
@@ -56,10 +61,21 @@ export const serverCRMStore = {
 
   updateState(partial: Partial<ServerCRMState>): ServerCRMState {
     const current = this.getState();
+    const rawConvs = partial.conversations || current.conversations;
+    const cleanConvs = rawConvs.map(c => {
+      if (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) {
+        return {
+          ...c,
+          lastMessagePreview: 'Conversa sincronizada via Extensão Chrome',
+        };
+      }
+      return c;
+    });
+
     const next: ServerCRMState = {
       contacts: partial.contacts ? this.mergeContacts(current.contacts, partial.contacts) : current.contacts,
       deals: partial.deals || current.deals,
-      conversations: partial.conversations || current.conversations,
+      conversations: cleanConvs,
       messages: partial.messages ? this.mergeMessages(current.messages, partial.messages) : current.messages,
       aiInsights: partial.aiInsights ? { ...current.aiInsights, ...partial.aiInsights } : current.aiInsights,
     };
@@ -133,6 +149,8 @@ export const serverCRMStore = {
     const all = [...oldMsgs, ...newMsgs];
     all.forEach(m => {
       const content = (m.content || '').trim();
+      if (!content || isWhatsAppSystemMessage(content)) return;
+
       const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
       const key = `${m.conversationId}-${content}-${timeKey}`;
       const existing = map.get(key);

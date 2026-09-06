@@ -21,10 +21,10 @@ export function isWhatsAppChannelOrGroup(target: {
 
   // 1. Flags explícitas da Z-API / WhatsApp
   if (
-    target.isGroup === true || 
-    target.isNewsletter === true || 
-    target.isChannel === true || 
-    target.isGroupAnnouncement === true || 
+    target.isGroup === true ||
+    target.isNewsletter === true ||
+    target.isChannel === true ||
+    target.isGroupAnnouncement === true ||
     Boolean(target.groupMetadata)
   ) {
     return true;
@@ -156,3 +156,79 @@ export function arePhonesEquivalent(phoneA: string | undefined | null, phoneB: s
 
   return digitsA.endsWith(digitsB) || digitsB.endsWith(digitsA);
 }
+
+/**
+ * Detecta se o conteúdo de uma mensagem é um aviso de sistema/segurança do WhatsApp
+ * (ex: criptografia de ponta a ponta, mensagens temporárias, alteração de código de segurança, aviso de conta comercial).
+ * Essas mensagens não devem ser salvas nem exibidas nas conversas do CRM.
+ */
+export function isWhatsAppSystemMessage(text?: string | null): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
+
+  // 1. Aviso de criptografia de ponta a ponta (PT, EN, ES)
+  if (
+    lower.includes('criptografia de ponta a ponta') ||
+    lower.includes('end-to-end encrypt') ||
+    lower.includes('cifrado de extremo a extremo') ||
+    lower.includes('somente as pessoas que fazem parte da conversa') ||
+    (lower.includes('mensagens e ligações') && lower.includes('protegidas')) ||
+    (lower.includes('mensagens e ligacoes') && lower.includes('protegidas')) ||
+    (lower.includes('mensagens e chamadas') && lower.includes('protegidas')) ||
+    (lower.includes('messages and calls') && lower.includes('encrypted')) ||
+    (lower.includes('clique para saber mais') && (lower.includes('cripto') || lower.includes('protegid') || lower.includes('conversa'))) ||
+    lower.includes('protegidas com a criptografia') ||
+    lower.includes('ninguém fora desta conversa') ||
+    lower.includes('ninguem fora desta conversa') ||
+    lower.includes('no one outside of this chat')
+  ) {
+    return true;
+  }
+
+  // 2. Mensagens temporárias ativadas/desativadas
+  if (
+    lower.includes('mensagens temporárias') ||
+    lower.includes('mensagens temporarias') ||
+    lower.includes('disappearing messages') ||
+    lower.includes('mensajes temporales')
+  ) {
+    return true;
+  }
+
+  // 3. Alteração de código de segurança
+  if (
+    lower.includes('código de segurança') ||
+    lower.includes('codigo de seguranca') ||
+    lower.includes('security code changed') ||
+    lower.includes('código de seguridad') ||
+    lower.includes('codigo de seguridad')
+  ) {
+    return true;
+  }
+
+  // 4. Avisos de conta comercial / Meta AI
+  if (
+    lower.includes('conta comercial oficial') ||
+    (lower.includes('esta conversa é com') && lower.includes('conta comercial')) ||
+    (lower.includes('esta conversa e com') && lower.includes('conta comercial')) ||
+    lower.includes('official business account') ||
+    lower.includes('esta empresa usa o serviço seguro da meta') ||
+    lower.includes('esta empresa usa o servico seguro da meta')
+  ) {
+    return true;
+  }
+
+  // 5. Avisos de bloqueio / desbloqueio
+  if (
+    lower.includes('você bloqueou este contato') ||
+    lower.includes('voce bloqueou este contato') ||
+    lower.includes('você desbloqueou este contato') ||
+    lower.includes('voce desbloqueou este contato') ||
+    lower.includes('you blocked this contact')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+

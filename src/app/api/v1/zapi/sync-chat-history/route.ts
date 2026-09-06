@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { validateApiSession } from '@/lib/api-auth';
+import { isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,14 +84,14 @@ export async function POST(req: NextRequest) {
           timestamp,
         };
       })
-      .filter(m => cutoffMs === 0 || new Date(m.timestamp).getTime() >= cutoffMs);
+      .filter(m => (cutoffMs === 0 || new Date(m.timestamp).getTime() >= cutoffMs) && !isWhatsAppSystemMessage(m.content));
 
     // Se a Z-API Multi-Device não retorna histórico remoto antigo do aparelho, recupera apenas mensagens reais gravadas
     if (formattedMessages.length === 0) {
       const serverState = serverCRMStore.getState();
       const storedMsgs = serverState.messages.filter(m => 
-        m.conversationId === (conversationId || `conv-zapi-${cleanPhone}`) ||
-        (m as any).phone === cleanPhone
+        (m.conversationId === (conversationId || `conv-zapi-${cleanPhone}`) ||
+        (m as any).phone === cleanPhone) && !isWhatsAppSystemMessage(m.content)
       ).filter(m => !m.id.startsWith('hist-') && !m.id.startsWith('initial-msg-'));
 
       if (storedMsgs.length > 0) {

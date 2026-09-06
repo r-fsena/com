@@ -183,12 +183,13 @@ export function WhatsAppInbox() {
     resetCRMDatabase,
     loadChatHistory,
     isFeatureEnabled,
-    currentTenant
+    currentTenant,
+    getContactUrgencyAnalysis
   } = useCRM();
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED'>('ALL');
+  const [filterTab, setFilterTab] = useState<'ALL' | 'UNASSIGNED' | 'MINE' | 'PENDING_TEAM' | 'SLA_BREACHED' | 'EMERGENCY'>('ALL');
   const [instanceFilter, setInstanceFilter] = useState<'ALL' | 'CENTRAL' | 'DIRECT'>('ALL');
   const [sendingInstanceId, setSendingInstanceId] = useState<string>(activeInstanceId);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
@@ -813,8 +814,19 @@ export function WhatsAppInbox() {
     if (filterTab === 'MINE') return c.assignedUserId === currentUser.id;
     if (filterTab === 'PENDING_TEAM') return c.status === 'PENDING_TEAM';
     if (filterTab === 'SLA_BREACHED') return c.slaBreached;
+    if (filterTab === 'EMERGENCY') {
+      const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
+      return urgency && urgency.urgencyLevel !== 'HEALTHY';
+    }
     return true;
   }).sort((a, b) => {
+    // Se estiver no filtro emergencial, ordena pela maior urgência primeiro
+    if (filterTab === 'EMERGENCY') {
+      const urgencyA = getContactUrgencyAnalysis(a.contactId, undefined, a.id)?.urgencyScore || 0;
+      const urgencyB = getContactUrgencyAnalysis(b.contactId, undefined, b.id)?.urgencyScore || 0;
+      if (urgencyA !== urgencyB) return urgencyB - urgencyA;
+    }
+
     // Prioridade 1: Conversas Fixadas no Topo
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
@@ -824,6 +836,11 @@ export function WhatsAppInbox() {
     const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
     return timeB - timeA;
   });
+
+  const emergencyConversationsCount = conversations.filter(c => {
+    const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
+    return urgency && urgency.urgencyLevel !== 'HEALTHY';
+  }).length;
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1066,6 +1083,22 @@ export function WhatsAppInbox() {
             >
               Minhas
             </button>
+            <button
+              onClick={() => setFilterTab('EMERGENCY')}
+              className={`flex-1 py-1 text-center rounded-full text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                filterTab === 'EMERGENCY' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-rose-700'
+              }`}
+              title="Clientes aguardando resposta da equipe ou negociações esfriando"
+            >
+              <span>🚨 Urgentes</span>
+              {emergencyConversationsCount > 0 && (
+                <span className={`text-[9px] px-1 py-0.2 rounded-full font-extrabold ${
+                  filterTab === 'EMERGENCY' ? 'bg-white text-rose-700' : 'bg-rose-100 text-rose-800'
+                }`}>
+                  {emergencyConversationsCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1083,6 +1116,7 @@ export function WhatsAppInbox() {
             filteredConversations.map((conv) => {
               const contact = contacts.find(c => c.id === conv.contactId) || contacts.find(c => c.phone.replace(/\D/g, '') === conv.id.replace(/\D/g, ''));
               const isSelected = conv.id === activeConversation?.id;
+              const urgency = getContactUrgencyAnalysis(conv.contactId, undefined, conv.id);
 
               return (
                 <button
@@ -1092,7 +1126,13 @@ export function WhatsAppInbox() {
                     markConversationAsRead(conv.id);
                   }}
                   className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group cursor-pointer ${
-                    isSelected ? 'bg-indigo-50/50 border-l-4 border-[#3742AC]' : 'hover:bg-slate-50'
+                    isSelected 
+                      ? 'bg-indigo-50/50 border-l-4 border-[#3742AC]' 
+                      : urgency?.urgencyLevel === 'CRITICAL_UNANSWERED'
+                      ? 'bg-rose-50/30 border-l-4 border-rose-500 hover:bg-rose-50/50'
+                      : urgency?.urgencyLevel === 'HIGH_STALE_DEAL'
+                      ? 'border-l-4 border-amber-400 hover:bg-slate-50'
+                      : 'hover:bg-slate-50'
                   }`}
                 >
                   {/* Avatar */}
@@ -1136,16 +1176,36 @@ export function WhatsAppInbox() {
                       );
                     })()}
 
-                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                    <div className="flex items-center justify-between gap-1 text-[10px] mt-1">
                       <span className="text-slate-400 font-mono">
                         {formatDisplayPhone(contact?.phone || conv.id)}
                       </span>
 
-                      {conv.unreadCount > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white text-[10px] font-bold flex items-center justify-center shadow-2xs">
-                          {conv.unreadCount}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {urgency && urgency.urgencyLevel === 'CRITICAL_UNANSWERED' && (
+                          <span 
+                            className="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300 animate-pulse flex items-center gap-0.5" 
+                            title={urgency.urgencyReason}
+                          >
+                            🚨 No Vácuo ({urgency.formattedTimeAgo})
+                          </span>
+                        )}
+
+                        {urgency && urgency.urgencyLevel === 'HIGH_STALE_DEAL' && (
+                          <span 
+                            className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-0.5" 
+                            title={urgency.urgencyReason}
+                          >
+                            ⏱️ {urgency.formattedTimeAgo}
+                          </span>
+                        )}
+
+                        {conv.unreadCount > 0 && (
+                          <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white text-[10px] font-bold flex items-center justify-center shadow-2xs">
+                            {conv.unreadCount}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </button>

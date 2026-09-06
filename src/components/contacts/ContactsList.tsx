@@ -32,10 +32,11 @@ interface ContactsListProps {
 }
 
 export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
-  const { contacts, deleteContact, users, syncWhatsAppChats, isSyncingWhatsApp } = useCRM();
+  const { contacts, deleteContact, users, syncWhatsAppChats, isSyncingWhatsApp, getContactUrgencyAnalysis } = useCRM();
   const [search, setSearch] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState('ALL');
   const [sourceFilter, setSourceFilter] = useState('ALL');
+  const [inactivityFilter, setInactivityFilter] = useState<'ALL' | 'UNANSWERED' | 'OVER_48H' | 'OVER_7D'>('ALL');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -63,6 +64,15 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
     if (!matchesSearch) return false;
     if (temperatureFilter !== 'ALL' && c.temperature !== temperatureFilter) return false;
     if (sourceFilter !== 'ALL' && c.source !== sourceFilter) return false;
+
+    if (inactivityFilter !== 'ALL') {
+      const urgency = getContactUrgencyAnalysis(c.id);
+      if (!urgency) return false;
+      if (inactivityFilter === 'UNANSWERED' && !urgency.isUnansweredByTeam) return false;
+      if (inactivityFilter === 'OVER_48H' && urgency.hoursSinceLastInteraction < 48) return false;
+      if (inactivityFilter === 'OVER_7D' && urgency.daysSinceLastInteraction < 7) return false;
+    }
+
     return true;
   });
 
@@ -197,6 +207,22 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
           <option value="PORTAL_ZAP">Portal ZAP</option>
           <option value="GOOGLE">Google Ads</option>
         </select>
+
+        {/* Inactivity / SLA Filter */}
+        <select
+          value={inactivityFilter}
+          onChange={(e) => setInactivityFilter(e.target.value as any)}
+          className={`text-xs border rounded-xl px-3 py-2 focus:outline-none cursor-pointer transition ${
+            inactivityFilter !== 'ALL'
+              ? 'bg-rose-50 border-rose-300 text-rose-800 font-bold'
+              : 'bg-slate-50 border-slate-200 text-slate-700'
+          }`}
+        >
+          <option value="ALL">Status de Contato: Todos</option>
+          <option value="UNANSWERED">🚨 No Vácuo (Aguardando Resposta)</option>
+          <option value="OVER_48H">⏱️ Sem contato &gt; 48 horas</option>
+          <option value="OVER_7D">🟡 Sem contato &gt; 7 dias</option>
+        </select>
       </div>
 
       {/* Contacts Table */}
@@ -206,6 +232,7 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 <th className="py-3 px-4">Lead / Contato</th>
+                <th className="py-3 px-4">Última Interação / SLA</th>
                 <th className="py-3 px-4">Qualificação Financeira</th>
                 <th className="py-3 px-4">Interesse & Região</th>
                 <th className="py-3 px-4">Origem & Tags</th>
@@ -217,6 +244,7 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((contact) => {
                 const broker = users.find(u => u.id === contact.assignedUserId);
+                const urgency = getContactUrgencyAnalysis(contact.id);
 
                 return (
                   <tr key={contact.id} className="hover:bg-slate-50/80 transition group">
@@ -244,6 +272,43 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
                           <p className="text-[11px] text-slate-500 font-mono mt-0.5">{contact.phone}</p>
                         </div>
                       </div>
+                    </td>
+
+                    {/* Última Interação / SLA */}
+                    <td className="py-3 px-4">
+                      {!urgency ? (
+                        <span className="text-slate-400 text-[11px]">Sem dados</span>
+                      ) : urgency.isUnansweredByTeam ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full border border-rose-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
+                            No Vácuo ({urgency.formattedTimeAgo})
+                          </span>
+                          <p className="text-[10px] text-rose-600 font-medium">
+                            Aguardando resposta
+                          </p>
+                        </div>
+                      ) : urgency.urgencyLevel === 'HIGH_STALE_DEAL' ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-200">
+                            ⏱️ Esfriando ({urgency.formattedTimeAgo})
+                          </span>
+                          <p className="text-[10px] text-amber-700 font-medium truncate max-w-[130px]">
+                            {urgency.stageName || 'Negociação'}
+                          </p>
+                        </div>
+                      ) : urgency.urgencyLevel === 'MEDIUM_FOLLOW_UP' ? (
+                        <div>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                            Sem contato há {urgency.formattedTimeAgo}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span>Em dia ({urgency.formattedTimeAgo})</span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Qualificação Financeira */}
@@ -326,10 +391,19 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => onOpenChat(contact.id)}
-                          className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
-                          title="Abrir WhatsApp"
+                          className={`p-1.5 rounded-lg transition flex items-center gap-1 ${
+                            urgency?.isUnansweredByTeam 
+                              ? 'bg-rose-500 hover:bg-rose-600 text-white font-bold text-[10px] px-2 shadow-xs animate-pulse' 
+                              : urgency?.urgencyLevel === 'HIGH_STALE_DEAL'
+                              ? 'bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] px-2 shadow-xs'
+                              : 'text-emerald-700 hover:bg-emerald-50'
+                          }`}
+                          title={urgency?.isUnansweredByTeam ? 'Responder Cliente no Vácuo' : 'Abrir WhatsApp'}
                         >
                           <MessageSquare className="w-4 h-4" />
+                          {(urgency?.isUnansweredByTeam || urgency?.urgencyLevel === 'HIGH_STALE_DEAL') && (
+                            <span>Chamar</span>
+                          )}
                         </button>
                         <button
                           onClick={() => deleteContact(contact.id)}

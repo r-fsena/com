@@ -56,13 +56,15 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     contacts, 
     users, 
     conversations,
-    aiInsights
+    aiInsights,
+    getDealUrgencyAnalysis
   } = useCRM();
 
   // Estados de Filtros e Busca
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBroker, setSelectedBroker] = useState<string>('ALL');
   const [selectedTemperature, setSelectedTemperature] = useState<string>('ALL');
+  const [filterStaleOnly, setFilterStaleOnly] = useState(false);
 
   // Estado do Modal de Configuração do Funil
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -87,10 +89,19 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
+  // Quantidade de negócios em inatividade / esfriando
+  const staleDealsCount = deals.filter(d => d.status === 'OPEN' && getDealUrgencyAnalysis(d).urgencyLevel !== 'HEALTHY').length;
+
   // Filtragem de deals
   const filteredDeals = deals.filter(deal => {
     const contact = contacts.find(c => c.id === deal.contactId);
     
+    // Filtro por Oportunidades Paradas / Esfriando
+    if (filterStaleOnly) {
+      const urgency = getDealUrgencyAnalysis(deal);
+      if (urgency.urgencyLevel === 'HEALTHY') return false;
+    }
+
     // Filtro por Corretor
     if (selectedBroker !== 'ALL' && deal.assignedUserId !== selectedBroker) return false;
     
@@ -401,6 +412,28 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
             </select>
           </div>
 
+          {/* Filtro Rápido: Negociações Paradas / Esfriando */}
+          <button
+            type="button"
+            onClick={() => setFilterStaleOnly(!filterStaleOnly)}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition shadow-2xs active:scale-95 cursor-pointer ${
+              filterStaleOnly
+                ? 'bg-rose-600 text-white border-rose-700 shadow-rose-950/10'
+                : 'bg-slate-50 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200 hover:border-rose-200'
+            }`}
+            title="Filtrar oportunidades que estão sem contato ou com follow-up atrasado"
+          >
+            <Clock className={`w-3.5 h-3.5 ${filterStaleOnly ? 'text-white' : 'text-rose-500'}`} />
+            <span>🚨 Parados / Esfriando</span>
+            {staleDealsCount > 0 && (
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                filterStaleOnly ? 'bg-white text-rose-700' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {staleDealsCount}
+              </span>
+            )}
+          </button>
+
           {/* Configurar Funil */}
           <button
             onClick={handleOpenConfigModal}
@@ -475,7 +508,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   stageDeals.map((deal) => {
                     const contact = contacts.find(c => c.id === deal.contactId);
                     const broker = users.find(u => u.id === deal.assignedUserId);
-                    const daysInactive = Math.floor((Date.now() - new Date(deal.updatedAt || deal.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+                    const urgency = getDealUrgencyAnalysis(deal);
 
                     return (
                       <div
@@ -488,6 +521,9 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                         className={`bg-white rounded-2xl p-3.5 shadow-xs border transition duration-150 hover:shadow-md hover:border-emerald-500 group cursor-pointer relative ${
                           stage.isWon ? 'border-emerald-300 bg-emerald-50/20' : 
                           stage.isLost ? 'border-rose-200 bg-rose-50/20 opacity-80' : 
+                          deal.status === 'OPEN' && urgency.urgencyLevel === 'CRITICAL_UNANSWERED' ? 'border-rose-400 border-l-4 border-l-rose-600 bg-rose-50/10' :
+                          deal.status === 'OPEN' && urgency.urgencyLevel === 'HIGH_STALE_DEAL' ? 'border-amber-300 border-l-4 border-l-amber-500 bg-amber-50/10' :
+                          deal.status === 'OPEN' && urgency.urgencyLevel === 'MEDIUM_FOLLOW_UP' ? 'border-slate-200 border-l-2 border-l-amber-400' :
                           'border-slate-200'
                         }`}
                       >
@@ -497,12 +533,35 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                             R$ {deal.expectedValue.toLocaleString('pt-BR')}
                           </span>
 
-                          <div className="flex items-center gap-1">
-                            {/* Alerta de Inatividade SLA */}
-                            {deal.status === 'OPEN' && daysInactive >= 2 && (
-                              <span className="text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 animate-pulse" title={`Sem interação há ${daysInactive} dias`}>
+                          <div className="flex items-center gap-1 flex-wrap justify-end">
+                            {/* Alertas Inteligentes do Radar de Inatividade */}
+                            {deal.status === 'OPEN' && urgency.urgencyLevel === 'CRITICAL_UNANSWERED' && (
+                              <span 
+                                className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 animate-pulse" 
+                                title={urgency.urgencyReason}
+                              >
+                                <Clock className="w-2.5 h-2.5 text-rose-600" />
+                                <span>🚨 No Vácuo ({urgency.formattedTimeAgo})</span>
+                              </span>
+                            )}
+
+                            {deal.status === 'OPEN' && urgency.urgencyLevel === 'HIGH_STALE_DEAL' && (
+                              <span 
+                                className="text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5" 
+                                title={urgency.urgencyReason}
+                              >
                                 <Clock className="w-2.5 h-2.5 text-amber-600" />
-                                <span>{daysInactive}d</span>
+                                <span>⏱️ Esfriando ({urgency.formattedTimeAgo})</span>
+                              </span>
+                            )}
+
+                            {deal.status === 'OPEN' && urgency.urgencyLevel === 'MEDIUM_FOLLOW_UP' && (
+                              <span 
+                                className="text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded-md flex items-center gap-0.5" 
+                                title={urgency.urgencyReason}
+                              >
+                                <Clock className="w-2.5 h-2.5 text-slate-400" />
+                                <span>{urgency.formattedTimeAgo}</span>
                               </span>
                             )}
 

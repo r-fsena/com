@@ -591,3 +591,35 @@ export interface GoalsProgressSummary {
   projectionMethod?: string;
 }
 
+// -------------------------------------------------------------
+// 10. RADAR DE INATIVIDADE & PAREAMENTO EMERGENCIAL DE CONTATO
+// -------------------------------------------------------------
+export type InactivityUrgencyLevel = 
+  | 'CRITICAL_UNANSWERED' // Cliente aguardando resposta da equipe (no vácuo)
+  | 'HIGH_STALE_DEAL'     // Oportunidade quente (Proposta/Visita) esfriando
+  | 'MEDIUM_FOLLOW_UP'    // Follow-up periódico vencido
+  | 'HEALTHY';            // Interação recente em dia
+
+export interface ContactUrgencyAnalysis {
+  contactId: string;
+  contactName: string;
+  contactPhone: string;
+  conversationId?: string;
+  dealId?: string;
+  dealTitle?: string;
+  dealValue?: number;
+  stageId?: string;
+  stageName?: string;
+  urgencyLevel: InactivityUrgencyLevel;
+  urgencyScore: number; // 0 a 100
+  isUnansweredByTeam: boolean; // Cliente enviou a última mensagem e não foi respondido
+  unansweredMinutes: number;
+  hoursSinceLastInteraction: number;
+  daysSinceLastInteraction: number;
+  formattedTimeAgo: string; // Ex: "há 3h", "há 4 dias"
+  urgencyReason: string; // Ex: "Aguardando resposta da equipe há 3h" | "Proposta em mesa sem contato há 4d"
+  suggestedAction: string; // Ex: "Responder dúvida pendente" | "Cobrar retorno da proposta"
+  assignedUserId?: string;
+}
+
+

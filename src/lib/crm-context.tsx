@@ -31,7 +31,9 @@ import {
   MonthlyGoal,
   TenantGoalsConfig,
   GoalProgressItem,
-  GoalsProgressSummary
+  GoalsProgressSummary,
+  InactivityUrgencyLevel,
+  ContactUrgencyAnalysis
 } from '@/types/crm';
 import { 
   MOCK_TENANTS, 
@@ -213,6 +215,11 @@ interface CRMContextType {
   updateMonthlyGoal: (monthKey: string, goal: Partial<MonthlyGoal>) => void;
   updateAnnualTarget: (annualVGV: number) => void;
   getGoalsProgress: (monthKey?: string) => GoalsProgressSummary;
+
+  // Radar de Inatividade & Follow-Up Emergencial
+  getContactUrgencyAnalysis: (contactId: string, dealId?: string, conversationId?: string) => ContactUrgencyAnalysis | null;
+  getDealUrgencyAnalysis: (deal: Deal) => ContactUrgencyAnalysis;
+  getUrgentContactsRadar: () => ContactUrgencyAnalysis[];
 }
 
 export function normalizePhoneKey(phone: string | undefined): string {
@@ -3649,6 +3656,203 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
+  // -------------------------------------------------------------
+  // MOTOR DE INATIVIDADE & PAREAMENTO EMERGENCIAL DE CONTATOS
+  // -------------------------------------------------------------
+  const getContactUrgencyAnalysis = (
+    contactId: string, 
+    dealId?: string, 
+    conversationId?: string
+  ): ContactUrgencyAnalysis | null => {
+    const contact = scopedContacts.find(c => c.id === contactId);
+    if (!contact) return null;
+
+    const conv = conversationId 
+      ? scopedConversations.find(c => c.id === conversationId)
+      : scopedConversations.find(c => c.contactId === contactId);
+
+    const deal = dealId 
+      ? scopedDeals.find(d => d.id === dealId)
+      : scopedDeals.find(d => d.contactId === contactId && d.status === 'OPEN');
+
+    const stage = deal ? currentPipeline.stages.find(s => s.id === deal.stageId) : undefined;
+
+    // Busca mensagens da conversa para identificar a última
+    const convMessages = conv ? messages.filter(m => m.conversationId === conv.id) : [];
+    const lastMsg = convMessages.length > 0 ? convMessages[convMessages.length - 1] : null;
+
+    // Timestamp da última interação
+    const lastInteractionDateStr = 
+      conv?.lastMessageAt || 
+      lastMsg?.timestamp || 
+      contact.lastClientInteractionAt || 
+      contact.lastTeamInteractionAt || 
+      contact.updatedAt || 
+      contact.createdAt;
+
+    const lastDate = lastInteractionDateStr ? new Date(lastInteractionDateStr).getTime() : Date.now();
+    const nowMs = Date.now();
+    const diffMs = Math.max(0, nowMs - lastDate);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    // Formatação de tempo amigável
+    let formattedTimeAgo = 'recentemente';
+    if (diffMinutes < 60) {
+      formattedTimeAgo = `há ${Math.max(1, diffMinutes)}m`;
+    } else if (diffHours < 24) {
+      formattedTimeAgo = `há ${diffHours}h`;
+    } else if (diffDays === 1) {
+      formattedTimeAgo = 'ontem';
+    } else {
+      formattedTimeAgo = `há ${diffDays}d`;
+    }
+
+    // Verifica se a última mensagem foi enviada pelo cliente e não respondida
+    const hasUnread = conv ? (conv.unreadCount || 0) > 0 : false;
+    const isLastFromContact = lastMsg ? lastMsg.senderType === 'CONTACT' : hasUnread;
+    const isUnansweredByTeam = isLastFromContact;
+    const unansweredMinutes = isUnansweredByTeam ? diffMinutes : 0;
+
+    let urgencyLevel: InactivityUrgencyLevel = 'HEALTHY';
+    let urgencyScore = 10;
+    let urgencyReason = 'Interação recente em dia';
+    let suggestedAction = 'Acompanhamento normal';
+
+    // REGRA 1: CLIENTE AGUARDANDO RESPOSTA (NO VÁCUO)
+    if (isUnansweredByTeam) {
+      if (diffHours >= 2) {
+        urgencyLevel = 'CRITICAL_UNANSWERED';
+        urgencyScore = Math.min(100, 80 + Math.floor(diffHours * 2));
+        urgencyReason = `Cliente aguardando resposta da equipe ${formattedTimeAgo}`;
+        suggestedAction = 'Responder dúvida no WhatsApp com prioridade máxima';
+      } else if (diffMinutes >= 30) {
+        urgencyLevel = 'HIGH_STALE_DEAL';
+        urgencyScore = 75;
+        urgencyReason = `Mensagem nova aguardando retorno (${formattedTimeAgo})`;
+        suggestedAction = 'Acolher atendimento com agilidade';
+      } else {
+        urgencyLevel = 'MEDIUM_FOLLOW_UP';
+        urgencyScore = 55;
+        urgencyReason = `Aguardando retorno recente (${formattedTimeAgo})`;
+        suggestedAction = 'Responder quando possível';
+      }
+    }
+    // REGRA 2: NEGOCIAÇÃO PARADA / ESFRIANDO NO FUNIL
+    else if (deal && deal.status === 'OPEN') {
+      const isHotStage = stage?.id === 'stage-6' || stage?.id === 'stage-5'; // Proposta em Mesa ou Visita
+      if (isHotStage) {
+        if (diffHours >= 48) {
+          urgencyLevel = 'HIGH_STALE_DEAL';
+          urgencyScore = Math.min(95, 70 + diffDays * 5);
+          urgencyReason = `${stage?.name || 'Proposta'} sem contato ${formattedTimeAgo}`;
+          suggestedAction = 'Cobrar retorno sobre a proposta ou visita agendada';
+        } else if (diffHours >= 24) {
+          urgencyLevel = 'MEDIUM_FOLLOW_UP';
+          urgencyScore = 60;
+          urgencyReason = `Negociação quente sem contato há 24h`;
+          suggestedAction = 'Enviar mensagem de acompanhamento';
+        }
+      } else {
+        // Estágios de Imóveis Apresentados, Qualificação ou Novo Lead
+        if (diffDays >= 7) {
+          urgencyLevel = 'HIGH_STALE_DEAL';
+          urgencyScore = Math.min(85, 50 + diffDays * 3);
+          urgencyReason = `Lead no funil sem interação ${formattedTimeAgo}`;
+          suggestedAction = 'Reengajar com nova opção de imóvel ou condições especiais';
+        } else if (diffDays >= 4) {
+          urgencyLevel = 'MEDIUM_FOLLOW_UP';
+          urgencyScore = 50;
+          urgencyReason = `Sem contato ${formattedTimeAgo}`;
+          suggestedAction = 'Realizar follow-up de rotina';
+        }
+      }
+    }
+    // REGRA 3: CONTATO SEM NEGÓCIO ABERTO MAS COM INATIVIDADE PROLONGADA
+    else if (diffDays >= 10) {
+      urgencyLevel = 'MEDIUM_FOLLOW_UP';
+      urgencyScore = 40;
+      urgencyReason = `Contato inativo ${formattedTimeAgo}`;
+      suggestedAction = 'Disparar oportunidade ou novidade';
+    }
+
+    return {
+      contactId: contact.id,
+      contactName: contact.name,
+      contactPhone: contact.phone,
+      conversationId: conv?.id,
+      dealId: deal?.id,
+      dealTitle: deal?.title,
+      dealValue: deal?.expectedValue,
+      stageId: stage?.id,
+      stageName: stage?.name,
+      urgencyLevel,
+      urgencyScore,
+      isUnansweredByTeam,
+      unansweredMinutes,
+      hoursSinceLastInteraction: diffHours,
+      daysSinceLastInteraction: diffDays,
+      formattedTimeAgo,
+      urgencyReason,
+      suggestedAction,
+      assignedUserId: deal?.assignedUserId || contact.assignedUserId,
+    };
+  };
+
+  const getDealUrgencyAnalysis = (deal: Deal): ContactUrgencyAnalysis => {
+    const analysis = getContactUrgencyAnalysis(deal.contactId, deal.id);
+    if (analysis) return analysis;
+
+    return {
+      contactId: deal.contactId,
+      contactName: 'Cliente',
+      contactPhone: '',
+      dealId: deal.id,
+      dealTitle: deal.title,
+      dealValue: deal.expectedValue,
+      stageId: deal.stageId,
+      urgencyLevel: 'HEALTHY',
+      urgencyScore: 10,
+      isUnansweredByTeam: false,
+      unansweredMinutes: 0,
+      hoursSinceLastInteraction: 0,
+      daysSinceLastInteraction: 0,
+      formattedTimeAgo: 'hoje',
+      urgencyReason: 'Em dia',
+      suggestedAction: 'Acompanhamento normal',
+      assignedUserId: deal.assignedUserId,
+    };
+  };
+
+  const getUrgentContactsRadar = (): ContactUrgencyAnalysis[] => {
+    const list: ContactUrgencyAnalysis[] = [];
+    const seenContactIds = new Set<string>();
+
+    // 1. Analisa conversas ativas
+    scopedConversations.forEach(conv => {
+      const analysis = getContactUrgencyAnalysis(conv.contactId, undefined, conv.id);
+      if (analysis && analysis.urgencyLevel !== 'HEALTHY') {
+        list.push(analysis);
+        seenContactIds.add(conv.contactId);
+      }
+    });
+
+    // 2. Analisa negócios abertos ainda não contemplados
+    scopedDeals.forEach(deal => {
+      if (deal.status !== 'OPEN') return;
+      if (seenContactIds.has(deal.contactId)) return;
+
+      const analysis = getContactUrgencyAnalysis(deal.contactId, deal.id);
+      if (analysis && analysis.urgencyLevel !== 'HEALTHY') {
+        list.push(analysis);
+        seenContactIds.add(deal.contactId);
+      }
+    });
+
+    return list.sort((a, b) => b.urgencyScore - a.urgencyScore);
+  };
+
   const scopedUsers = useMemo(() => {
     return users.filter(u => 
       u.role === 'SUPERADMIN' || 
@@ -3767,6 +3971,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       updateMonthlyGoal,
       updateAnnualTarget,
       getGoalsProgress,
+      getContactUrgencyAnalysis,
+      getDealUrgencyAnalysis,
+      getUrgentContactsRadar,
     }}>
       {children}
     </CRMContext.Provider>

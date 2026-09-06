@@ -182,6 +182,7 @@ export default function CRMApp() {
               onOpenAuthModal={() => setIsAuthModalOpen(true)}
               onSelectContact={handleOpenChatForContact}
               onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+              onNavigateTab={(tab) => setCurrentTab(tab)}
             />
 
             {/* View Switcher */}

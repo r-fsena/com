@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { 
   Search, 
@@ -15,7 +15,11 @@ import {
   Menu,
   Sparkles,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Target
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -25,12 +29,29 @@ interface HeaderProps {
   onOpenAuthModal?: () => void;
   onSelectContact?: (contactId: string) => void;
   onToggleMobileSidebar?: () => void;
+  onNavigateTab?: (tab: string) => void;
 }
 
-export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar }: HeaderProps) {
-  const { alerts, dismissAlert, contacts, currentUser, setActiveConversationId, conversations, currentTenant, activeSyncJob, dismissSyncJob } = useCRM();
+export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar, onNavigateTab }: HeaderProps) {
+  const { alerts, dismissAlert, contacts, currentUser, setActiveConversationId, conversations, currentTenant, activeSyncJob, dismissSyncJob, logout } = useCRM();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAlertsPopover, setShowAlertsPopover] = useState(false);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+        setShowProfileDropdown(false);
+      }
+    };
+    if (showProfileDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showProfileDropdown]);
 
   const activeAlerts = alerts.filter(a => !a.isDismissed);
 
@@ -223,16 +244,125 @@ export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenA
           )}
         </div>
 
-        {/* Avatar do Usuário */}
-        <div className="flex items-center gap-2 bg-white rounded-full p-1 pl-2.5 border border-slate-200/80 shadow-2xs">
-          <span className="text-xs font-bold text-slate-800 hidden sm:inline">
-            {currentUser?.name?.split(' ')[0]}
-          </span>
-          <img
-            src={currentUser?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser?.name || 'User')}
-            alt={currentUser?.name}
-            className="w-7 h-7 rounded-full object-cover ring-2 ring-indigo-100"
-          />
+        {/* Menu Suspenso de Perfil do Usuário */}
+        <div className="relative" ref={profileDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 rounded-full p-1 pl-3 pr-2 border border-slate-200/80 shadow-2xs transition cursor-pointer group"
+            title="Menu do Usuário"
+          >
+            <span className="text-xs font-bold text-slate-800 hidden sm:inline group-hover:text-[#3742AC] transition">
+              {currentUser?.name?.split(' ')[0]}
+            </span>
+            <img
+              src={currentUser?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser?.name || 'User')}
+              alt={currentUser?.name}
+              className="w-7 h-7 rounded-full object-cover ring-2 ring-indigo-100"
+            />
+            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-transform duration-200 ${showProfileDropdown ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Dropdown Menu Suspenso */}
+          {showProfileDropdown && (
+            <div className="absolute right-0 top-12 w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 p-2.5 z-50 animate-in fade-in zoom-in-95 space-y-2">
+              {/* Header do Usuário */}
+              <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100/80 flex items-center gap-3">
+                <img
+                  src={currentUser?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser?.name || 'User')}
+                  alt={currentUser?.name}
+                  className="w-10 h-10 rounded-full object-cover ring-2 ring-indigo-200 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-900 truncate">
+                    {currentUser?.name}
+                  </p>
+                  <p className="text-[11px] text-slate-500 truncate font-mono">
+                    {currentUser?.email}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-50 text-[#3742AC] border border-indigo-100 uppercase tracking-wider">
+                      {currentUser?.role}
+                    </span>
+                    <span className="text-[9px] text-slate-400 truncate max-w-[100px]">
+                      {currentTenant.name}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Itens de Ação Rápida */}
+              <div className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfileDropdown(false);
+                    onNavigateTab?.('copilot');
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 transition cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-[#3742AC] flex items-center justify-center">
+                    <Bot className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className="font-bold">IA Copiloto</p>
+                    <p className="text-[10px] text-slate-400">Sugestões e automação de atendimento</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfileDropdown(false);
+                    onNavigateTab?.('settings');
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 transition cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
+                    <Settings className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className="font-bold">Configurações</p>
+                    <p className="text-[10px] text-slate-400">Workspace, equipe e instâncias Z-API</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfileDropdown(false);
+                    onNavigateTab?.('goals');
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 transition cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                    <Target className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className="font-bold">Metas & Performance</p>
+                    <p className="text-[10px] text-slate-400">Acompanhamento de VGV e objetivos</p>
+                  </div>
+                </button>
+              </div>
+
+              <div className="border-t border-slate-100 my-1" />
+
+              {/* Sair da Conta (Logout) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProfileDropdown(false);
+                  logout();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+              >
+                <div className="w-7 h-7 rounded-lg bg-rose-100/60 text-rose-600 flex items-center justify-center">
+                  <LogOut className="w-3.5 h-3.5" />
+                </div>
+                <span>Sair da Conta (Logout)</span>
+              </button>
+            </div>
+          )}
         </div>
 
       </div>

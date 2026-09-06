@@ -55,8 +55,7 @@ export function Sidebar({
     instances, 
     alerts, 
     tasks, 
-    isFeatureEnabled,
-    logout 
+    isFeatureEnabled
   } = useCRM();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -402,51 +401,6 @@ export function Sidebar({
                   <span>{isZapiConnected ? 'Conectado' : 'Conectar'}</span>
                 </button>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Perfil do Usuário */}
-        {isCollapsed ? (
-          <div className="flex flex-col items-center gap-2 pt-1">
-            <img
-              src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
-              alt={currentUser.name}
-              className="w-8 h-8 rounded-full object-cover ring-2 ring-indigo-200"
-              title={`${currentUser.name} (${currentUser.role})`}
-            />
-            <button
-              onClick={() => logout()}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-              title="Sair da Conta (Logoff)"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2 pt-1">
-            <div className="flex items-center gap-2.5 px-1">
-              <img
-                src={currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.name)}
-                alt={currentUser.name}
-                className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 flex-shrink-0"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-slate-900 truncate">
-                  {currentUser.name}
-                </p>
-                <p className="text-[10px] font-semibold text-[#3742AC] truncate">
-                  {currentUser.role}
-                </p>
-              </div>
-
-              <button
-                onClick={() => logout()}
-                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-                title="Sair da Conta (Logoff)"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
             </div>
           </div>
         )}

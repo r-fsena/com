@@ -47,14 +47,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function handleForwardLog(logData) {
   try {
-    const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerName']);
+    const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerName', 'extensionSessionToken']);
     const crmUrl = config.crmUrl || DEFAULT_CRM_URL;
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-extension-token': EXTENSION_TOKEN,
+    };
+    if (config.extensionSessionToken) {
+      headers['Authorization'] = `Bearer ${config.extensionSessionToken}`;
+    }
     fetch(`${crmUrl}/api/v1/telemetry/extension-logs`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-extension-token': EXTENSION_TOKEN,
-      },
+      headers,
       body: JSON.stringify({
         timestamp: Date.now(),
         tenantId: config.tenantId || DEFAULT_TENANT_ID,
@@ -66,7 +70,7 @@ async function handleForwardLog(logData) {
 }
 
 async function handleBatchSync(data) {
-  const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerUserId', 'brokerName']);
+  const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerUserId', 'brokerName', 'extensionSessionToken']);
   const crmUrl = config.crmUrl || DEFAULT_CRM_URL;
   const tenantId = config.tenantId || DEFAULT_TENANT_ID;
 
@@ -90,12 +94,17 @@ async function handleBatchSync(data) {
     }
   });
 
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-extension-token': EXTENSION_TOKEN,
+  };
+  if (config.extensionSessionToken) {
+    headers['Authorization'] = `Bearer ${config.extensionSessionToken}`;
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-extension-token': EXTENSION_TOKEN,
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -138,17 +147,22 @@ async function handleBatchSync(data) {
 }
 
 async function handleGetAiSuggestion(data) {
-  const config = await chrome.storage.local.get(['crmUrl', 'brokerName']);
+  const config = await chrome.storage.local.get(['crmUrl', 'brokerName', 'extensionSessionToken']);
   const crmUrl = config.crmUrl || DEFAULT_CRM_URL;
 
   const endpoint = `${crmUrl}/api/v1/ai/copilot`;
 
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-extension-token': EXTENSION_TOKEN,
+  };
+  if (config.extensionSessionToken) {
+    headers['Authorization'] = `Bearer ${config.extensionSessionToken}`;
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-extension-token': EXTENSION_TOKEN,
-    },
+    headers,
     body: JSON.stringify({
       chatHistory: data.chatHistory || [],
       brokerName: config.brokerName || 'Corretor',

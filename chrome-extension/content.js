@@ -12,7 +12,7 @@
   let currentActivePhone = '';
   let currentActiveName = '';
 
-  // 1. Injeta a Sidebar do CRM no DOM
+  // 1. Injeta a Sidebar do CRM no DOM com suporte a Login Próprio e Persistente
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
@@ -31,7 +31,7 @@
             <div class="sovereign-brand-icon">B</div>
             <div>
               <div class="sovereign-title" style="display:flex; align-items:center;">
-                Brokiva <span style="font-size:10px; background:#059669; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.3</span>
+                Brokiva <span style="font-size:10px; background:#3742AC; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.3</span>
               </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
@@ -39,84 +39,257 @@
           <button id="sovereign-close-btn" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:18px;">✕</button>
         </div>
 
-        <div class="sovereign-body">
-          <!-- Card de Sincronização em Massa -->
-          <div class="sovereign-card">
-            <div class="sovereign-card-title">
-              <span>Sincronização com CRM</span>
-              <span id="sovereign-sync-badge" class="sovereign-lead-pill">Pronto</span>
-            </div>
-            <p style="font-size:11px; color:#64748b; margin-bottom:10px;">
-              Extrai conversas e todo o histórico passado para o seu CRM sem limites.
-            </p>
-            <button id="sovereign-batch-sync-btn" class="sovereign-btn-sync">
-              <span>⚡ Sincronizar Histórico Completo</span>
-            </button>
-            <div id="sovereign-progress-bar" class="sovereign-progress-bar">
-              <div id="sovereign-progress-fill" class="sovereign-progress-fill"></div>
-            </div>
-            <p id="sovereign-progress-status" style="font-size:10px; color:#64748b; margin-top:6px; display:none; text-align:center;"></p>
-          </div>
+        <!-- Container do Perfil do Corretor Ativo -->
+        <div id="sovereign-header-profile"></div>
 
-          <!-- Card do Lead Selecionado -->
-          <div class="sovereign-card" id="sovereign-lead-card">
-            <div class="sovereign-card-title">Lead em Atendimento</div>
-            <div class="sovereign-lead-header">
-              <div id="sovereign-lead-avatar" class="sovereign-lead-avatar" style="display:flex; align-items:center; justify-content:center; font-weight:bold; color:#059669;">
-                ?
-              </div>
-              <div style="flex:1; min-width:0;">
-                <div id="sovereign-lead-name" class="sovereign-lead-name truncate">Nenhum chat selecionado</div>
-                <div id="sovereign-lead-phone" class="sovereign-lead-phone">Selecione uma conversa</div>
-              </div>
-            </div>
-
-            <button id="sovereign-sync-current-btn" class="sovereign-btn-sync" style="background:#0f172a; margin-top:6px;">
-              <span>📥 Salvar Histórico Desta Conversa</span>
-            </button>
-          </div>
-
-          <!-- Card do Copiloto de IA -->
-          <div class="sovereign-ai-card">
-            <div class="sovereign-ai-badge">✦ Copiloto Brokiva IA</div>
-            <p style="font-size:11px; color:#cbd5e1; margin-bottom:10px;">
-              Analisa o momento do cliente e gera respostas persuasivas com 1 clique.
-            </p>
-            <button id="sovereign-ai-generate-btn" class="sovereign-btn-sync" style="background:#10b981;">
-              <span>✨ Sugerir Respostas Inteligentes</span>
-            </button>
-            <div id="sovereign-ai-suggestions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
-          </div>
-
-          <!-- Card de Logs & Telemetria CloudWatch -->
-          <div class="sovereign-card" style="background:#0f172a; border:1px solid #334155; color:#cbd5e1;">
-            <div class="sovereign-card-title" style="color:#94a3b8; display:flex; justify-content:space-between;">
-              <span>CloudWatch Logs (Extensão)</span>
-              <span id="sovereign-logs-count" style="font-size:10px; color:#34d399;">● Ativo</span>
-            </div>
-            <div id="sovereign-live-logs" style="font-family:monospace; font-size:10px; max-height:130px; overflow-y:auto; background:#020617; padding:8px; border-radius:8px; color:#e2e8f0; display:flex; flex-direction:column; gap:4px; border:1px solid #1e293b;">
-              <div style="color:#64748b;">[Aguardando comando...]</div>
-            </div>
-          </div>
-        </div>
+        <!-- Conteúdo Dinâmico (Login ou Ferramentas de Sincronização) -->
+        <div class="sovereign-body" id="sovereign-body-container"></div>
       </div>
     `;
 
     document.body.appendChild(root);
 
-    // Eventos de clique na Sidebar
+    // Eventos de toggle e fechar
     const toggleBtn = document.getElementById('sovereign-toggle-btn');
     const closeBtn = document.getElementById('sovereign-close-btn');
-    const batchSyncBtn = document.getElementById('sovereign-batch-sync-btn');
-    const syncCurrentBtn = document.getElementById('sovereign-sync-current-btn');
-    const aiBtn = document.getElementById('sovereign-ai-generate-btn');
+    toggleBtn?.addEventListener('click', () => root.classList.toggle('open'));
+    closeBtn?.addEventListener('click', () => root.classList.remove('open'));
 
-    toggleBtn.addEventListener('click', () => root.classList.toggle('open'));
-    closeBtn.addEventListener('click', () => root.classList.remove('open'));
+    // Renderiza conteúdo baseado na sessão da extensão
+    renderSidebarContent();
 
-    batchSyncBtn.addEventListener('click', () => executeBatchHistoryScan());
-    syncCurrentBtn.addEventListener('click', () => syncCurrentActiveChat());
-    aiBtn.addEventListener('click', () => triggerAiSuggestion());
+    // Reage dinamicamente a mudanças de autenticação (ex: login via popup ou bridge)
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && (changes.extensionSessionToken || changes.brokerName)) {
+        renderSidebarContent();
+      }
+    });
+  }
+
+  // 1.1 Renderizador dinâmico de Login ou Ferramentas Ativas
+  async function renderSidebarContent() {
+    const bodyContainer = document.getElementById('sovereign-body-container');
+    const headerContainer = document.getElementById('sovereign-header-profile');
+    if (!bodyContainer) return;
+
+    const storage = await chrome.storage.local.get([
+      'extensionSessionToken',
+      'brokerName',
+      'brokerEmail',
+      'tenantName',
+      'tenantId',
+      'crmUrl'
+    ]);
+
+    const isConnected = Boolean(storage.extensionSessionToken && storage.brokerName);
+    const crmUrl = storage.crmUrl || 'https://crm.faithhubs.com';
+    const brokerName = storage.brokerName || 'Corretor';
+    const tenantName = storage.tenantName || 'Amábile Barbarotti Imóveis';
+
+    if (isConnected) {
+      const initials = brokerName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || 'BR';
+      if (headerContainer) {
+        headerContainer.innerHTML = `
+          <div class="sovereign-broker-bar">
+            <div class="sovereign-broker-info">
+              <div class="sovereign-broker-avatar">${initials}</div>
+              <div style="min-width:0;">
+                <div class="sovereign-broker-name">${brokerName}</div>
+                <div class="sovereign-broker-tenant">${tenantName}</div>
+              </div>
+            </div>
+            <button id="sovereign-btn-logout-sidebar" class="sovereign-btn-logout" title="Desconectar ou trocar de corretor">Sair</button>
+          </div>
+        `;
+        document.getElementById('sovereign-btn-logout-sidebar')?.addEventListener('click', async () => {
+          if (confirm('Deseja desconectar a extensão Brokiva deste corretor?')) {
+            await chrome.storage.local.remove(['extensionSessionToken', 'brokerName', 'brokerUserId', 'brokerEmail']);
+            await renderSidebarContent();
+          }
+        });
+      }
+
+      bodyContainer.innerHTML = `
+        <!-- Card de Sincronização em Massa -->
+        <div class="sovereign-card">
+          <div class="sovereign-card-title">
+            <span>Sincronização com CRM</span>
+            <span id="sovereign-sync-badge" class="sovereign-lead-pill">Pronto</span>
+          </div>
+          <p style="font-size:11px; color:#64748b; margin-bottom:10px;">
+            Extrai conversas e todo o histórico passado para o seu CRM sem limites.
+          </p>
+          <button id="sovereign-batch-sync-btn" class="sovereign-btn-sync" style="background:#3742AC;">
+            <span>⚡ Sincronizar Histórico Completo</span>
+          </button>
+          <div id="sovereign-progress-bar" class="sovereign-progress-bar">
+            <div id="sovereign-progress-fill" class="sovereign-progress-fill" style="background:#3742AC;"></div>
+          </div>
+          <p id="sovereign-progress-status" style="font-size:10px; color:#64748b; margin-top:6px; display:none; text-align:center;"></p>
+        </div>
+
+        <!-- Card do Lead Selecionado -->
+        <div class="sovereign-card" id="sovereign-lead-card">
+          <div class="sovereign-card-title">Lead em Atendimento</div>
+          <div class="sovereign-lead-header">
+            <div id="sovereign-lead-avatar" class="sovereign-lead-avatar" style="display:flex; align-items:center; justify-content:center; font-weight:bold; color:#3742AC; background:rgba(55,66,172,0.1);">
+              ?
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div id="sovereign-lead-name" class="sovereign-lead-name truncate">Nenhum chat selecionado</div>
+              <div id="sovereign-lead-phone" class="sovereign-lead-phone">Selecione uma conversa</div>
+            </div>
+          </div>
+
+          <button id="sovereign-sync-current-btn" class="sovereign-btn-sync" style="background:#0f172a; margin-top:6px;">
+            <span>📥 Salvar Histórico Desta Conversa</span>
+          </button>
+        </div>
+
+        <!-- Card do Copiloto de IA -->
+        <div class="sovereign-ai-card">
+          <div class="sovereign-ai-badge">✦ Copiloto Brokiva IA</div>
+          <p style="font-size:11px; color:#cbd5e1; margin-bottom:10px;">
+            Analisa o momento do cliente e gera respostas persuasivas com 1 clique.
+          </p>
+          <button id="sovereign-ai-generate-btn" class="sovereign-btn-sync" style="background:#3742AC;">
+            <span>✨ Sugerir Respostas Inteligentes</span>
+          </button>
+          <div id="sovereign-ai-suggestions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
+        </div>
+
+        <!-- Card de Logs & Telemetria CloudWatch -->
+        <div class="sovereign-card" style="background:#0f172a; border:1px solid #334155; color:#cbd5e1;">
+          <div class="sovereign-card-title" style="color:#94a3b8; display:flex; justify-content:space-between;">
+            <span>CloudWatch Logs (Extensão)</span>
+            <span id="sovereign-logs-count" style="font-size:10px; color:#34d399;">● Ativo</span>
+          </div>
+          <div id="sovereign-live-logs" style="font-family:monospace; font-size:10px; max-height:130px; overflow-y:auto; background:#020617; padding:8px; border-radius:8px; color:#e2e8f0; display:flex; flex-direction:column; gap:4px; border:1px solid #1e293b;">
+            <div style="color:#64748b;">[Aguardando comando...]</div>
+          </div>
+        </div>
+      `;
+
+      // Conecta botões das ferramentas
+      document.getElementById('sovereign-batch-sync-btn')?.addEventListener('click', () => executeBatchHistoryScan());
+      document.getElementById('sovereign-sync-current-btn')?.addEventListener('click', () => syncCurrentActiveChat());
+      document.getElementById('sovereign-ai-generate-btn')?.addEventListener('click', () => triggerAiSuggestion());
+
+      // Atualiza lead ativo se houver conversa aberta
+      updateActiveLeadUI();
+    } else {
+      if (headerContainer) headerContainer.innerHTML = '';
+      bodyContainer.innerHTML = `
+        <div class="sovereign-login-card">
+          <div class="sovereign-login-badge">✦ Conexão Segura Brokiva</div>
+          <div class="sovereign-login-title">Identifique-se no CRM</div>
+          <div class="sovereign-login-desc">
+            Conecte sua conta de corretor para sincronizar leads e ativar o Copiloto de IA sem interrupções.
+          </div>
+
+          <div id="sovereign-sidebar-error" class="sovereign-login-error"></div>
+
+          <div class="sovereign-field">
+            <label class="sovereign-label">Imobiliária / Espaço:</label>
+            <select id="sovereign-sidebar-tenant" class="sovereign-select">
+              <option value="tenant-amabile-barbarotti" selected>Amábile Barbarotti Imóveis</option>
+            </select>
+          </div>
+
+          <div class="sovereign-field">
+            <label class="sovereign-label">Seu Nome ou E-mail:</label>
+            <input type="text" id="sovereign-sidebar-broker" class="sovereign-input" value="Rafael Sena" placeholder="Ex: Rafael Sena ou rafael@faithhubs.com">
+          </div>
+
+          <div class="sovereign-field">
+            <label class="sovereign-label">Servidor do CRM:</label>
+            <input type="text" id="sovereign-sidebar-crm-url" class="sovereign-input" value="${crmUrl}">
+          </div>
+
+          <button id="sovereign-sidebar-login-btn" class="sovereign-btn-login">
+            <span>✦ Conectar ao Brokiva CRM</span>
+          </button>
+        </div>
+      `;
+
+      // Busca catálogo de imobiliárias para o select
+      try {
+        fetch(`${crmUrl}/api/v1/auth/extension-login`)
+          .then(r => r.json())
+          .then(data => {
+            const select = document.getElementById('sovereign-sidebar-tenant');
+            if (select && data.success && Array.isArray(data.tenants)) {
+              select.innerHTML = data.tenants.map(t => 
+                `<option value="${t.id}" ${t.id === (storage.tenantId || 'tenant-amabile-barbarotti') ? 'selected' : ''}>${t.name}</option>`
+              ).join('');
+            }
+          }).catch(() => {});
+      } catch {}
+
+      // Listener de login da sidebar
+      document.getElementById('sovereign-sidebar-login-btn')?.addEventListener('click', async () => {
+        const errorEl = document.getElementById('sovereign-sidebar-error');
+        const loginBtn = document.getElementById('sovereign-sidebar-login-btn');
+        const tenantSelect = document.getElementById('sovereign-sidebar-tenant');
+        const brokerInput = document.getElementById('sovereign-sidebar-broker');
+        const urlInput = document.getElementById('sovereign-sidebar-crm-url');
+
+        if (errorEl) errorEl.style.display = 'none';
+        const targetUrl = urlInput?.value?.trim() || crmUrl;
+        const tenantId = tenantSelect?.value || 'tenant-amabile-barbarotti';
+        const brokerVal = brokerInput?.value?.trim() || '';
+
+        if (!brokerVal) {
+          if (errorEl) {
+            errorEl.textContent = 'Informe seu nome ou e-mail de corretor.';
+            errorEl.style.display = 'block';
+          }
+          return;
+        }
+
+        if (loginBtn) {
+          loginBtn.disabled = true;
+          loginBtn.innerText = 'Conectando ao Brokiva...';
+        }
+
+        try {
+          const res = await fetch(`${targetUrl}/api/v1/auth/extension-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: brokerVal, name: brokerVal, tenantId }),
+          });
+          const data = await res.json();
+          if (data.success && data.token && data.user) {
+            await chrome.storage.local.set({
+              extensionSessionToken: data.token,
+              brokerUserId: data.user.userId,
+              brokerName: data.user.name,
+              brokerEmail: data.user.email,
+              tenantId: data.user.tenantId,
+              tenantName: data.user.tenantName,
+              crmUrl: targetUrl,
+              isPaired: true,
+            });
+            await renderSidebarContent();
+          } else {
+            if (errorEl) {
+              errorEl.textContent = data.error || 'Falha na autenticação do corretor.';
+              errorEl.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          if (errorEl) {
+            errorEl.textContent = 'Falha de conexão com o CRM. Verifique a URL do servidor.';
+            errorEl.style.display = 'block';
+          }
+        } finally {
+          if (loginBtn) {
+            loginBtn.disabled = false;
+            loginBtn.innerText = '✦ Conectar ao Brokiva CRM';
+          }
+        }
+      });
+    }
   }
 
   // Registrador de Telemetria e Logs para a UI e CloudWatch

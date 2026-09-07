@@ -71,6 +71,7 @@ interface CRMContextType {
   currentTenant: Tenant;
   setCurrentTenant: (tenant: Tenant) => void;
   updateTenant: (updates: Partial<Tenant>) => void;
+  updateTenantById: (tenantId: string, updates: Partial<Tenant>) => void;
   createTenant: (tenantData: Partial<Tenant>) => Tenant;
   updateTenantStatus: (tenantId: string, status: TenantStatus) => void;
   deleteTenant: (tenantId: string) => void;
@@ -573,6 +574,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updatedList)); } catch {}
       return updatedList;
     });
+  };
+
+  const updateTenantById = (tenantId: string, updates: Partial<Tenant>) => {
+    setTenants(prev => {
+      const updatedList = prev.map(t => t.id === tenantId ? { ...t, ...updates } : t);
+      try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(updatedList)); } catch {}
+      return updatedList;
+    });
+    if (currentTenant && currentTenant.id === tenantId) {
+      setCurrentTenant(prev => {
+        const updated = { ...prev, ...updates };
+        try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
   };
 
   const createTenant = (tenantData: Partial<Tenant>): Tenant => {
@@ -4214,6 +4230,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       currentTenant,
       setCurrentTenant,
       updateTenant,
+      updateTenantById,
       createTenant,
       updateTenantStatus,
       deleteTenant,

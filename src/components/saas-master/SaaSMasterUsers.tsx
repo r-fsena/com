@@ -14,7 +14,8 @@ import {
   Lock, 
   Crown, 
   Sparkles,
-  KeyRound
+  KeyRound,
+  X
 } from 'lucide-react';
 
 const AVAILABLE_PERMISSIONS = [
@@ -65,7 +66,7 @@ export function SaaSMasterUsers() {
       if (selectedPermissions.includes('ALL_PERMISSIONS')) {
         setSelectedPermissions([]);
       } else {
-        setSelectedPermissions(AVAILABLE_PERMISSIONS.map(p => p.id));
+        setSelectedPermissions(['ALL_PERMISSIONS']);
       }
       return;
     }
@@ -94,7 +95,7 @@ export function SaaSMasterUsers() {
         phone: phone.trim(),
         role,
         permissions: selectedPermissions,
-        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=0f172a&color=38bdf8`,
+        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=3742AC&color=ffffff`,
       });
     }
 
@@ -102,39 +103,39 @@ export function SaaSMasterUsers() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 max-w-7xl w-full mx-auto space-y-6 animate-fadeIn">
+    <div className="flex-1 overflow-y-auto p-6 sm:p-8 max-w-7xl w-full mx-auto space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#3742AC]/10 text-[#3742AC] flex items-center justify-center font-bold">
               <ShieldCheck className="w-4 h-4" />
             </div>
-            <h2 className="text-lg font-bold text-slate-900">Gestão de Usuários Admins Masters</h2>
-            <span className="text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full">
+            <h2 className="text-lg font-extrabold text-slate-900">Usuários Administradores Masters</h2>
+            <span className="text-xs font-bold font-mono bg-indigo-50 text-[#3742AC] border border-indigo-200/60 px-2.5 py-0.5 rounded-full">
               {masterUsers.length} administradores
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Controle de acesso à plataforma SaaS Master. Defina permissões granulares para suporte, financeiro e superadministradores.
+          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+            Controle de acesso à infraestrutura global do SaaS. Conceda privilégios para suporte, operações e superadministradores.
           </p>
         </div>
 
         <button
           type="button"
           onClick={openNewUserModal}
-          className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+          className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold py-2.5 px-4 rounded-xl transition shadow-md shadow-indigo-950/10 flex items-center gap-1.5 cursor-pointer active:scale-95"
         >
-          <UserPlus className="w-4 h-4 text-amber-400" />
-          <span>+ Convidar Admin Master</span>
+          <UserPlus className="w-4 h-4" />
+          <span>Convidar Admin Master</span>
         </button>
       </div>
 
       {/* Tabela de Usuários Masters */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+            <thead className="bg-slate-50/80 border-b border-slate-200/80 text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
               <tr>
                 <th className="py-4 px-6">Administrador Master</th>
                 <th className="py-4 px-6">Papel / Nível</th>
@@ -154,14 +155,14 @@ export function SaaSMasterUsers() {
                         <img
                           src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
                           alt={user.name}
-                          className="w-10 h-10 rounded-full object-cover ring-2 ring-slate-200"
+                          className="w-10 h-10 rounded-full object-cover ring-2 ring-[#3742AC]/20 shadow-2xs"
                         />
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <p className="font-bold text-slate-900 text-sm">{user.name}</p>
+                            <p className="font-extrabold text-slate-900 text-sm">{user.name}</p>
                             {isSuperAdmin && <Crown className="w-3.5 h-3.5 text-amber-500" />}
                           </div>
-                          <p className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
+                          <p className="text-slate-400 text-[11px] flex items-center gap-1 mt-0.5">
                             <Mail className="w-3 h-3 text-slate-400" />
                             <span>{user.email}</span>
                           </p>
@@ -171,7 +172,7 @@ export function SaaSMasterUsers() {
 
                     <td className="py-4 px-6">
                       <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                        user.role === 'SUPERADMIN_GLOBAL' ? 'bg-amber-50 text-amber-800 border-amber-300 font-black' :
+                        user.role === 'SUPERADMIN_GLOBAL' ? 'bg-indigo-50 text-[#3742AC] border-indigo-200/80 font-black' :
                         user.role === 'SUPPORT_LEAD' ? 'bg-blue-50 text-blue-800 border-blue-200' :
                         'bg-purple-50 text-purple-800 border-purple-200'
                       }`}>
@@ -184,7 +185,7 @@ export function SaaSMasterUsers() {
                     <td className="py-4 px-6 max-w-xs">
                       <div className="flex flex-wrap gap-1">
                         {user.permissions?.includes('ALL_PERMISSIONS') ? (
-                          <span className="text-[10px] bg-slate-900 text-amber-300 font-bold px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] bg-[#3742AC] text-white font-extrabold px-2.5 py-0.5 rounded-full shadow-2xs">
                             ★ Controle Total
                           </span>
                         ) : (
@@ -203,29 +204,28 @@ export function SaaSMasterUsers() {
                     </td>
 
                     <td className="py-4 px-6">
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-fit">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         <span>Ativo</span>
                       </span>
                     </td>
 
                     <td className="py-4 px-6 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
                           onClick={() => openEditModal(user)}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                          title="Editar permissões"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Editar</span>
+                          <Edit3 className="w-4 h-4" />
                         </button>
-
-                        {user.id !== 'master-01' && (
+                        {user.id !== currentUser?.id && (
                           <button
                             type="button"
                             onClick={() => deleteMasterUser(user.id)}
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                            title="Remover Acesso Master"
+                            title="Remover Admin Master"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -242,119 +242,122 @@ export function SaaSMasterUsers() {
 
       {/* Modal: Convidar / Editar Admin Master */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 p-5 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-slate-900 to-[#3742AC] p-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center border border-white/20">
                   <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">
                     {editingUser ? 'Editar Administrador Master' : 'Convidar Novo Admin Master'}
                   </h3>
-                  <p className="text-[11px] text-slate-400">Atribua permissões e nível de acesso</p>
+                  <p className="text-[11px] text-indigo-200">Defina papel e permissões de acesso ao sistema</p>
                 </div>
               </div>
               <button 
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white transition p-1"
+                className="text-white/70 hover:text-white transition p-1.5 rounded-xl hover:bg-white/10 cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSave} className="p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">Nome Completo *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Carlos Eduardo"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">Email Corporativo *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="carlos@faithhubs.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Nome Completo *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Carlos Silva"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-700 font-bold block mb-1">Telefone / WhatsApp</label>
+                  <label className="text-slate-700 font-bold block mb-1">E-mail Profissional *</label>
                   <input
-                    type="text"
-                    placeholder="+55 11 99999-8888"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
+                    type="email"
+                    required
+                    placeholder="carlos@empresa.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-slate-700 font-bold block mb-1">Papel / Cargo</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as MasterUserRole)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs cursor-pointer font-semibold"
-                  >
-                    <option value="SUPERADMIN_GLOBAL">👑 SuperAdmin Global (Acesso Total)</option>
-                    <option value="SUPPORT_LEAD">🎧 Suporte & Operações SaaS</option>
-                    <option value="FINANCE_ADMIN">💰 Financeiro & Assinaturas SaaS</option>
-                  </select>
+                  <label className="text-slate-700 font-bold block mb-1">Telefone WhatsApp</label>
+                  <input
+                    type="text"
+                    placeholder="(11) 99999-9999"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="text-slate-700 font-bold block mb-2">Matriz de Permissões Granulares:</label>
-                <div className="space-y-2 bg-slate-50 p-3 rounded-2xl border border-slate-200 max-h-48 overflow-y-auto">
+                <label className="text-slate-700 font-bold block mb-1">Papel Global *</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as MasterUserRole)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
+                >
+                  <option value="SUPERADMIN_GLOBAL">👑 SuperAdmin Global (Acesso Total irrestrito)</option>
+                  <option value="SUPPORT_LEAD">🎧 Suporte & Operações (Acesso CRM & Gestão de Ambientes)</option>
+                  <option value="FINANCE_LEAD">💰 Financeiro SaaS (Relatórios Asaas & Cobranças)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-2">Permissões Granulares</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {AVAILABLE_PERMISSIONS.map(perm => {
-                    const isChecked = selectedPermissions.includes(perm.id) || selectedPermissions.includes('ALL_PERMISSIONS');
+                    const isChecked = selectedPermissions.includes(perm.id);
 
                     return (
-                      <label key={perm.id} className="flex items-start gap-2.5 p-1.5 hover:bg-white rounded-lg transition cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => togglePermission(perm.id)}
-                          className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 mt-0.5"
-                        />
+                      <div
+                        key={perm.id}
+                        onClick={() => togglePermission(perm.id)}
+                        className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between ${
+                          isChecked ? 'bg-indigo-50/60 border-indigo-200' : 'bg-slate-50 border-slate-200/80 hover:bg-white'
+                        }`}
+                      >
                         <div>
-                          <p className="font-bold text-slate-800 text-xs">{perm.label}</p>
+                          <p className="font-bold text-slate-900 text-xs">{perm.label}</p>
                           <p className="text-[10.5px] text-slate-500">{perm.desc}</p>
                         </div>
-                      </label>
+                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center border transition ${
+                          isChecked ? 'bg-[#3742AC] border-[#3742AC] text-white' : 'border-slate-300 bg-white'
+                        }`}>
+                          {isChecked && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold cursor-pointer"
+                  className="px-4 py-2 text-slate-600 hover:text-slate-900 text-xs font-bold rounded-xl transition cursor-pointer"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="submit"
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2 rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold px-5 py-2 rounded-xl transition shadow-md shadow-indigo-950/10 cursor-pointer"
                 >
-                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Salvar Administrador</span>
+                  {editingUser ? 'Salvar Alterações' : 'Convidar Admin'}
                 </button>
               </div>
             </form>

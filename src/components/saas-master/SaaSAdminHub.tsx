@@ -23,7 +23,8 @@ import {
   TrendingUp,
   FileText,
   Menu,
-  X
+  X,
+  Layers
 } from 'lucide-react';
 
 interface SaaSAdminHubProps {
@@ -36,9 +37,9 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
   const [activeTab, setActiveTabState] = useState<'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis'>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('faithhubs_master_active_tab') as any;
+        const saved = localStorage.getItem('brokiva_master_active_tab') || localStorage.getItem('faithhubs_master_active_tab');
         if (saved && ['dashboard', 'new-tenant', 'tenants', 'plans', 'master-users', 'apis'].includes(saved)) {
-          return saved;
+          return saved as any;
         }
       } catch {}
     }
@@ -48,7 +49,7 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
   const setActiveTab = (tab: 'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis') => {
     setActiveTabState(tab);
     try {
-      localStorage.setItem('faithhubs_master_active_tab', tab);
+      localStorage.setItem('brokiva_master_active_tab', tab);
     } catch {}
   };
 
@@ -58,31 +59,31 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
       label: 'Dashboard Estratégico',
       icon: BarChart3,
       badge: 'MRR',
-      badgeColor: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+      badgeColor: 'bg-emerald-50 text-emerald-700 border border-emerald-200'
     },
     {
       id: 'new-tenant',
-      label: 'Proposta Comercial',
+      label: 'Proposta & Provisionar',
       icon: FileText,
-      badge: 'Nova',
-      badgeColor: 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+      badge: 'Novo',
+      badgeColor: 'bg-indigo-50 text-indigo-700 border border-indigo-200'
     },
     {
       id: 'tenants',
       label: 'Ambientes Produtivos',
       icon: Building2,
       badge: String(tenants.length),
-      badgeColor: 'bg-slate-800 text-slate-300 border border-slate-700'
+      badgeColor: 'bg-slate-100 text-slate-700 border border-slate-200'
     },
     {
       id: 'plans',
-      label: 'Configuração de Planos',
+      label: 'Catálogo de Planos',
       icon: Tag,
       badge: null,
     },
     {
       id: 'master-users',
-      label: 'Usuários Admins Masters',
+      label: 'Admins Masters',
       icon: ShieldCheck,
       badge: null,
     },
@@ -91,78 +92,91 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
       label: 'Configurações de APIs',
       icon: Key,
       badge: 'Z-API / Asaas',
-      badgeColor: 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+      badgeColor: 'bg-violet-50 text-violet-700 border border-violet-200'
     },
   ];
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased select-none flex-col md:flex-row relative">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#F0F3FA] text-slate-800 antialiased select-none flex-col md:flex-row relative">
       {/* Topbar no Mobile */}
-      <div className="md:hidden h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
+      <div className="md:hidden h-14 bg-white border-b border-slate-200/80 px-4 flex items-center justify-between shrink-0 z-20 shadow-2xs">
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
-            className="p-2 text-slate-300 hover:text-white bg-slate-800 rounded-xl transition cursor-pointer"
+            className="p-2 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
             title="Menu do Portal Master"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-1.5">
-            <Crown className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-bold text-white">FaithHubs Master</span>
+          <div className="flex items-center gap-2">
+            <img 
+              src="/brand/brokiva-icon.png" 
+              alt="Brokiva" 
+              className="w-7 h-7 object-contain" 
+            />
+            <span className="text-xs font-black text-slate-900">Brokiva Master</span>
           </div>
         </div>
 
-        <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
-          SaaS Hub
+        <span className="text-[10px] font-mono font-bold bg-[#3742AC]/10 text-[#3742AC] px-2.5 py-0.5 rounded-full border border-[#3742AC]/20">
+          SaaS Ecosystem
         </span>
       </div>
 
       {/* Backdrop no Mobile */}
       {isMobileNavOpen && (
         <div 
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-2xs z-40 md:hidden animate-fadeIn"
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-2xs z-40 md:hidden animate-fadeIn"
           onClick={() => setIsMobileNavOpen(false)}
         />
       )}
 
       {/* Sidebar Dedicada do Portal SaaS Master */}
-      <aside className={`w-64 bg-slate-900 border-r border-slate-800/80 flex flex-col flex-shrink-0 justify-between fixed md:static inset-y-0 left-0 z-50 md:z-10 transition-transform duration-200 ease-in-out ${
+      <aside className={`w-64 bg-white border-r border-slate-200/80 flex flex-col flex-shrink-0 justify-between fixed md:static inset-y-0 left-0 z-50 md:z-10 transition-transform duration-200 ease-in-out ${
         isMobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
       }`}>
-        <div>
+        <div className="flex-1 overflow-y-auto">
           {/* Header da Sidebar */}
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950/50">
-                <Crown className="w-5 h-5 text-slate-950 fill-amber-300" />
+          <div className="p-4 border-b border-slate-100">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1 flex items-center min-w-0">
+                <img 
+                  src="/brand/brokiva-logo-dark.png" 
+                  alt="Brokiva — Relacionamentos que viram negócios" 
+                  className="h-10 w-auto object-contain max-w-[170px]" 
+                />
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <h1 className="text-sm font-black text-white tracking-tight">FaithHubs Master</h1>
-                  <span className="text-[9px] bg-amber-400/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.2 rounded font-mono font-bold">
-                    SaaS Hub
-                  </span>
-                </div>
-                <p className="text-[10.5px] text-slate-400">Portal do Dono do CRM</p>
-              </div>
+
+              {/* Fechar no Mobile */}
+              <button
+                type="button"
+                onClick={() => setIsMobileNavOpen(false)}
+                className="md:hidden p-1.5 rounded-xl text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+                title="Fechar menu"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Fechar no Mobile */}
-            <button
-              type="button"
-              onClick={() => setIsMobileNavOpen(false)}
-              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800/60"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {/* Tenant Master Badge */}
+            <div className="mt-3 flex items-center justify-between px-3 py-1.5 bg-indigo-50/70 border border-indigo-100/90 rounded-xl">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Crown className="w-3.5 h-3.5 text-[#3742AC] shrink-0" />
+                <span className="text-[11px] font-extrabold text-[#3742AC] truncate">
+                  Portal Master Global
+                </span>
+              </div>
+              <span className="text-[9px] font-mono font-black uppercase px-1.5 py-0.2 rounded bg-white text-[#3742AC] border border-indigo-200/60 shadow-2xs">
+                SaaS
+              </span>
+            </div>
           </div>
 
           {/* Menus de Navegação */}
           <div className="p-3 space-y-1">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-3 py-2">
-              Menu Executivo & Gestão
+            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-3 py-2">
+              Gestão da Plataforma
             </p>
 
             {navItems.map(item => {
@@ -177,20 +191,20 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
                     setActiveTab(item.id as any);
                     setIsMobileNavOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition cursor-pointer group ${
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition duration-150 cursor-pointer group ${
                     isActive 
-                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40' 
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                      ? 'bg-[#3742AC] text-white shadow-md shadow-indigo-950/10' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 transition ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-emerald-400'}`} />
+                    <Icon className={`w-4 h-4 transition shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'}`} />
                     <span className="truncate">{item.label}</span>
                   </div>
 
                   {item.badge && (
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
-                      isActive ? 'bg-white/20 text-white' : item.badgeColor || 'bg-slate-800 text-slate-300'
+                      isActive ? 'bg-white/20 text-white' : item.badgeColor || 'bg-slate-100 text-slate-600'
                     }`}>
                       {item.badge}
                     </span>
@@ -202,17 +216,17 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
         </div>
 
         {/* Rodapé da Sidebar: Perfil Master & Logoff */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-900/60 space-y-3">
+        <div className="p-4 border-t border-slate-100 bg-slate-50/60 space-y-3 shrink-0">
           <div className="flex items-center gap-3">
             <img
               src={currentUser?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
               alt={currentUser?.name}
-              className="w-9 h-9 rounded-full object-cover ring-2 ring-emerald-500/50"
+              className="w-9 h-9 rounded-full object-cover ring-2 ring-[#3742AC]/30 shadow-2xs"
             />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-white truncate">{currentUser?.name || 'Rafael Sena'}</p>
-              <span className="inline-block text-[9px] font-bold text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-800/40">
-                👑 SuperAdmin Global
+              <p className="text-xs font-bold text-slate-900 truncate">{currentUser?.name || 'Rafael Sena'}</p>
+              <span className="inline-block text-[10px] font-extrabold text-[#3742AC] bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 rounded-md">
+                👑 SuperAdmin
               </span>
             </div>
           </div>
@@ -220,16 +234,16 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
           <button
             type="button"
             onClick={() => logout()}
-            className="w-full flex items-center justify-center gap-2 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 hover:text-rose-100 border border-rose-800/40 rounded-xl py-2 text-xs font-bold transition cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200/80 hover:border-rose-200 rounded-xl py-2 text-xs font-bold transition cursor-pointer shadow-2xs"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-3.5 h-3.5 text-rose-500" />
             <span>Sair do Portal</span>
           </button>
         </div>
       </aside>
 
       {/* Conteúdo Principal do SaaS Master */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-950">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#F0F3FA]">
         {activeTab === 'dashboard' && <SaaSDashboard onNavigateToTab={(t) => setActiveTab(t as any)} />}
         {activeTab === 'new-tenant' && <SaaSNewTenantPage onSuccess={() => setActiveTab('tenants')} />}
         {activeTab === 'tenants' && (

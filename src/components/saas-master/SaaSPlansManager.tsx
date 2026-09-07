@@ -15,7 +15,8 @@ import {
   Trash2, 
   ShieldCheck,
   Zap,
-  Tag
+  Tag,
+  X
 } from 'lucide-react';
 
 export function SaaSPlansManager() {
@@ -103,31 +104,31 @@ export function SaaSPlansManager() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 max-w-7xl w-full mx-auto space-y-6 animate-fadeIn">
+    <div className="flex-1 overflow-y-auto p-6 sm:p-8 max-w-7xl w-full mx-auto space-y-6 animate-fadeIn">
       {/* Header dos Planos */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#3742AC]/10 text-[#3742AC] flex items-center justify-center font-bold">
               <Tag className="w-4 h-4" />
             </div>
-            <h2 className="text-lg font-bold text-slate-900">Catálogo de Planos Comerciais SaaS</h2>
-            <span className="text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-0.5 rounded-full">
+            <h2 className="text-lg font-extrabold text-slate-900">Catálogo de Planos Comerciais SaaS</h2>
+            <span className="text-xs font-bold font-mono bg-indigo-50 text-[#3742AC] border border-indigo-200/60 px-2.5 py-0.5 rounded-full">
               {saasPlans.length} planos ativos
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Configure os planos de assinatura disponíveis para venda. Estes planos alimentam automaticamente a tela de propostas comerciais.
+          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+            Defina faixas de preço, cotas de corretores e recursos. Estes planos alimentam o provisionamento e propostas comerciais.
           </p>
         </div>
 
         <button
           type="button"
           onClick={openNewPlanModal}
-          className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+          className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold py-2.5 px-4 rounded-xl transition shadow-md shadow-indigo-950/10 flex items-center gap-1.5 cursor-pointer active:scale-95"
         >
           <Plus className="w-4 h-4" />
-          <span>+ Criar Novo Plano</span>
+          <span>Criar Novo Plano</span>
         </button>
       </div>
 
@@ -136,11 +137,13 @@ export function SaaSPlansManager() {
         {saasPlans.map(plan => (
           <div
             key={plan.id}
-            className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between space-y-4 relative hover:shadow-md transition"
+            className={`bg-white rounded-3xl border p-6 shadow-2xs flex flex-col justify-between space-y-4 relative hover:shadow-md transition ${
+              plan.isPopular ? 'border-[#3742AC] ring-2 ring-[#3742AC]/15' : 'border-slate-200/80'
+            }`}
           >
             {plan.isPopular && (
-              <span className="absolute -top-3 right-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider px-3 py-0.5 rounded-full shadow-md">
-                Destaque / Popular
+              <span className="absolute -top-3 right-6 bg-[#3742AC] text-white text-[10px] font-black uppercase tracking-wider px-3 py-0.5 rounded-full shadow-md">
+                Mais Escolhido
               </span>
             )}
 
@@ -157,7 +160,7 @@ export function SaaSPlansManager() {
                   <span className="text-3xl font-black text-slate-900">
                     R$ {plan.monthlyPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
                   </span>
-                  <span className="text-xs text-slate-500 font-semibold">/mês</span>
+                  <span className="text-xs text-slate-400 font-medium">/mês</span>
                 </div>
                 <p className="text-[11px] text-slate-400 font-mono mt-0.5">
                   R$ {plan.annualPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 0 })} /ano
@@ -165,9 +168,9 @@ export function SaaSPlansManager() {
               </div>
 
               {/* Especificações Técnicas */}
-              <div className="mt-4 pt-3 border-t border-slate-100 space-y-2 text-xs">
+              <div className="mt-4 pt-3.5 border-t border-slate-100 space-y-2 text-xs">
                 <div className="flex items-center gap-2 text-slate-700 font-semibold">
-                  <Users className="w-4 h-4 text-purple-600" />
+                  <Users className="w-4 h-4 text-[#3742AC]" />
                   <span>Até {plan.maxBrokers} corretores</span>
                 </div>
                 <div className="flex items-center gap-2 text-slate-700 font-semibold">
@@ -176,17 +179,17 @@ export function SaaSPlansManager() {
                 </div>
                 <div className="flex items-center gap-2 text-slate-700 font-semibold">
                   <Bot className="w-4 h-4 text-blue-600" />
-                  <span>{plan.aiCopilotEnabled ? 'IA Copilot Ativa' : 'Sem IA'}</span>
+                  <span>{plan.aiCopilotEnabled ? 'IA Copilot Inclusa' : 'Sem IA'}</span>
                 </div>
               </div>
 
               {/* Features Inclusas */}
-              <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Recursos inclusos:</p>
+              <div className="mt-4 pt-3.5 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recursos inclusos:</p>
                 {plan.features.map((feat, i) => (
                   <div key={i} className="flex items-center gap-1.5 text-[11px]">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                    <span>{feat}</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="text-slate-700 font-medium">{feat}</span>
                   </div>
                 ))}
               </div>
@@ -197,16 +200,16 @@ export function SaaSPlansManager() {
               <button
                 type="button"
                 onClick={() => openEditModal(plan)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 text-xs font-bold py-2 rounded-xl border border-slate-200/80 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
               >
-                <Edit3 className="w-3.5 h-3.5" />
+                <Edit3 className="w-3.5 h-3.5 text-slate-500" />
                 <span>Editar</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => deleteSaaSPlan(plan.id)}
-                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer border border-transparent hover:border-rose-200"
                 title="Excluir Plano"
               >
                 <Trash2 className="w-4 h-4" />
@@ -218,25 +221,25 @@ export function SaaSPlansManager() {
 
       {/* Modal: Criar / Editar Plano */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-900 p-5 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-slate-900 to-[#3742AC] p-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center border border-purple-500/30">
+                <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center border border-white/20">
                   <Tag className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">
                     {editingPlan ? 'Editar Plano Comercial' : 'Criar Novo Plano Comercial'}
                   </h3>
-                  <p className="text-[11px] text-slate-400">Configure preços, limites e funcionalidades</p>
+                  <p className="text-[11px] text-indigo-200">Configure preços, limites e funcionalidades</p>
                 </div>
               </div>
               <button 
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white transition p-1"
+                className="text-white/70 hover:text-white transition p-1.5 rounded-xl hover:bg-white/10 cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -247,25 +250,22 @@ export function SaaSPlansManager() {
                   <input
                     type="text"
                     required
-                    placeholder="Ex: Diamond Corporate"
+                    placeholder="Ex: Growth Imobiliário"
                     value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      if (!slug) setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '-'));
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-slate-700 font-bold block mb-1">Identificador (Slug) *</label>
+                  <label className="text-slate-700 font-bold block mb-1">Slug Identificador *</label>
                   <input
                     type="text"
                     required
-                    placeholder="diamond"
+                    placeholder="growth"
                     value={slug}
                     onChange={(e) => setSlug(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
               </div>
@@ -276,48 +276,48 @@ export function SaaSPlansManager() {
                   <input
                     type="number"
                     required
+                    min={0}
                     value={monthlyPrice}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setMonthlyPrice(val);
-                      setAnnualPrice(val * 10); // Sugere 2 meses grátis
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-sm text-purple-700"
+                    onChange={(e) => setMonthlyPrice(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-slate-700 font-bold block mb-1">Preço Anual (R$) *</label>
+                  <label className="text-slate-700 font-bold block mb-1">Preço Anual Total (R$) *</label>
                   <input
                     type="number"
                     required
+                    min={0}
                     value={annualPrice}
                     onChange={(e) => setAnnualPrice(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold text-sm text-slate-800"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-700 font-bold block mb-1">Limite de Corretores *</label>
+                  <label className="text-slate-700 font-bold block mb-1">Máx. Corretores *</label>
                   <input
                     type="number"
                     required
+                    min={1}
                     value={maxBrokers}
                     onChange={(e) => setMaxBrokers(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-slate-700 font-bold block mb-1">Linhas WhatsApp Z-API *</label>
+                  <label className="text-slate-700 font-bold block mb-1">Máx. Linhas Z-API *</label>
                   <input
                     type="number"
                     required
+                    min={1}
                     value={maxInstances}
                     onChange={(e) => setMaxInstances(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   />
                 </div>
               </div>
@@ -328,35 +328,46 @@ export function SaaSPlansManager() {
                   rows={4}
                   value={featuresText}
                   onChange={(e) => setFeaturesText(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs leading-relaxed focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                 />
               </div>
 
-              <div className="flex items-center gap-4 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={aiCopilotEnabled}
+                    onChange={(e) => setAiCopilotEnabled(e.target.checked)}
+                    className="rounded text-[#3742AC] focus:ring-[#3742AC] w-4 h-4"
+                  />
+                  <span className="font-semibold text-slate-800">Habilitar IA Copiloto neste plano</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={isPopular}
                     onChange={(e) => setIsPopular(e.target.checked)}
-                    className="rounded text-purple-600 focus:ring-purple-500 w-4 h-4"
+                    className="rounded text-[#3742AC] focus:ring-[#3742AC] w-4 h-4"
                   />
-                  <span className="text-slate-700 font-semibold text-xs">Marcar como Plano em Destaque (Popular)</span>
+                  <span className="font-semibold text-slate-800">Marcar como Plano Popular / Destaque</span>
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold cursor-pointer"
+                  className="px-4 py-2 text-slate-600 hover:text-slate-900 text-xs font-bold rounded-xl transition cursor-pointer"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="submit"
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-5 py-2 rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+                  className="bg-[#3742AC] hover:bg-[#2D368E] text-white text-xs font-bold px-5 py-2 rounded-xl transition shadow-md shadow-indigo-950/10 cursor-pointer"
                 >
-                  Salvar Plano Comercial
+                  {editingPlan ? 'Salvar Alterações' : 'Criar Plano'}
                 </button>
               </div>
             </form>

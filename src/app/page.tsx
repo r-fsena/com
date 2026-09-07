@@ -153,22 +153,23 @@ export default function CRMApp() {
       <div className="flex h-screen w-screen overflow-hidden bg-slate-100 antialiased flex-col">
         {/* Barra de Modo Admin Master (quando o SuperAdmin entra no CRM de uma Imobiliária) */}
         {isMasterAdmin && (
-          <div className="bg-slate-900 text-white px-4 sm:px-6 py-2 text-xs flex items-center justify-between border-b border-amber-500/30 shrink-0 shadow-xs gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="bg-gradient-to-r from-amber-500 to-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md shadow-2xs shrink-0">
-                👑 MODO ADMIN MASTER
+          <div className="bg-slate-900 text-white px-4 sm:px-6 py-2 text-xs flex items-center justify-between border-b border-indigo-900/60 shrink-0 shadow-xs gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="bg-[#3742AC] text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-2xs shrink-0 flex items-center gap-1">
+                <span>👑</span>
+                <span>MODO ADMIN MASTER</span>
               </span>
               <span className="text-slate-300 text-xs truncate">
-                Imobiliária: <strong className="text-white font-bold">{currentTenant.name}</strong>
+                Visualizando ambiente: <strong className="text-white font-bold">{currentTenant.name}</strong>
               </span>
             </div>
 
             <button
               type="button"
               onClick={() => handleSetViewMode('SAAS_MASTER')}
-              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-lg text-xs transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 shrink-0"
+              className="bg-white hover:bg-slate-100 text-[#3742AC] font-black px-3.5 py-1.5 rounded-xl text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 shrink-0"
             >
-              <span>↩ <span className="hidden sm:inline">Voltar ao Portal Master SaaS</span><span className="sm:hidden">SaaS Hub</span></span>
+              <span>↩ <span className="hidden sm:inline">Voltar ao Portal Master SaaS</span><span className="sm:hidden">Master</span></span>
             </button>
           </div>
         )}

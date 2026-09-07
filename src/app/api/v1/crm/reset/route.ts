@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { webhookStore } from '@/lib/webhook-store';
+import { validateApiSession } from '@/lib/api-auth';
 
 export async function POST(req: NextRequest) {
+  // 0. Validação de Sessão & Privilégio de SuperAdmin
+  const { session, errorResponse } = validateApiSession(req, { requireSuperAdmin: true });
+  if (errorResponse) return errorResponse;
   try {
     // 1. Limpa o buffer de estado em memória do servidor
     serverCRMStore.resetState();

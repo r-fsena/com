@@ -23,7 +23,11 @@ export function middleware(request: NextRequest) {
       response.headers.set('Access-Control-Allow-Origin', origin);
       response.headers.set('Access-Control-Allow-Credentials', 'true');
       response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tenant-Id, X-User-Id, X-User-Email, Client-Token');
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tenant-Id, X-User-Id, X-User-Email, Client-Token, X-Extension-Token, Asaas-Access-Token');
+
+      if (request.method === 'OPTIONS') {
+        return new NextResponse(null, { status: 204, headers: response.headers });
+      }
     }
   }
 

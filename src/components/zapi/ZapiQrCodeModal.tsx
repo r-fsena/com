@@ -45,17 +45,12 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
 
-  // Form de Credenciais da Instância
+  // Form de Credenciais da Instância (Segredos gerenciados via .env / servidor)
   const [instanceId, setInstanceId] = useState(
-    instances[0]?.zapiInstanceId || 
-    (currentTenant.id === 'tenant-amabile-barbarotti' ? '3F8144490C66805B4E3FD64A35E2F2DC' : `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`)
+    instances[0]?.zapiInstanceId || `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`
   );
-  const [instanceToken, setInstanceToken] = useState(
-    currentTenant.id === 'tenant-amabile-barbarotti' ? '550DBC07B2F984AB74E4BCE5' : ''
-  );
-  const [clientToken, setClientToken] = useState(
-    currentTenant.id === 'tenant-amabile-barbarotti' ? 'Fc78d61c833db4b50864816b70766aee8S' : ''
-  );
+  const [instanceToken, setInstanceToken] = useState('');
+  const [clientToken, setClientToken] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [syncHistoryDays, setSyncHistoryDays] = useState<number>(15);
 

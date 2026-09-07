@@ -251,9 +251,7 @@ export function WhatsAppConnectionView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          instanceId: activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
-          token: process.env.NEXT_PUBLIC_ZAPI_TOKEN || '550DBC07B2F984AB74E4BCE5',
-          clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+          instanceId: activeInstance?.zapiInstanceId,
           webhookUrl: officialWebhookUrl,
         }),
       });
@@ -281,9 +279,7 @@ export function WhatsAppConnectionView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          instanceId: activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
-          token: '550DBC07B2F984AB74E4BCE5',
-          clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+          instanceId: activeInstance?.zapiInstanceId,
         }),
       });
 

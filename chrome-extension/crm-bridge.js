@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     window.postMessage({
       type: 'BROKIVA_EXTENSION_SYNC',
       data: request.data
-    }, '*');
+    }, window.location.origin);
     sendResponse({ success: true });
     return false;
   }

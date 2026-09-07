@@ -7,15 +7,17 @@ export async function processZapiWebhookRequest(
   request: NextRequest,
   routeParams?: { tenantId?: string; instanceId?: string }
 ) {
-  // Validação opcional de segurança
+  // Validação Estrita de Segurança do Webhook Z-API
   const expectedToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN;
   const clientToken = request.headers.get('client-token') || request.nextUrl.searchParams.get('token');
 
-  if (expectedToken && clientToken && clientToken !== expectedToken) {
-    return NextResponse.json(
-      { success: false, error: 'Acesso negado: Token de webhook Z-API inválido' },
-      { status: 401 }
-    );
+  if (expectedToken) {
+    if (!clientToken || clientToken !== expectedToken) {
+      return NextResponse.json(
+        { success: false, error: 'Acesso negado: Token de webhook Z-API ausente ou inválido' },
+        { status: 401 }
+      );
+    }
   }
 
   try {

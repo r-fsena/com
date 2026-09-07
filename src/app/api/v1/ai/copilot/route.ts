@@ -45,8 +45,10 @@ export async function POST(request: NextRequest) {
     }, { status: 429 });
   }
 
-  // 2. Validação de Sessão
-  const { session, errorResponse } = validateApiSession(request);
+  // 2. Validação Estrita de Sessão & RBAC
+  const { session, errorResponse } = validateApiSession(request, {
+    requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
+  });
   if (errorResponse) return errorResponse;
 
   try {

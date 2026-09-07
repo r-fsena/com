@@ -5,6 +5,8 @@ import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
+import { validateApiSession } from '@/lib/api-auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +39,20 @@ const BatchSyncSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // 1. Rate Limiting (Máx 60 lotes por minuto por IP)
+  const clientIp = getClientIp(req.headers);
+  const rateCheck = checkRateLimit(`ext-sync:${clientIp}`, 60, 60);
+  if (!rateCheck.allowed) {
+    return NextResponse.json({
+      success: false,
+      error: `Limite de requisições excedido. Aguarde ${rateCheck.resetInSeconds}s.`,
+    }, { status: 429 });
+  }
+
+  // 2. Validação de Sessão ou Token da Extensão
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json().catch(() => ({}));
     const parsed = BatchSyncSchema.safeParse(body);

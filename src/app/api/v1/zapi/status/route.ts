@@ -3,10 +3,13 @@ import { ZApiClient } from '@/lib/zapi-client';
 import { validateApiSession } from '@/lib/api-auth';
 
 export async function GET(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+
   const { searchParams } = new URL(req.url);
-  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '';
+  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '';
+  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
 
   try {
     const client = new ZApiClient({

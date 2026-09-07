@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
 import { validateApiSession } from '@/lib/api-auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { session, errorResponse } = validateApiSession(req);
+  // Rate Limiting (Máx 60 ações por minuto por IP)
+  const clientIp = getClientIp(req.headers);
+  const rateCheck = checkRateLimit(`zapi-actions:${clientIp}`, 60, 60);
+  if (!rateCheck.allowed) {
+    return NextResponse.json({
+      success: false,
+      error: `Limite de ações excedido. Aguarde ${rateCheck.resetInSeconds}s.`,
+    }, { status: 429 });
+  }
+
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
+  });
   if (errorResponse) return errorResponse;
 
   try {
@@ -16,9 +29,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Telefone obrigatório' }, { status: 400 });
     }
 
-    const instanceId = targetInstanceId || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const instanceToken = targetToken || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-    const securityToken = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
+    const instanceId = targetInstanceId || process.env.ZAPI_INSTANCE_ID || '';
+    const instanceToken = targetToken || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const securityToken = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
 
     if (!instanceId || !instanceToken) {
       return NextResponse.json({

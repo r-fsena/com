@@ -4,6 +4,7 @@
 
 const DEFAULT_CRM_URL = 'https://crm.faithhubs.com';
 const DEFAULT_TENANT_ID = 'tenant-amabile-barbarotti';
+const EXTENSION_TOKEN = 'brokiva-ext-sync-secret-2026';
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(['crmUrl', 'tenantId'], (res) => {
@@ -50,7 +51,10 @@ async function handleForwardLog(logData) {
     const crmUrl = config.crmUrl || DEFAULT_CRM_URL;
     fetch(`${crmUrl}/api/v1/telemetry/extension-logs`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-extension-token': EXTENSION_TOKEN,
+      },
       body: JSON.stringify({
         timestamp: Date.now(),
         tenantId: config.tenantId || DEFAULT_TENANT_ID,
@@ -88,7 +92,10 @@ async function handleBatchSync(data) {
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-extension-token': EXTENSION_TOKEN,
+    },
     body: JSON.stringify(payload),
   });
 
@@ -138,7 +145,10 @@ async function handleGetAiSuggestion(data) {
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-extension-token': EXTENSION_TOKEN,
+    },
     body: JSON.stringify({
       chatHistory: data.chatHistory || [],
       brokerName: config.brokerName || 'Corretor',

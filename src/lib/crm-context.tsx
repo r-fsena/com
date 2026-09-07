@@ -1018,7 +1018,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const session = JSON.parse(saved);
         if (session?.userEmail) {
           const u = users.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
-          if (u) setCurrentUser(u);
+          if (u) {
+            setCurrentUser(u);
+            // Renova o cookie assinado HttpOnly no servidor para requisições à API
+            fetch('/api/v1/auth/session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: u.email,
+                userId: u.id,
+                role: u.role,
+                tenantId: currentTenant.id,
+              }),
+            }).catch(() => {});
+          }
           setIsAuthenticated(true);
         } else {
           setIsAuthenticated(false);
@@ -1031,7 +1044,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsAuthReady(true);
     }
-  }, [users]);
+  }, [users, currentTenant.id]);
 
   const login = (email: string, role?: string) => {
     let targetUser = currentUser;
@@ -1437,6 +1450,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   // Listener em tempo real para sincronizações recebidas diretamente da Extensão Brokiva
   useEffect(() => {
     const handleExtensionDirectSync = (event: MessageEvent) => {
+      // Blindagem contra Cross-Window Injection & iframes maliciosos
+      if (typeof window !== 'undefined') {
+        if (event.source !== window) return;
+        if (event.origin && event.origin !== window.location.origin) return;
+      }
+
       if (event.data?.type === 'BROKIVA_EXTENSION_SYNC' && event.data?.data) {
         console.log('[Brokiva CRM] Mensagens sincronizadas recebidas da extensão:', event.data.data);
         const { messages: incomingMsgs, contacts: incomingContacts, conversations: incomingConvs } = event.data.data;

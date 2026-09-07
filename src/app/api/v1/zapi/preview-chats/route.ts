@@ -7,12 +7,14 @@ import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { errorResponse } = validateApiSession(req);
+  const { errorResponse } = validateApiSession(req, {
+    requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
+  });
   if (errorResponse) return errorResponse;
 
-  let instanceId = process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+  let instanceId = process.env.ZAPI_INSTANCE_ID || '';
+  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
+  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
   let historyDays = 0; // Padrão: 0 (Todo o histórico sem restrição de corte)
 
   try {

@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function POST(req: NextRequest) {
+  // Rate Limiting (Máx 20 cobranças por minuto por IP)
+  const clientIp = getClientIp(req.headers);
+  const rateCheck = checkRateLimit(`asaas-payment:${clientIp}`, 20, 60);
+  if (!rateCheck.allowed) {
+    return NextResponse.json({
+      error: `Limite de operações excedido. Aguarde ${rateCheck.resetInSeconds} segundos.`,
+    }, { status: 429 });
+  }
+
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER'],
   });

@@ -107,9 +107,14 @@ resource "aws_apigatewayv2_api" "http_api" {
   name          = "vanguard-crm-http-api"
   protocol_type = "HTTP"
   cors_configuration {
-    allow_origins = ["*"]
-    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    allow_headers = ["Content-Type", "Authorization", "Client-Token", "x-client-token"]
+    allow_origins = [
+      "https://crm.faithhubs.com",
+      "http://localhost:3000",
+      "http://127.0.0.1:3000"
+    ]
+    allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allow_headers     = ["Content-Type", "Authorization", "Client-Token", "x-client-token", "x-tenant-id", "x-user-id", "x-user-email", "x-extension-token", "asaas-access-token"]
+    allow_credentials = true
   }
 }
 

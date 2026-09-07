@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ZApiClient } from '@/lib/zapi-client';
 import { webhookStore } from '@/lib/webhook-store';
 import { validateApiSession } from '@/lib/api-auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,15 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // Rate Limiting (Máx 60 disparos por minuto por IP)
+  const clientIp = getClientIp(request.headers);
+  const rateCheck = checkRateLimit(`send-msg:${clientIp}`, 60, 60);
+  if (!rateCheck.allowed) {
+    return NextResponse.json({
+      error: `Limite de envio de mensagens atingido. Aguarde ${rateCheck.resetInSeconds} segundos.`,
+    }, { status: 429 });
+  }
+
   const { session, errorResponse } = validateApiSession(request, {
     requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
   });
@@ -44,7 +54,7 @@ export async function POST(
       );
     }
 
-    const { content, messageType, mediaUrl, fileName, isInternalNote, idempotencyKey } = validated.data;
+    const { content, messageType, mediaUrl, fileName, isInternalNote, idempotencyKey, senderUserId } = validated.data;
 
     // Se for nota interna, grava internamente sem disparar para a Z-API
     if (isInternalNote) {
@@ -65,14 +75,14 @@ export async function POST(
     }
 
     let instanceId = validated.data.instanceId;
-    if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20 || instanceId === '3F1B67FC8139425171C79ED390C0144C') {
-      instanceId = process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
+    if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
+      instanceId = process.env.ZAPI_INSTANCE_ID || '';
     }
     let instanceToken = validated.data.instanceToken;
-    if (!instanceToken || instanceToken.length < 15 || instanceToken === '7A18BD2BADA4840FB0374499') {
-      instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
+    if (!instanceToken || instanceToken.length < 15) {
+      instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
     }
-    let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
+    let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
 
     let externalMessageId = `zapi-${Date.now()}`;
 

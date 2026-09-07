@@ -7,7 +7,10 @@ import { isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { session } = validateApiSession(req);
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
+  });
+  if (errorResponse) return errorResponse;
 
   try {
     const body = await req.json();
@@ -28,9 +31,9 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanPhone = phone.replace(/\D/g, '');
-    const instanceId = reqInstId || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const instanceToken = reqToken || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-    const securityToken = reqClientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+    const instanceId = reqInstId || process.env.ZAPI_INSTANCE_ID || '';
+    const instanceToken = reqToken || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const securityToken = reqClientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
 
     const cutoffMs = historyDays > 0 ? Date.now() - (Number(historyDays) * 24 * 60 * 60 * 1000) : 0;
 

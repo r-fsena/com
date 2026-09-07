@@ -1,34 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MOCK_USERS } from '@/lib/mock-data';
+import { signSessionPayload, verifySessionToken } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 const COOKIE_NAME = 'vanguard_session';
 
 /**
- * Gestão Segura de Sessão com HttpOnly Cookies
- * Elimina a vulnerabilidade de exfiltração de sessão via XSS no localStorage.
+ * Gestão Segura de Sessão com HttpOnly Cookies Assinados com HMAC-SHA256
+ * Elimina falsificação de sessão e exfiltração via XSS no localStorage.
  */
 
-// GET: Retorna a sessão ativa a partir do cookie HttpOnly
+// GET: Retorna a sessão ativa a partir do cookie HttpOnly assinado
 export async function GET(req: NextRequest) {
   const cookie = req.cookies.get(COOKIE_NAME);
   if (!cookie || !cookie.value) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  try {
-    const sessionData = JSON.parse(Buffer.from(cookie.value, 'base64url').toString('utf-8'));
-    return NextResponse.json({
-      authenticated: true,
-      user: sessionData,
-    });
-  } catch {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
+  const sessionData = verifySessionToken(cookie.value);
+  if (!sessionData) {
+    return NextResponse.json({ authenticated: false, error: 'Sessão inválida ou adulterada' }, { status: 401 });
   }
+
+  return NextResponse.json({
+    authenticated: true,
+    user: sessionData,
+  });
 }
 
-// POST: Cria a sessão segura e injeta o cookie HttpOnly
+// POST: Cria a sessão segura e injeta o cookie HttpOnly assinado
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -46,11 +47,11 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    const sessionToken = Buffer.from(JSON.stringify(sessionPayload)).toString('base64url');
+    const sessionToken = signSessionPayload(sessionPayload);
 
     const res = NextResponse.json({
       success: true,
-      message: 'Sessão autenticada com sucesso via HttpOnly Cookie.',
+      message: 'Sessão autenticada com sucesso via HttpOnly Cookie assinado.',
       user: sessionPayload,
     });
 

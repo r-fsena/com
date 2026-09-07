@@ -91,7 +91,7 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
       id: 'apis',
       label: 'Configurações de APIs',
       icon: Key,
-      badge: 'Z-API / Asaas',
+      badge: 'Z-API',
       badgeColor: 'bg-violet-50 text-violet-700 border border-violet-200'
     },
   ];
@@ -144,7 +144,7 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
                 <img 
                   src="/brand/brokiva-logo-dark.png" 
                   alt="Brokiva — Relacionamentos que viram negócios" 
-                  className="h-10 w-auto object-contain max-w-[170px]" 
+                  className="h-14 sm:h-16 w-auto object-contain object-left max-w-[215px] drop-shadow-2xs" 
                 />
               </div>
 
@@ -203,7 +203,7 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
                   </div>
 
                   {item.badge && (
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold shrink-0 whitespace-nowrap ${
                       isActive ? 'bg-white/20 text-white' : item.badgeColor || 'bg-slate-100 text-slate-600'
                     }`}>
                       {item.badge}

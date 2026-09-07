@@ -280,7 +280,7 @@ export function Sidebar({
                   <img 
                     src="/brand/brokiva-logo-dark.png" 
                     alt="Brokiva — Relacionamentos que viram negócios" 
-                    className="h-11 w-auto object-contain max-w-[180px] drop-shadow-2xs" 
+                    className="h-14 sm:h-16 w-auto object-contain object-left max-w-[215px] drop-shadow-2xs" 
                   />
                 </div>
 

@@ -141,6 +141,7 @@ export default function CRMApp() {
         <SaaSAdminHub 
           onEnterTenant={(tenant) => {
             setCurrentTenant(tenant);
+            setCurrentTab('dashboard');
             handleSetViewMode('TENANT_CRM');
           }}
         />

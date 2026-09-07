@@ -32,7 +32,7 @@ interface SaaSAdminHubProps {
 }
 
 export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
-  const { currentUser, logout, tenants } = useCRM();
+  const { currentUser, logout, tenants, currentTenant } = useCRM();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [activeTab, setActiveTabState] = useState<'dashboard' | 'new-tenant' | 'tenants' | 'plans' | 'master-users' | 'apis'>(() => {
     if (typeof window !== 'undefined') {
@@ -119,9 +119,21 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
           </div>
         </div>
 
-        <span className="text-[10px] font-mono font-bold bg-[#3742AC]/10 text-[#3742AC] px-2.5 py-0.5 rounded-full border border-[#3742AC]/20">
-          SaaS Ecosystem
-        </span>
+        <div className="flex items-center gap-2">
+          {currentTenant && (
+            <button
+              type="button"
+              onClick={() => onEnterTenant(currentTenant)}
+              className="text-[11px] font-bold bg-[#3742AC] hover:bg-[#2D368E] text-white px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition"
+              title={`Voltar ao CRM de ${currentTenant.name}`}
+            >
+              <span>↩ CRM</span>
+            </button>
+          )}
+          <span className="text-[10px] font-mono font-bold bg-[#3742AC]/10 text-[#3742AC] px-2.5 py-0.5 rounded-full border border-[#3742AC]/20">
+            SaaS
+          </span>
+        </div>
       </div>
 
       {/* Backdrop no Mobile */}
@@ -171,6 +183,27 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
                 SaaS
               </span>
             </div>
+
+            {/* Atalho Rápido para Voltar ao CRM da Imobiliária Ativa */}
+            {currentTenant && (
+              <button
+                type="button"
+                onClick={() => {
+                  onEnterTenant(currentTenant);
+                  setIsMobileNavOpen(false);
+                }}
+                className="mt-2.5 w-full flex items-center justify-between px-3 py-2 bg-gradient-to-r from-indigo-50/90 to-blue-50/70 hover:from-indigo-100 hover:to-blue-100/90 border border-indigo-200/80 text-[#3742AC] rounded-xl text-xs font-bold transition cursor-pointer group shadow-2xs"
+                title={`Ir para o CRM de ${currentTenant.name}`}
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs group-hover:-translate-x-0.5 transition-transform">↩</span>
+                  <span className="truncate text-[11px]">Voltar ao CRM</span>
+                </div>
+                <span className="text-[10px] font-mono font-extrabold max-w-[85px] truncate bg-white text-[#3742AC] px-1.5 py-0.5 rounded border border-indigo-200/60 shadow-2xs">
+                  {currentTenant.name.split(' ')[0]}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Menus de Navegação */}

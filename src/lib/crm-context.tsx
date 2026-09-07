@@ -374,24 +374,48 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const cleanList = parsed
-              .filter((t: Tenant) => t.id !== 'tenant-horizonte-02' && t.id !== 'tenant-alphaville-03' && t.id !== 'tenant-vanguard-01')
-              .map((t: Tenant) => {
-                if (t.id === 'tenant-amabile-barbarotti') {
-                  return {
-                    ...t,
-                    featureFlags: {
-                      ...(t.featureFlags || DEFAULT_FEATURE_FLAGS),
-                      proposals: false,
-                      asaasBilling: false,
-                      campaigns: false,
-                      automations: false,
-                    },
-                  };
-                }
-                return t;
-              });
-            if (cleanList.length > 0) return cleanList;
+            const seenIds = new Set<string>();
+            const cleanList: Tenant[] = [];
+
+            for (const t of parsed) {
+              if (!t || !t.id) continue;
+              if (t.id === 'tenant-horizonte-02' || t.id === 'tenant-alphaville-03' || t.id === 'tenant-vanguard-01') continue;
+
+              const isAmabile = t.id === 'tenant-amabile-barbarotti' || 
+                                t.slug === 'amabile-barbarotti' || 
+                                (t.name && t.name.toLowerCase().includes('amabile'));
+
+              if (isAmabile) {
+                if (seenIds.has('tenant-amabile-barbarotti')) continue;
+                seenIds.add('tenant-amabile-barbarotti');
+                cleanList.push({
+                  ...t,
+                  id: 'tenant-amabile-barbarotti',
+                  name: t.name || 'Amábile Barbarotti Imóveis',
+                  slug: 'amabile-barbarotti',
+                  featureFlags: {
+                    ...(t.featureFlags || DEFAULT_FEATURE_FLAGS),
+                    proposals: false,
+                    asaasBilling: false,
+                    campaigns: false,
+                    automations: false,
+                  },
+                });
+              } else {
+                if (seenIds.has(t.id)) continue;
+                seenIds.add(t.id);
+                cleanList.push(t);
+              }
+            }
+
+            if (!seenIds.has('tenant-amabile-barbarotti')) {
+              cleanList.unshift(MOCK_TENANTS[0]);
+            }
+
+            if (cleanList.length > 0) {
+              try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(cleanList)); } catch {}
+              return cleanList;
+            }
           }
         }
       } catch {}
@@ -399,14 +423,52 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_TENANTS;
   });
 
-  const [currentTenant, setCurrentTenant] = useState<Tenant>(() => {
+  const [pipelines, setPipelines] = useState<Pipeline[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_pipelines');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((p: Pipeline) => {
+              const isAmabilePipe = !p.tenantId || p.tenantId === 'tenant-amabile-barbarotti' || p.tenantId.includes('amabile') || p.tenantId.startsWith('tenant-17');
+              return {
+                ...p,
+                tenantId: isAmabilePipe ? 'tenant-amabile-barbarotti' : p.tenantId,
+              };
+            });
+          }
+        }
+      } catch {}
+    }
+    return MOCK_PIPELINES;
+  });
+
+  const [currentPipeline, setCurrentPipeline] = useState<Pipeline>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_current_pipeline');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0 && parsed.tenantId !== 'tenant-vanguard-01') return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_PIPELINES[0];
+  });
+
+  const [currentTenant, setCurrentTenantState] = useState<Tenant>(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('vanguard_crm_current_tenant');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.id !== 'tenant-horizonte-02' && parsed.id !== 'tenant-alphaville-03' && parsed.id !== 'tenant-vanguard-01') {
-            if (parsed.id === 'tenant-amabile-barbarotti') {
+            const isAmabile = parsed.id === 'tenant-amabile-barbarotti' || 
+                              parsed.slug === 'amabile-barbarotti' || 
+                              (parsed.name && parsed.name.toLowerCase().includes('amabile'));
+            if (isAmabile) {
+              parsed.id = 'tenant-amabile-barbarotti';
               parsed.featureFlags = {
                 ...(parsed.featureFlags || DEFAULT_FEATURE_FLAGS),
                 proposals: false,
@@ -423,6 +485,82 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
     return MOCK_TENANTS[0];
   });
+
+  const setCurrentTenant = (tenantOrFn: Tenant | ((prev: Tenant) => Tenant)) => {
+    setCurrentTenantState(prev => {
+      const raw = typeof tenantOrFn === 'function' ? tenantOrFn(prev) : tenantOrFn;
+      if (!raw) return prev;
+
+      const isAmabile = raw.id === 'tenant-amabile-barbarotti' || 
+                        raw.slug === 'amabile-barbarotti' || 
+                        (raw.name && raw.name.toLowerCase().includes('amabile'));
+      
+      const canonicalId = isAmabile ? 'tenant-amabile-barbarotti' : raw.id;
+      const foundInList = tenants.find(t => t.id === canonicalId) || (isAmabile ? MOCK_TENANTS[0] : null);
+
+      const resolvedFlags = isAmabile ? {
+        ...(foundInList?.featureFlags || raw.featureFlags || DEFAULT_FEATURE_FLAGS),
+        proposals: false,
+        asaasBilling: false,
+        campaigns: false,
+        automations: false,
+      } : {
+        ...DEFAULT_FEATURE_FLAGS,
+        ...(foundInList?.featureFlags || raw.featureFlags || {}),
+      };
+
+      const updated: Tenant = {
+        ...raw,
+        ...(foundInList || {}),
+        id: canonicalId,
+        featureFlags: resolvedFlags,
+      };
+
+      try {
+        localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(updated));
+      } catch {}
+
+      // Sincroniza pipeline imediatamente com o tenant selecionado
+      const matchingPipes = pipelines.filter(p => p.tenantId === canonicalId);
+      if (matchingPipes.length > 0) {
+        setCurrentPipeline(matchingPipes[0]);
+        try {
+          localStorage.setItem('vanguard_crm_current_pipeline', JSON.stringify(matchingPipes[0]));
+        } catch {}
+      }
+
+      return updated;
+    });
+  };
+
+  const scopedPipelines = useMemo(() => {
+    const pipes = pipelines.filter(p => p.tenantId === currentTenant.id);
+    if (pipes.length > 0) return pipes;
+
+    const defaultP: Pipeline = {
+      id: `pipe-${currentTenant.id}-default`,
+      tenantId: currentTenant.id,
+      name: 'Funil Geral de Vendas',
+      isDefault: true,
+      stages: [
+        { id: `stage-${currentTenant.id}-1`, pipelineId: `pipe-${currentTenant.id}-default`, name: '1. Novo Lead WhatsApp', order: 1, slaHours: 2, colorHex: '#3b82f6' },
+        { id: `stage-${currentTenant.id}-2`, pipelineId: `pipe-${currentTenant.id}-default`, name: '2. Primeiro Contato', order: 2, slaHours: 12, colorHex: '#6366f1' },
+        { id: `stage-${currentTenant.id}-3`, pipelineId: `pipe-${currentTenant.id}-default`, name: '3. Em Qualificação', order: 3, slaHours: 24, colorHex: '#8b5cf6' },
+        { id: `stage-${currentTenant.id}-4`, pipelineId: `pipe-${currentTenant.id}-default`, name: '4. Visita Agendada', order: 4, slaHours: 48, colorHex: '#d97706' },
+        { id: `stage-${currentTenant.id}-5`, pipelineId: `pipe-${currentTenant.id}-default`, name: '5. Proposta em Mesa', order: 5, slaHours: 48, colorHex: '#f59e0b' },
+        { id: `stage-${currentTenant.id}-6`, pipelineId: `pipe-${currentTenant.id}-default`, name: '6. Contrato Fechado', order: 6, slaHours: 0, colorHex: '#059669', isWon: true },
+        { id: `stage-${currentTenant.id}-7`, pipelineId: `pipe-${currentTenant.id}-default`, name: 'Perdido / Descarte', order: 7, slaHours: 0, colorHex: '#ef4444', isLost: true },
+      ]
+    };
+    return [defaultP];
+  }, [pipelines, currentTenant.id]);
+
+  const effectiveCurrentPipeline = useMemo(() => {
+    if (currentPipeline && currentPipeline.tenantId === currentTenant.id) {
+      return currentPipeline;
+    }
+    return scopedPipelines[0];
+  }, [currentPipeline, scopedPipelines, currentTenant.id]);
 
   const updateTenant = (updates: Partial<Tenant>) => {
     setCurrentTenant(prev => {
@@ -518,7 +656,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isFeatureEnabled = (feature: keyof TenantFeatureFlags): boolean => {
-    if (!currentTenant.featureFlags) return true; // Habilitado por padrão se não especificado
+    if (!currentTenant) return true;
+    const isAmabile = currentTenant.id === 'tenant-amabile-barbarotti' || 
+                      currentTenant.slug === 'amabile-barbarotti' || 
+                      (currentTenant.name && currentTenant.name.toLowerCase().includes('amabile'));
+
+    if (isAmabile) {
+      if (feature === 'proposals' || feature === 'asaasBilling' || feature === 'campaigns' || feature === 'automations') {
+        return currentTenant.featureFlags?.[feature] === true;
+      }
+    }
+
+    if (!currentTenant.featureFlags) return true;
     return currentTenant.featureFlags[feature] ?? true;
   };
 
@@ -944,11 +1093,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed = parsed
               .filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
-              .map((c: Contact) => ({
-                ...c,
-                isPersonal: c.isPersonal === true ? true : false,
-                targetRegions: (c.targetRegions || []).filter(r => r !== 'Região Metropolitana' && r !== 'São Paulo' && r !== 'Geral'),
-              }));
+              .map((c: Contact) => {
+                const isAmabileContact = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
+                return {
+                  ...c,
+                  tenantId: isAmabileContact ? 'tenant-amabile-barbarotti' : c.tenantId,
+                  isPersonal: c.isPersonal === true ? true : false,
+                  targetRegions: (c.targetRegions || []).filter(r => r !== 'Região Metropolitana' && r !== 'São Paulo' && r !== 'Geral'),
+                };
+              });
             return deduplicateContactList(parsed);
           }
         }
@@ -957,19 +1110,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return deduplicateContactList(MOCK_CONTACTS);
   });
 
-  const [pipelines, setPipelines] = useState<Pipeline[]>(MOCK_PIPELINES);
-  const [currentPipeline, setCurrentPipeline] = useState<Pipeline>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('vanguard_crm_current_pipeline');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0 && parsed.tenantId !== 'tenant-vanguard-01') return parsed;
-        }
-      } catch {}
-    }
-    return MOCK_PIPELINES[0];
-  });
   const [deals, setDeals] = useState<Deal[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -977,7 +1117,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((d: Deal) => d.tenantId !== 'tenant-vanguard-01');
+            parsed = parsed
+              .filter((d: Deal) => d.tenantId !== 'tenant-vanguard-01')
+              .map((d: Deal) => {
+                const isAmabileDeal = !d.tenantId || d.tenantId === 'tenant-amabile-barbarotti' || d.tenantId.includes('amabile') || d.tenantId.startsWith('tenant-17');
+                return {
+                  ...d,
+                  tenantId: isAmabileDeal ? 'tenant-amabile-barbarotti' : d.tenantId,
+                };
+              });
             return parsed;
           }
         }
@@ -992,7 +1140,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem('vanguard_crm_instances');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((inst: WhatsAppInstance) => {
+              const isAmabileInst = !inst.tenantId || inst.tenantId === 'tenant-amabile-barbarotti' || inst.tenantId.includes('amabile') || inst.tenantId.startsWith('tenant-17');
+              return {
+                ...inst,
+                tenantId: isAmabileInst ? 'tenant-amabile-barbarotti' : inst.tenantId,
+              };
+            });
+          }
         }
       } catch {}
     }
@@ -1094,10 +1250,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             parsed = parsed
               .filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }))
               .map((c: Conversation) => {
-                if (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) {
-                  return { ...c, lastMessagePreview: 'Conversa sincronizada via WhatsApp' };
-                }
-                return c;
+                const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
+                const cleanPreview = (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) ? 'Conversa sincronizada via WhatsApp' : c.lastMessagePreview;
+                return {
+                  ...c,
+                  tenantId: isAmabileConv ? 'tenant-amabile-barbarotti' : c.tenantId,
+                  isPersonal: c.isPersonal === true ? true : false,
+                  lastMessagePreview: cleanPreview,
+                };
               });
             return parsed;
           }
@@ -1772,7 +1932,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   // Manipulação de Deals / Kanban
   const moveDealStage = (dealId: string, targetStageId: string) => {
-    const stage = currentPipeline.stages.find(s => s.id === targetStageId);
+    const stage = effectiveCurrentPipeline.stages.find(s => s.id === targetStageId);
     setDeals(prev => {
       const updated = prev.map(deal => {
         if (deal.id === dealId) {
@@ -1804,8 +1964,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       id: `deal-${Date.now()}`,
       tenantId: currentTenant.id,
       contactId: contactId,
-      pipelineId: currentPipeline.id,
-      stageId: data.stageId || currentPipeline.stages[0].id,
+      pipelineId: effectiveCurrentPipeline.id,
+      stageId: data.stageId || effectiveCurrentPipeline.stages[0]?.id || 'stage-1',
       assignedUserId: data.assignedUserId || currentUser.id,
       title: data.title || 'Novo Negócio Imobiliário',
       expectedValue: data.expectedValue || 1000000,
@@ -1858,7 +2018,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const updatePipelineStages = (newStages: PipelineStage[]) => {
     const ordered = newStages.map((s, idx) => ({ ...s, order: idx + 1 }));
     const updatedPipeline: Pipeline = {
-      ...currentPipeline,
+      ...effectiveCurrentPipeline,
       stages: ordered,
     };
     setCurrentPipeline(updatedPipeline);
@@ -2806,13 +2966,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       };
       newContacts.push(newContact);
 
-      if (createDeals && currentPipeline?.stages?.[0]) {
-        const firstStage = currentPipeline.stages[0];
+      if (createDeals && effectiveCurrentPipeline?.stages?.[0]) {
+        const firstStage = effectiveCurrentPipeline.stages[0];
         newDeals.push({
           id: `deal-${Date.now()}-${clean.slice(-4)}`,
           tenantId: currentTenant.id,
           contactId,
-          pipelineId: currentPipeline.id,
+          pipelineId: effectiveCurrentPipeline.id,
           stageId: firstStage.id,
           title: `Interesse • ${newContact.name}`,
           expectedValue: Number(rec.maxPropertyValue) || 650000,
@@ -3567,35 +3727,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return deals.filter(d => d.tenantId === currentTenant.id);
   }, [deals, currentTenant.id]);
 
-  const scopedPipelines = useMemo(() => {
-    const pipes = pipelines.filter(p => p.tenantId === currentTenant.id);
-    if (pipes.length > 0) return pipes;
-
-    const defaultP: Pipeline = {
-      id: `pipe-${currentTenant.id}-default`,
-      tenantId: currentTenant.id,
-      name: 'Funil Geral de Vendas',
-      isDefault: true,
-      stages: [
-        { id: `stage-${currentTenant.id}-1`, pipelineId: `pipe-${currentTenant.id}-default`, name: '1. Novo Lead WhatsApp', order: 1, slaHours: 2, colorHex: '#3b82f6' },
-        { id: `stage-${currentTenant.id}-2`, pipelineId: `pipe-${currentTenant.id}-default`, name: '2. Primeiro Contato', order: 2, slaHours: 12, colorHex: '#6366f1' },
-        { id: `stage-${currentTenant.id}-3`, pipelineId: `pipe-${currentTenant.id}-default`, name: '3. Em Qualificação', order: 3, slaHours: 24, colorHex: '#8b5cf6' },
-        { id: `stage-${currentTenant.id}-4`, pipelineId: `pipe-${currentTenant.id}-default`, name: '4. Visita Agendada', order: 4, slaHours: 48, colorHex: '#d97706' },
-        { id: `stage-${currentTenant.id}-5`, pipelineId: `pipe-${currentTenant.id}-default`, name: '5. Proposta em Mesa', order: 5, slaHours: 48, colorHex: '#f59e0b' },
-        { id: `stage-${currentTenant.id}-6`, pipelineId: `pipe-${currentTenant.id}-default`, name: '6. Contrato Fechado', order: 6, slaHours: 0, colorHex: '#059669', isWon: true },
-        { id: `stage-${currentTenant.id}-7`, pipelineId: `pipe-${currentTenant.id}-default`, name: 'Perdido / Descarte', order: 7, slaHours: 0, colorHex: '#ef4444', isLost: true },
-      ]
-    };
-    return [defaultP];
-  }, [pipelines, currentTenant.id]);
-
-  const effectiveCurrentPipeline = useMemo(() => {
-    if (currentPipeline && currentPipeline.tenantId === currentTenant.id) {
-      return currentPipeline;
-    }
-    return scopedPipelines[0];
-  }, [currentPipeline, scopedPipelines, currentTenant.id]);
-
   const scopedTasks = useMemo(() => {
     return tasks.filter(t => t.tenantId === currentTenant.id);
   }, [tasks, currentTenant.id]);
@@ -3844,7 +3975,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       ? scopedDeals.find(d => d.id === dealId)
       : scopedDeals.find(d => d.contactId === contactId && d.status === 'OPEN');
 
-    const stage = deal ? currentPipeline.stages.find(s => s.id === deal.stageId) : undefined;
+    const stage = deal ? effectiveCurrentPipeline.stages.find(s => s.id === deal.stageId) : undefined;
 
     // Busca mensagens da conversa para identificar a última
     const convMessages = conv ? messages.filter(m => m.conversationId === conv.id) : [];

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { GoalsEngineModal } from './GoalsEngineModal';
 import { ContactUrgencyAnalysis } from '@/types/crm';
+import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 
 interface SalesDashboardProps {
   onOpenChat?: (contactId: string) => void;
@@ -99,8 +100,14 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
   const monthlyTargetVGV = currentGoals.monthlyVGV.target;
   const targetPercent = currentGoals.monthlyVGV.percentage;
 
-  // Leads com Mensagem Não Respondida (Apenas Comerciais)
-  const unreadConversations = conversations.filter(c => (c.unreadCount || 0) > 0 && commercialContactIds.has(c.contactId) && !c.isPersonal);
+  // Leads com Mensagem Não Respondida (Apenas Comerciais e Não Arquivadas)
+  const unreadConversations = conversations.filter(c => 
+    (c.unreadCount || 0) > 0 && 
+    commercialContactIds.has(c.contactId) && 
+    !c.isPersonal && 
+    !c.isArchived && 
+    !isWhatsAppChannelOrGroup(c)
+  );
 
   // Radar de Inatividade & Pareamento Emergencial
   const urgentRadar = getUrgentContactsRadar();

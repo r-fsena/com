@@ -3809,6 +3809,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   // -------------------------------------------------------------
   // MOTOR DE INATIVIDADE & PAREAMENTO EMERGENCIAL DE CONTATOS
   // -------------------------------------------------------------
+  const isCourteousClosingMessage = (text?: string | null): boolean => {
+    if (!text) return false;
+    const clean = text.toLowerCase().trim().replace(/[.,!?;:()_\-\n\r]/g, '');
+    const closings = [
+      'obrigado', 'obrigada', 'valeu', 'vlw', 'show', 'ok', 'blz', 'beleza', 
+      'combinado', 'fechado', 'perfeito', 'otimo', 'ótimo', 'tks', 'thanks', 
+      'tmj', 'certo', 'tudo bem', 'ta bom', 'tá bom', 'ate logo', 'até logo',
+      'bom dia', 'boa tarde', 'boa noite', 'opa', 'olá', 'ola', 'sim', 'nao', 'não',
+      'muito obrigado', 'muito obrigada', 'de nada', 'disponha', 'top'
+    ];
+    if (clean.length <= 18 && closings.includes(clean)) return true;
+    if (clean.length <= 4) return true;
+    return false;
+  };
+
   const getContactUrgencyAnalysis = (
     contactId: string, 
     dealId?: string, 
@@ -3816,12 +3831,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   ): ContactUrgencyAnalysis | null => {
     const contact = scopedContacts.find(c => c.id === contactId);
     if (!contact || contact.isPersonal) return null;
+    if (isWhatsAppChannelOrGroup(contact)) return null;
 
     const conv = conversationId 
       ? scopedConversations.find(c => c.id === conversationId)
       : scopedConversations.find(c => c.contactId === contactId);
 
-    if (conv?.isPersonal) return null;
+    if (conv?.isPersonal || conv?.isArchived) return null;
+    if (conv && isWhatsAppChannelOrGroup(conv)) return null;
 
     const deal = dealId 
       ? scopedDeals.find(d => d.id === dealId)
@@ -3861,10 +3878,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       formattedTimeAgo = `há ${diffDays}d`;
     }
 
-    // Verifica se a última mensagem foi enviada pelo cliente e não respondida
+    // Critério Real de "No Vácuo":
+    // 1) Tem mensagens NÃO LIDAS pendentes (unreadCount > 0) e não é conversa arquivada
+    // 2) OU mensagem recente (menos de 24h) com remetente CONTACT, sem resposta da equipe e que NÃO seja mera cortesia de encerramento
     const hasUnread = conv ? (conv.unreadCount || 0) > 0 : false;
     const isLastFromContact = lastMsg ? lastMsg.senderType === 'CONTACT' : hasUnread;
-    const isUnansweredByTeam = isLastFromContact;
+    const isClosing = isCourteousClosingMessage(lastMsg?.content);
+    
+    const isUnansweredByTeam = (diffDays < 7) && isLastFromContact && (
+      hasUnread || (diffHours < 24 && !isClosing)
+    );
     const unansweredMinutes = isUnansweredByTeam ? diffMinutes : 0;
 
     let urgencyLevel: InactivityUrgencyLevel = 'HEALTHY';
@@ -3872,7 +3895,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     let urgencyReason = 'Interação recente em dia';
     let suggestedAction = 'Acompanhamento normal';
 
-    // REGRA 1: CLIENTE AGUARDANDO RESPOSTA (NO VÁCUO)
+    // REGRA 1: CLIENTE AGUARDANDO RESPOSTA (NO VÁCUO REAL)
     if (isUnansweredByTeam) {
       if (diffHours >= 2) {
         urgencyLevel = 'CRITICAL_UNANSWERED';
@@ -3891,9 +3914,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         suggestedAction = 'Responder quando possível';
       }
     }
-    // REGRA 2: NEGOCIAÇÃO PARADA / ESFRIANDO NO FUNIL
+    // REGRA 2: NEGOCIAÇÃO PARADA / ESFRIANDO NO FUNIL (APENAS NEGÓCIOS ABERTOS)
     else if (deal && deal.status === 'OPEN') {
-      const isHotStage = stage?.id === 'stage-6' || stage?.id === 'stage-5'; // Proposta em Mesa ou Visita
+      const isHotStage = stage?.id === 'stage-6' || stage?.id === 'stage-5' || stage?.name?.toLowerCase().includes('proposta') || stage?.name?.toLowerCase().includes('visita');
       if (isHotStage) {
         if (diffHours >= 48) {
           urgencyLevel = 'HIGH_STALE_DEAL';
@@ -3921,12 +3944,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    // REGRA 3: CONTATO SEM NEGÓCIO ABERTO MAS COM INATIVIDADE PROLONGADA
-    else if (diffDays >= 10) {
-      urgencyLevel = 'MEDIUM_FOLLOW_UP';
-      urgencyScore = 40;
-      urgencyReason = `Contato inativo ${formattedTimeAgo}`;
-      suggestedAction = 'Disparar oportunidade ou novidade';
+    // REGRA 3: NOVO LEAD RECÉM-CRIADO SEM PRIMEIRO ATENDIMENTO
+    else if (!contact.lastTeamInteractionAt && diffHours >= 2 && diffDays <= 5) {
+      urgencyLevel = 'CRITICAL_UNANSWERED';
+      urgencyScore = 85;
+      urgencyReason = `Novo lead aguardando primeiro contato ${formattedTimeAgo}`;
+      suggestedAction = 'Realizar primeiro contato no WhatsApp imediatamente';
     }
 
     return {
@@ -3981,8 +4004,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const list: ContactUrgencyAnalysis[] = [];
     const seenContactIds = new Set<string>();
 
-    // 1. Analisa conversas ativas
+    // 1. Analisa conversas ativas (ignora arquivadas, grupos, canais e pessoais)
     scopedConversations.forEach(conv => {
+      if (conv.isArchived || conv.isPersonal) return;
+      if (isWhatsAppChannelOrGroup(conv)) return;
+
       const analysis = getContactUrgencyAnalysis(conv.contactId, undefined, conv.id);
       if (analysis && analysis.urgencyLevel !== 'HEALTHY') {
         list.push(analysis);
@@ -3999,6 +4025,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (analysis && analysis.urgencyLevel !== 'HEALTHY') {
         list.push(analysis);
         seenContactIds.add(deal.contactId);
+      }
+    });
+
+    // 3. Analisa novos leads cadastrados recentemente sem negócio
+    scopedContacts.forEach(contact => {
+      if (contact.isPersonal) return;
+      if (seenContactIds.has(contact.id)) return;
+      if (isWhatsAppChannelOrGroup(contact)) return;
+
+      if (!contact.lastTeamInteractionAt) {
+        const analysis = getContactUrgencyAnalysis(contact.id);
+        if (analysis && analysis.urgencyLevel !== 'HEALTHY') {
+          list.push(analysis);
+          seenContactIds.add(contact.id);
+        }
       }
     });
 

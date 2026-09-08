@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
-import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier } from '@/lib/whatsapp-filter';
 
 export async function processZapiWebhookRequest(
   request: NextRequest,
@@ -26,49 +26,67 @@ export async function processZapiWebhookRequest(
     // 1. Extração robusta de LID e Telefone Real do contato
     let lid = '';
     if (body.lid) {
-      lid = String(body.lid).replace(/@.*$/, '').replace(/\D/g, '');
+      lid = cleanLid(body.lid);
     } else if (String(body.phone || '').includes('@lid')) {
-      lid = String(body.phone).replace(/@.*$/, '').replace(/\D/g, '');
+      lid = cleanLid(body.phone);
     } else if (String(body.chatId || '').includes('@lid')) {
-      lid = String(body.chatId).replace(/@.*$/, '').replace(/\D/g, '');
+      lid = cleanLid(body.chatId);
     }
 
     let realPhoneCandidate = body.chatPhone 
-      || (!String(body.phone || '').includes('@lid') ? body.phone : '')
-      || (!String(body.senderPhone || '').includes('@lid') ? body.senderPhone : '')
-      || (!String(body.recipientPhone || '').includes('@lid') ? body.recipientPhone : '')
-      || (!String(body.to || '').includes('@lid') ? body.to : '')
-      || (!String(body.chatId || '').includes('@lid') ? body.chatId : '')
-      || (!String(body.from || '').includes('@lid') ? body.from : '')
-      || (body.data && (body.data.chatPhone || (!String(body.data.phone || '').includes('@lid') ? body.data.phone : '') || body.data.senderPhone))
+      || (!isLidIdentifier(body.phone) ? body.phone : '')
+      || (!isLidIdentifier(body.senderPhone) ? body.senderPhone : '')
+      || (!isLidIdentifier(body.recipientPhone) ? body.recipientPhone : '')
+      || (!isLidIdentifier(body.to) ? body.to : '')
+      || (!isLidIdentifier(body.chatId) ? body.chatId : '')
+      || (!isLidIdentifier(body.from) ? body.from : '')
+      || (body.data && (body.data.chatPhone || (!isLidIdentifier(body.data.phone) ? body.data.phone : '') || body.data.senderPhone))
       || '';
 
     let cleanPhone = String(realPhoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
 
     // Se chatPhone estiver presente com número completo
-    if (body.chatPhone) {
+    if (body.chatPhone && !isLidIdentifier(body.chatPhone)) {
       const p = String(body.chatPhone).replace(/\D/g, '');
       if (p.length >= 10 && !p.startsWith('1397')) cleanPhone = p;
     }
 
-    // Se o telefone não começar com 55 e tiver 10 ou 11 dígitos (formato BR com DDD), normaliza com 55
+    // Normaliza telefone nacional (DDI 55)
     if (cleanPhone && !cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
       cleanPhone = `55${cleanPhone}`;
     }
 
-    // Se o telefone ainda estiver vazio mas temos um LID, busca no serverCRMStore pelo telefone real desse LID
-    if (!cleanPhone && lid) {
-      const serverState = serverCRMStore.getState();
-      const existingContact = serverState.contacts?.find((c: any) => c.lid?.replace(/\D/g, '') === lid || c.phone?.replace(/\D/g, '') === lid);
-      if (existingContact && existingContact.phone && !existingContact.phone.replace(/\D/g, '').startsWith('1397')) {
-        cleanPhone = existingContact.phone.replace(/\D/g, '');
+    // Se temos tanto o telefone real quanto o LID, registra imediatamente no mapa global
+    if (cleanPhone && lid && !isLidIdentifier(cleanPhone)) {
+      serverCRMStore.registerLidPhone(lid, cleanPhone);
+    }
+
+    // Se o telefone estiver vazio ou for um LID, resolve para o telefone canônico
+    if ((!cleanPhone || isLidIdentifier(cleanPhone)) && lid) {
+      const resolved = serverCRMStore.resolvePhoneFromLid(lid);
+      if (resolved) {
+        cleanPhone = resolved;
       } else {
-        cleanPhone = lid;
+        // Tenta localizar contato por pushName/chatName se não tiver mapeamento
+        const serverState = serverCRMStore.getState();
+        const contactByName = serverState.contacts.find(c => 
+          c.name && body.senderName && 
+          !c.name.startsWith('+') && 
+          !body.senderName.startsWith('+') &&
+          c.name.toLowerCase().trim() === body.senderName.toLowerCase().trim() &&
+          c.phone && !isLidIdentifier(c.phone)
+        );
+        if (contactByName && contactByName.phone) {
+          cleanPhone = contactByName.phone.replace(/\D/g, '');
+          serverCRMStore.registerLidPhone(lid, cleanPhone);
+        } else {
+          cleanPhone = cleanPhone || lid;
+        }
       }
     }
 
     // 1.1 Ignora canais, newsletters, grupos e transmissões do WhatsApp
-    if (isWhatsAppChannelOrGroup(body) || isWhatsAppChannelOrGroup({ phone: cleanPhone, id: body.chatId || body.messageId })) {
+    if (isWhatsAppChannelOrGroup(body) || isWhatsAppChannelOrGroup({ phone: cleanPhone, id: body.chatId || body.messageId, lid })) {
       return NextResponse.json({
         received: true,
         ignored: true,
@@ -182,12 +200,26 @@ export async function processZapiWebhookRequest(
         timestamp: new Date().toISOString(),
       });
 
-      // Atualiza também no serverCRMStore
+      const canonicalConvId = `conv-zapi-${cleanPhone}`;
+
+      // Atualiza também no serverCRMStore unificando conversa e mensagem
       serverCRMStore.updateState({
+        conversations: [{
+          id: canonicalConvId,
+          tenantId,
+          instanceId,
+          contactId: `contact-zapi-${cleanPhone}`,
+          status: fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
+          unreadCount: fromMe ? 0 : 1,
+          lastMessagePreview: content.substring(0, 100),
+          lastMessageAt: new Date().toISOString(),
+          slaBreached: false,
+          isPersonal: false,
+        }],
         messages: [{
           id: messageId,
           tenantId,
-          conversationId: `conv-zapi-${cleanPhone}`,
+          conversationId: canonicalConvId,
           senderType: fromMe ? 'USER' : 'CONTACT',
           senderName,
           messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,

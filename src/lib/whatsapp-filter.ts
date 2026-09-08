@@ -232,3 +232,53 @@ export function isWhatsAppSystemMessage(text?: string | null): boolean {
   return false;
 }
 
+/**
+ * Detecta se uma string ou identificador representa um WhatsApp Linked Identity (LID).
+ * Identifica tanto o sufixo '@lid' quanto sequências numéricas de 14+ dígitos fora do padrão E.164.
+ */
+export function isLidIdentifier(val: string | undefined | null): boolean {
+  if (!val) return false;
+  const str = String(val).trim().toLowerCase();
+  if (str.includes('@lid') || str.includes('_lid')) return true;
+
+  const digits = str.replace(/\D/g, '');
+  // Telefones brasileiros têm no máximo 13 dígitos (55 + 2 DDD + 9 dígitos).
+  // LIDs do WhatsApp Multi-Device têm 14 a 18 dígitos.
+  if (digits.length >= 14) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Extrai apenas os dígitos limpos do WhatsApp LID.
+ */
+export function cleanLid(val: string | undefined | null): string {
+  if (!val) return '';
+  return String(val).replace(/@.*$/, '').replace(/\D/g, '');
+}
+
+/**
+ * Formata um número de telefone com máscara visual padrão brasileira (+55 (DD) 9XXXX-XXXX).
+ */
+export function formatCanonicalPhone(phone: string | undefined | null): string {
+  if (!phone) return '';
+  let digits = String(phone).replace(/\D/g, '');
+  if (!digits) return '';
+
+  if (isLidIdentifier(digits)) {
+    return `LID ${digits}`;
+  }
+
+  if (digits.startsWith('55') && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.length === 11) {
+    return `+55 (${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  } else if (digits.length === 10) {
+    return `+55 (${digits.slice(0, 2)}) 9${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  return `+${digits}`;
+}

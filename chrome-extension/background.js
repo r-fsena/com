@@ -178,19 +178,38 @@ async function handleGetAiSuggestion(data) {
 }
 
 async function handleResolveContact({ name, lid }) {
-  if (!name) return null;
-  const normName = name.toLowerCase().trim();
+  const normName = name ? name.toLowerCase().trim() : '';
+  const cleanL = lid ? String(lid).replace(/@.*$/, '').replace(/\D/g, '') : '';
 
-  // 1. Checa cache local sincronizado pelo crm-bridge
+  // 1. Checa mapa persistente de LID <-> Telefone
   try {
-    const storage = await chrome.storage.local.get(['brokivaCrmContacts']);
+    const storage = await chrome.storage.local.get(['brokiva_lid_phone_map', 'brokivaCrmContacts']);
+    const lidMap = storage.brokiva_lid_phone_map || {};
+    if (cleanL && lidMap[cleanL]) {
+      const p = lidMap[cleanL];
+      return { phone: p, lid: cleanL, name: name || 'Contato' };
+    }
+
+    // 2. Checa contatos sincronizados pelo crm-bridge por LID ou Nome
     const cached = storage.brokivaCrmContacts || [];
     if (Array.isArray(cached) && cached.length > 0) {
-      const found = cached.find(c => c.name && c.name.toLowerCase().trim() === normName);
-      if (found && found.phone) {
-        const clean = found.phone.replace(/\D/g, '');
-        if (clean.length >= 10 && clean.length <= 13) {
-          return { phone: clean, lid: found.lid || lid, name: found.name };
+      if (cleanL) {
+        const foundByLid = cached.find(c => (c.lid && c.lid.replace(/\D/g, '') === cleanL) || (c.phone && c.phone.replace(/\D/g, '') === cleanL));
+        if (foundByLid && foundByLid.phone) {
+          const clean = foundByLid.phone.replace(/\D/g, '');
+          if (clean.length >= 10 && clean.length <= 13) {
+            return { phone: clean, lid: cleanL, name: foundByLid.name || name };
+          }
+        }
+      }
+
+      if (normName) {
+        const found = cached.find(c => c.name && c.name.toLowerCase().trim() === normName);
+        if (found && found.phone) {
+          const clean = found.phone.replace(/\D/g, '');
+          if (clean.length >= 10 && clean.length <= 13) {
+            return { phone: clean, lid: found.lid || lid, name: found.name };
+          }
         }
       }
     }

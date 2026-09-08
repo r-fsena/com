@@ -359,6 +359,46 @@
     );
   }
 
+  // Mapeamento em memória e persistente de WhatsApp LID <-> Telefone Canônico
+  const inMemoryLidPhoneMap = new Map();
+
+  try {
+    chrome.storage.local.get(['brokiva_lid_phone_map'], (res) => {
+      if (res?.brokiva_lid_phone_map) {
+        Object.entries(res.brokiva_lid_phone_map).forEach(([l, p]) => {
+          inMemoryLidPhoneMap.set(l, p);
+        });
+      }
+    });
+  } catch (e) {}
+
+  function rememberLidPhone(lid, phone) {
+    if (!lid || !phone) return;
+    const cleanL = String(lid).replace(/@.*$/, '').replace(/\D/g, '');
+    const cleanP = String(phone).replace(/\D/g, '');
+    if (cleanL && cleanP && cleanP.length >= 8 && cleanP.length <= 13) {
+      inMemoryLidPhoneMap.set(cleanL, cleanP);
+      try {
+        chrome.storage.local.get(['brokiva_lid_phone_map'], (res) => {
+          const map = res?.brokiva_lid_phone_map || {};
+          map[cleanL] = cleanP;
+          chrome.storage.local.set({ brokiva_lid_phone_map: map });
+        });
+      } catch (e) {}
+    }
+  }
+
+  function formatPhoneDisplay(raw) {
+    if (!raw) return '';
+    const digits = String(raw).replace(/\D/g, '');
+    if (digits.length >= 14) return `LID ${digits}`;
+    if (digits.length === 11) return `+55 (${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    if (digits.length === 10) return `+55 (${digits.slice(0, 2)}) 9${digits.slice(2, 6)}-${digits.slice(6)}`;
+    if (digits.startsWith('55') && digits.length === 13) return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+    if (digits.startsWith('55') && digits.length === 12) return `+55 (${digits.slice(2, 4)}) 9${digits.slice(4, 8)}-${digits.slice(8)}`;
+    return `+${digits}`;
+  }
+
   // 2. Extrai dados da conversa ativa no WhatsApp Web
   function extractActiveChatData() {
     const main = document.querySelector('#main');
@@ -445,9 +485,20 @@
       }
     }
 
-    // Se ainda não tiver telefone mas tem LID, usa os dígitos do LID temporariamente
-    if (!resolvedPhone && resolvedLid) {
-      resolvedPhone = resolvedLid.replace(/\D/g, '');
+    // Se tiver LID, tenta recuperar o telefone canônico do mapa ou usa o LID temporariamente
+    if (resolvedLid) {
+      const pureL = resolvedLid.replace(/@.*$/, '').replace(/\D/g, '');
+      if (!resolvedPhone && pureL) {
+        const fromMap = inMemoryLidPhoneMap.get(pureL);
+        if (fromMap) {
+          resolvedPhone = fromMap;
+        }
+      }
+      if (resolvedPhone && resolvedPhone.length <= 13) {
+        rememberLidPhone(pureL, resolvedPhone);
+      } else if (!resolvedPhone) {
+        resolvedPhone = pureL;
+      }
     }
 
     currentActivePhone = resolvedPhone;
@@ -604,14 +655,28 @@
 
     const chatData = extractActiveChatData();
     if (chatData && chatData.phone) {
+      const isLidOnly = chatData.phone.length >= 14;
       const sig = `${chatData.phone}-${chatData.messages.length}`;
       if (lastLeadSignature !== sig) {
         lastLeadSignature = sig;
         nameElem.innerText = chatData.name || 'Contato WhatsApp';
-        phoneElem.innerText = `+${chatData.phone} (${chatData.messages.length} msgs carregadas)`;
+        phoneElem.innerText = isLidOnly 
+          ? `Identificando telefone (${chatData.messages.length} msgs carregadas)...`
+          : `${formatPhoneDisplay(chatData.phone)} (${chatData.messages.length} msgs carregadas)`;
         if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
         if (syncCurrentBtn) {
           syncCurrentBtn.innerHTML = `<span>📥 Salvar ${chatData.messages.length} Mensagens no CRM</span>`;
+        }
+
+        // Se o identificador for um LID, resolve para o telefone real em segundo plano e atualiza a UI
+        if (isLidOnly) {
+          resolvePhoneFromCrmIfLid(chatData.name, chatData.phone).then(realPhone => {
+            if (realPhone && realPhone.length <= 13) {
+              chatData.phone = realPhone;
+              currentActivePhone = realPhone;
+              phoneElem.innerText = `${formatPhoneDisplay(realPhone)} (${chatData.messages.length} msgs carregadas)`;
+            }
+          }).catch(() => {});
         }
       }
     } else {
@@ -664,13 +729,13 @@
 
   async function extractPhoneFromContactDrawer() {
     try {
-      const headerBtn = document.querySelector('#main header div[role="button"], #main header span[title]');
+      const headerBtn = document.querySelector('#main header div[role="button"], #main header div[tabindex="0"], #main header span[title]');
       if (!headerBtn) return null;
 
       headerBtn.click();
-      await new Promise(r => setTimeout(r, 380));
+      await new Promise(r => setTimeout(r, 450));
 
-      const sidePanel = document.querySelector('div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"]');
+      const sidePanel = document.querySelector('div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"], div[data-testid="chat-info-drawer"]');
       let foundPhone = null;
       if (sidePanel) {
         const text = sidePanel.innerText || '';
@@ -682,7 +747,8 @@
       }
 
       const closeBtn = document.querySelector('div[tabindex="-1"] span[data-icon="x"]')?.closest('button') ||
-                       document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar"], div[tabindex="-1"] button[aria-label*="Close"]');
+                       document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar"], div[tabindex="-1"] button[aria-label*="Close"]') ||
+                       document.querySelector('[data-testid="btn-closer"]');
       if (closeBtn) closeBtn.click();
       await new Promise(r => setTimeout(r, 150));
 
@@ -736,8 +802,10 @@
     try {
       const drawerPhone = await extractPhoneFromContactDrawer();
       if (drawerPhone && drawerPhone.length >= 10 && drawerPhone.length <= 13) {
-        console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para ${contactName}: ${drawerPhone}`);
-        return drawerPhone.startsWith('55') ? drawerPhone : `55${drawerPhone}`;
+        const fullPhone = drawerPhone.startsWith('55') ? drawerPhone : `55${drawerPhone}`;
+        rememberLidPhone(phoneOrLid, fullPhone);
+        console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para ${contactName}: ${fullPhone}`);
+        return fullPhone;
       }
     } catch (e) {}
 

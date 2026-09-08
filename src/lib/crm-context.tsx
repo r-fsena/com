@@ -56,7 +56,16 @@ import {
   MOCK_MASTER_USERS,
   MOCK_SAAS_API_CONFIG
 } from './mock-data';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, canonicalPhoneKey, arePhonesEquivalent, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
+import { 
+  isWhatsAppChannelOrGroup, 
+  isRealWhatsAppConversation, 
+  canonicalPhoneKey, 
+  arePhonesEquivalent, 
+  isWhatsAppSystemMessage,
+  isLidIdentifier,
+  cleanLid,
+  formatCanonicalPhone
+} from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 interface CRMContextType {
@@ -240,9 +249,7 @@ export function normalizePhoneKey(phone: string | undefined): string {
 }
 
 export function isLidNumber(phoneOrId: string | undefined): boolean {
-  if (!phoneOrId) return false;
-  const digits = phoneOrId.replace(/\D/g, '');
-  return digits.length >= 14 && (digits.startsWith('13') || digits.startsWith('14') || digits.startsWith('26') || digits.startsWith('90') || digits.startsWith('107') || digits.startsWith('64'));
+  return isLidIdentifier(phoneOrId);
 }
 
 export function deduplicateContactList(list: Contact[]): Contact[] {
@@ -254,37 +261,38 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
 
   list.forEach(contact => {
     if (!contact) return;
-    const clean = contact.phone.replace(/\D/g, '');
-    const isLid = isLidNumber(clean);
-    
-    // Se o contato foi salvo com LID no campo de telefone, extrai para contact.lid
-    if (isLid && !contact.lid) {
-      contact.lid = clean;
+    const isPhoneLid = isLidIdentifier(contact.phone);
+    const pureLid = cleanLid(contact.lid || (isPhoneLid ? contact.phone : ''));
+
+    // Se o contato foi salvo com LID no campo de telefone, preserva no campo lid
+    if (pureLid && !contact.lid) {
+      contact.lid = pureLid;
     }
 
-    const pKey = !isLid ? normalizePhoneKey(contact.phone) : '';
-    const lidKey = contact.lid ? contact.lid.replace(/\D/g, '') : (isLid ? clean : '');
+    const pKey = !isPhoneLid ? canonicalPhoneKey(contact.phone) : '';
     const normName = contact.name && !contact.name.startsWith('+') && !contact.name.startsWith('WhatsApp') && contact.name !== 'Lead WhatsApp' && contact.name !== 'Cliente'
       ? contact.name.toLowerCase().trim()
       : '';
 
     const existing = (pKey ? phoneMap.get(pKey) : null) 
-      || (lidKey ? lidMap.get(lidKey) : null) 
+      || (pureLid ? lidMap.get(pureLid) : null) 
       || idMap.get(contact.id)
       || (normName ? nameMap.get(normName) : null);
 
     if (existing) {
-      // Prefere o telefone real (não-LID e não-sintético gerado por hash legado)
-      const existingIsLid = isLidNumber(existing.phone);
+      const existingIsLid = isLidIdentifier(existing.phone);
       const isSyntheticA = existing.phone && (existing.phone.includes('554863562855') || existing.id.includes('554863562855'));
       const isSyntheticB = contact.phone && (contact.phone.includes('554863562855') || contact.id.includes('554863562855'));
 
+      // Prefere SEMPRE o telefone real
       const chosenPhone = (!existingIsLid && !isSyntheticA && existing.phone) 
         ? existing.phone 
-        : ((!isLid && !isSyntheticB && contact.phone) ? contact.phone : existing.phone);
+        : ((!isPhoneLid && !isSyntheticB && contact.phone) ? contact.phone : existing.phone);
 
-      const chosenLid = existing.lid || contact.lid || (existingIsLid ? existing.phone.replace(/\D/g, '') : (isLid ? clean : undefined));
-      const chosenId = chosenPhone && !isLidNumber(chosenPhone) && !isSyntheticA ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` : existing.id;
+      const chosenLid = cleanLid(existing.lid || pureLid || (existingIsLid ? existing.phone : '')) || undefined;
+      const chosenId = chosenPhone && !isLidIdentifier(chosenPhone) && !isSyntheticA 
+        ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` 
+        : existing.id;
 
       const merged: Contact = {
         ...existing,
@@ -305,20 +313,29 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         assignedUserId: existing.assignedUserId || contact.assignedUserId,
       };
 
-      const realPKey = normalizePhoneKey(chosenPhone);
-      if (realPKey && !isLidNumber(chosenPhone)) phoneMap.set(realPKey, merged);
-      if (chosenLid) lidMap.set(chosenLid.replace(/\D/g, ''), merged);
+      const realPKey = canonicalPhoneKey(chosenPhone);
+      if (realPKey && !isLidIdentifier(chosenPhone)) phoneMap.set(realPKey, merged);
+      if (chosenLid) lidMap.set(chosenLid, merged);
       if (normName) nameMap.set(normName, merged);
       idMap.set(merged.id, merged);
 
-      const idx = result.findIndex(c => c.id === existing.id || c.id === contact.id);
+      const idx = result.findIndex(c => c.id === existing.id || c.id === contact.id || c.id === merged.id);
       if (idx >= 0) result[idx] = merged;
     } else {
-      if (pKey) phoneMap.set(pKey, contact);
-      if (lidKey) lidMap.set(lidKey, contact);
-      if (normName) nameMap.set(normName, contact);
-      idMap.set(contact.id, contact);
-      result.push(contact);
+      const finalLid = pureLid || (isPhoneLid ? cleanLid(contact.phone) : undefined);
+      const withTimestamps: Contact = {
+        ...contact,
+        lid: finalLid,
+        isPersonal: contact.isPersonal ?? false,
+        firstSyncedAt: contact.firstSyncedAt || new Date().toISOString(),
+        lastSyncedAt: contact.lastSyncedAt || new Date().toISOString(),
+      };
+
+      if (pKey) phoneMap.set(pKey, withTimestamps);
+      if (finalLid) lidMap.set(finalLid, withTimestamps);
+      if (normName) nameMap.set(normName, withTimestamps);
+      idMap.set(contact.id, withTimestamps);
+      result.push(withTimestamps);
     }
   });
 
@@ -1315,9 +1332,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
-  // Função para remover mensagens duplicadas, limpar placeholders genéricos, avisos de sistema e corrigir lado do remetente
-  const deduplicateMessages = (msgs: Message[]): Message[] => {
+  // Função para remover mensagens duplicadas, higienizar avisos de sistema e unificar mensagens de LID e Telefone Canônico
+  const deduplicateMessages = (msgs: Message[], contactList?: Contact[]): Message[] => {
     const map = new Map<string, Message>();
+    const currentContacts = contactList || contacts || [];
+
+    // Mapeamento de LID -> Telefone Canônico para unificar as mensagens sob a mesma conversa
+    const lidToPhone = new Map<string, string>();
+    currentContacts.forEach(c => {
+      if (c.lid && c.phone && !isLidIdentifier(c.phone)) {
+        const clean = c.phone.replace(/\D/g, '');
+        lidToPhone.set(cleanLid(c.lid), clean.startsWith('55') ? clean : `55${clean}`);
+      }
+    });
+
     msgs.forEach(m => {
       const content = (m.content || '').trim();
       if (
@@ -1334,21 +1362,106 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       ) {
         return;
       }
+
+      // Reatribui conversationId caso seja de um LID conhecido, para fundir na conversa do telefone
+      let convId = m.conversationId;
+      const rawDigits = convId.replace(/\D/g, '');
+      if (isLidIdentifier(rawDigits)) {
+        const mapped = lidToPhone.get(cleanLid(rawDigits));
+        if (mapped) {
+          convId = `conv-zapi-${mapped}`;
+        }
+      }
+
+      const normalizedMsg: Message = convId !== m.conversationId ? { ...m, conversationId: convId } : m;
       const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
-      const key = `${m.conversationId}-${content}-${timeKey}`;
+      const key = `${convId}-${content}-${timeKey}`;
       const existing = map.get(key);
 
       if (!existing) {
-        map.set(key, m);
+        map.set(key, normalizedMsg);
       } else {
         // Se a mensagem já existia marcada erroneamente como CONTACT e agora veio como USER, corrige para USER!
-        if (existing.senderType === 'CONTACT' && m.senderType === 'USER') {
-          map.set(key, m);
+        if (existing.senderType === 'CONTACT' && normalizedMsg.senderType === 'USER') {
+          map.set(key, normalizedMsg);
         }
       }
     });
 
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+  };
+
+  // Função para deduplicar e fundir conversas de LID e Telefone Canônico no Feed
+  const deduplicateConversations = (convList: Conversation[], contactList?: Contact[]): Conversation[] => {
+    const map = new Map<string, Conversation>();
+    const currentContacts = contactList || contacts || [];
+
+    const contactByPhone = new Map<string, Contact>();
+    const contactByLid = new Map<string, Contact>();
+    const contactById = new Map<string, Contact>();
+
+    currentContacts.forEach(c => {
+      contactById.set(c.id, c);
+      if (c.phone && !isLidIdentifier(c.phone)) {
+        contactByPhone.set(canonicalPhoneKey(c.phone), c);
+      }
+      if (c.lid) {
+        contactByLid.set(cleanLid(c.lid), c);
+      }
+    });
+
+    convList.forEach(conv => {
+      if (!conv) return;
+      const rawDigits = conv.id.replace(/\D/g, '');
+      const isLid = isLidIdentifier(rawDigits);
+
+      let contact = contactById.get(conv.contactId);
+      if (!contact && isLid) {
+        contact = contactByLid.get(cleanLid(rawDigits));
+      }
+      if (!contact && rawDigits) {
+        contact = contactByPhone.get(canonicalPhoneKey(rawDigits));
+      }
+
+      const canonicalPhone = contact?.phone && !isLidIdentifier(contact.phone)
+        ? contact.phone.replace(/\D/g, '')
+        : (contact?.phone ? contact.phone.replace(/\D/g, '') : rawDigits);
+
+      const canonicalConvId = canonicalPhone ? `conv-zapi-${canonicalPhone}` : conv.id;
+      const cleanPreview = (conv.lastMessagePreview && isWhatsAppSystemMessage(conv.lastMessagePreview))
+        ? 'Conversa sincronizada via WhatsApp'
+        : conv.lastMessagePreview;
+
+      const existing = map.get(canonicalConvId);
+      if (existing) {
+        const timeA = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
+        const timeB = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+        const useNewer = timeB > timeA;
+
+        map.set(canonicalConvId, {
+          ...existing,
+          ...conv,
+          id: canonicalConvId,
+          contactId: contact?.id || existing.contactId || conv.contactId,
+          lastMessagePreview: useNewer ? (cleanPreview || existing.lastMessagePreview) : existing.lastMessagePreview,
+          lastMessageAt: useNewer ? conv.lastMessageAt : existing.lastMessageAt,
+          unreadCount: Math.max(existing.unreadCount || 0, conv.unreadCount || 0),
+        });
+      } else {
+        map.set(canonicalConvId, {
+          ...conv,
+          id: canonicalConvId,
+          contactId: contact?.id || conv.contactId,
+          lastMessagePreview: cleanPreview,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return timeB - timeA;
+    });
   };
 
   // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima e novos dispositivos)
@@ -1476,35 +1589,29 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         console.log('[Brokiva CRM] Mensagens sincronizadas recebidas da extensão:', event.data.data);
         const { messages: incomingMsgs, contacts: incomingContacts, conversations: incomingConvs } = event.data.data;
 
-        if (Array.isArray(incomingMsgs) && incomingMsgs.length > 0) {
-          setMessages(prev => {
-            const merged = deduplicateMessages([...prev, ...incomingMsgs]);
-            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
-            return merged;
+        let mergedContacts = contacts;
+        if (Array.isArray(incomingContacts) && incomingContacts.length > 0) {
+          setContacts(prev => {
+            const next = deduplicateContactList([...prev, ...incomingContacts]);
+            mergedContacts = next;
+            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(next)); } catch {}
+            return next;
           });
         }
 
-        if (Array.isArray(incomingContacts) && incomingContacts.length > 0) {
-          setContacts(prev => {
-            const merged = deduplicateContactList([...prev, ...incomingContacts]);
-            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
+        if (Array.isArray(incomingMsgs) && incomingMsgs.length > 0) {
+          setMessages(prev => {
+            const merged = deduplicateMessages([...prev, ...incomingMsgs], mergedContacts);
+            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
             return merged;
           });
         }
 
         if (Array.isArray(incomingConvs) && incomingConvs.length > 0) {
           setConversations(prev => {
-            const map = new Map(prev.map(c => [c.id, c]));
-            incomingConvs.forEach((c: any) => {
-              const existing = map.get(c.id);
-              const preview = (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview))
-                ? 'Conversa sincronizada via WhatsApp'
-                : c.lastMessagePreview;
-              map.set(c.id, existing ? { ...existing, ...c, lastMessagePreview: preview || existing.lastMessagePreview } : { ...c, lastMessagePreview: preview });
-            });
-            const updated = Array.from(map.values());
-            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
-            return updated;
+            const merged = deduplicateConversations([...prev, ...incomingConvs], mergedContacts);
+            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
+            return merged;
           });
         }
       }

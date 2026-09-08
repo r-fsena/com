@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
-import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage, isLidIdentifier, cleanLid } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { validateApiSession } from '@/lib/api-auth';
@@ -77,26 +77,34 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
 
     for (const chat of chats) {
-      const rawDigits = chat.phone.replace(/\D/g, '');
+      let rawDigits = chat.phone.replace(/\D/g, '');
       if (!rawDigits || rawDigits.length < 8) continue;
-      if (isWhatsAppChannelOrGroup({ phone: rawDigits, name: chat.name })) continue;
+      if (isWhatsAppChannelOrGroup({ phone: rawDigits, name: chat.name, lid: chat.lid })) continue;
 
+      const isInputLid = isLidIdentifier(rawDigits) || isLidIdentifier(chat.phone);
+      const incomingLid = cleanLid(chat.lid || (isInputLid ? rawDigits : ''));
+
+      // Tenta resolver para o telefone canônico caso seja um LID
       let cleanPhone = rawDigits;
+      if (isInputLid) {
+        const resolvedFromStore = serverCRMStore.resolvePhoneFromLid(incomingLid || rawDigits);
+        if (resolvedFromStore) {
+          cleanPhone = resolvedFromStore;
+        }
+      }
+
       if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
         cleanPhone = `55${cleanPhone}`;
       }
 
-      const defaultContactId = `contact-zapi-${cleanPhone}`;
-      const defaultConversationId = `conv-zapi-${cleanPhone}`;
-
-      // Localiza se já existe contato ou conversa prévia com esse número (com ou sem 9º dígito), LID ou nome no CRM
+      // Localiza se já existe contato ou conversa prévia com esse número, LID ou nome no CRM
       const currentState = serverCRMStore.getState();
       const existingContact = currentState.contacts.find(c => {
         const matchPhone = arePhonesEquivalent(c.phone, rawDigits) || 
                            arePhonesEquivalent(c.phone, cleanPhone) ||
                            arePhonesEquivalent(c.phone, chat.phone);
-        const matchLid = (chat.lid && c.lid && (c.lid === chat.lid || c.lid.includes(chat.lid))) ||
-                         (c.lid && rawDigits && c.lid.includes(rawDigits));
+        const matchLid = (incomingLid && c.lid && cleanLid(c.lid) === incomingLid) ||
+                         (c.lid && rawDigits && cleanLid(c.lid) === cleanLid(rawDigits));
         const matchName = chat.name && c.name && 
                           !chat.name.startsWith('+') && 
                           !c.name.startsWith('+') && 
@@ -104,23 +112,30 @@ export async function POST(req: NextRequest) {
         return matchPhone || matchLid || matchName;
       });
 
+      // Se o contato existente possuir telefone real válido, adota-o como canônico
+      if (existingContact?.phone && !isLidIdentifier(existingContact.phone)) {
+        cleanPhone = existingContact.phone.replace(/\D/g, '');
+      }
+
+      // Registra a correlação LID <-> Telefone se ambos estiverem presentes
+      if (incomingLid && cleanPhone && !isLidIdentifier(cleanPhone)) {
+        serverCRMStore.registerLidPhone(incomingLid, cleanPhone);
+      }
+
+      const defaultContactId = `contact-zapi-${cleanPhone}`;
+      const defaultConversationId = `conv-zapi-${cleanPhone}`;
+
       const existingConv = currentState.conversations.find(cv => {
         const convDigits = cv.id.replace(/\D/g, '') || cv.contactId.replace(/\D/g, '');
-        const matchConvPhone = arePhonesEquivalent(convDigits, rawDigits) || 
-                               arePhonesEquivalent(convDigits, cleanPhone) ||
-                               arePhonesEquivalent(convDigits, chat.phone);
+        const matchConvPhone = arePhonesEquivalent(convDigits, cleanPhone) ||
+                               arePhonesEquivalent(convDigits, rawDigits);
         return cv.id === defaultConversationId || 
                matchConvPhone || 
                (existingContact && (cv.contactId === existingContact.id || cv.id.includes(existingContact.id)));
       });
 
       const contactId = existingContact ? existingContact.id : defaultContactId;
-      if (existingContact?.phone && existingContact.phone.replace(/\D/g, '').length <= 13) {
-        cleanPhone = existingContact.phone.replace(/\D/g, '');
-      }
-      const conversationId = existingConv 
-        ? existingConv.id 
-        : (existingContact ? (existingContact.phone ? `conv-zapi-${existingContact.phone.replace(/\D/g, '')}` : `conv-${existingContact.id}`) : defaultConversationId);
+      const conversationId = defaultConversationId;
 
       const contactName = chat.name && !chat.name.startsWith('+') && !chat.name.startsWith('WhatsApp')
         ? chat.name.trim()
@@ -200,12 +215,16 @@ export async function POST(req: NextRequest) {
       }
 
       // 2. Contato: Garante separação estrita entre telefone e LID
-      const isCleanPhoneLid = cleanPhone.length > 13 || (cleanPhone.length >= 14 && cleanPhone.startsWith('1'));
-      const resolvedPhone = existingContact?.phone && !existingContact.phone.includes('@lid') && existingContact.phone.replace(/\D/g, '').length <= 13
+      const isCleanPhoneLid = isLidIdentifier(cleanPhone);
+      const resolvedPhoneFromStore = isCleanPhoneLid ? serverCRMStore.resolvePhoneFromLid(cleanPhone) : null;
+      const resolvedPhone = existingContact?.phone && !isLidIdentifier(existingContact.phone)
         ? existingContact.phone
-        : (isCleanPhoneLid ? (existingContact?.phone || `+${cleanPhone}`) : `+${cleanPhone}`);
+        : (resolvedPhoneFromStore ? `+${resolvedPhoneFromStore}` : `+${cleanPhone}`);
       
-      const resolvedLid = chat.lid || existingContact?.lid || (isCleanPhoneLid ? `${cleanPhone}@lid` : undefined);
+      const resolvedLid = cleanLid(chat.lid || existingContact?.lid || (isCleanPhoneLid ? cleanPhone : '')) || undefined;
+      if (resolvedLid && resolvedPhone && !isLidIdentifier(resolvedPhone)) {
+        serverCRMStore.registerLidPhone(resolvedLid, resolvedPhone);
+      }
 
       newContacts.push({
         id: contactId,

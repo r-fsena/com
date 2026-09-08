@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -63,7 +63,6 @@ import {
   UserMinus
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
-import { arePhonesEquivalent } from '@/lib/whatsapp-filter';
 import { PropertyType, PresentedProperty, Message } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
@@ -307,57 +306,48 @@ export function WhatsAppInbox() {
     const cleanPhone = activeContact?.phone ? activeContact.phone.replace(/\D/g, '') : convId.replace(/\D/g, '');
     const cleanLid = activeContact?.lid ? activeContact.lid.replace(/\D/g, '') : '';
 
-    // Mapeia todos os contatos que possuem o mesmo nome ou telefone do contato ativo
-    const relatedContactIds = new Set<string>();
-    if (activeContact) {
-      relatedContactIds.add(activeContact.id);
-      const activeNormName = (activeContact.name || '').toLowerCase().trim();
-      contacts.forEach(c => {
-        if (c.id === activeContact.id) return;
-        if (activeNormName && !activeNormName.startsWith('+') && !activeNormName.startsWith('whatsapp') && c.name && c.name.toLowerCase().trim() === activeNormName) {
-          relatedContactIds.add(c.id);
-        }
-        if (cleanPhone && c.phone && arePhonesEquivalent(c.phone, cleanPhone)) {
-          relatedContactIds.add(c.id);
-        }
-      });
+    // Conjunto canônico estrito de identificadores válidos pertencentes unicamente a esta conversa
+    const allowedConvIds = new Set<string>();
+    allowedConvIds.add(convId);
+    if (activeConversation.contactId) {
+      allowedConvIds.add(activeConversation.contactId);
+      allowedConvIds.add(`conv-${activeConversation.contactId}`);
     }
-
-    // Mapeia todas as conversas relacionadas a esses contatos
-    const relatedConvIds = new Set<string>();
-    relatedConvIds.add(convId);
-    conversations.forEach(cv => {
-      if (relatedContactIds.has(cv.contactId)) {
-        relatedConvIds.add(cv.id);
+    if (activeContact?.id) {
+      allowedConvIds.add(activeContact.id);
+      allowedConvIds.add(`conv-${activeContact.id}`);
+      allowedConvIds.add(`conv-zapi-${activeContact.id.replace('contact-zapi-', '')}`);
+    }
+    if (cleanPhone && cleanPhone.length >= 8 && !isLidIdentifier(cleanPhone)) {
+      allowedConvIds.add(`conv-zapi-${cleanPhone}`);
+      allowedConvIds.add(`contact-zapi-${cleanPhone}`);
+      if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
+        allowedConvIds.add(`conv-zapi-55${cleanPhone}`);
       }
-    });
+    }
+    if (cleanLid && cleanLid.length >= 8) {
+      allowedConvIds.add(`conv-zapi-${cleanLid}`);
+      allowedConvIds.add(cleanLid);
+      allowedConvIds.add(`contact-zapi-${cleanLid}`);
+    }
 
     const matched = messages
       .filter(m => {
         if (!m.content || isWhatsAppSystemMessage(m.content)) return false;
 
-        if (relatedConvIds.has(m.conversationId)) return true;
-        if (m.conversationId === convId) return true;
-        if (activeContact && (m.conversationId === `conv-${activeContact.id}` || m.conversationId === activeContact.id)) return true;
-        if (activeContact && relatedContactIds.has(m.conversationId.replace('conv-', ''))) return true;
-        
-        const mConvDigits = m.conversationId.replace(/\D/g, '');
-        if (mConvDigits && cleanPhone && arePhonesEquivalent(mConvDigits, cleanPhone)) return true;
-        if (mConvDigits && activeContact && arePhonesEquivalent(mConvDigits, activeContact.phone)) return true;
-        if (cleanLid && cleanLid.length >= 8 && m.conversationId.includes(cleanLid)) return true;
+        // 1. Match direto por ID canônico de conversa
+        if (allowedConvIds.has(m.conversationId)) return true;
 
+        // 2. Se a mensagem possui campo phone explícito, valida de forma estrita
         const mPhone = (m as any).phone ? String((m as any).phone).replace(/\D/g, '') : '';
-        if (mPhone && cleanPhone && arePhonesEquivalent(mPhone, cleanPhone)) return true;
-        if (mPhone && activeContact && arePhonesEquivalent(mPhone, activeContact.phone)) return true;
-        if (mPhone && cleanLid && mPhone.includes(cleanLid)) return true;
-
-        // Se a mensagem possui o mesmo nome de remetente do contato ativo
-        if (activeContact?.name && m.senderName && 
-            !activeContact.name.startsWith('+') && 
-            !m.senderName.startsWith('+') && 
-            m.senderName.toLowerCase().trim() === activeContact.name.toLowerCase().trim()) {
-          return true;
+        if (mPhone && cleanPhone && !isLidIdentifier(mPhone) && !isLidIdentifier(cleanPhone)) {
+          const pA = mPhone.startsWith('55') ? mPhone : `55${mPhone}`;
+          const pB = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+          if (pA === pB || (pA.length >= 10 && pB.length >= 10 && pA.slice(-8) === pB.slice(-8) && pA.slice(2, 4) === pB.slice(2, 4))) {
+            return true;
+          }
         }
+        if (mPhone && cleanLid && mPhone === cleanLid) return true;
 
         return false;
       })
@@ -410,18 +400,18 @@ export function WhatsAppInbox() {
     }
 
     return deduped;
-  }, [messages, activeConversation, activeContact, contacts, conversations]);
+  }, [messages, activeConversation, activeContact]);
 
   const activeInsight = React.useMemo(() => {
     if (activeConversation && aiInsights[activeConversation.id]) return aiInsights[activeConversation.id];
     if (activeContact) {
       if (aiInsights[activeContact.id]) return aiInsights[activeContact.id];
       if (aiInsights[`conv-${activeContact.id}`]) return aiInsights[`conv-${activeContact.id}`];
-      const cleanPhone = activeContact.phone.replace(/\D/g, '');
+      const cleanPhone = activeContact.phone ? activeContact.phone.replace(/\D/g, '') : '';
       if (cleanPhone && aiInsights[`conv-zapi-${cleanPhone}`]) return aiInsights[`conv-zapi-${cleanPhone}`];
     }
-    const firstKey = Object.keys(aiInsights)[0];
-    return firstKey ? aiInsights[firstKey] : null;
+    // NUNCA vaza insight de outro cliente como fallback global
+    return null;
   }, [aiInsights, activeConversation, activeContact]);
 
   const activeDeal = React.useMemo(() => {

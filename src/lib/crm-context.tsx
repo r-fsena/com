@@ -3326,7 +3326,7 @@ const pollWebhookMessages = async () => {
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
           data.messages.forEach((incoming: any) => {
             if (isWhatsAppChannelOrGroup(incoming)) return;
-            let resolvedPhone = incoming.phone.replace(/\D/g, '');
+            let resolvedPhone = incoming.phone ? incoming.phone.replace(/\D/g, '') : '';
             const isLid = isLidIdentifier(incoming.phone) || (incoming.lid && isLidIdentifier(incoming.lid));
             const lidClean = cleanLid(incoming.lid || (isLidIdentifier(incoming.phone) ? incoming.phone : ''));
 
@@ -3338,29 +3338,31 @@ const pollWebhookMessages = async () => {
                 } catch {}
               }
               if (isLidIdentifier(resolvedPhone)) {
-                const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && (c.lid === lidClean || c.avatarUrl === incoming.senderPhoto)));
+                const matchCnt = contacts.find(c => c.lid && cleanLid(c.lid) === lidClean);
                 if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
                   resolvedPhone = matchCnt.phone.replace(/\D/g, '');
                 }
               }
             }
 
-            if (!resolvedPhone.startsWith('55') && (resolvedPhone.length === 10 || resolvedPhone.length === 11)) {
+            if (resolvedPhone && !isLidIdentifier(resolvedPhone) && !resolvedPhone.startsWith('55') && (resolvedPhone.length === 10 || resolvedPhone.length === 11)) {
               resolvedPhone = `55${resolvedPhone}`;
             }
 
             const rawPhone = resolvedPhone;
-            const phoneSuffix = rawPhone.length >= 8 ? rawPhone.slice(-8) : rawPhone;
+            if (!rawPhone || rawPhone === '0') return;
+
             const formattedPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
 
             // 1. Encontra ou cria contato
             setContacts(prevContacts => {
               const pKey = normalizePhoneKey(rawPhone);
               const existing = prevContacts.find(c => {
-                const cPKey = normalizePhoneKey(c.phone);
-                if (cPKey && pKey && (cPKey === pKey || cPKey.endsWith(pKey) || pKey.endsWith(cPKey))) return true;
-                if (phoneSuffix && c.phone.replace(/\D/g, '').endsWith(phoneSuffix)) return true;
                 if (lidClean && c.lid && cleanLid(c.lid) === lidClean) return true;
+                if (!isLidIdentifier(rawPhone)) {
+                  const cPKey = normalizePhoneKey(c.phone);
+                  if (cPKey && pKey && cPKey === pKey) return true;
+                }
                 return false;
               });
 
@@ -3416,14 +3418,12 @@ const pollWebhookMessages = async () => {
               ? users.find(u => u.id === matchingInst.assignedUserId)
               : undefined;
 
-            // 2. Atualiza ou cria a conversa canônica
+            // 2. Atualiza ou cria a conversa canônica de forma estrita
             setConversations(prevConvs => {
               const existingConv = prevConvs.find(c => {
                 if (c.id === `conv-zapi-${rawPhone}`) return true;
                 if (c.contactId === `contact-zapi-${rawPhone}`) return true;
-                if (lidClean && (c.id.includes(lidClean) || c.contactId?.includes(lidClean))) return true;
-                const cDigits = (c.contactId?.replace(/\D/g, '') || '') + (c.id.replace(/\D/g, '') || '');
-                if (cDigits && phoneSuffix && cDigits.includes(phoneSuffix)) return true;
+                if (lidClean && (c.id === `conv-zapi-${lidClean}` || c.contactId === `contact-zapi-${lidClean}`)) return true;
                 return false;
               });
 

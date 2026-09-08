@@ -132,6 +132,15 @@ export function canonicalPhoneKey(phone: string | undefined | null): string {
 export function arePhonesEquivalent(phoneA: string | undefined | null, phoneB: string | undefined | null): boolean {
   if (!phoneA || !phoneB) return false;
 
+  const isLidA = isLidIdentifier(phoneA);
+  const isLidB = isLidIdentifier(phoneB);
+
+  // Se um é LID e o outro não, não são o mesmo telefone a menos que já estejam associados
+  if (isLidA !== isLidB) return false;
+  if (isLidA && isLidB) {
+    return cleanLid(phoneA) === cleanLid(phoneB);
+  }
+
   const keyA = canonicalPhoneKey(phoneA);
   const keyB = canonicalPhoneKey(phoneB);
 
@@ -143,18 +152,21 @@ export function arePhonesEquivalent(phoneA: string | undefined | null, phoneB: s
   if (!digitsA || !digitsB) return false;
   if (digitsA === digitsB) return true;
 
-  // Compara últimos 8 dígitos se ambos tiverem ao menos 8 dígitos
+  // Ambos devem ter ao menos 8 dígitos para comparação de telefone
+  if (digitsA.length < 8 || digitsB.length < 8) return false;
+
+  // Compara últimos 8 dígitos quando ambos possuem ao menos 8 dígitos
   const last8A = digitsA.slice(-8);
   const last8B = digitsB.slice(-8);
 
-  if (last8A.length === 8 && last8A === last8B) {
+  if (last8A === last8B) {
     const dddA = digitsA.length >= 10 ? (digitsA.startsWith('55') ? digitsA.slice(2, 4) : digitsA.slice(0, 2)) : '';
     const dddB = digitsB.length >= 10 ? (digitsB.startsWith('55') ? digitsB.slice(2, 4) : digitsB.slice(0, 2)) : '';
     if (dddA && dddB) return dddA === dddB;
     return true;
   }
 
-  return digitsA.endsWith(digitsB) || digitsB.endsWith(digitsA);
+  return false;
 }
 
 /**

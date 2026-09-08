@@ -274,8 +274,24 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       ? contact.name.toLowerCase().trim()
       : '';
 
+    // Tenta resolver se esse LID já foi mapeado para um telefone conhecido no navegador
+    let mappedPhone = '';
+    if (pureLid && typeof window !== 'undefined') {
+      try {
+        const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+        if (storedMap[pureLid]) mappedPhone = storedMap[pureLid];
+      } catch {}
+    }
+
+    // Se o contato atual tem o mesmo avatar de outro contato com telefone real, é o mesmo cliente
+    const avatarMatch = (contact.avatarUrl && !contact.avatarUrl.includes('ui-avatars.com')) 
+      ? result.find(c => c.avatarUrl === contact.avatarUrl && c.phone && !isLidIdentifier(c.phone))
+      : null;
+
     const existing = (pKey ? phoneMap.get(pKey) : null) 
+      || (mappedPhone ? phoneMap.get(canonicalPhoneKey(mappedPhone)) : null)
       || (pureLid ? lidMap.get(pureLid) : null) 
+      || avatarMatch
       || idMap.get(contact.id)
       || (normName ? nameMap.get(normName) : null);
 
@@ -294,15 +310,17 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` 
         : existing.id;
 
+      // Se um dos nomes for o nome do corretor (ex: "Rafael Sena" ou "Corretor"), descarta e mantém o nome do cliente ("anna carolina")
+      const isBrokerName = (n?: string) => !n || n === 'Rafael Sena' || n.toLowerCase().includes('corretor') || n.startsWith('WhatsApp ') || n === 'Cliente';
+      const cleanName = !isBrokerName(existing.name) ? existing.name : (!isBrokerName(contact.name) ? contact.name : (existing.name || contact.name));
+
       const merged: Contact = {
         ...existing,
         ...contact,
         id: chosenId,
         phone: chosenPhone,
         lid: chosenLid,
-        name: (existing.name && !existing.name.startsWith('+') && !existing.name.startsWith('WhatsApp') && existing.name !== 'Lead WhatsApp' && existing.name !== 'Cliente')
-          ? existing.name
-          : (contact.name || existing.name),
+        name: cleanName,
         monthlyIncome: existing.monthlyIncome || contact.monthlyIncome,
         downPaymentAvailable: existing.downPaymentAvailable || contact.downPaymentAvailable,
         maxPropertyValue: existing.maxPropertyValue || contact.maxPropertyValue,
@@ -312,6 +330,14 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         email: existing.email || contact.email,
         assignedUserId: existing.assignedUserId || contact.assignedUserId,
       };
+
+      if (typeof window !== 'undefined' && chosenLid && chosenPhone && !isLidIdentifier(chosenPhone)) {
+        try {
+          const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+          storedMap[chosenLid] = chosenPhone.replace(/\D/g, '');
+          localStorage.setItem('brokiva_lid_phone_map', JSON.stringify(storedMap));
+        } catch {}
+      }
 
       const realPKey = canonicalPhoneKey(chosenPhone);
       if (realPKey && !isLidIdentifier(chosenPhone)) phoneMap.set(realPKey, merged);
@@ -330,6 +356,14 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         firstSyncedAt: contact.firstSyncedAt || new Date().toISOString(),
         lastSyncedAt: contact.lastSyncedAt || new Date().toISOString(),
       };
+
+      if (typeof window !== 'undefined' && finalLid && contact.phone && !isLidIdentifier(contact.phone)) {
+        try {
+          const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+          storedMap[finalLid] = contact.phone.replace(/\D/g, '');
+          localStorage.setItem('brokiva_lid_phone_map', JSON.stringify(storedMap));
+        } catch {}
+      }
 
       if (pKey) phoneMap.set(pKey, withTimestamps);
       if (finalLid) lidMap.set(finalLid, withTimestamps);
@@ -1367,7 +1401,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       let convId = m.conversationId;
       const rawDigits = convId.replace(/\D/g, '');
       if (isLidIdentifier(rawDigits)) {
-        const mapped = lidToPhone.get(cleanLid(rawDigits));
+        let mapped = lidToPhone.get(cleanLid(rawDigits));
+        if (!mapped && typeof window !== 'undefined') {
+          try {
+            const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+            if (stored[cleanLid(rawDigits)]) mapped = stored[cleanLid(rawDigits)];
+          } catch {}
+        }
         if (mapped) {
           convId = `conv-zapi-${mapped}`;
         }
@@ -1414,20 +1454,40 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (!conv) return;
       const rawDigits = conv.id.replace(/\D/g, '');
       const isLid = isLidIdentifier(rawDigits);
+      const lidClean = cleanLid(rawDigits);
 
       let contact = contactById.get(conv.contactId);
       if (!contact && isLid) {
-        contact = contactByLid.get(cleanLid(rawDigits));
+        contact = contactByLid.get(lidClean);
       }
       if (!contact && rawDigits) {
         contact = contactByPhone.get(canonicalPhoneKey(rawDigits));
       }
 
-      const canonicalPhone = contact?.phone && !isLidIdentifier(contact.phone)
-        ? contact.phone.replace(/\D/g, '')
-        : (contact?.phone ? contact.phone.replace(/\D/g, '') : rawDigits);
+      // Consulta no mapa local brokiva_lid_phone_map se não achou contato direto
+      if (!contact && isLid && typeof window !== 'undefined') {
+        try {
+          const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+          if (stored[lidClean]) {
+            contact = contactByPhone.get(canonicalPhoneKey(stored[lidClean]));
+          }
+        } catch {}
+      }
 
-      const canonicalConvId = canonicalPhone ? `conv-zapi-${canonicalPhone}` : conv.id;
+      let canonicalPhone = contact?.phone && !isLidIdentifier(contact.phone)
+        ? contact.phone.replace(/\D/g, '')
+        : '';
+
+      if (!canonicalPhone && isLid && typeof window !== 'undefined') {
+        try {
+          const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+          if (stored[lidClean]) canonicalPhone = stored[lidClean];
+        } catch {}
+      }
+
+      if (!canonicalPhone) canonicalPhone = rawDigits;
+
+      const canonicalConvId = canonicalPhone && !isLidIdentifier(canonicalPhone) ? `conv-zapi-${canonicalPhone}` : conv.id;
       const cleanPreview = (conv.lastMessagePreview && isWhatsAppSystemMessage(conv.lastMessagePreview))
         ? 'Conversa sincronizada via WhatsApp'
         : conv.lastMessagePreview;
@@ -1524,26 +1584,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           setDeals(serverData.deals);
         }
 
-        // Conversas
+        // Conversas com fusão de LIDs e Telefones Canônicos
         if (parsedLocalConvs && parsedLocalConvs.length > 0) {
           const mappedConvs = parsedLocalConvs.map((cv: any) => ({
             ...cv,
             isPersonal: cv.isPersonal === true ? true : false,
           }));
-          setConversations(mappedConvs);
+          const dedupedConvs = deduplicateConversations(mappedConvs, parsedLocalContacts || contacts);
+          setConversations(dedupedConvs);
+          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(dedupedConvs)); } catch {}
         } else if (serverData && Array.isArray(serverData.conversations) && serverData.conversations.length > 0) {
           const mappedConvs = serverData.conversations.map((cv: any) => ({
             ...cv,
             isPersonal: cv.isPersonal === true ? true : false,
           }));
-          setConversations(mappedConvs);
+          const dedupedConvs = deduplicateConversations(mappedConvs, serverData.contacts || contacts);
+          setConversations(dedupedConvs);
+          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(dedupedConvs)); } catch {}
         }
 
         // Mensagens
         const mergedMsgs = deduplicateMessages([
           ...(parsedLocalMsgs || []),
           ...(serverData?.messages || [])
-        ]);
+        ], parsedLocalContacts || contacts);
         if (mergedMsgs.length > 0) {
           setMessages(mergedMsgs);
           try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(mergedMsgs)); } catch {}
@@ -2250,12 +2314,41 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (targetPhone) {
+        // Resolução de LID para telefone canônico antes do disparo
+        if (isLidIdentifier(targetPhone)) {
+          const lidClean = cleanLid(targetPhone);
+          let mapped = '';
+          if (typeof window !== 'undefined') {
+            try {
+              const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+              if (stored[lidClean]) mapped = stored[lidClean];
+            } catch {}
+          }
+          if (!mapped) {
+            const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && c.avatarUrl === contact?.avatarUrl));
+            if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
+              mapped = matchCnt.phone.replace(/\D/g, '');
+            }
+          }
+          if (mapped) targetPhone = mapped;
+        }
+
+        if (!targetPhone.startsWith('55') && (targetPhone.length === 10 || targetPhone.length === 11)) {
+          targetPhone = `55${targetPhone}`;
+        }
+
         // Procura a linha individual do corretor logado ou a da conversa
         const brokerInstance = instances.find(i => i.assignedUserId === currentUser.id) || instances.find(i => i.id === conv?.instanceId) || instances[0];
 
         fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({
             content: cleanContent || previewText,
             messageType: actualType,
@@ -2264,14 +2357,22 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             phone: targetPhone,
             senderUserId: currentUser.id,
             instanceId: brokerInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
+            instanceToken: (brokerInstance as any)?.token || '550DBC07B2F984AB74E4BCE5',
+            clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
           }),
-        }).catch(err => console.error('Erro ao enviar mensagem via Z-API:', err));
+        }).then(async res => {
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            console.error('Falha ao enviar mensagem:', errData);
+            setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'FAILED' } : m));
+          } else {
+            setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'DELIVERED' } : m));
+          }
+        }).catch(err => {
+          console.error('Erro ao enviar mensagem via Z-API:', err);
+          setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'FAILED' } : m));
+        });
       }
-
-      // Confirmação de entrega
-      setTimeout(() => {
-        setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'DELIVERED' } : m));
-      }, 1200);
     }
   };
 
@@ -2853,9 +2954,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       const res = await fetch('/api/v1/zapi/sync-chats', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        },
         body: JSON.stringify({
-          instanceId: chosenInst?.zapiInstanceId || chosenInst?.id,
+          instanceId: chosenInst?.zapiInstanceId || chosenInst?.id || '3F8144490C66805B4E3FD64A35E2F2DC',
+          token: (chosenInst as any)?.token || '550DBC07B2F984AB74E4BCE5',
+          clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
           tenantId: currentTenant.id,
           assignedUserId: chosenInst?.assignedUserId || currentUser.id,
           fetchHistoryMessages: true,
@@ -2865,6 +2974,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
 
       if (data.success) {
+        let mergedContacts: Contact[] = [];
         if (Array.isArray(data.contacts) && data.contacts.length > 0) {
           const validIncoming = data.contacts.filter((c: Contact) => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
           // Merge e higienização completa de contatos com resolução de LID para telefone real
@@ -2876,6 +2986,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             }));
             const combined = [...cleanPrev, ...mappedIncoming];
             const deduplicated = deduplicateContactList(combined);
+            mergedContacts = deduplicated;
             try {
               localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduplicated));
             } catch {}
@@ -2883,38 +2994,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // 2. Merge de Conversas
+        // 2. Merge e unificação de Conversas
         let finalConversations: Conversation[] = [];
         if (Array.isArray(data.conversations)) {
           const validConvs = data.conversations.filter((c: Conversation) => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
           setConversations(prev => {
             const cleanPrev = prev.filter(c => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
-            const map = new Map(cleanPrev.map(c => [c.id, c]));
-            validConvs.forEach((c: Conversation) => {
-              const old = map.get(c.id) || cleanPrev.find(x => x.contactId === c.contactId);
-              if (old) {
-                map.set(old.id, {
-                  ...old,
-                  ...c,
-                  isPersonal: old.isPersonal === true ? true : false,
-                  lastMessagePreview: c.lastMessagePreview || old.lastMessagePreview,
-                  lastMessageAt: c.lastMessageAt || old.lastMessageAt,
-                });
-              } else {
-                map.set(c.id, {
-                  ...c,
-                  isPersonal: c.isPersonal === true ? true : false,
-                });
-              }
-            });
-            const result = Array.from(map.values()).sort((a, b) => {
-              return parseWhatsAppTimestamp(b.lastMessageAt) - parseWhatsAppTimestamp(a.lastMessageAt);
-            });
-            finalConversations = result;
+            const combined = [...cleanPrev, ...validConvs];
+            const deduplicated = deduplicateConversations(combined, mergedContacts.length > 0 ? mergedContacts : contacts);
+            finalConversations = deduplicated;
             try {
-              localStorage.setItem('vanguard_crm_conversations', JSON.stringify(result));
+              localStorage.setItem('vanguard_crm_conversations', JSON.stringify(deduplicated));
             } catch {}
-            return result;
+            return deduplicated;
           });
         }
 
@@ -3226,7 +3318,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const lastPollTimeRef = useRef<number>(Date.now() - 60000);
 
   useEffect(() => {
-    const pollWebhookMessages = async () => {
+const pollWebhookMessages = async () => {
       try {
         const res = await fetch('/api/v1/webhooks/zapi/events');
         const data = await res.json();
@@ -3234,9 +3326,32 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
           data.messages.forEach((incoming: any) => {
             if (isWhatsAppChannelOrGroup(incoming)) return;
-            const rawPhone = incoming.phone.replace(/\D/g, '');
+            let resolvedPhone = incoming.phone.replace(/\D/g, '');
+            const isLid = isLidIdentifier(incoming.phone) || (incoming.lid && isLidIdentifier(incoming.lid));
+            const lidClean = cleanLid(incoming.lid || (isLidIdentifier(incoming.phone) ? incoming.phone : ''));
+
+            if (isLid && lidClean) {
+              if (typeof window !== 'undefined') {
+                try {
+                  const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+                  if (storedMap[lidClean]) resolvedPhone = storedMap[lidClean];
+                } catch {}
+              }
+              if (isLidIdentifier(resolvedPhone)) {
+                const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && (c.lid === lidClean || c.avatarUrl === incoming.senderPhoto)));
+                if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
+                  resolvedPhone = matchCnt.phone.replace(/\D/g, '');
+                }
+              }
+            }
+
+            if (!resolvedPhone.startsWith('55') && (resolvedPhone.length === 10 || resolvedPhone.length === 11)) {
+              resolvedPhone = `55${resolvedPhone}`;
+            }
+
+            const rawPhone = resolvedPhone;
             const phoneSuffix = rawPhone.length >= 8 ? rawPhone.slice(-8) : rawPhone;
-            const formattedPhone = incoming.phone.startsWith('+') ? incoming.phone : `+${incoming.phone}`;
+            const formattedPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
 
             // 1. Encontra ou cria contato
             setContacts(prevContacts => {
@@ -3245,25 +3360,35 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 const cPKey = normalizePhoneKey(c.phone);
                 if (cPKey && pKey && (cPKey === pKey || cPKey.endsWith(pKey) || pKey.endsWith(cPKey))) return true;
                 if (phoneSuffix && c.phone.replace(/\D/g, '').endsWith(phoneSuffix)) return true;
+                if (lidClean && c.lid && cleanLid(c.lid) === lidClean) return true;
                 return false;
               });
 
               if (existing) {
                 return prevContacts.map(c => c.id === existing.id ? {
                   ...c,
-                  name: (existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.senderName || existing.name),
+                  lid: lidClean || c.lid,
+                  name: incoming.fromMe
+                    ? existing.name
+                    : ((existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.senderName || existing.name)),
                   avatarUrl: incoming.senderPhoto || c.avatarUrl,
                   lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 } : c);
               }
 
+              const isBroker = incoming.fromMe;
+              const contactName = isBroker
+                ? (rawPhone.length >= 10 ? `WhatsApp (${rawPhone.slice(-4)})` : 'Cliente WhatsApp')
+                : (incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`);
+
               const newContact: Contact = {
                 id: `contact-zapi-${rawPhone}`,
                 tenantId: currentTenant.id,
-                name: incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`,
+                name: contactName,
                 phone: formattedPhone,
-                avatarUrl: incoming.senderPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(incoming.senderName || 'Cliente')}&background=059669&color=fff`,
+                lid: lidClean || undefined,
+                avatarUrl: incoming.senderPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`,
                 source: 'WHATSAPP',
                 temperature: 'HOT',
                 aiPriorityScore: 85,
@@ -3291,26 +3416,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               ? users.find(u => u.id === matchingInst.assignedUserId)
               : undefined;
 
-            // 2. Atualiza ou cria a conversa
+            // 2. Atualiza ou cria a conversa canônica
             setConversations(prevConvs => {
               const existingConv = prevConvs.find(c => {
                 if (c.id === `conv-zapi-${rawPhone}`) return true;
                 if (c.contactId === `contact-zapi-${rawPhone}`) return true;
+                if (lidClean && (c.id.includes(lidClean) || c.contactId?.includes(lidClean))) return true;
                 const cDigits = (c.contactId?.replace(/\D/g, '') || '') + (c.id.replace(/\D/g, '') || '');
                 if (cDigits && phoneSuffix && cDigits.includes(phoneSuffix)) return true;
                 return false;
               });
 
               if (existingConv) {
-                const updated = prevConvs.map(c => c.id === existingConv.id ? {
+                const updated = prevConvs.map(c => (c.id === existingConv.id || (lidClean && c.id === `conv-zapi-${lidClean}`)) ? {
                   ...c,
+                  id: `conv-zapi-${rawPhone}`,
+                  contactId: `contact-zapi-${rawPhone}`,
                   assignedUserId: c.assignedUserId || matchingInst?.assignedUserId,
                   lastMessagePreview: incoming.content,
                   lastMessageAt: incoming.timestamp || new Date().toISOString(),
                   status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
                   unreadCount: incoming.fromMe ? 0 : (c.unreadCount || 0) + 1,
                   slaBreached: false,
-                } : c).sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
+                } : c).filter((c, idx, arr) => arr.findIndex(x => x.id === c.id) === idx)
+                 .sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
                 try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
                 return updated;
               }
@@ -3328,7 +3457,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 slaBreached: false,
                 isPersonal: false,
               };
-              const updated = [newConv, ...prevConvs].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
+              const updated = [newConv, ...prevConvs.filter(c => !lidClean || c.id !== `conv-zapi-${lidClean}`)]
+                .sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
               try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
               return updated;
             });
@@ -3364,28 +3494,33 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             };
 
             setMessages(prevMsgs => {
+              // Re-chaveia qualquer mensagem anterior que estivesse presa na conversa temporária de LID
+              const rekeyed = lidClean 
+                ? prevMsgs.map(m => m.conversationId === `conv-zapi-${lidClean}` ? { ...m, conversationId: `conv-zapi-${rawPhone}` } : m)
+                : prevMsgs;
+
               // 1. Evita duplicata se o ID for idêntico
-              if (prevMsgs.some(m => m.id === newMsg.id)) return prevMsgs;
+              if (rekeyed.some(m => m.id === newMsg.id)) return rekeyed;
 
               // 2. Se for mensagem enviada (fromMe = true), verifica se já enviamos no portal
               if (incoming.fromMe) {
-                const isAlreadyPresent = prevMsgs.some(m =>
+                const isAlreadyPresent = rekeyed.some(m =>
                   m.senderType === 'USER' &&
                   (m.content || '').trim() === (newMsg.content || '').trim() &&
                   Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000
                 );
-                if (isAlreadyPresent) return prevMsgs;
+                if (isAlreadyPresent) return rekeyed;
               }
 
               // 3. Evita duplicatas gerais de mesmo conteúdo e mesmo remetente em menos de 60s
-              const isDuplicateContent = prevMsgs.some(m =>
+              const isDuplicateContent = rekeyed.some(m =>
                 m.senderType === newMsg.senderType &&
                 (m.content || '').trim() === (newMsg.content || '').trim() &&
                 Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000
               );
-              if (isDuplicateContent) return prevMsgs;
+              if (isDuplicateContent) return rekeyed;
 
-              const updated = [...prevMsgs, newMsg];
+              const updated = [...rekeyed, newMsg];
               try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
               return updated;
             });
@@ -3402,9 +3537,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const chosenInst = instances.find(i => i.assignedUserId === currentUser.id) || instances[0];
         const res = await fetch('/api/v1/zapi/sync-chats', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({
             instanceId: chosenInst?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
+            token: (chosenInst as any)?.token || '550DBC07B2F984AB74E4BCE5',
+            clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
             tenantId: currentTenant.id,
             assignedUserId: chosenInst?.assignedUserId || currentUser.id,
             fetchHistoryMessages: false,

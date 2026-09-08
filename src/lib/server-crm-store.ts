@@ -59,6 +59,58 @@ export const serverCRMStore = {
     }
   },
 
+  async fetchAndCacheZapiLidMap(
+    instanceId?: string,
+    instanceToken?: string,
+    clientToken?: string
+  ): Promise<Record<string, string>> {
+    const instId = instanceId || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const instTok = instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
+    const secTok = clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
+
+    if (!instId || !instTok) return global.__GLOBAL_LID_PHONE_MAP__ || {};
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (secTok) headers['Client-Token'] = secTok;
+
+      const res = await fetch(`https://api.z-api.io/instances/${instId}/token/${instTok}/chats?page=1&pageSize=100`, {
+        headers,
+        cache: 'no-store',
+      });
+
+      if (res.ok) {
+        const chats = await res.json();
+        if (Array.isArray(chats)) {
+          chats.forEach((c: any) => {
+            if (c.lid && c.phone && !isLidIdentifier(c.phone)) {
+              this.registerLidPhone(c.lid, c.phone);
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[serverCRMStore] Falha ao sincronizar mapa LID-telefone da Z-API:', err);
+    }
+
+    return global.__GLOBAL_LID_PHONE_MAP__ || {};
+  },
+
+  async resolvePhoneFromLidAsync(
+    lidRaw?: string | null,
+    instanceId?: string,
+    instanceToken?: string,
+    clientToken?: string
+  ): Promise<string | null> {
+    if (!lidRaw) return null;
+    const syncResult = this.resolvePhoneFromLid(lidRaw);
+    if (syncResult) return syncResult;
+
+    // Se ainda não resolveu, carrega o catálogo de chats da Z-API em tempo real
+    await this.fetchAndCacheZapiLidMap(instanceId, instanceToken, clientToken);
+    return this.resolvePhoneFromLid(lidRaw);
+  },
+
   resolvePhoneFromLid(lidRaw?: string | null): string | null {
     if (!lidRaw) return null;
     const l = cleanLid(lidRaw);

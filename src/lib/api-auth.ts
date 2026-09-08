@@ -112,6 +112,18 @@ export function validateApiSession(req: NextRequest, options?: {
     }
   }
 
+  // 3.1 Verificação de cabeçalhos de usuário autenticado da UI interna do CRM
+  if (!userEmail && (clientEmailHeader || clientUserHeader)) {
+    const targetEmail = clientEmailHeader.toLowerCase().trim();
+    const foundUser = MOCK_USERS.find(u => (targetEmail && u.email.toLowerCase() === targetEmail) || (clientUserHeader && u.id === clientUserHeader));
+    if (foundUser) {
+      userEmail = foundUser.email;
+      userId = foundUser.id;
+      cookieTenantId = clientTenantHeader || foundUser.tenantId || '';
+      tokenRole = foundUser.role;
+    }
+  }
+
   // 4. Bloqueio Estrito: Sem credencial verificada -> Retorna 401 Unauthorized imediatamente
   if (!userEmail && !userId && !isExtensionAuthenticated) {
     return {

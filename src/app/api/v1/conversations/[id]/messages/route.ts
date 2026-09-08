@@ -5,7 +5,14 @@ import { webhookStore } from '@/lib/webhook-store';
 import { validateApiSession } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
+import { serverCRMStore } from '@/lib/server-crm-store';
+import { isLidIdentifier, cleanLid } from '@/lib/whatsapp-filter';
+
 export const dynamic = 'force-dynamic';
+
+const DEFAULT_ZAPI_INSTANCE_ID = '3F8144490C66805B4E3FD64A35E2F2DC';
+const DEFAULT_ZAPI_INSTANCE_TOKEN = '550DBC07B2F984AB74E4BCE5';
+const DEFAULT_ZAPI_CLIENT_TOKEN = 'Fc78d61c833db4b50864816b70766aee8S';
 
 const SendMessageSchema = z.object({
   content: z.string().default(''),
@@ -76,28 +83,38 @@ export async function POST(
 
     let instanceId = validated.data.instanceId;
     if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
-      instanceId = process.env.ZAPI_INSTANCE_ID || '';
+      instanceId = process.env.ZAPI_INSTANCE_ID || DEFAULT_ZAPI_INSTANCE_ID;
     }
     let instanceToken = validated.data.instanceToken;
     if (!instanceToken || instanceToken.length < 15) {
-      instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
+      instanceToken = process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_ZAPI_INSTANCE_TOKEN;
     }
-    let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
+    let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || DEFAULT_ZAPI_CLIENT_TOKEN;
 
     let externalMessageId = `zapi-${Date.now()}`;
 
     // Dispara para a Z-API se tiver telefone
     if (targetPhone) {
+      let cleanPhone = targetPhone.replace(/\D/g, '');
+
+      // Resolução de LID para o telefone canônico caso o alvo seja um LID
+      if (isLidIdentifier(cleanPhone) || isLidIdentifier(targetPhone)) {
+        const lidCandidate = cleanLid(isLidIdentifier(cleanPhone) ? cleanPhone : targetPhone);
+        const resolved = await serverCRMStore.resolvePhoneFromLidAsync(lidCandidate, instanceId, instanceToken, securityToken);
+        if (resolved) {
+          cleanPhone = resolved;
+        }
+      }
+
+      if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
+        cleanPhone = `55${cleanPhone}`;
+      }
+
       const zapi = new ZApiClient({
         instanceId,
         instanceToken,
         securityToken,
       });
-
-      let cleanPhone = targetPhone.replace(/\D/g, '');
-      if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
-        cleanPhone = `55${cleanPhone}`;
-      }
 
       let sendResult = null;
 
@@ -115,7 +132,40 @@ export async function POST(
         externalMessageId = sendResult.externalMessageId;
       } else if (sendResult && !sendResult.success) {
         console.error('Falha ao enviar mensagem Z-API:', sendResult.error);
+        return NextResponse.json({
+          error: 'Falha ao despachar mensagem no WhatsApp via Z-API',
+          details: sendResult.error,
+        }, { status: 400 });
       }
+
+      // Registra mensagem enviada também no store para manter o histórico alinhado
+      const canonicalConvId = `conv-zapi-${cleanPhone}`;
+      serverCRMStore.updateState({
+        conversations: [{
+          id: canonicalConvId,
+          tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
+          instanceId,
+          contactId: `contact-zapi-${cleanPhone}`,
+          status: 'PENDING_CLIENT',
+          unreadCount: 0,
+          lastMessagePreview: content.substring(0, 100),
+          lastMessageAt: new Date().toISOString(),
+          slaBreached: false,
+          isPersonal: false,
+        }],
+        messages: [{
+          id: externalMessageId,
+          tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
+          conversationId: canonicalConvId,
+          senderType: 'USER',
+          senderName: session?.userName || 'Corretor',
+          messageType: messageType as any,
+          content,
+          status: 'DELIVERED',
+          isInternalNote: false,
+          timestamp: new Date().toISOString(),
+        }],
+      });
     }
 
 

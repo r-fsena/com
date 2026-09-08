@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { validateApiSession } from '@/lib/api-auth';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isLidIdentifier, cleanLid } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
+
+const DEFAULT_ZAPI_INSTANCE_ID = '3F8144490C66805B4E3FD64A35E2F2DC';
+const DEFAULT_ZAPI_INSTANCE_TOKEN = '550DBC07B2F984AB74E4BCE5';
+const DEFAULT_ZAPI_CLIENT_TOKEN = 'Fc78d61c833db4b50864816b70766aee8S';
 
 async function handleSyncChats(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
@@ -13,9 +17,9 @@ async function handleSyncChats(req: NextRequest) {
   });
   if (errorResponse) return errorResponse;
 
-  let instanceId = process.env.ZAPI_INSTANCE_ID || '';
-  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
-  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+  let instanceId = process.env.ZAPI_INSTANCE_ID || DEFAULT_ZAPI_INSTANCE_ID;
+  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_ZAPI_INSTANCE_TOKEN;
+  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || DEFAULT_ZAPI_CLIENT_TOKEN;
   let tenantId = session?.tenantId || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
   let assignedUserId: string | undefined;
   let fetchHistoryMessages = true;
@@ -124,18 +128,34 @@ async function handleSyncChats(req: NextRequest) {
       });
     }
 
-    // Deduplica chats por telefone (mantendo a ocorrência com lastMessageTime mais recente)
+    // 1. Popula o mapa global de LIDs a partir de todos os chats que trazem ambos os identificadores
+    rawChats.forEach((c: any) => {
+      if (c && c.lid && c.phone && !isLidIdentifier(c.phone)) {
+        serverCRMStore.registerLidPhone(c.lid, c.phone);
+      }
+    });
+
+    // Deduplica chats por telefone (resolvendo chats que vieram apenas com LID para seu telefone canônico)
     const chatsByPhone = new Map<string, any>();
     rawChats.forEach((c: any) => {
-      if (!c || !isRealWhatsAppConversation(c)) return;
-      const clean = (c.phone || '').replace(/\D/g, '');
+      if (!c) return;
+      if (c.lid && (!c.phone || isLidIdentifier(c.phone))) {
+        const resolved = serverCRMStore.resolvePhoneFromLid(c.lid);
+        if (resolved) c.phone = resolved;
+      }
+      if (!isRealWhatsAppConversation(c)) return;
+      let clean = (c.phone || '').replace(/\D/g, '');
       if (!clean) return;
+      if (!clean.startsWith('55') && (clean.length === 10 || clean.length === 11)) {
+        clean = `55${clean}`;
+      }
 
       const existing = chatsByPhone.get(clean);
       const currentTime = parseWhatsAppTimestamp(c.lastMessageTime);
       const existingTime = existing ? parseWhatsAppTimestamp(existing.lastMessageTime) : 0;
 
       if (!existing || currentTime > existingTime) {
+        if (!c.name && existing?.name) c.name = existing.name;
         chatsByPhone.set(clean, c);
       }
     });

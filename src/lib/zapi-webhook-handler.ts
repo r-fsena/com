@@ -63,7 +63,10 @@ export async function processZapiWebhookRequest(
 
     // Se o telefone estiver vazio ou for um LID, resolve para o telefone canônico
     if ((!cleanPhone || isLidIdentifier(cleanPhone)) && lid) {
-      const resolved = serverCRMStore.resolvePhoneFromLid(lid);
+      let resolved = serverCRMStore.resolvePhoneFromLid(lid);
+      if (!resolved) {
+        resolved = await serverCRMStore.resolvePhoneFromLidAsync(lid, routeParams?.instanceId);
+      }
       if (resolved) {
         cleanPhone = resolved;
       } else {
@@ -191,7 +194,8 @@ export async function processZapiWebhookRequest(
         tenantId,
         instanceId,
         phone: cleanPhone,
-        senderName,
+        lid: lid || undefined,
+        senderName: fromMe ? (body.senderName || 'Corretor') : senderName,
         senderPhoto,
         content,
         mediaType,
@@ -204,6 +208,27 @@ export async function processZapiWebhookRequest(
 
       // Atualiza também no serverCRMStore unificando conversa e mensagem
       serverCRMStore.updateState({
+        contacts: !fromMe && cleanPhone && !isLidIdentifier(cleanPhone) ? [{
+          id: `contact-zapi-${cleanPhone}`,
+          tenantId,
+          name: senderName,
+          phone: `+${cleanPhone}`,
+          lid: lid || undefined,
+          avatarUrl: senderPhoto,
+          source: 'WHATSAPP',
+          temperature: 'HOT',
+          aiPriorityScore: 85,
+          tags: ['Novo Lead WhatsApp'],
+          targetRegions: [],
+          notesCount: 0,
+          consentGiven: true,
+          hasOptedOut: false,
+          isPersonal: false,
+          lastClientInteractionAt: new Date().toISOString(),
+          lastTeamInteractionAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }] : [],
         conversations: [{
           id: canonicalConvId,
           tenantId,
@@ -221,7 +246,7 @@ export async function processZapiWebhookRequest(
           tenantId,
           conversationId: canonicalConvId,
           senderType: fromMe ? 'USER' : 'CONTACT',
-          senderName,
+          senderName: fromMe ? (body.senderName || 'Corretor') : senderName,
           messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
           content,
           status: 'DELIVERED',

@@ -878,7 +878,97 @@
     });
   }
 
-  // 5. Varredura Automática Paginada (Clica e Lê cada Conversa)
+  // Helper: Encontra o container real de rolagem da lista de conversas (#pane-side)
+  function findPaneSideScrollContainer() {
+    const pane = document.querySelector('#pane-side');
+    if (!pane) return null;
+    if (pane.scrollHeight > pane.clientHeight) return pane;
+    
+    // Fallback caso o container de rolagem seja um filho interno
+    const children = pane.querySelectorAll('div');
+    for (const child of children) {
+      if (child.scrollHeight > child.clientHeight && child.clientHeight > 100) {
+        const style = window.getComputedStyle(child);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+          return child;
+        }
+      }
+    }
+    return pane;
+  }
+
+  // Helper: Obtém as linhas de conversas visíveis no DOM virtual do WhatsApp
+  function getVisibleChatRows() {
+    const pane = findPaneSideScrollContainer() || document.querySelector('#pane-side');
+    if (!pane) return [];
+
+    const candidateSpans = Array.from(pane.querySelectorAll('span[title], div[role="gridcell"] span[title], span[dir="auto"][title]'));
+    const rows = [];
+    const seenContainers = new Set();
+    const seenKeys = new Set();
+    const paneRect = pane.getBoundingClientRect();
+
+    for (const span of candidateSpans) {
+      const title = (span.getAttribute('title') || span.innerText || '').trim();
+      if (!title || title.length < 1) continue;
+
+      // Ignora itens de sistema e canais
+      if (['Meta AI', 'Arquivadas', 'Comunidades', 'Canais', 'Status'].includes(title)) continue;
+      if (title.includes('Você') || title.includes('WhatsApp')) continue;
+
+      // Localiza o container da linha clicável
+      const rowContainer = span.closest('div[role="listitem"], div[role="row"], div[role="gridcell"], div[data-testid="cell-frame-container"], div._ak8l') ||
+                           span.parentElement?.parentElement;
+      if (!rowContainer || seenContainers.has(rowContainer)) continue;
+
+      // Ignora nós sem dimensão real
+      const rect = span.getBoundingClientRect();
+      if (rect.height === 0 || rect.width === 0) continue;
+
+      const rowRect = rowContainer.getBoundingClientRect();
+      // Permite elementos no viewport do pane-side (com margem de tolerância)
+      if (rowRect.bottom < (paneRect.top - 50) || rowRect.top > (paneRect.bottom + 100)) continue;
+
+      seenContainers.add(rowContainer);
+
+      const key = title.toLowerCase().trim();
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        rows.push({
+          title,
+          key,
+          span,
+          clickable: rowContainer
+        });
+      }
+    }
+
+    // Fallback: se não achou com span[title], tenta via seletores de gridcell
+    if (rows.length === 0) {
+      const gridcells = Array.from(pane.querySelectorAll('div[role="gridcell"], div[role="row"], div[data-testid="cell-frame-container"]'));
+      for (const cell of gridcells) {
+        const firstSpan = cell.querySelector('span[dir="auto"], span.x10l6tqk, span');
+        const title = (firstSpan?.getAttribute('title') || firstSpan?.innerText || '').trim();
+        if (!title || title.length < 2) continue;
+        if (['Meta AI', 'Arquivadas', 'Comunidades', 'Canais'].includes(title)) continue;
+
+        const key = title.toLowerCase().trim();
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          rows.push({
+            title,
+            key,
+            span: firstSpan || cell,
+            clickable: cell
+          });
+        }
+      }
+    }
+
+    return rows;
+  }
+
+  // 5. Varredura Automática Paginada com Rolagem Virtual Contínua
   async function executeBatchHistoryScan() {
     if (isSyncing) return;
     isSyncing = true;
@@ -892,92 +982,137 @@
     if (progressBar) progressBar.style.display = 'block';
     if (progressStatus) {
       progressStatus.style.display = 'block';
-      progressStatus.innerText = 'Iniciando varredura e leitura dos chats...';
+      progressStatus.innerText = 'Iniciando varredura e rolagem das conversas...';
     }
 
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', 'Varredura em lote acionada pelo corretor');
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', 'Varredura em lote com rolagem automática iniciada');
 
-    // Localiza spans de título na lista lateral do WhatsApp Web
-    const titleNodes = Array.from(document.querySelectorAll('#pane-side span[title]'))
-      .filter(span => {
-        const title = (span.getAttribute('title') || span.innerText || '').trim();
-        return title && 
-               title !== 'Meta AI' && 
-               title !== 'Arquivadas' && 
-               !title.includes('Você') &&
-               span.offsetHeight > 0;
-      });
-
-    logToConsoleAndCloudWatch('INFO', 'CHATS_DISCOVERED', `Localizados ${titleNodes.length} chats para sincronização`);
-
-    if (titleNodes.length === 0) {
-      logToConsoleAndCloudWatch('WARN', 'NO_CHATS_FOUND', 'Nenhum chat visível encontrado no #pane-side');
+    const scrollContainer = findPaneSideScrollContainer() || document.querySelector('#pane-side');
+    if (!scrollContainer) {
+      logToConsoleAndCloudWatch('WARN', 'NO_PANE_SIDE', 'Container #pane-side não encontrado');
       alert('Nenhum chat visível no WhatsApp Web. Certifique-se de que o WhatsApp Web está aberto.');
       isSyncing = false;
       if (btn) btn.disabled = false;
       return;
     }
 
-    const total = Math.min(titleNodes.length, 30);
+    // Rola suavemente para o topo antes de iniciar para garantir a varredura completa
+    try {
+      scrollContainer.scrollTop = 0;
+      scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 450));
+    } catch (e) {}
+
+    const processedChatKeys = new Set();
     const syncedChats = [];
+    const MAX_TARGET_CHATS = 50; // Limite de chats por varredura
+    let consecutiveScrollsWithoutNew = 0;
+    let totalAttempts = 0;
 
-    for (let i = 0; i < total; i++) {
-      const titleSpan = titleNodes[i];
-      if (!titleSpan) continue;
+    while (syncedChats.length < MAX_TARGET_CHATS && consecutiveScrollsWithoutNew < 5) {
+      const visibleRows = getVisibleChatRows();
+      // Localiza a próxima conversa visível que ainda não foi sincronizada nesta rodada
+      const nextRow = visibleRows.find(r => !processedChatKeys.has(r.key));
 
-      const name = titleSpan.getAttribute('title') || titleSpan.innerText || `Chat ${i + 1}`;
+      if (nextRow) {
+        consecutiveScrollsWithoutNew = 0;
+        processedChatKeys.add(nextRow.key);
+        totalAttempts++;
 
-      if (progressStatus) {
-        progressStatus.innerText = `Abrindo e lendo histórico (${i + 1}/${total}): ${name}...`;
-      }
+        if (progressStatus) {
+          progressStatus.innerText = `Lendo chat ${totalAttempts} (${syncedChats.length} salvos): ${nextRow.title}...`;
+        }
 
-      logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo (${i + 1}/${total}): ${name}`);
+        logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat (${syncedChats.length + 1}/${MAX_TARGET_CHATS}): ${nextRow.title}`);
 
-      // Clica para abrir a conversa usando múltiplos eventos de ponteiro
-      const clickable = titleSpan.closest('div[role="gridcell"], div[role="row"], div._ak8l') || 
-                        titleSpan.parentElement?.parentElement || 
-                        titleSpan;
+        // Rola o item para o centro da lista antes do clique
+        try {
+          nextRow.clickable.scrollIntoView({ block: 'center', behavior: 'auto' });
+          await new Promise(r => setTimeout(r, 120));
+        } catch (e) {}
 
-      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-        clickable.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-        titleSpan.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-      });
-
-      // Aguarda 950ms para o WhatsApp renderizar os balões
-      await new Promise(r => setTimeout(r, 950));
-
-      // Extrai dados reais com mensagens
-      const chatData = extractActiveChatData();
-      if (chatData) {
-        chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
-      }
-      if (chatData && chatData.phone) {
-        syncedChats.push(chatData);
-
-        logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${chatData.messages.length} msgs de ${chatData.name} (${chatData.phone})`);
-
-        // Envia imediatamente cada chat para a API da Brokiva
-        safeSendMessage({
-          action: 'SYNC_BATCH_CHATS',
-          data: { chats: [chatData] }
+        // Dispara eventos de ponteiro/mouse para o WhatsApp Web abrir o chat
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+          try {
+            nextRow.clickable.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+            nextRow.span.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+          } catch (e) {}
         });
-      } else {
-        logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${name}: Não foi possível resolver identificador do contato`);
-      }
 
-      // Atualiza barra de progresso
-      const pct = Math.round(((i + 1) / total) * 100);
-      if (progressFill) progressFill.style.width = `${pct}%`;
+        // Aguarda 950ms para o WhatsApp renderizar o histórico em #main
+        await new Promise(r => setTimeout(r, 950));
+
+        // Extrai dados da conversa aberta
+        let chatData = extractActiveChatData();
+        if (!chatData || !chatData.messages || chatData.messages.length === 0) {
+          // Pequena tolerância para conexões mais lentas
+          await new Promise(r => setTimeout(r, 400));
+          chatData = extractActiveChatData();
+        }
+
+        if (chatData) {
+          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
+        }
+
+        if (chatData && chatData.phone) {
+          syncedChats.push(chatData);
+          logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${chatData.messages.length} msgs de ${chatData.name} (${chatData.phone})`);
+
+          // Envia imediatamente cada chat para a API da Brokiva
+          safeSendMessage({
+            action: 'SYNC_BATCH_CHATS',
+            data: { chats: [chatData] }
+          });
+        } else {
+          logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${nextRow.title}: Não foi possível resolver identificador do contato`);
+        }
+
+        // Atualiza barra de progresso
+        const pct = Math.min(100, Math.round((syncedChats.length / MAX_TARGET_CHATS) * 100));
+        if (progressFill) progressFill.style.width = `${pct}%`;
+
+        // Pausa breve entre conversas
+        await new Promise(r => setTimeout(r, 200));
+
+      } else {
+        // Todas as conversas visíveis no viewport atual já foram processadas.
+        // Rola o #pane-side para baixo para forçar a montagem do próximo lote virtual
+        const pane = findPaneSideScrollContainer() || document.querySelector('#pane-side');
+        if (!pane) break;
+
+        const prevScrollTop = pane.scrollTop;
+        const scrollStep = Math.max(320, Math.round(pane.clientHeight * 0.75));
+
+        if (progressStatus) {
+          progressStatus.innerText = `Rolando conversas para baixo (${syncedChats.length} lidos)...`;
+        }
+
+        pane.scrollTop += scrollStep;
+        pane.dispatchEvent(new Event('scroll', { bubbles: true }));
+        pane.dispatchEvent(new WheelEvent('wheel', { deltaY: scrollStep, bubbles: true }));
+
+        // Aguarda a janela virtual do React/WhatsApp montar os novos elementos
+        await new Promise(r => setTimeout(r, 700));
+
+        const currentScrollTop = pane.scrollTop;
+        const isAtBottom = (pane.scrollTop + pane.clientHeight) >= (pane.scrollHeight - 20);
+
+        if (Math.abs(currentScrollTop - prevScrollTop) < 5 || isAtBottom) {
+          consecutiveScrollsWithoutNew++;
+          logToConsoleAndCloudWatch('DEBUG', 'SCROLL_BOTTOM_CHECK', `Atingiu fim de rolagem ou repetição (tentativa ${consecutiveScrollsWithoutNew}/5)`);
+        }
+      }
     }
 
     isSyncing = false;
     if (btn) btn.disabled = false;
+    if (progressFill) progressFill.style.width = '100%';
     if (progressStatus) {
-      progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e históricos completos sincronizados com a Brokiva!`;
+      progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e históricos sincronizados com a Brokiva!`;
       progressStatus.style.color = '#059669';
     }
 
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura finalizada: ${syncedChats.length}/${total} chats sincronizados com a nuvem`);
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura finalizada com rolagem: ${syncedChats.length} chats sincronizados`);
   }
 
   // 6. Copiloto de IA: Sugere e insere resposta com 1 clique no WhatsApp Web

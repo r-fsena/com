@@ -1100,6 +1100,9 @@
       const title = (span.getAttribute('title') || span.innerText || '').trim();
       if (!title || title.length < 1) continue;
 
+      const rowContainer = span.closest('div[role="row"], div[role="listitem"], div[data-testid="cell-frame-container"], div[tabindex="-1"]') || span;
+      if (seenContainers.has(rowContainer)) continue;
+
       // Ignora itens de sistema, canais e grupos
       if (isRowGroupOrChannel(rowContainer, title)) continue;
 

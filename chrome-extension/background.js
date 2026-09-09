@@ -43,6 +43,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  if (request.action === 'EXTENSION_LOGIN') {
+    handleExtensionLogin(request.data)
+      .then(result => sendResponse({ success: true, result }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (request.action === 'GET_TENANTS') {
+    handleGetTenants(request.data)
+      .then(result => sendResponse({ success: true, result }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 async function handleForwardLog(logData) {
@@ -244,3 +258,26 @@ async function handleResolveContact({ name, lid }) {
 
   return null;
 }
+
+async function handleGetTenants(data) {
+  const config = await chrome.storage.local.get(['crmUrl']);
+  const crmUrl = (data?.crmUrl || config.crmUrl || DEFAULT_CRM_URL).replace(/\/+$/, '');
+  const res = await fetch(`${crmUrl}/api/v1/auth/extension-login`);
+  return await res.json();
+}
+
+async function handleExtensionLogin(data) {
+  const config = await chrome.storage.local.get(['crmUrl']);
+  const crmUrl = (data?.crmUrl || config.crmUrl || DEFAULT_CRM_URL).replace(/\/+$/, '');
+  const res = await fetch(`${crmUrl}/api/v1/auth/extension-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: data.email,
+      name: data.name,
+      tenantId: data.tenantId,
+    }),
+  });
+  return await res.json();
+}
+

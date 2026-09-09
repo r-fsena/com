@@ -5,6 +5,19 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-extension-token',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 /**
  * GET: Retorna catálogo simplificado de Imobiliárias e Corretores ativos
  * para exibição amigável na interface de login da extensão
@@ -30,7 +43,7 @@ export async function GET(req: NextRequest) {
     success: true,
     tenants,
     brokers,
-  });
+  }, { headers: corsHeaders });
 }
 
 /**
@@ -45,7 +58,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: false,
       error: `Muitas tentativas. Aguarde ${rateCheck.resetInSeconds} segundos.`,
-    }, { status: 429 });
+    }, { status: 429, headers: corsHeaders });
   }
 
   try {
@@ -56,7 +69,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: false,
         error: 'Informe o e-mail ou nome do corretor para identificação.',
-      }, { status: 400 });
+      }, { status: 400, headers: corsHeaders });
     }
 
     const cleanEmail = (email || '').trim().toLowerCase();
@@ -93,11 +106,11 @@ export async function POST(req: NextRequest) {
       message: `Corretor ${displayName} autenticado com sucesso na extensão Brokiva.`,
       token,
       user: sessionPayload,
-    });
+    }, { headers: corsHeaders });
   } catch (error: any) {
     return NextResponse.json({
       success: false,
       error: error.message || 'Falha ao autenticar corretor na extensão',
-    }, { status: 500 });
+    }, { status: 500, headers: corsHeaders });
   }
 }

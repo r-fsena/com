@@ -221,19 +221,16 @@
         </div>
       `;
 
-      // Busca catálogo de imobiliárias para o select
-      try {
-        fetch(`${normalizeCrmUrl(crmUrl)}/api/v1/auth/extension-login`)
-          .then(r => r.json())
-          .then(data => {
-            const select = document.getElementById('sovereign-sidebar-tenant');
-            if (select && data.success && Array.isArray(data.tenants)) {
-              select.innerHTML = data.tenants.map(t => 
-                `<option value="${t.id}" ${t.id === (storage.tenantId || 'tenant-amabile-barbarotti') ? 'selected' : ''}>${t.name}</option>`
-              ).join('');
-            }
-          }).catch(() => {});
-      } catch {}
+      // Busca catálogo de imobiliárias para o select através do background worker (isento de CORS)
+      safeSendMessage({ action: 'GET_TENANTS', data: { crmUrl: normalizeCrmUrl(crmUrl) } }, (resp) => {
+        const data = resp?.result;
+        const select = document.getElementById('sovereign-sidebar-tenant');
+        if (select && data && data.success && Array.isArray(data.tenants)) {
+          select.innerHTML = data.tenants.map(t => 
+            `<option value="${t.id}" ${t.id === (storage.tenantId || 'tenant-amabile-barbarotti') ? 'selected' : ''}>${t.name}</option>`
+          ).join('');
+        }
+      });
 
       // Listener de login da sidebar
       document.getElementById('sovereign-sidebar-login-btn')?.addEventListener('click', async () => {
@@ -261,14 +258,18 @@
           loginBtn.innerText = 'Conectando ao Brokiva...';
         }
 
-        try {
-          const res = await fetch(`${targetUrl}/api/v1/auth/extension-login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: brokerVal, name: brokerVal, tenantId }),
-          });
-          const data = await res.json();
-          if (data.success && data.token && data.user) {
+        // Executa autenticação através do background worker para evitar bloqueio de CORS do WhatsApp Web
+        safeSendMessage({
+          action: 'EXTENSION_LOGIN',
+          data: { email: brokerVal, name: brokerVal, tenantId, crmUrl: targetUrl }
+        }, async (resp) => {
+          if (loginBtn) {
+            loginBtn.disabled = false;
+            loginBtn.innerText = '✦ Conectar ao Brokiva CRM';
+          }
+
+          const data = resp?.result;
+          if (resp && resp.success && data && data.success && data.token && data.user) {
             await chrome.storage.local.set({
               extensionSessionToken: data.token,
               brokerUserId: data.user.userId,
@@ -282,21 +283,12 @@
             await renderSidebarContent();
           } else {
             if (errorEl) {
-              errorEl.textContent = data.error || 'Falha na autenticação do corretor.';
+              const err = data?.error || resp?.error || 'Falha na autenticação do corretor.';
+              errorEl.textContent = err;
               errorEl.style.display = 'block';
             }
           }
-        } catch (err) {
-          if (errorEl) {
-            errorEl.textContent = `Falha de conexão com o CRM (${targetUrl}). Verifique a URL do servidor.`;
-            errorEl.style.display = 'block';
-          }
-        } finally {
-          if (loginBtn) {
-            loginBtn.disabled = false;
-            loginBtn.innerText = '✦ Conectar ao Brokiva CRM';
-          }
-        }
+        });
       });
     }
   }

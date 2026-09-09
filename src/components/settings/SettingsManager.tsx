@@ -40,7 +40,9 @@ import {
   ToggleLeft,
   ToggleRight,
   SlidersHorizontal,
-  Bot
+  Bot,
+  UserX,
+  UserCheck
 } from 'lucide-react';
 import { UserRole, User, TenantFeatureFlags, TenantAIConfig, AIProvider, AITone, AIObjective } from '@/types/crm';
 
@@ -58,6 +60,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     updateUser, 
     createUser, 
     deleteUser, 
+    toggleUserStatus,
     resendUserInvite, 
     resetUserPassword,
     isFeatureEnabled,
@@ -694,7 +697,12 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                             )}
                           </td>
                           <td className="py-3.5 px-4">
-                            {u.passwordSet || u.status === 'ACTIVE' ? (
+                            {u.isActive === false || u.status === 'INACTIVE' ? (
+                              <span className="text-[10.5px] font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-200 inline-flex items-center gap-1.5 shadow-2xs whitespace-nowrap">
+                                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                <span>Desativado</span>
+                              </span>
+                            ) : u.passwordSet || u.status === 'ACTIVE' ? (
                               <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 inline-flex items-center gap-1.5 shadow-2xs whitespace-nowrap">
                                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                                 <span>Ativo</span>
@@ -720,7 +728,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                               </button>
 
                               {/* Botão de Reenviar E-mail de Convite */}
-                              {(!u.passwordSet || u.status === 'INVITED') && !isMaster && (
+                              {!isMaster && (
                                 <button
                                   type="button"
                                   disabled={resendingUserId === u.id}
@@ -776,6 +784,39 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                                   </>
                                 )}
                               </button>
+
+                              {/* Botão Ativar / Desativar Usuário */}
+                              {!isMaster && !isCurrent && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const willDeactivate = u.isActive !== false && u.status !== 'INACTIVE';
+                                    if (confirm(`Deseja realmente ${willDeactivate ? 'desativar' : 'ativar'} o acesso de ${u.name}?`)) {
+                                      toggleUserStatus(u.id);
+                                      setUserSuccessMessage(`Usuário ${u.name} ${willDeactivate ? 'desativado' : 'ativado'} com sucesso.`);
+                                      setTimeout(() => setUserSuccessMessage(null), 4000);
+                                    }
+                                  }}
+                                  className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap ${
+                                    u.isActive === false || u.status === 'INACTIVE'
+                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+                                  }`}
+                                  title={u.isActive === false || u.status === 'INACTIVE' ? 'Reativar usuário' : 'Desativar usuário'}
+                                >
+                                  {u.isActive === false || u.status === 'INACTIVE' ? (
+                                    <>
+                                      <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Ativar</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserX className="w-3.5 h-3.5 text-rose-600" />
+                                      <span>Desativar</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
 
                               {!isMaster && (
                                 <select

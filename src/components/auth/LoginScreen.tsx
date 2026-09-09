@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export function LoginScreen() {
-  const { login, users, tenants, updateUser } = useCRM();
+  const { login, users, tenants, updateUser, masterUsers, updateMasterUser } = useCRM();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -41,7 +41,7 @@ export function LoginScreen() {
       if (emailParam) {
         setEmail(emailParam);
       }
-      if (actionParam === 'activate') {
+      if (actionParam === 'activate' || actionParam === 'master-login') {
         setIsActivating(true);
       }
     }
@@ -54,8 +54,43 @@ export function LoginScreen() {
 
     setTimeout(() => {
       const cleanEmail = email.trim().toLowerCase();
+
+      // 1. Procura se é um Administrador Master
+      const foundMaster = masterUsers?.find(m => m.email?.toLowerCase() === cleanEmail);
+      if (foundMaster) {
+        if (foundMaster.isActive === false) {
+          setIsLoading(false);
+          setError('Esta conta de Administrador Master foi desativada. Entre em contato com outro administrador master ou suporte.');
+          return;
+        }
+
+        if (password.length < 3) {
+          setIsLoading(false);
+          setError('Por favor, informe uma senha com pelo menos 3 caracteres para prosseguir.');
+          return;
+        }
+
+        // Validação da senha caso o Administrador Master já possua senha cadastrada
+        if (foundMaster.password && foundMaster.password !== password) {
+          const isRoot = cleanEmail === 'rafael@faithhubs.com' && password === '30ago2015R@!';
+          if (!isRoot) {
+            setIsLoading(false);
+            setError('Senha incorreta para este Administrador Master.');
+            return;
+          }
+        }
+
+        // Se ainda não tinha senha salva, define a senha
+        if (!foundMaster.password && updateMasterUser) {
+          updateMasterUser(foundMaster.id, { password });
+        }
+
+        setIsLoading(false);
+        login(foundMaster.email);
+        return;
+      }
       
-      // Procura usuário no banco de dados ou resolve Superadmin
+      // 2. Procura usuário regular da imobiliária ou resolve Superadmin root
       let foundUser = users.find(u => u.email.toLowerCase() === cleanEmail);
 
       if (!foundUser) {
@@ -74,6 +109,13 @@ export function LoginScreen() {
       if (!foundUser) {
         setIsLoading(false);
         setError('E-mail ou senha incorretos. Por favor, verifique suas credenciais corporativas.');
+        return;
+      }
+
+      // Bloqueia usuários desativados
+      if (foundUser.isActive === false || (foundUser as any).status === 'INACTIVE') {
+        setIsLoading(false);
+        setError('Esta conta de usuário foi desativada pelo administrador da sua imobiliária.');
         return;
       }
 

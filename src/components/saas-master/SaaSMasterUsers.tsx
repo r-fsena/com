@@ -15,7 +15,13 @@ import {
   Crown, 
   Sparkles,
   KeyRound,
-  X
+  X,
+  Send,
+  Copy,
+  Check,
+  RefreshCw,
+  UserX,
+  AlertCircle
 } from 'lucide-react';
 
 const AVAILABLE_PERMISSIONS = [
@@ -29,10 +35,23 @@ const AVAILABLE_PERMISSIONS = [
 ];
 
 export function SaaSMasterUsers() {
-  const { masterUsers, createMasterUser, updateMasterUser, deleteMasterUser, currentUser } = useCRM();
+  const { 
+    masterUsers, 
+    createMasterUser, 
+    updateMasterUser, 
+    deleteMasterUser, 
+    toggleMasterUserStatus, 
+    resendMasterUserInvite, 
+    currentUser 
+  } = useCRM();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<MasterUser | null>(null);
+
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null);
+  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Form State
   const [name, setName] = useState('');
@@ -61,6 +80,48 @@ export function SaaSMasterUsers() {
     setIsModalOpen(true);
   };
 
+  const handleResendAccess = async (u: MasterUser) => {
+    try {
+      setResendingUserId(u.id);
+      setErrorMessage(null);
+      const res = await resendMasterUserInvite(u.id);
+      setFeedbackMessage(`✉️ ${res.message}`);
+      setTimeout(() => setFeedbackMessage(null), 5000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Não foi possível reenviar o acesso.');
+      setTimeout(() => setErrorMessage(null), 5000);
+    } finally {
+      setResendingUserId(null);
+    }
+  };
+
+  const handleCopyAccessLink = (u: MasterUser) => {
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://crm.faithhubs.com';
+    const link = `${baseUrl}?action=master-login&email=${encodeURIComponent(u.email)}`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(link);
+      setCopiedUserId(u.id);
+      setFeedbackMessage(`🔗 Link de acesso master copiado para a área de transferência!`);
+      setTimeout(() => {
+        setCopiedUserId(null);
+        setFeedbackMessage(null);
+      }, 3000);
+    }
+  };
+
+  const handleToggleActive = (u: MasterUser) => {
+    const willDeactivate = u.isActive !== false;
+    const msg = willDeactivate
+      ? `Deseja realmente desativar o acesso do Administrador Master "${u.name}"? Ele não poderá operar no painel master até ser reativado.`
+      : `Deseja reativar o acesso do Administrador Master "${u.name}"?`;
+
+    if (confirm(msg)) {
+      toggleMasterUserStatus(u.id);
+      setFeedbackMessage(willDeactivate ? `⚠️ Admin Master ${u.name} desativado com sucesso.` : `✅ Admin Master ${u.name} reativado com sucesso.`);
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    }
+  };
+
   const togglePermission = (permId: string) => {
     if (permId === 'ALL_PERMISSIONS') {
       if (selectedPermissions.includes('ALL_PERMISSIONS')) {
@@ -83,22 +144,25 @@ export function SaaSMasterUsers() {
     if (editingUser) {
       updateMasterUser(editingUser.id, {
         name: name.trim(),
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         phone: phone.trim(),
         role,
         permissions: selectedPermissions,
       });
+      setFeedbackMessage(`Admin Master ${name.trim()} atualizado com sucesso.`);
     } else {
       createMasterUser({
         name: name.trim(),
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         phone: phone.trim(),
         role,
         permissions: selectedPermissions,
         avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=3742AC&color=ffffff`,
       });
+      setFeedbackMessage(`Novo Admin Master ${name.trim()} convidado com sucesso.`);
     }
 
+    setTimeout(() => setFeedbackMessage(null), 4000);
     setIsModalOpen(false);
   };
 
@@ -131,6 +195,31 @@ export function SaaSMasterUsers() {
         </button>
       </div>
 
+      {/* Feedback Alert Banners */}
+      {feedbackMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-2xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{feedbackMessage}</span>
+          </div>
+          <button onClick={() => setFeedbackMessage(null)} className="text-emerald-600 hover:text-emerald-900 cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-2xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-900 cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Tabela de Usuários Masters */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -153,7 +242,7 @@ export function SaaSMasterUsers() {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
                         <img
-                          src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
+                          src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=3742AC&color=ffffff`}
                           alt={user.name}
                           className="w-10 h-10 rounded-full object-cover ring-2 ring-[#3742AC]/20 shadow-2xs"
                         />
@@ -204,14 +293,93 @@ export function SaaSMasterUsers() {
                     </td>
 
                     <td className="py-4 px-6">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-fit">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>Ativo</span>
-                      </span>
+                      {user.isActive !== false ? (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 w-fit shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Ativo</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1.5 w-fit shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                          <span>Desativado</span>
+                        </span>
+                      )}
                     </td>
 
                     <td className="py-4 px-6 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap sm:flex-nowrap">
+                        {/* Botão de Reenviar Acesso Master */}
+                        <button
+                          type="button"
+                          disabled={resendingUserId === user.id || user.isActive === false}
+                          onClick={() => handleResendAccess(user)}
+                          className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl border bg-indigo-50 hover:bg-indigo-100 text-[#3742AC] border-indigo-200 transition flex items-center gap-1 cursor-pointer disabled:opacity-40 shadow-2xs active:scale-95 whitespace-nowrap"
+                          title="Reenviar e-mail com instruções e link de acesso"
+                        >
+                          {resendingUserId === user.id ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3742AC]" />
+                              <span>Enviando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-3.5 h-3.5 text-[#3742AC]" />
+                              <span>Acesso</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Botão de Copiar Link de Acesso Master */}
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAccessLink(user)}
+                          className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap ${
+                            copiedUserId === user.id
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                          title="Copiar link direto de login master"
+                        >
+                          {copiedUserId === user.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Copiado</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copiar</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Botão de Desativar / Ativar */}
+                        {user.id !== currentUser?.id && user.email?.toLowerCase() !== currentUser?.email?.toLowerCase() && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(user)}
+                            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 whitespace-nowrap ${
+                              user.isActive !== false
+                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                            }`}
+                            title={user.isActive !== false ? 'Desativar acesso deste Admin Master' : 'Reativar acesso'}
+                          >
+                            {user.isActive !== false ? (
+                              <>
+                                <UserX className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Desativar</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>Ativar</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Botão de Editar */}
                         <button
                           type="button"
                           onClick={() => openEditModal(user)}
@@ -220,10 +388,16 @@ export function SaaSMasterUsers() {
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
-                        {user.id !== currentUser?.id && (
+
+                        {/* Botão de Excluir */}
+                        {user.id !== currentUser?.id && user.email?.toLowerCase() !== currentUser?.email?.toLowerCase() && user.email?.toLowerCase() !== 'rafael@faithhubs.com' && (
                           <button
                             type="button"
-                            onClick={() => deleteMasterUser(user.id)}
+                            onClick={() => {
+                              if (confirm(`Deseja realmente remover permanentemente o Admin Master ${user.name}?`)) {
+                                deleteMasterUser(user.id);
+                              }
+                            }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                             title="Remover Admin Master"
                           >

@@ -90,6 +90,7 @@ interface CRMContextType {
   updateUser: (userId: string, updates: Partial<User>) => void;
   createUser: (userData: Partial<User>) => User;
   deleteUser: (userId: string) => void;
+  toggleUserStatus: (userId: string) => void;
   resendUserInvite: (userId: string) => Promise<{ success: boolean; message: string }>;
   resetUserPassword: (userId: string, newPassword: string, options?: { notifyEmail?: boolean; mustChangePassword?: boolean }) => Promise<{ success: boolean; message: string }>;
   updateUserAIPersona: (userId: string, data: { aiPersonaPrompt?: string; aiTone?: any; aiDirectives?: string[]; aiModel?: string }) => void;
@@ -203,6 +204,8 @@ interface CRMContextType {
   createMasterUser: (userData: Partial<MasterUser>) => MasterUser;
   updateMasterUser: (userId: string, updates: Partial<MasterUser>) => void;
   deleteMasterUser: (userId: string) => void;
+  toggleMasterUserStatus: (userId: string) => void;
+  resendMasterUserInvite: (userId: string) => Promise<{ success: boolean; message: string; inviteLink?: string }>;
 
   saasApiConfig: SaaSApiConfig;
   updateSaaSApiConfig: (updates: Partial<SaaSApiConfig>) => void;
@@ -1030,6 +1033,24 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return newUser;
   };
 
+  const toggleUserStatus = (userId: string) => {
+    setUsers(prev => {
+      const updated = prev.map(u => {
+        if (u.id === userId) {
+          const newStatus: 'ACTIVE' | 'INACTIVE' = u.isActive === false || u.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
+          return {
+            ...u,
+            isActive: newStatus === 'ACTIVE',
+            status: newStatus,
+          };
+        }
+        return u;
+      });
+      try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
   const resendUserInvite = async (userId: string): Promise<{ success: boolean; message: string }> => {
     const targetUser = users.find(u => u.id === userId);
     if (!targetUser) {
@@ -1038,7 +1059,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     const res = await fetch('/api/v1/users/invite', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': currentTenant.id,
+        'x-user-id': currentUser.id,
+        'x-user-email': currentUser.email,
+      },
       body: JSON.stringify({
         email: targetUser.email,
         name: targetUser.name,
@@ -1047,6 +1074,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         tenantId: currentTenant.id,
         temporaryPassword: targetUser.password,
         isResend: true,
+        isMaster: targetUser.role === 'SUPERADMIN' || targetUser.role === 'ADMIN_MASTER',
       }),
     });
 
@@ -1121,6 +1149,138 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     updateUser(userId, data);
   };
 
+  const [masterUsers, setMasterUsers] = useState<MasterUser[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_master_users');
+        if (saved) {
+          let parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Garante que o usuário Rafael Master sempre esteja presente como âncora root
+            const hasRoot = parsed.some((u: MasterUser) => u.email?.toLowerCase() === 'rafael@faithhubs.com');
+            const merged = hasRoot ? parsed : [...MOCK_MASTER_USERS, ...parsed];
+            return merged;
+          }
+        }
+      } catch {}
+    }
+    return MOCK_MASTER_USERS;
+  });
+
+  const createMasterUser = (userData: Partial<MasterUser>): MasterUser => {
+    const newUser: MasterUser = {
+      id: `master-${Date.now()}`,
+      name: userData.name || 'Novo Administrador Master',
+      email: (userData.email || '').trim().toLowerCase(),
+      phone: userData.phone || '',
+      avatarUrl: userData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name || 'Master')}&background=3742AC&color=ffffff`,
+      role: userData.role || 'SUPPORT_LEAD',
+      permissions: userData.permissions || ['MANAGE_TENANTS', 'IMPERSONATE_CRM', 'VIEW_FINANCIALS'],
+      isActive: userData.isActive !== false,
+      createdAt: new Date().toISOString(),
+      ...userData,
+    };
+
+    setMasterUsers(prev => {
+      const updated = [...prev.filter(u => u.id !== newUser.id), newUser];
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    // Envia convite de acesso master
+    if (newUser.email && typeof window !== 'undefined') {
+      fetch('/api/v1/users/invite', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        },
+        body: JSON.stringify({
+          email: newUser.email,
+          name: newUser.name,
+          role: 'SUPERADMIN',
+          tenantName: 'FaithHubs SaaS Master',
+          tenantId: 'master-portal',
+          isMaster: true,
+          isResend: false,
+        }),
+      }).catch(err => console.error('[CRMContext] Erro ao disparar convite master:', err));
+    }
+
+    return newUser;
+  };
+
+  const updateMasterUser = (userId: string, updates: Partial<MasterUser>) => {
+    setMasterUsers(prev => {
+      const updated = prev.map(u => u.id === userId ? { ...u, ...updates } : u);
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const toggleMasterUserStatus = (userId: string) => {
+    setMasterUsers(prev => {
+      const updated = prev.map(u => {
+        if (u.id === userId) {
+          const nextActive = u.isActive === false ? true : false;
+          return { ...u, isActive: nextActive };
+        }
+        return u;
+      });
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const resendMasterUserInvite = async (userId: string): Promise<{ success: boolean; message: string; inviteLink?: string }> => {
+    const targetUser = masterUsers.find(u => u.id === userId);
+    if (!targetUser) {
+      throw new Error('Administrador Master não encontrado.');
+    }
+
+    const res = await fetch('/api/v1/users/invite', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': currentTenant.id,
+        'x-user-id': currentUser.id,
+        'x-user-email': currentUser.email,
+      },
+      body: JSON.stringify({
+        email: targetUser.email,
+        name: targetUser.name,
+        role: targetUser.role === 'SUPERADMIN_GLOBAL' ? 'SUPERADMIN' : targetUser.role,
+        tenantName: 'FaithHubs SaaS Master',
+        tenantId: 'master-portal',
+        isMaster: true,
+        isResend: true,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Não foi possível reenviar as instruções de acesso.');
+    }
+
+    return {
+      success: true,
+      message: data.message || `Instruções de acesso master reenviadas com sucesso para ${targetUser.email}!`,
+      inviteLink: data.inviteLink,
+    };
+  };
+
+  const deleteMasterUser = (userId: string) => {
+    setMasterUsers(prev => {
+      const updated = prev.filter(u => u.id !== userId);
+      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
   // Checa se já existe sessão salva no navegador
   useEffect(() => {
     try {
@@ -1128,8 +1288,36 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (saved) {
         const session = JSON.parse(saved);
         if (session?.userEmail) {
-          const u = users.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
+          const cleanEmail = session.userEmail.toLowerCase();
+          
+          // Verifica se é master user
+          const foundMaster = masterUsers.find(m => m.email?.toLowerCase() === cleanEmail);
+          if (foundMaster) {
+            if (foundMaster.isActive === false) {
+              localStorage.removeItem('vanguard_auth_session');
+              setIsAuthenticated(false);
+              return;
+            }
+            const masterAsUser: User = {
+              id: foundMaster.id,
+              name: foundMaster.name,
+              email: foundMaster.email,
+              phone: foundMaster.phone || '',
+              role: 'SUPERADMIN',
+              isActive: true,
+            };
+            setCurrentUser(masterAsUser);
+            setIsAuthenticated(true);
+            return;
+          }
+
+          const u = users.find(x => x.email.toLowerCase() === cleanEmail);
           if (u) {
+            if (u.isActive === false || u.status === 'INACTIVE') {
+              localStorage.removeItem('vanguard_auth_session');
+              setIsAuthenticated(false);
+              return;
+            }
             setCurrentUser(u);
             // Renova o cookie assinado HttpOnly no servidor para requisições à API
             fetch('/api/v1/auth/session', {
@@ -1155,32 +1343,63 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsAuthReady(true);
     }
-  }, [users, currentTenant.id]);
+  }, [users, masterUsers, currentTenant.id]);
 
   const login = (email: string, role?: string) => {
     let targetUser = currentUser;
     const cleanEmail = email.trim().toLowerCase();
-    const foundUser = users.find(u => u.email.toLowerCase() === cleanEmail) ||
-      (cleanEmail === 'rafael@faithhubs.com' || cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com'
-        ? (users.find(u => u.email.toLowerCase() === 'rafael@faithhubs.com') || users.find(u => u.role === 'SUPERADMIN') || MOCK_USERS[0])
-        : null);
 
-    if (foundUser) {
-      targetUser = foundUser;
-      setCurrentUser(foundUser);
-    } else if (role) {
-      const roleUser = users.find(u => u.role === role);
-      if (roleUser) {
-        targetUser = roleUser;
-        setCurrentUser(roleUser);
+    // 1. Verifica se é um usuário Master
+    const foundMaster = masterUsers.find(m => m.email?.toLowerCase() === cleanEmail);
+    if (foundMaster) {
+      if (foundMaster.isActive === false) {
+        throw new Error('Esta conta de Administrador Master foi desativada.');
+      }
+      const masterAsUser: User = {
+        id: foundMaster.id,
+        name: foundMaster.name,
+        email: foundMaster.email,
+        phone: foundMaster.phone || '',
+        role: 'SUPERADMIN',
+        isActive: true,
+      };
+      targetUser = masterAsUser;
+      setCurrentUser(masterAsUser);
+    } else {
+      // 2. Procura nos usuários regulares da imobiliária
+      const foundUser = users.find(u => u.email.toLowerCase() === cleanEmail) ||
+        (cleanEmail === 'rafael@faithhubs.com' || cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com'
+          ? (users.find(u => u.email.toLowerCase() === 'rafael@faithhubs.com') || users.find(u => u.role === 'SUPERADMIN') || MOCK_USERS[0])
+          : null);
+
+      if (foundUser) {
+        if (foundUser.isActive === false || foundUser.status === 'INACTIVE') {
+          throw new Error('Esta conta de usuário foi desativada pelo administrador.');
+        }
+        targetUser = foundUser;
+        setCurrentUser(foundUser);
+      } else if (role) {
+        const roleUser = users.find(u => u.role === role);
+        if (roleUser) {
+          if (roleUser.isActive === false || roleUser.status === 'INACTIVE') {
+            throw new Error('Esta conta de usuário foi desativada pelo administrador.');
+          }
+          targetUser = roleUser;
+          setCurrentUser(roleUser);
+        }
       }
     }
 
     try {
       localStorage.setItem('vanguard_auth_session', JSON.stringify({ userEmail: targetUser.email, userId: targetUser.id }));
-      // Ao logar na plataforma, sempre direciona para a tela de Dashboard & Vendas e modo CRM
       localStorage.setItem('vanguard_crm_current_tab', 'dashboard');
-      localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
+      
+      const isMasterLogin = typeof window !== 'undefined' && window.location.search.includes('action=master-login');
+      if (foundMaster || (isMasterLogin && targetUser.role === 'SUPERADMIN')) {
+        localStorage.setItem('faithhubs_view_mode', 'SAAS_MASTER');
+      } else {
+        localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
+      }
 
       // Sincroniza sessão no servidor com HttpOnly Cookie
       fetch('/api/v1/auth/session', {
@@ -4156,60 +4375,6 @@ const pollWebhookMessages = async () => {
     });
   };
 
-  const [masterUsers, setMasterUsers] = useState<MasterUser[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('vanguard_crm_master_users');
-        if (saved) {
-          let parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((u: MasterUser) => u.email?.toLowerCase() === 'rafael@faithhubs.com');
-            if (parsed.length > 0) return parsed;
-          }
-        }
-      } catch {}
-    }
-    return MOCK_MASTER_USERS;
-  });
-
-  const createMasterUser = (userData: Partial<MasterUser>): MasterUser => {
-    const newUser: MasterUser = {
-      id: `master-${Date.now()}`,
-      name: userData.name || 'Novo Administrador Master',
-      email: userData.email || '',
-      phone: userData.phone || '',
-      avatarUrl: userData.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      role: userData.role || 'SUPERADMIN_GLOBAL',
-      permissions: userData.permissions || ['ALL_PERMISSIONS'],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      ...userData,
-    };
-
-    setMasterUsers(prev => {
-      const updated = [...prev, newUser];
-      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-    return newUser;
-  };
-
-  const updateMasterUser = (userId: string, updates: Partial<MasterUser>) => {
-    setMasterUsers(prev => {
-      const updated = prev.map(u => u.id === userId ? { ...u, ...updates } : u);
-      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  };
-
-  const deleteMasterUser = (userId: string) => {
-    setMasterUsers(prev => {
-      const updated = prev.filter(u => u.id !== userId);
-      try { localStorage.setItem('vanguard_crm_master_users', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  };
-
   const [saasApiConfig, setSaasApiConfig] = useState<SaaSApiConfig>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -4739,6 +4904,7 @@ const pollWebhookMessages = async () => {
       updateUser,
       createUser,
       deleteUser,
+      toggleUserStatus,
       resendUserInvite,
       resetUserPassword,
       updateUserAIPersona,
@@ -4818,6 +4984,8 @@ const pollWebhookMessages = async () => {
       createMasterUser,
       updateMasterUser,
       deleteMasterUser,
+      toggleMasterUserStatus,
+      resendMasterUserInvite,
       saasApiConfig,
       updateSaaSApiConfig,
       isSyncingWhatsApp,

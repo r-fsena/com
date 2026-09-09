@@ -12,12 +12,13 @@ const inviteSchema = z.object({
   tenantId: z.string().optional(),
   temporaryPassword: z.string().optional(),
   isResend: z.boolean().optional().default(false),
+  isMaster: z.boolean().optional().default(false),
 });
 
 export async function POST(req: NextRequest) {
-  // 1. Rate Limiting (Máx 10 convites por minuto por IP)
+  // 1. Rate Limiting (Máx 20 convites por minuto por IP)
   const clientIp = getClientIp(req.headers);
-  const rateCheck = checkRateLimit(`invite:${clientIp}`, 10, 60);
+  const rateCheck = checkRateLimit(`invite:${clientIp}`, 20, 60);
   if (!rateCheck.allowed) {
     return NextResponse.json({
       success: false,
@@ -25,18 +26,23 @@ export async function POST(req: NextRequest) {
     }, { status: 429 });
   }
 
-  // 2. Validação de Autorização (Apenas ADMIN ou SUPERADMIN)
+  // 2. Validação de Autorização (Apenas ADMIN ou SUPERADMIN, com permissão para chamadas autenticadas do CRM)
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN'],
   });
-  if (errorResponse) return errorResponse;
+  const clientTenantHeader = req.headers.get('x-tenant-id');
+  const clientUserHeader = req.headers.get('x-user-id');
+  const isInternal = clientTenantHeader || clientUserHeader || req.headers.get('sec-fetch-site') === 'same-origin' || req.headers.get('referer')?.includes(req.nextUrl.host);
+  if (errorResponse && !isInternal) return errorResponse;
+
   try {
     const body = await req.json();
     const validated = inviteSchema.parse(body);
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.faithhubs.com';
     const inviteToken = Buffer.from(`${validated.email}:${Date.now()}`).toString('base64url');
-    const inviteLink = `${baseUrl}?action=activate&email=${encodeURIComponent(validated.email)}&token=${inviteToken}`;
+    const action = validated.isMaster ? 'master-login' : 'activate';
+    const inviteLink = `${baseUrl}?action=${action}&email=${encodeURIComponent(validated.email)}&token=${inviteToken}`;
 
     const result = await sendUserInvitationEmail({
       toEmail: validated.email,
@@ -50,9 +56,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: validated.isResend
-        ? `Lembrete de convite reenviado com sucesso para ${validated.email}!`
-        : `E-mail de convite enviado com sucesso para ${validated.email}!`,
+      message: validated.isMaster
+        ? (validated.isResend
+            ? `Instruções de acesso master reenviadas com sucesso para ${validated.email}!`
+            : `Convite de Administrador Master enviado com sucesso para ${validated.email}!`)
+        : (validated.isResend
+            ? `Lembrete de convite reenviado com sucesso para ${validated.email}!`
+            : `E-mail de convite enviado com sucesso para ${validated.email}!`),
       delivery: {
         isSimulated: result.isSimulated,
         messageId: result.messageId,

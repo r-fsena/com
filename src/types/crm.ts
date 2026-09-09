@@ -13,7 +13,7 @@ export interface User {
   isActive: boolean;
 
   // Status de Convite & Senha
-  status?: 'INVITED' | 'ACTIVE' | 'SUSPENDED';
+  status?: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'INACTIVE';
   passwordSet?: boolean;
   password?: string;
   mustChangePassword?: boolean;
@@ -527,6 +527,8 @@ export interface MasterUser {
   role: MasterUserRole;
   permissions: string[];
   isActive: boolean;
+  password?: string;
+  passwordSet?: boolean;
   lastLoginAt?: string;
   createdAt: string;
 }

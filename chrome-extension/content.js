@@ -657,59 +657,74 @@
 
   // 3. Atualiza UI do Lead Ativo de forma segura e leve
   function updateActiveLeadUI() {
-    const main = document.querySelector('#main');
-    const nameElem = document.getElementById('sovereign-lead-name');
-    const phoneElem = document.getElementById('sovereign-lead-phone');
-    const avatarElem = document.getElementById('sovereign-lead-avatar');
-    const syncCurrentBtn = document.getElementById('sovereign-sync-current-btn');
+    try {
+      const main = document.querySelector('#main');
+      const nameElem = document.getElementById('sovereign-lead-name');
+      const phoneElem = document.getElementById('sovereign-lead-phone');
+      const avatarElem = document.getElementById('sovereign-lead-avatar');
+      const syncCurrentBtn = document.getElementById('sovereign-sync-current-btn');
 
-    if (!nameElem || !phoneElem) return;
+      if (!nameElem || !phoneElem) return;
 
-    if (!main) {
-      if (lastLeadSignature !== 'none') {
-        lastLeadSignature = 'none';
-        nameElem.innerText = 'Nenhum chat selecionado';
-        phoneElem.innerText = 'Abra uma conversa no WhatsApp';
-        if (avatarElem) avatarElem.innerText = '?';
-        if (syncCurrentBtn) syncCurrentBtn.innerHTML = `<span>📥 Salvar Histórico Desta Conversa</span>`;
-      }
-      return;
-    }
-
-    const chatData = extractActiveChatData();
-    if (chatData && chatData.phone) {
-      const isLidOnly = chatData.phone.length >= 14;
-      const sig = `${chatData.phone}-${chatData.messages.length}`;
-      if (lastLeadSignature !== sig) {
-        lastLeadSignature = sig;
-        nameElem.innerText = chatData.name || 'Contato WhatsApp';
-        phoneElem.innerText = isLidOnly 
-          ? `Identificando telefone (${chatData.messages.length} msgs carregadas)...`
-          : `${formatPhoneDisplay(chatData.phone)} (${chatData.messages.length} msgs carregadas)`;
-        if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
-        if (syncCurrentBtn) {
-          syncCurrentBtn.innerHTML = `<span>📥 Salvar ${chatData.messages.length} Mensagens no CRM</span>`;
+      if (!main) {
+        if (lastLeadSignature !== 'none') {
+          lastLeadSignature = 'none';
+          nameElem.innerText = 'Nenhum chat selecionado';
+          phoneElem.innerText = 'Abra uma conversa no WhatsApp';
+          if (avatarElem) avatarElem.innerText = '?';
+          if (syncCurrentBtn) syncCurrentBtn.innerHTML = `<span>📥 Salvar Histórico Desta Conversa</span>`;
         }
+        return;
+      }
 
-        // Se o identificador for um LID, resolve para o telefone real em segundo plano e atualiza a UI
-        if (isLidOnly) {
-          resolvePhoneFromCrmIfLid(chatData.name, chatData.phone).then(realPhone => {
-            if (realPhone && realPhone.length <= 13) {
-              chatData.phone = realPhone;
-              currentActivePhone = realPhone;
-              phoneElem.innerText = `${formatPhoneDisplay(realPhone)} (${chatData.messages.length} msgs carregadas)`;
-            }
-          }).catch(() => {});
+      const chatData = extractActiveChatData();
+      if (chatData && chatData.phone) {
+        const phoneStr = String(chatData.phone);
+        const isLidOnly = phoneStr.length >= 14;
+        const msgCount = (chatData.messages && chatData.messages.length) || 0;
+        const sig = `${phoneStr}-${msgCount}`;
+
+        if (lastLeadSignature !== sig) {
+          lastLeadSignature = sig;
+          nameElem.innerText = chatData.name || 'Contato WhatsApp';
+          phoneElem.innerText = isLidOnly 
+            ? `Identificando telefone (${msgCount} msgs carregadas)...`
+            : `${formatPhoneDisplay(phoneStr)} (${msgCount} msgs carregadas)`;
+          if (avatarElem) avatarElem.innerText = (chatData.name || 'C').charAt(0).toUpperCase();
+          if (syncCurrentBtn) {
+            syncCurrentBtn.innerHTML = `<span>📥 Salvar ${msgCount} Mensagens no CRM</span>`;
+          }
+
+          // Se o identificador for um LID, resolve para o telefone real em segundo plano e atualiza a UI
+          if (isLidOnly) {
+            resolvePhoneFromCrmIfLid(chatData.name, phoneStr, false)
+              .then(realPhone => {
+                try {
+                  if (realPhone && typeof realPhone === 'string' && realPhone.length <= 13) {
+                    chatData.phone = realPhone;
+                    currentActivePhone = realPhone;
+                    const pElem = document.getElementById('sovereign-lead-phone');
+                    if (pElem) {
+                      const updatedCount = (chatData.messages && chatData.messages.length) || 0;
+                      pElem.innerText = `${formatPhoneDisplay(realPhone)} (${updatedCount} msgs carregadas)`;
+                    }
+                  }
+                } catch (e) {}
+              })
+              .catch(() => {});
+          }
+        }
+      } else {
+        const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
+        if (headerTitle && lastLeadSignature !== headerTitle) {
+          lastLeadSignature = headerTitle;
+          nameElem.innerText = headerTitle;
+          phoneElem.innerText = 'Conversa aberta (clique abaixo para ler mensagens)';
+          if (avatarElem) avatarElem.innerText = headerTitle.charAt(0).toUpperCase();
         }
       }
-    } else {
-      const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
-      if (headerTitle && lastLeadSignature !== headerTitle) {
-        lastLeadSignature = headerTitle;
-        nameElem.innerText = headerTitle;
-        phoneElem.innerText = 'Conversa aberta (clique abaixo para ler mensagens)';
-        if (avatarElem) avatarElem.innerText = headerTitle.charAt(0).toUpperCase();
-      }
+    } catch (e) {
+      // Falha silenciosa para não poluir o console durante transições de tela
     }
   }
 
@@ -785,10 +800,13 @@
     }
   }
 
-  async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid) {
-    const isSynthetic = phoneOrLid && (phoneOrLid.includes('554863562855') || phoneOrLid.startsWith('55486356'));
-    if (!isSynthetic && phoneOrLid && phoneOrLid.length >= 10 && phoneOrLid.length <= 13 && phoneOrLid.startsWith('55')) {
-      return phoneOrLid;
+  async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid, allowDrawer = false) {
+    if (!phoneOrLid) return '';
+    const phoneStr = String(phoneOrLid);
+
+    const isSynthetic = phoneStr.includes('554863562855') || phoneStr.startsWith('55486356');
+    if (!isSynthetic && phoneStr.length >= 10 && phoneStr.length <= 13 && phoneStr.startsWith('55')) {
+      return phoneStr;
     }
 
     // 1. Pergunta ao background worker (que consulta abas abertas do CRM e storage local)
@@ -796,12 +814,12 @@
       const res = await new Promise(resolve => {
         safeSendMessage({
           action: 'RESOLVE_CONTACT_BY_NAME',
-          data: { name: contactName, lid: phoneOrLid }
+          data: { name: contactName, lid: phoneStr }
         }, resp => {
           resolve(resp?.result);
         });
       });
-      if (res && res.phone) {
+      if (res && res.phone && typeof res.phone === 'string') {
         console.log(`[Brokiva] Telefone resolvido pelo CRM para ${contactName}: ${res.phone}`);
         return res.phone;
       }
@@ -812,10 +830,10 @@
       const storage = await chrome.storage.local.get(['brokivaCrmContacts']);
       const list = storage.brokivaCrmContacts || [];
       if (Array.isArray(list) && contactName) {
-        const norm = contactName.toLowerCase().trim();
-        const found = list.find(c => c.name && c.name.toLowerCase().trim() === norm);
+        const norm = String(contactName).toLowerCase().trim();
+        const found = list.find(c => c && c.name && String(c.name).toLowerCase().trim() === norm);
         if (found && found.phone) {
-          const clean = found.phone.replace(/\D/g, '');
+          const clean = String(found.phone).replace(/\D/g, '');
           if (clean.length >= 10 && clean.length <= 13) {
             console.log(`[Brokiva] Telefone extraído do cache de contatos CRM para ${contactName}: ${clean}`);
             return clean;
@@ -824,18 +842,20 @@
       }
     } catch (e) {}
 
-    // 3. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial
-    try {
-      const drawerPhone = await extractPhoneFromContactDrawer();
-      if (drawerPhone && drawerPhone.length >= 10 && drawerPhone.length <= 13) {
-        const fullPhone = drawerPhone.startsWith('55') ? drawerPhone : `55${drawerPhone}`;
-        rememberLidPhone(phoneOrLid, fullPhone);
-        console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para ${contactName}: ${fullPhone}`);
-        return fullPhone;
-      }
-    } catch (e) {}
+    // 3. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial (somente quando explicitamente permitido)
+    if (allowDrawer) {
+      try {
+        const drawerPhone = await extractPhoneFromContactDrawer();
+        if (drawerPhone && typeof drawerPhone === 'string' && drawerPhone.length >= 10 && drawerPhone.length <= 13) {
+          const fullPhone = drawerPhone.startsWith('55') ? drawerPhone : `55${drawerPhone}`;
+          rememberLidPhone(phoneStr, fullPhone);
+          console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para ${contactName}: ${fullPhone}`);
+          return fullPhone;
+        }
+      } catch (e) {}
+    }
 
-    return isSynthetic ? (phoneOrLid.replace(/\D/g, '') || '') : phoneOrLid;
+    return isSynthetic ? (phoneStr.replace(/\D/g, '') || '') : phoneStr;
   }
 
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
@@ -857,7 +877,7 @@
     }
 
     // Se o telefone extraído for LID, consulta o CRM pelo nome do contato para casar o telefone real
-    chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
+    chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
 
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
     if (badge) badge.innerText = 'Salvando...';

@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
         cleanPhone = `55${cleanPhone}`;
       }
 
-      // Localiza se já existe contato ou conversa prévia com esse número, LID ou nome no CRM
+      // Localiza se já existe contato ou conversa prévia com esse número ou LID
       const currentState = serverCRMStore.getState();
       const existingContact = currentState.contacts.find(c => {
         const matchPhone = arePhonesEquivalent(c.phone, rawDigits) || 
@@ -105,11 +105,7 @@ export async function POST(req: NextRequest) {
                            arePhonesEquivalent(c.phone, chat.phone);
         const matchLid = (incomingLid && c.lid && cleanLid(c.lid) === incomingLid) ||
                          (c.lid && rawDigits && cleanLid(c.lid) === cleanLid(rawDigits));
-        const matchName = chat.name && c.name && 
-                          !chat.name.startsWith('+') && 
-                          !c.name.startsWith('+') && 
-                          c.name.toLowerCase().trim() === chat.name.toLowerCase().trim();
-        return matchPhone || matchLid || matchName;
+        return matchPhone || matchLid;
       });
 
       // Se o contato existente possuir telefone real válido, adota-o como canônico
@@ -135,7 +131,7 @@ export async function POST(req: NextRequest) {
       });
 
       const contactId = existingContact ? existingContact.id : defaultContactId;
-      const conversationId = defaultConversationId;
+      const conversationId = existingConv ? existingConv.id : defaultConversationId;
 
       const contactName = chat.name && !chat.name.startsWith('+') && !chat.name.startsWith('WhatsApp')
         ? chat.name.trim()
@@ -153,6 +149,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (Array.isArray(chat.messages) && chat.messages.length > 0) {
+        const seenInBatch = new Set<string>();
         chat.messages.forEach((m, idx) => {
           const mContent = (m.content || '').trim();
           if (!mContent && !m.mediaUrl) return;
@@ -164,8 +161,11 @@ export async function POST(req: NextRequest) {
             if (ms > 0) mTimestamp = new Date(ms).toISOString();
           }
 
-          const mId = m.id || `ext-msg-${cleanPhone}-${idx}-${Date.now()}`;
+          const mId = m.id || `ext-msg-${cleanPhone}-${idx}-${mTimestamp}`;
           const isFromMe = Boolean(m.fromMe);
+          const batchDedupeKey = m.id || `${conversationId}-${mContent}-${mTimestamp.slice(0, 19)}-${isFromMe}`;
+          if (seenInBatch.has(batchDedupeKey)) return;
+          seenInBatch.add(batchDedupeKey);
 
           newMessages.push({
             id: mId,

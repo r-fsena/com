@@ -666,8 +666,9 @@ export const serverCRMStore = {
         conversationId: convId,
       };
 
-      const timeKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
-      const key = `${convId}-${content}-${timeKey}`;
+      const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
+      const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
+      const key = isNativeWppId ? m.id! : `${convId}-${content}-${timeKey}-${m.senderType}`;
       const existing = map.get(key);
       if (!existing) {
         map.set(key, normalizedMsg);

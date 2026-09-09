@@ -426,7 +426,161 @@
     return `+${digits}`;
   }
 
-  // 2. Extrai dados da conversa ativa no WhatsApp Web
+  // 1.2 Utilitário de detecção de Grupos, Canais e Comunidades
+  function isWhatsAppChannelOrGroup(target) {
+    if (!target) return false;
+    const rawCombined = `${target.phone || ''} ${target.id || ''} ${target.lid || ''} ${target.name || ''}`.toLowerCase();
+
+    if (
+      rawCombined.includes('@newsletter') ||
+      rawCombined.includes('newsletter') ||
+      rawCombined.includes('@g.us') ||
+      rawCombined.includes('-group') ||
+      rawCombined.includes('@broadcast') ||
+      rawCombined.includes('@temp')
+    ) {
+      return true;
+    }
+
+    const phoneDigits = String(target.phone || '').replace(/\D/g, '');
+    if (phoneDigits.startsWith('120363') && phoneDigits.length >= 15) return true;
+    if (phoneDigits === '0' || (phoneDigits.length > 0 && phoneDigits.length < 8)) return true;
+
+    const nameLower = (target.name || '').toLowerCase().trim();
+    if (
+      nameLower.startsWith('grupo ') ||
+      nameLower.startsWith('grupo:') ||
+      nameLower.startsWith('comunidade ') ||
+      nameLower.startsWith('canal ') ||
+      nameLower.startsWith('avisos ') ||
+      nameLower === 'meta ai' ||
+      nameLower === 'arquivadas' ||
+      nameLower === 'canais' ||
+      nameLower === 'comunidades' ||
+      nameLower === 'status' ||
+      nameLower === 'notícias'
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // 1.3 Detecta se uma linha visível no painel lateral é grupo ou canal antes do clique
+  function isRowGroupOrChannel(rowContainer, spanTitle) {
+    if (!rowContainer) return false;
+    const title = (spanTitle || '').trim().toLowerCase();
+
+    // Palavras reservadas do sistema
+    const systemTitles = ['meta ai', 'arquivadas', 'comunidades', 'canais', 'status', 'avisos', 'whatsapp', 'você', 'notícias'];
+    if (systemTitles.some(st => title === st || title.startsWith(st))) return true;
+
+    // Ícones característicos de grupo, comunidade ou canal
+    const groupOrChannelIcon = rowContainer.querySelector(
+      'span[data-icon="default-group"], span[data-icon="community"], span[data-icon="newsletter"], span[data-icon="channel"], span[data-icon="announcement"], span[data-icon="broadcast"], span[data-icon*="group"], span[data-icon*="newsletter"], span[data-icon*="community"]'
+    );
+    if (groupOrChannelIcon) return true;
+
+    // Avatar do WhatsApp com URL de grupo ou canal
+    const avatarImg = rowContainer.querySelector('img[src]');
+    if (avatarImg) {
+      const src = (avatarImg.getAttribute('src') || '').toLowerCase();
+      if (src.includes('g.us') || src.includes('newsletter') || src.includes('broadcast') || src.includes('group')) {
+        return true;
+      }
+    }
+
+    // Atributos aria-label que indicam grupo
+    const ariaLabel = (rowContainer.getAttribute('aria-label') || '').toLowerCase();
+    if (ariaLabel.includes('grupo') || ariaLabel.includes('comunidade') || ariaLabel.includes('canal') || ariaLabel.includes('newsletter')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // 1.4 Detecta se a conversa atualmente aberta no #main é um grupo ou canal
+  function isCurrentChatGroupOrChannel() {
+    const main = document.querySelector('#main');
+    if (!main) return false;
+
+    const header = main.querySelector('header');
+    if (header) {
+      const headerText = (header.innerText || '').toLowerCase();
+      if (
+        headerText.includes('participantes') ||
+        headerText.includes('participante') ||
+        headerText.includes('dados do grupo') ||
+        headerText.includes('dados da comunidade') ||
+        headerText.includes('canal oficial') ||
+        headerText.includes('seguidores') ||
+        headerText.includes('somente admins') ||
+        headerText.includes('clique aqui para ver os dados do grupo') ||
+        (headerText.includes('você') && headerText.includes('+'))
+      ) {
+        return true;
+      }
+
+      const icon = header.querySelector(
+        'span[data-icon="default-group"], span[data-icon="newsletter"], span[data-icon="community"], span[data-icon="channel"], span[data-icon="announcement"], span[data-icon*="group"], span[data-icon*="newsletter"]'
+      );
+      if (icon) return true;
+
+      const avatarImg = header.querySelector('img[src]');
+      if (avatarImg) {
+        const src = (avatarImg.getAttribute('src') || '').toLowerCase();
+        if (src.includes('g.us') || src.includes('newsletter') || src.includes('broadcast')) {
+          return true;
+        }
+      }
+    }
+
+    // Amostra rápida de data-ids para verificar JIDs de grupo ou canal
+    const sampleElements = Array.from(main.querySelectorAll('[data-id]')).slice(0, 10);
+    for (const el of sampleElements) {
+      const dId = el.getAttribute('data-id') || '';
+      if (dId.includes('@g.us') || dId.includes('@newsletter') || dId.includes('@broadcast') || dId.includes('@temp')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // 1.5 Aguarda confirmação ativa de troca de conversa no #main (evita contaminação entre chats)
+  async function waitForChatToOpen(expectedTitle, previousTitle, timeoutMs = 3500) {
+    const start = Date.now();
+    const normExpected = (expectedTitle || '').toLowerCase().trim();
+    const normPrev = (previousTitle || '').toLowerCase().trim();
+
+    while (Date.now() - start < timeoutMs) {
+      const main = document.querySelector('#main');
+      if (main) {
+        const headerSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
+        const currentTitle = (headerSpan ? (headerSpan.getAttribute('title') || headerSpan.innerText) : '').trim().toLowerCase();
+
+        // 1. Checa se o título é exatamente igual ou contém o esperado
+        const matchesExpected = currentTitle && normExpected && (
+          currentTitle === normExpected ||
+          normExpected.includes(currentTitle) ||
+          currentTitle.includes(normExpected)
+        );
+
+        // 2. Ou se comprovadamente mudou em relação ao chat anterior
+        const changedFromPrev = normPrev && currentTitle && currentTitle !== normPrev;
+
+        if (matchesExpected || (changedFromPrev && currentTitle.length >= 2)) {
+          // Pequena pausa para garantir que o Virtual DOM montou as mensagens da nova conversa
+          await new Promise(r => setTimeout(r, 350));
+          return true;
+        }
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+    return false;
+  }
+
+  // 2. Extrai dados da conversa ativa no WhatsApp Web (Blindada contra duplicações e grupos)
   function extractActiveChatData() {
     const main = document.querySelector('#main');
     if (!main) {
@@ -434,28 +588,21 @@
       return null;
     }
 
+    // Filtro Imediato: Se for grupo ou canal, descarta
+    if (isCurrentChatGroupOrChannel()) {
+      console.log('[Brokiva] Grupo ou Canal detectado no #main, ignorando extração.');
+      return null;
+    }
+
     // 1. Identifica nome e título no header do chat
     const headerTitleSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
     const contactName = headerTitleSpan ? (headerTitleSpan.getAttribute('title') || headerTitleSpan.innerText).trim() : 'Contato WhatsApp';
 
-    // 2. Busca mensagens por múltiplos seletores resilientes do WhatsApp Web
-    let messageElements = Array.from(main.querySelectorAll(
-      'div[data-testid="msg-container"], div.message-in, div.message-out, div[data-id], div[class*="message-"], div.copyable-text'
-    ));
-
-    // Fallback: seletor baseado em copyable-text ou selectable-text
-    if (messageElements.length === 0) {
-      const copyableNodes = Array.from(main.querySelectorAll('.copyable-text, [data-pre-plain-text], .selectable-text'));
-      messageElements = copyableNodes.map(node => node.closest('div[role="row"]') || node.parentElement || node);
-    }
-
-    console.log(`[Brokiva] Encontrados ${messageElements.length} elementos de mensagem em #main`);
-
-    // 3. Localiza telefone do contato e LID
+    // 2. Localiza telefone do contato e LID
     let resolvedPhone = '';
     let resolvedLid = '';
 
-    // Método A: Busca telefone real no Header do WhatsApp Web (+55 (11) 99600-0862)
+    // Método A: Busca telefone real no Header do WhatsApp Web
     const headerElement = main.querySelector('header');
     if (headerElement) {
       const headerText = headerElement.innerText || '';
@@ -465,17 +612,15 @@
         const cleanHeaderDigits = phoneMatch[0].replace(/\D/g, '');
         if (cleanHeaderDigits.length >= 10 && cleanHeaderDigits.length <= 13) {
           resolvedPhone = cleanHeaderDigits;
-          console.log(`[Brokiva] Telefone extraído com sucesso do header: ${resolvedPhone}`);
         }
       }
     }
 
-    // Método B: Atributos data-id em elementos de #main (suporta @c.us, @s.whatsapp.net e @lid)
+    // Método B: Atributos data-id em elementos de #main
     const allDataIdElements = main.querySelectorAll('[data-id]');
     for (const el of allDataIdElements) {
       const dataId = el.getAttribute('data-id') || '';
-      if (dataId.includes('@g.us')) {
-        console.log('[Brokiva] Grupo detectado, ignorando');
+      if (dataId.includes('@g.us') || dataId.includes('@newsletter') || dataId.includes('@broadcast')) {
         return null;
       }
       if (!resolvedLid && dataId.includes('@lid')) {
@@ -484,7 +629,6 @@
           resolvedLid = `${lidMatch[1]}@lid`;
         }
       }
-      // Suporta tanto @c.us quanto @s.whatsapp.net
       if (!resolvedPhone && (dataId.includes('@c.us') || dataId.includes('@s.whatsapp.net'))) {
         const phoneMatch = dataId.match(/_(\d{10,15})@(c\.us|s\.whatsapp\.net)/) ||
                            dataId.match(/(\d{10,15})@(c\.us|s\.whatsapp\.net)/);
@@ -531,93 +675,81 @@
     currentActivePhone = resolvedPhone;
     currentActiveName = contactName;
 
-    // 4. Extrai balões de mensagem
-    const messages = [];
-    messageElements.forEach((el, index) => {
-      if (!el) return;
-      const container = (el.closest && (el.closest('[data-id]') || el.closest('div[role="row"]'))) || el;
-      if (!container) return;
+    // 3. Extração estrita de balões: seleciona nós raiz únicos para NUNCA duplicar balões
+    const candidateRows = Array.from(main.querySelectorAll('div[data-id], div[role="row"]'));
+    const uniqueRootContainers = [];
+    const seenContainers = new Set();
 
-      const dataId = (container.getAttribute && container.getAttribute('data-id')) || 
-                     (el.getAttribute && el.getAttribute('data-id')) || '';
-      
-      // Filtro 1: Ignora containers de aviso de sistema/criptografia do WhatsApp Web
+    for (const el of candidateRows) {
+      // Prioriza o container com data-id ou role=row
+      const root = el.hasAttribute('data-id') ? el : (el.closest('[data-id]') || el);
+      if (seenContainers.has(root)) continue;
+      seenContainers.add(root);
+
+      // Descarta avisos de sistema e containers de data/hora no topo
       const isSystemContainer = Boolean(
-        container.closest?.('[data-testid*="system"]') ||
-        container.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
-        el.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
-        (container.getAttribute?.('class') || '').includes('system')
+        root.closest?.('[data-testid*="system"]') ||
+        root.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
+        (root.getAttribute?.('class') || '').includes('system')
       );
-      if (isSystemContainer) return;
+      if (isSystemContainer) continue;
 
-      const prePlain = container.querySelector?.('[data-pre-plain-text]')?.getAttribute?.('data-pre-plain-text') || 
-                       el.querySelector?.('[data-pre-plain-text]')?.getAttribute?.('data-pre-plain-text') || 
-                       (container.getAttribute ? container.getAttribute('data-pre-plain-text') : '') || '';
+      uniqueRootContainers.push(root);
+    }
 
-      const hasCheckmark = Boolean(container.querySelector?.(
-        'span[data-icon*="check"], span[data-icon="msg-time"], span[data-testid*="check"], span[aria-label*="Lida"], span[aria-label*="Entregue"], span[aria-label*="Enviada"], span[aria-label*="Read"], span[aria-label*="Delivered"], span[aria-label*="Sent"]'
-      ));
+    console.log(`[Brokiva] Encontrados ${uniqueRootContainers.length} balões raiz únicos em #main`);
 
-      const hasMessageOutClass = Boolean(
-        container?.classList?.contains?.('message-out') || 
-        container?.closest?.('.message-out') || 
-        (container?.getAttribute?.('class') || '').includes('message-out')
-      );
+    const messages = [];
+    const seenMsgKeys = new Set();
 
-      let isRightAligned = false;
-      try {
-        if (main?.getBoundingClientRect) {
-          const mainRect = main.getBoundingClientRect();
-          const targetBox = container.querySelector?.('.selectable-text') || container;
-          if (targetBox?.getBoundingClientRect) {
-            const boxRect = targetBox.getBoundingClientRect();
-            const boxCenter = boxRect.left + (boxRect.width / 2);
-            const mainCenter = mainRect.left + (mainRect.width / 2);
-            if (boxCenter > mainCenter) {
-              isRightAligned = true;
-            }
-          }
-        }
-      } catch (e) {}
-
-      let isFromMe = false;
-      if (dataId.startsWith('true_')) {
-        isFromMe = true;
-      } else if (dataId.startsWith('false_')) {
-        // Se o data-id diz explicitamente false_, mas tem checkmark de envio, confia no checkmark
-        isFromMe = hasCheckmark;
-      } else {
-        // Fallback quando não há data-id no container
-        isFromMe = hasCheckmark || isRightAligned || hasMessageOutClass || prePlain.includes('Você:') || prePlain.includes('You:');
+    uniqueRootContainers.forEach((container, index) => {
+      const dataId = (container.getAttribute && container.getAttribute('data-id')) || '';
+      if (dataId.includes('@g.us') || dataId.includes('@newsletter') || dataId.includes('@broadcast')) {
+        return;
       }
 
-      // Validação cruzada com checkmark: se tem checkmark de envio, é garantidamente do dono do WhatsApp
-      if (hasCheckmark) {
-        isFromMe = true;
-      }
+      const textNode = container.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
+      let content = textNode ? textNode.innerText.trim() : (container.innerText || '').trim();
 
-      const textNode = el.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
-      let content = textNode ? textNode.innerText.trim() : (el.innerText || '').trim();
-
-      // Limpa horários grudados no final
+      // Limpa horários grudados no final da mensagem
       content = content.replace(/\n\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i, '').trim();
 
-      // Filtro 2: Ignora qualquer aviso de sistema (criptografia, mensagens temporárias, etc.)
-      if (!content || isWhatsAppSystemMessage(content)) return;
+      if (isWhatsAppSystemMessage(content)) return;
 
       let messageType = 'TEXT';
-      if (el.querySelector('audio')) {
+      if (container.querySelector('audio')) {
         messageType = 'AUDIO';
         content = content || '🎵 Mensagem de Voz';
-      } else if (el.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]')) {
+      } else if (container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]')) {
         messageType = 'IMAGE';
         content = content || '📷 Foto';
-      } else if (el.querySelector('span[data-icon*="document"], a[download]')) {
+      } else if (container.querySelector('span[data-icon*="document"], a[download]')) {
         messageType = 'DOCUMENT';
         content = content || '📄 Documento';
       }
 
       if (!content || isWhatsAppSystemMessage(content)) return;
+
+      const prePlain = container.querySelector?.('[data-pre-plain-text]')?.getAttribute?.('data-pre-plain-text') || 
+                       (container.getAttribute ? container.getAttribute('data-pre-plain-text') : '') || '';
+
+      const hasCheckmark = Boolean(container.querySelector(
+        'span[data-icon*="check"], span[data-icon="msg-time"], span[data-testid*="check"], span[aria-label*="Lida"], span[aria-label*="Entregue"], span[aria-label*="Enviada"], span[aria-label*="Read"], span[aria-label*="Delivered"], span[aria-label*="Sent"]'
+      ));
+
+      const hasMessageOutClass = Boolean(
+        container.classList?.contains?.('message-out') || container.closest?.('.message-out') || (container.getAttribute?.('class') || '').includes('message-out')
+      );
+
+      let isFromMe = false;
+      if (dataId.startsWith('true_')) {
+        isFromMe = true;
+      } else if (dataId.startsWith('false_')) {
+        isFromMe = hasCheckmark;
+      } else {
+        isFromMe = hasCheckmark || hasMessageOutClass || prePlain.includes('Você:') || prePlain.includes('You:');
+      }
+      if (hasCheckmark) isFromMe = true;
 
       let msgTime = new Date().toISOString();
       if (prePlain) {
@@ -639,8 +771,13 @@
         }
       }
 
+      // Deduplicação interna: impede rigorosamente balões duplicados no array
+      const uniqueMsgKey = dataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}`;
+      if (seenMsgKeys.has(uniqueMsgKey)) return;
+      seenMsgKeys.add(uniqueMsgKey);
+
       messages.push({
-        id: dataId || `wpp-ext-${resolvedPhone}-${index}`,
+        id: dataId || `wpp-ext-${resolvedPhone}-${index}-${Date.now()}`,
         content,
         fromMe: isFromMe,
         timestamp: msgTime,
@@ -648,11 +785,10 @@
       });
     });
 
-    // Filtra mensagens finais garantindo ausência de avisos de sistema
     const validContentMsgs = messages.filter(m => m.content && !isWhatsAppSystemMessage(m.content));
     const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
 
-    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens válidas para ${contactName} (${resolvedPhone})`);
+    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens limpas e deduplicadas para ${contactName} (${resolvedPhone})`);
 
     return {
       phone: resolvedPhone,
@@ -742,9 +878,14 @@
   function findChatScrollContainer() {
     const main = document.querySelector('#main');
     if (!main) return null;
-    const candidates = main.querySelectorAll('div');
+    const directScroll = main.querySelector('div[tabindex="-1"][data-tab], div.copyable-area > div[tabindex="-1"], div[role="application"]');
+    if (directScroll && directScroll.scrollHeight > directScroll.clientHeight) {
+      return directScroll;
+    }
+
+    const candidates = main.querySelectorAll('div[tabindex="-1"], div.copyable-area, div._ajyl, div');
     for (const el of candidates) {
-      if (el.scrollHeight > el.clientHeight && el.clientHeight > 200) {
+      if (el.scrollHeight > el.clientHeight && el.clientHeight > 150) {
         const style = window.getComputedStyle(el);
         if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
           return el;
@@ -761,18 +902,19 @@
     if (!scrollContainer) return;
 
     const badge = document.getElementById('sovereign-sync-badge');
-    let lastCount = document.querySelectorAll('#main .copyable-text, #main [data-pre-plain-text], #main [data-id]').length;
+    let lastCount = document.querySelectorAll('#main div[data-id], #main div[role="row"]').length;
 
     for (let i = 0; i < targetScrolls; i++) {
       scrollContainer.scrollTop = 0;
       scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: -600, bubbles: true }));
 
       if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
       if (typeof onProgress === 'function') onProgress(i + 1, targetScrolls);
 
-      await new Promise(r => setTimeout(r, 360));
+      await new Promise(r => setTimeout(r, 450));
 
-      const currentCount = document.querySelectorAll('#main .copyable-text, #main [data-pre-plain-text], #main [data-id]').length;
+      const currentCount = document.querySelectorAll('#main div[data-id], #main div[role="row"]').length;
       if (currentCount === lastCount && i >= 2) {
         break; // Topo da conversa atingido
       }
@@ -871,6 +1013,11 @@
 
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
   async function syncCurrentActiveChat() {
+    if (isCurrentChatGroupOrChannel()) {
+      alert('Grupos, canais e comunidades não são importados para o CRM como leads comerciais.');
+      return;
+    }
+
     const badge = document.getElementById('sovereign-sync-badge');
     if (badge) badge.innerText = 'Carregando histórico...';
 
@@ -882,13 +1029,19 @@
     const chatData = extractActiveChatData();
     if (!chatData || !chatData.phone || chatData.messages.length === 0) {
       logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_EMPTY', `Conversa sem mensagens ou não identificada. (Phone: ${chatData?.phone || 'n/d'}, Msgs: ${chatData?.messages?.length || 0})`);
-      alert('Abra uma conversa com mensagens no WhatsApp antes de sincronizar.');
+      alert('Abra uma conversa individual com mensagens no WhatsApp antes de sincronizar.');
       if (badge) badge.innerText = 'Pronto';
       return;
     }
 
     // Se o telefone extraído for LID, consulta o CRM pelo nome do contato para casar o telefone real
     chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
+
+    if (isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
+      alert('Este chat foi identificado como grupo ou canal e não será importado para o CRM.');
+      if (badge) badge.innerText = 'Ignorado';
+      return;
+    }
 
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
     if (badge) badge.innerText = 'Salvando...';
@@ -947,14 +1100,8 @@
       const title = (span.getAttribute('title') || span.innerText || '').trim();
       if (!title || title.length < 1) continue;
 
-      // Ignora itens de sistema e canais
-      if (['Meta AI', 'Arquivadas', 'Comunidades', 'Canais', 'Status'].includes(title)) continue;
-      if (title.includes('Você') || title.includes('WhatsApp')) continue;
-
-      // Localiza o container da linha clicável
-      const rowContainer = span.closest('div[role="listitem"], div[role="row"], div[role="gridcell"], div[data-testid="cell-frame-container"], div._ak8l') ||
-                           span.parentElement?.parentElement;
-      if (!rowContainer || seenContainers.has(rowContainer)) continue;
+      // Ignora itens de sistema, canais e grupos
+      if (isRowGroupOrChannel(rowContainer, title)) continue;
 
       // Ignora nós sem dimensão real
       const rect = span.getBoundingClientRect();
@@ -985,7 +1132,7 @@
         const firstSpan = cell.querySelector('span[dir="auto"], span.x10l6tqk, span');
         const title = (firstSpan?.getAttribute('title') || firstSpan?.innerText || '').trim();
         if (!title || title.length < 2) continue;
-        if (['Meta AI', 'Arquivadas', 'Comunidades', 'Canais'].includes(title)) continue;
+        if (isRowGroupOrChannel(cell, title)) continue;
 
         const key = title.toLowerCase().trim();
         if (!seenKeys.has(key)) {
@@ -1286,6 +1433,9 @@
 
         logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat (${syncedChats.length + 1}/${MAX_TARGET_CHATS}): ${currentName}`);
 
+        const headerTitleEl = document.querySelector('#main header span[title], #main header div[role="button"] span, #main header span[dir="auto"]');
+        const previousHeaderTitle = (headerTitleEl ? (headerTitleEl.getAttribute('title') || headerTitleEl.innerText) : '').trim();
+
         // Rola o item para o centro da lista antes do clique
         try {
           nextRow.clickable.scrollIntoView({ block: 'center', behavior: 'auto' });
@@ -1300,10 +1450,20 @@
           } catch (e) {}
         });
 
-        // Aguarda 750ms para o WhatsApp montar a conversa em #main
-        await new Promise(r => setTimeout(r, 750));
+        // Aguarda confirmação ativa de abertura do chat para evitar contaminação
+        const transitionOk = await waitForChatToOpen(currentName, previousHeaderTitle, 3500);
+        if (!transitionOk) {
+          logToConsoleAndCloudWatch('WARN', 'CHAT_OPEN_TIMEOUT', `Chat "${currentName}" demorou a responder ou não abriu. Pulando para evitar contaminação.`);
+          continue;
+        }
 
         if (cancelSyncRequested) break;
+
+        // Se o chat aberto for grupo ou canal, ignora imediatamente
+        if (isCurrentChatGroupOrChannel()) {
+          logToConsoleAndCloudWatch('INFO', 'GROUP_OR_CHANNEL_IGNORED', `Chat "${currentName}" identificado como grupo ou canal no #main. Pulando.`);
+          continue;
+        }
 
         // CARREGAMENTO PROFUNDO: Rola para cima na conversa aberta para carregar mensagens antigas!
         updateSyncModalProgress({
@@ -1329,7 +1489,7 @@
         // Extrai dados completos da conversa aberta com todo o histórico acumulado
         let chatData = extractActiveChatData();
         if (!chatData || !chatData.messages || chatData.messages.length === 0) {
-          await new Promise(r => setTimeout(r, 300));
+          await new Promise(r => setTimeout(r, 350));
           chatData = extractActiveChatData();
         }
 
@@ -1337,7 +1497,7 @@
           chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
         }
 
-        if (chatData && chatData.phone) {
+        if (chatData && chatData.phone && !isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
           syncedChats.push(chatData);
           const msgsCount = chatData.messages ? chatData.messages.length : 0;
           totalMessagesSynced += msgsCount;
@@ -1358,7 +1518,7 @@
             totalMessages: totalMessagesSynced,
           });
         } else {
-          logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${currentName}: Não foi possível resolver identificador do contato`);
+          logToConsoleAndCloudWatch('WARN', 'CHAT_SKIPPED', `Chat "${currentName}": Ignorado (grupo, canal ou sem identificador válido)`);
         }
 
         // Atualiza barra de progresso na sidebar

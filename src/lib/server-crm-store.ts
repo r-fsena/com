@@ -19,6 +19,7 @@ declare global {
   var __SERVER_CRM_STATE__: ServerCRMState | undefined;
   var __GLOBAL_LID_PHONE_MAP__: Record<string, string> | undefined;
   var __GLOBAL_PHONE_LID_MAP__: Record<string, string> | undefined;
+  var __GLOBAL_DELETED_CHAT_KEYS__: Set<string> | undefined;
 }
 
 if (!global.__SERVER_CRM_STATE__) {
@@ -37,6 +38,21 @@ if (!global.__GLOBAL_LID_PHONE_MAP__) {
 
 if (!global.__GLOBAL_PHONE_LID_MAP__) {
   global.__GLOBAL_PHONE_LID_MAP__ = {};
+}
+
+if (!global.__GLOBAL_DELETED_CHAT_KEYS__) {
+  // Pre-popula com conversas que foram explicitamente excluídas pelo usuário (ex: Thais e Anna)
+  global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set([
+    '5511915361868',
+    '11915361868',
+    'contact-zapi-5511915361868',
+    'conv-zapi-5511915361868',
+    '554896290235',
+    '4896290235',
+    '5548996290235',
+    'contact-zapi-554896290235',
+    'conv-zapi-554896290235',
+  ]);
 }
 
 export const serverCRMStore = {
@@ -152,6 +168,82 @@ export const serverCRMStore = {
     return null;
   },
 
+  deleteChat(conversationId: string, phoneOrLid?: string): string[] {
+    if (!global.__GLOBAL_DELETED_CHAT_KEYS__) {
+      global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set<string>();
+    }
+    const set = global.__GLOBAL_DELETED_CHAT_KEYS__;
+
+    const addKey = (k?: string | null) => {
+      if (!k) return;
+      const clean = k.trim();
+      if (!clean) return;
+      set.add(clean);
+      const digits = clean.replace(/\D/g, '');
+      if (digits && digits.length >= 8) {
+        set.add(digits);
+        set.add(`conv-zapi-${digits}`);
+        set.add(`contact-zapi-${digits}`);
+        if (digits.startsWith('55') && digits.length >= 12) {
+          const without55 = digits.slice(2);
+          set.add(without55);
+          set.add(`conv-zapi-${without55}`);
+          set.add(`contact-zapi-${without55}`);
+        } else if (!digits.startsWith('55') && (digits.length === 10 || digits.length === 11)) {
+          const with55 = `55${digits}`;
+          set.add(with55);
+          set.add(`conv-zapi-${with55}`);
+          set.add(`contact-zapi-${with55}`);
+        }
+      }
+      if (clean.includes('@lid')) {
+        const cl = cleanLid(clean);
+        set.add(cl);
+        set.add(`conv-zapi-${cl}`);
+        set.add(`contact-zapi-${cl}`);
+      }
+    };
+
+    addKey(conversationId);
+    addKey(phoneOrLid);
+
+    const state = this.getState();
+    const conv = state.conversations.find(c => c.id === conversationId || set.has(c.id));
+    if (conv) {
+      addKey(conv.contactId);
+      addKey(conv.id);
+    }
+    const contact = state.contacts.find(c => (conv && c.id === conv.contactId) || set.has(c.id) || (c.phone && set.has(c.phone.replace(/\D/g, ''))));
+    if (contact) {
+      addKey(contact.id);
+      addKey(contact.phone);
+      addKey(contact.lid);
+    }
+
+    // Remove imediatamente do estado em memória
+    state.conversations = state.conversations.filter(c => !this.isChatDeleted(c.id) && !this.isChatDeleted(c.contactId));
+    state.contacts = state.contacts.filter(c => !this.isChatDeleted(c.id) && !this.isChatDeleted(c.phone) && !this.isChatDeleted(c.lid));
+    state.messages = state.messages.filter(m => !this.isChatDeleted(m.conversationId));
+    state.deals = state.deals.filter(d => !this.isChatDeleted(d.contactId));
+
+    return Array.from(set);
+  },
+
+  isChatDeleted(idOrPhone?: string | null): boolean {
+    if (!idOrPhone) return false;
+    if (!global.__GLOBAL_DELETED_CHAT_KEYS__) return false;
+    const clean = idOrPhone.trim();
+    if (global.__GLOBAL_DELETED_CHAT_KEYS__.has(clean)) return true;
+    const digits = clean.replace(/\D/g, '');
+    if (digits && global.__GLOBAL_DELETED_CHAT_KEYS__.has(digits)) return true;
+    return false;
+  },
+
+  getDeletedChatKeys(): string[] {
+    if (!global.__GLOBAL_DELETED_CHAT_KEYS__) return [];
+    return Array.from(global.__GLOBAL_DELETED_CHAT_KEYS__);
+  },
+
   getState(): ServerCRMState {
     if (!global.__SERVER_CRM_STATE__) {
       global.__SERVER_CRM_STATE__ = {
@@ -161,6 +253,21 @@ export const serverCRMStore = {
         messages: INITIAL_MESSAGES,
         aiInsights: INITIAL_INSIGHTS,
       };
+    }
+    // Remove conversas e contatos deletados
+    if (global.__GLOBAL_DELETED_CHAT_KEYS__ && global.__GLOBAL_DELETED_CHAT_KEYS__.size > 0) {
+      global.__SERVER_CRM_STATE__.conversations = global.__SERVER_CRM_STATE__.conversations.filter(
+        c => !this.isChatDeleted(c.id) && !this.isChatDeleted(c.contactId)
+      );
+      global.__SERVER_CRM_STATE__.contacts = global.__SERVER_CRM_STATE__.contacts.filter(
+        c => !this.isChatDeleted(c.id) && !this.isChatDeleted(c.phone) && !this.isChatDeleted(c.lid)
+      );
+      global.__SERVER_CRM_STATE__.messages = global.__SERVER_CRM_STATE__.messages.filter(
+        m => !this.isChatDeleted(m.conversationId)
+      );
+      global.__SERVER_CRM_STATE__.deals = global.__SERVER_CRM_STATE__.deals.filter(
+        d => !this.isChatDeleted(d.contactId)
+      );
     }
     // Higieniza mensagens caso existam avisos de sistema prévios
     if (global.__SERVER_CRM_STATE__.messages?.some(m => isWhatsAppSystemMessage(m.content))) {
@@ -230,6 +337,7 @@ export const serverCRMStore = {
     const all = [...oldList, ...newList];
     all.forEach(c => {
       if (!c) return;
+      if (this.isChatDeleted(c.id) || this.isChatDeleted(c.phone) || this.isChatDeleted(c.lid)) return;
 
       const isPhoneLid = isLidIdentifier(c.phone);
       const pureLid = cleanLid(c.lid || (isPhoneLid ? c.phone : ''));
@@ -346,6 +454,7 @@ export const serverCRMStore = {
 
     all.forEach(conv => {
       if (!conv) return;
+      if (this.isChatDeleted(conv.id) || this.isChatDeleted(conv.contactId)) return;
       const rawDigits = conv.id.replace(/\D/g, '');
       const isLid = isLidIdentifier(rawDigits);
 
@@ -418,6 +527,7 @@ export const serverCRMStore = {
     });
 
     all.forEach(m => {
+      if (!m || !m.conversationId || this.isChatDeleted(m.conversationId)) return;
       const content = (m.content || '').trim();
       if (!content || isWhatsAppSystemMessage(content)) return;
 

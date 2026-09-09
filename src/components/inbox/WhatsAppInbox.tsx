@@ -152,6 +152,7 @@ export function WhatsAppInbox() {
     clearChatMessages,
     archiveConversation,
     deleteConversation,
+    deletedChatKeys,
     pinConversation,
     contacts, 
     users, 
@@ -767,6 +768,22 @@ export function WhatsAppInbox() {
     // Oculta conversas arquivadas
     if (c.isArchived) return false;
 
+    // Oculta conversas excluídas
+    if (deletedChatKeys && (deletedChatKeys.has(c.id) || deletedChatKeys.has(c.contactId))) {
+      return false;
+    }
+    const cDigitsOnly = (c.id + (c.contactId || '')).replace(/\D/g, '');
+    if (cDigitsOnly && deletedChatKeys && deletedChatKeys.has(cDigitsOnly)) {
+      return false;
+    }
+
+    // Oculta conversas vazias/fantasmas (chats excluídos que não possuem mensagens)
+    const convMsgs = messages.filter(m => m.conversationId === c.id && !m.isInternalNote && m.content && !isWhatsAppSystemMessage(m.content));
+    const isGhostEmpty = convMsgs.length === 0 && 
+      (!c.unreadCount || c.unreadCount === 0) && 
+      (!c.lastMessagePreview || c.lastMessagePreview.includes('Conversa sincronizada') || isWhatsAppSystemMessage(c.lastMessagePreview));
+    if (isGhostEmpty) return false;
+
     // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
     const convInstance = instances.find(i => i.id === c.instanceId || i.zapiInstanceId === c.instanceId);
     const isDirectLine = Boolean(convInstance && convInstance.type === 'BROKER_DIRECT');
@@ -1196,9 +1213,31 @@ export function WhatsAppInbox() {
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-slate-400 flex-shrink-0 ml-1 font-sans">
-                        {formatWhatsAppDate(conv.lastMessageAt)}
-                      </span>
+                      <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                        <span className="text-[10px] text-slate-400 font-sans group-hover:hidden">
+                          {formatWhatsAppDate(conv.lastMessageAt)}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Tem certeza que deseja excluir permanentemente a conversa com ${contact?.name || 'este contato'} do CRM e do WhatsApp?`)) {
+                              deleteConversation(conv.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.stopPropagation();
+                              deleteConversation(conv.id);
+                            }
+                          }}
+                          title="Excluir conversa permanentemente"
+                          className="hidden group-hover:flex items-center justify-center p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-500" />
+                        </span>
+                      </div>
                     </div>
 
                     {/* Preview da Mensagem */}

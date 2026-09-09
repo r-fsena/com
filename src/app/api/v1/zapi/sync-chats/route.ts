@@ -150,6 +150,19 @@ async function handleSyncChats(req: NextRequest) {
         clean = `55${clean}`;
       }
 
+      // Ignora chats que foram explicitamente excluídos pelo usuário ou no CRM
+      if (serverCRMStore.isChatDeleted(clean) || serverCRMStore.isChatDeleted(c.phone) || serverCRMStore.isChatDeleted(c.lid)) {
+        return;
+      }
+
+      // Se o chat não tem mensagem no WhatsApp, nem mensagens não lidas, nem histórico prévio salvo no CRM, é um chat vazio/excluído
+      const unreadCount = Number(c.unread || c.messagesUnread || 0);
+      const rawLastMsg = typeof c.lastMessage === 'string' ? c.lastMessage.trim() : (c.lastMessage?.message || c.lastMessage?.text || c.message || '');
+      const hasStoredMsgs = serverCRMStore.getState().messages.some(m => m.conversationId === `conv-zapi-${clean}` || (m as any).phone === clean);
+      if (!rawLastMsg && unreadCount === 0 && !hasStoredMsgs) {
+        return;
+      }
+
       const existing = chatsByPhone.get(clean);
       const currentTime = parseWhatsAppTimestamp(c.lastMessageTime);
       const existingTime = existing ? parseWhatsAppTimestamp(existing.lastMessageTime) : 0;

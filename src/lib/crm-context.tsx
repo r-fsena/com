@@ -154,6 +154,7 @@ interface CRMContextType {
   clearChatMessages: (conversationId: string) => Promise<void>;
   archiveConversation: (conversationId: string, archive?: boolean) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  deletedChatKeys: Set<string>;
   pinConversation: (conversationId: string) => Promise<void>;
   assignConversation: (conversationId: string, userId?: string) => void;
   simulateIncomingMessage: (phone: string, name: string, content: string) => void;
@@ -401,6 +402,49 @@ export function getDefaultGoalsConfig(tenantId: string = 'tenant-amabile-barbaro
     annualVGVTarget: 50000000,
     monthlyGoals: months,
   };
+}
+
+export const INITIAL_DELETED_CHAT_KEYS = [
+  '5511915361868',
+  '11915361868',
+  'contact-zapi-5511915361868',
+  'conv-zapi-5511915361868',
+  '554896290235',
+  '4896290235',
+  '5548996290235',
+  'contact-zapi-554896290235',
+  'conv-zapi-554896290235',
+];
+
+export function getStoredDeletedChatKeys(): Set<string> {
+  const set = new Set<string>(INITIAL_DELETED_CHAT_KEYS);
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('vanguard_crm_deleted_chats');
+      if (saved) {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr)) {
+          arr.forEach((k: any) => {
+            const clean = String(k).trim();
+            if (clean) set.add(clean);
+          });
+        }
+      }
+    } catch {}
+  }
+  return set;
+}
+
+export function isChatKeyDeleted(idOrPhone?: string | null, deletedSet?: Set<string>): boolean {
+  if (!idOrPhone) return false;
+  const set = deletedSet || getStoredDeletedChatKeys();
+  const clean = idOrPhone.trim();
+  if (set.has(clean)) return true;
+  const digits = clean.replace(/\D/g, '');
+  if (digits && set.has(digits)) return true;
+  if (digits.startsWith('55') && set.has(digits.slice(2))) return true;
+  if (!digits.startsWith('55') && digits.length >= 10 && set.has(`55${digits}`)) return true;
+  return false;
 }
 
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
@@ -1164,6 +1208,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
   };
 
+  const [deletedChatKeys, setDeletedChatKeys] = useState<Set<string>>(() => getStoredDeletedChatKeys());
+
   const [contacts, setContacts] = useState<Contact[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -1171,8 +1217,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            const initialDel = getStoredDeletedChatKeys();
             parsed = parsed
-              .filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
+              .filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && !isChatKeyDeleted(c.id, initialDel) && !isChatKeyDeleted(c.phone, initialDel) && !isChatKeyDeleted(c.lid, initialDel) && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
               .map((c: Contact) => {
                 const isAmabileContact = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
                 return {
@@ -1327,8 +1374,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            const initialDel = getStoredDeletedChatKeys();
             parsed = parsed
-              .filter((c: Conversation) => c.tenantId !== 'tenant-vanguard-01' && isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }))
+              .filter((c: Conversation) => {
+                if (c.tenantId === 'tenant-vanguard-01') return false;
+                if (isChatKeyDeleted(c.id, initialDel) || isChatKeyDeleted(c.contactId, initialDel)) return false;
+                const digits = (c.id + (c.contactId || '')).replace(/\D/g, '');
+                if (digits && isChatKeyDeleted(digits, initialDel)) return false;
+                // Descarta conversas vazias/excluídas que ficaram apenas com o placeholder padrão
+                const isGhost = (!c.unreadCount || c.unreadCount === 0) && 
+                  (!c.lastMessagePreview || c.lastMessagePreview.includes('Conversa sincronizada') || isWhatsAppSystemMessage(c.lastMessagePreview));
+                if (isGhost) return false;
+                return isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt });
+              })
               .map((c: Conversation) => {
                 const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
                 const cleanPreview = (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) ? 'Conversa sincronizada via WhatsApp' : c.lastMessagePreview;
@@ -1356,7 +1414,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((m: Message) => m.tenantId !== 'tenant-vanguard-01' && !isWhatsAppSystemMessage(m.content));
+            const initialDel = getStoredDeletedChatKeys();
+            parsed = parsed.filter((m: Message) => m.tenantId !== 'tenant-vanguard-01' && !isChatKeyDeleted(m.conversationId, initialDel) && !isWhatsAppSystemMessage(m.content));
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
             return parsed;
           }
@@ -1881,11 +1940,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteContact = (id: string) => {
-    setContacts(prev => {
-      const updated = prev.filter(c => c.id !== id);
-      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+    const contact = contacts.find(c => c.id === id);
+    const conv = conversations.find(c => c.contactId === id || (contact?.phone && c.id.includes(contact.phone.replace(/\D/g, ''))));
+    if (conv) {
+      deleteConversation(conv.id);
+    } else {
+      deleteConversation(`conv-${id}`);
+    }
   };
 
   const toggleContactPersonal = (contactId: string) => {
@@ -2437,26 +2498,96 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Deletar conversa completamente (Z-API + Local)
+  // Deletar conversa completamente (Z-API + Local + Persistência Total)
   const deleteConversation = async (conversationId: string) => {
     const conv = conversations.find(c => c.id === conversationId);
     const contact = contacts.find(cnt => cnt.id === conv?.contactId);
-    const phone = contact?.phone || (conversationId.includes('zapi-') ? conversationId.split('zapi-')[1] : '');
+    const rawPhone = contact?.phone || (conversationId.includes('zapi-') ? conversationId.split('zapi-')[1] : '');
+    const cleanPhone = rawPhone ? rawPhone.replace(/\D/g, '') : '';
+    const lid = contact?.lid;
 
-    setConversations(prev => prev.filter(c => c.id !== conversationId));
-    setMessages(prev => prev.filter(m => m.conversationId !== conversationId));
+    const keysToAdd: string[] = [
+      conversationId,
+      conv?.contactId || '',
+      contact?.id || '',
+      cleanPhone,
+      cleanPhone.startsWith('55') ? cleanPhone.slice(2) : `55${cleanPhone}`,
+      `contact-zapi-${cleanPhone}`,
+      `conv-zapi-${cleanPhone}`,
+      lid || '',
+      lid ? `conv-zapi-${lid}` : '',
+      lid ? `contact-zapi-${lid}` : '',
+    ].filter(Boolean);
+
+    setDeletedChatKeys(prev => {
+      const next = new Set(prev);
+      keysToAdd.forEach(k => next.add(k));
+      try {
+        localStorage.setItem('vanguard_crm_deleted_chats', JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+
+    const isMatch = (val?: string | null) => {
+      if (!val) return false;
+      const v = val.trim();
+      if (keysToAdd.includes(v)) return true;
+      const digits = v.replace(/\D/g, '');
+      if (digits && keysToAdd.includes(digits)) return true;
+      return false;
+    };
+
+    setConversations(prev => {
+      const updated = prev.filter(c => !isMatch(c.id) && !isMatch(c.contactId));
+      try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    setContacts(prev => {
+      const updated = prev.filter(c => !isMatch(c.id) && !isMatch(c.phone) && !isMatch(c.lid));
+      try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    setMessages(prev => {
+      const updated = prev.filter(m => !isMatch(m.conversationId));
+      try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    setDeals(prev => {
+      const updated = prev.filter(d => !isMatch(d.contactId));
+      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
     
-    if (activeConversationId === conversationId) {
+    if (activeConversationId === conversationId || (activeConversationId && isMatch(activeConversationId))) {
       setActiveConversationId(null);
     }
 
-    if (phone) {
+    // 1. Notifica o servidor para remoção do estado em memória
+    try {
+      fetch('/api/v1/crm/state', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId, phone: cleanPhone }),
+      }).catch(() => {});
+    } catch {}
+
+    // 2. Dispara remoção na Z-API para que o WhatsApp Web e celular também purguem
+    if (cleanPhone) {
       try {
-        await fetch('/api/v1/zapi/actions', {
+        fetch('/api/v1/zapi/actions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'delete', phone }),
-        });
+          body: JSON.stringify({ action: 'delete', phone: cleanPhone }),
+        }).catch(() => {});
+
+        fetch('/api/v1/zapi/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'clear', phone: cleanPhone }),
+        }).catch(() => {});
       } catch (err) {
         console.error('Erro ao deletar conversa na Z-API:', err);
       }
@@ -2976,10 +3107,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (data.success) {
         let mergedContacts: Contact[] = [];
         if (Array.isArray(data.contacts) && data.contacts.length > 0) {
-          const validIncoming = data.contacts.filter((c: Contact) => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
+          const validIncoming = data.contacts.filter((c: Contact) => 
+            !isChatKeyDeleted(c.id, deletedChatKeys) &&
+            !isChatKeyDeleted(c.phone, deletedChatKeys) &&
+            !isChatKeyDeleted(c.lid, deletedChatKeys) &&
+            isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt })
+          );
           // Merge e higienização completa de contatos com resolução de LID para telefone real
           setContacts(prev => {
-            const cleanPrev = prev.filter(c => isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt }));
+            const cleanPrev = prev.filter(c => 
+              !isChatKeyDeleted(c.id, deletedChatKeys) &&
+              !isChatKeyDeleted(c.phone, deletedChatKeys) &&
+              !isChatKeyDeleted(c.lid, deletedChatKeys) &&
+              isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt })
+            );
             const mappedIncoming = validIncoming.map((c: Contact) => ({
               ...c,
               isPersonal: c.isPersonal === true ? true : false,
@@ -2997,9 +3138,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // 2. Merge e unificação de Conversas
         let finalConversations: Conversation[] = [];
         if (Array.isArray(data.conversations)) {
-          const validConvs = data.conversations.filter((c: Conversation) => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
+          const validConvs = data.conversations.filter((c: Conversation) => 
+            !isChatKeyDeleted(c.id, deletedChatKeys) &&
+            !isChatKeyDeleted(c.contactId, deletedChatKeys) &&
+            isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt })
+          );
           setConversations(prev => {
-            const cleanPrev = prev.filter(c => isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }));
+            const cleanPrev = prev.filter(c => 
+              !isChatKeyDeleted(c.id, deletedChatKeys) &&
+              !isChatKeyDeleted(c.contactId, deletedChatKeys) &&
+              isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt })
+            );
             const combined = [...cleanPrev, ...validConvs];
             const deduplicated = deduplicateConversations(combined, mergedContacts.length > 0 ? mergedContacts : contacts);
             finalConversations = deduplicated;
@@ -3015,7 +3164,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (data.messages && data.messages.length > 0) {
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
-            const newOnes = data.messages.filter((m: Message) => !existingIds.has(m.id));
+            const newOnes = data.messages.filter((m: Message) => !existingIds.has(m.id) && !isChatKeyDeleted(m.conversationId, deletedChatKeys));
             const merged = deduplicateMessages([...prev, ...newOnes]);
             finalMessages = merged;
             try {
@@ -3351,6 +3500,7 @@ const pollWebhookMessages = async () => {
 
             const rawPhone = resolvedPhone;
             if (!rawPhone || rawPhone === '0') return;
+            if (isChatKeyDeleted(rawPhone, deletedChatKeys) || (lidClean && isChatKeyDeleted(lidClean, deletedChatKeys))) return;
 
             const formattedPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
 
@@ -3559,6 +3709,7 @@ const pollWebhookMessages = async () => {
             const seenIds = new Set(prev.map(m => m.id));
             const newOnes = data.messages.filter((m: any) => {
               if (seenIds.has(m.id)) return false;
+              if (isChatKeyDeleted(m.conversationId, deletedChatKeys)) return false;
               const isEcho = prev.some(existing => 
                 existing.senderType === m.senderType &&
                 (existing.content || '').trim() === (m.content || '').trim() &&
@@ -3578,6 +3729,7 @@ const pollWebhookMessages = async () => {
             const mapById = new Map<string, Conversation>();
             prev.forEach(c => mapById.set(c.id, c));
             data.conversations.forEach((newC: Conversation) => {
+              if (isChatKeyDeleted(newC.id, deletedChatKeys) || isChatKeyDeleted(newC.contactId, deletedChatKeys)) return;
               const existing = mapById.get(newC.id);
               if (existing) {
                 mapById.set(newC.id, {
@@ -4533,6 +4685,7 @@ const pollWebhookMessages = async () => {
       clearChatMessages,
       archiveConversation,
       deleteConversation,
+      deletedChatKeys,
       pinConversation,
       assignConversation,
       simulateIncomingMessage,

@@ -59,11 +59,18 @@
     renderSidebarContent();
 
     // Reage dinamicamente a mudanças de autenticação (ex: login via popup ou bridge)
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && (changes.extensionSessionToken || changes.brokerName)) {
-        renderSidebarContent();
+    try {
+      if (chrome?.storage?.onChanged?.addListener) {
+        chrome.storage.onChanged.addListener((changes, area) => {
+          try {
+            if (!chrome?.runtime?.id) return;
+            if (area === 'local' && (changes?.extensionSessionToken || changes?.brokerName)) {
+              renderSidebarContent().catch(() => {});
+            }
+          } catch (e) {}
+        });
       }
-    });
+    } catch (e) {}
   }
 
   function normalizeCrmUrl(raw) {
@@ -77,18 +84,20 @@
 
   // 1.1 Renderizador dinâmico de Login ou Ferramentas Ativas
   async function renderSidebarContent() {
-    const bodyContainer = document.getElementById('sovereign-body-container');
-    const headerContainer = document.getElementById('sovereign-header-profile');
-    if (!bodyContainer) return;
+    if (!chrome?.runtime?.id) return;
+    try {
+      const bodyContainer = document.getElementById('sovereign-body-container');
+      const headerContainer = document.getElementById('sovereign-header-profile');
+      if (!bodyContainer) return;
 
-    const storage = await chrome.storage.local.get([
-      'extensionSessionToken',
-      'brokerName',
-      'brokerEmail',
-      'tenantName',
-      'tenantId',
-      'crmUrl'
-    ]);
+      const storage = await chrome.storage.local.get([
+        'extensionSessionToken',
+        'brokerName',
+        'brokerEmail',
+        'tenantName',
+        'tenantId',
+        'crmUrl'
+      ]);
 
     const isConnected = Boolean(storage.extensionSessionToken && storage.brokerName);
     const crmUrl = storage.crmUrl || 'https://crm.faithhubs.com';
@@ -291,7 +300,8 @@
         });
       });
     }
-  }
+  } catch (e) {}
+}
 
   function safeSendMessage(payload, callback) {
     try {

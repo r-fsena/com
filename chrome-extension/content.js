@@ -730,20 +730,24 @@
            document.querySelector('#main div[role="application"]');
   }
 
-  async function deepScrollChatHistory(targetScrolls = 8) {
+  async function deepScrollChatHistory(targetScrolls = 6, onProgress = null) {
     const scrollContainer = findChatScrollContainer();
     if (!scrollContainer) return;
 
     const badge = document.getElementById('sovereign-sync-badge');
-    let lastCount = 0;
+    let lastCount = document.querySelectorAll('#main .copyable-text, #main [data-pre-plain-text], #main [data-id]').length;
 
     for (let i = 0; i < targetScrolls; i++) {
       scrollContainer.scrollTop = 0;
-      if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
-      await new Promise(r => setTimeout(r, 450));
+      scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
 
-      const currentCount = document.querySelectorAll('#main .copyable-text, #main [data-pre-plain-text]').length;
-      if (currentCount === lastCount && i >= 3) {
+      if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
+      if (typeof onProgress === 'function') onProgress(i + 1, targetScrolls);
+
+      await new Promise(r => setTimeout(r, 360));
+
+      const currentCount = document.querySelectorAll('#main .copyable-text, #main [data-pre-plain-text], #main [data-id]').length;
+      if (currentCount === lastCount && i >= 2) {
         break; // Topo da conversa atingido
       }
       lastCount = currentCount;
@@ -968,7 +972,212 @@
     return rows;
   }
 
-  // 5. Varredura Automática Paginada com Rolagem Virtual Contínua
+  // ==========================================================================
+  // CONTROLE DO MODAL DE SINCRONIZAÇÃO EM MASSA (OVERLAY FULL-SCREEN COM BLUR)
+  // ==========================================================================
+  let cancelSyncRequested = false;
+
+  function ensureSyncModalExists() {
+    let overlay = document.getElementById('brokiva-sync-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'brokiva-sync-overlay';
+      overlay.innerHTML = `
+        <div class="brokiva-sync-modal">
+          <div class="brokiva-modal-glow"></div>
+          
+          <div class="brokiva-modal-icon-wrap" id="brokiva-modal-icon">
+            <div class="brokiva-spinner-ring" id="brokiva-modal-spinner"></div>
+            <svg class="brokiva-icon-sync" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+          </div>
+
+          <h2 class="brokiva-modal-title" id="brokiva-modal-title">Sincronizando com a Brokiva CRM</h2>
+          <p class="brokiva-modal-subtitle" id="brokiva-modal-subtitle">
+            Importando histórico completo de conversas e mensagens com segurança...
+          </p>
+
+          <div class="brokiva-stats-grid">
+            <div class="brokiva-stat-card">
+              <span class="brokiva-stat-label">Conversas</span>
+              <span class="brokiva-stat-val" id="brokiva-stat-chats">0</span>
+            </div>
+            <div class="brokiva-stat-card">
+              <span class="brokiva-stat-label">Mensagens Salvas</span>
+              <span class="brokiva-stat-val highlight" id="brokiva-stat-msgs">0</span>
+            </div>
+            <div class="brokiva-stat-card">
+              <span class="brokiva-stat-label">Progresso</span>
+              <span class="brokiva-stat-val" id="brokiva-stat-pct">0%</span>
+            </div>
+          </div>
+
+          <div class="brokiva-current-lead-card" id="brokiva-current-lead-card">
+            <div class="brokiva-lead-badge-pulse" id="brokiva-lead-pulse"></div>
+            <div class="brokiva-lead-info">
+              <div class="brokiva-lead-name" id="brokiva-lead-name">Iniciando conexão...</div>
+              <div class="brokiva-lead-action" id="brokiva-lead-action">Aguardando varredura</div>
+            </div>
+          </div>
+
+          <div class="brokiva-progress-track">
+            <div class="brokiva-progress-bar" id="brokiva-modal-progress-bar" style="width: 0%;"></div>
+          </div>
+
+          <div class="brokiva-modal-footer" id="brokiva-modal-footer">
+            <div class="brokiva-security-tag">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <span>Sincronização direta e segura</span>
+            </div>
+            <button type="button" id="brokiva-cancel-sync-btn" class="brokiva-cancel-btn">
+              Cancelar Sincronização
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const cancelBtn = overlay.querySelector('#brokiva-cancel-sync-btn');
+      cancelBtn?.addEventListener('click', () => {
+        cancelSyncRequested = true;
+        const actionEl = document.getElementById('brokiva-lead-action');
+        if (actionEl) actionEl.innerText = 'Interrompendo e finalizando sincronização...';
+        if (cancelBtn) cancelBtn.disabled = true;
+      });
+    }
+    return overlay;
+  }
+
+  function openSyncModal(maxChats) {
+    cancelSyncRequested = false;
+    const overlay = ensureSyncModalExists();
+    overlay.classList.add('active');
+
+    const titleEl = document.getElementById('brokiva-modal-title');
+    const subtitleEl = document.getElementById('brokiva-modal-subtitle');
+    const statChats = document.getElementById('brokiva-stat-chats');
+    const statMsgs = document.getElementById('brokiva-stat-msgs');
+    const statPct = document.getElementById('brokiva-stat-pct');
+    const leadName = document.getElementById('brokiva-lead-name');
+    const leadAction = document.getElementById('brokiva-lead-action');
+    const bar = document.getElementById('brokiva-modal-progress-bar');
+    const iconWrap = document.getElementById('brokiva-modal-icon');
+    const footer = document.getElementById('brokiva-modal-footer');
+
+    if (titleEl) titleEl.innerText = 'Sincronizando com a Brokiva CRM';
+    if (subtitleEl) subtitleEl.innerText = 'Importando histórico completo de conversas e mensagens com segurança...';
+    if (statChats) statChats.innerText = `0 / ${maxChats}`;
+    if (statMsgs) statMsgs.innerText = '0';
+    if (statPct) statPct.innerText = '0%';
+    if (leadName) leadName.innerText = 'Iniciando varredura no WhatsApp Web...';
+    if (leadAction) leadAction.innerText = 'Preparando lista de conversas...';
+    if (bar) bar.style.width = '0%';
+
+    if (iconWrap) {
+      iconWrap.style.borderColor = '#334155';
+      iconWrap.style.color = '#38bdf8';
+      iconWrap.innerHTML = `
+        <div class="brokiva-spinner-ring" id="brokiva-modal-spinner"></div>
+        <svg class="brokiva-icon-sync" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+        </svg>
+      `;
+    }
+
+    if (footer) {
+      footer.innerHTML = `
+        <div class="brokiva-security-tag">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          <span>Sincronização direta e segura</span>
+        </div>
+        <button type="button" id="brokiva-cancel-sync-btn" class="brokiva-cancel-btn">
+          Cancelar Sincronização
+        </button>
+      `;
+      const cancelBtn = footer.querySelector('#brokiva-cancel-sync-btn');
+      cancelBtn?.addEventListener('click', () => {
+        cancelSyncRequested = true;
+        const actionEl = document.getElementById('brokiva-lead-action');
+        if (actionEl) actionEl.innerText = 'Interrompendo e finalizando sincronização...';
+        if (cancelBtn) cancelBtn.disabled = true;
+      });
+    }
+  }
+
+  function updateSyncModalProgress({ syncedCount, maxChats, contactName, actionText, totalMessages }) {
+    const statChats = document.getElementById('brokiva-stat-chats');
+    const statMsgs = document.getElementById('brokiva-stat-msgs');
+    const statPct = document.getElementById('brokiva-stat-pct');
+    const leadName = document.getElementById('brokiva-lead-name');
+    const leadAction = document.getElementById('brokiva-lead-action');
+    const bar = document.getElementById('brokiva-modal-progress-bar');
+
+    const pct = Math.min(100, Math.round(((syncedCount || 0) / maxChats) * 100));
+
+    if (statChats && syncedCount !== undefined) statChats.innerText = `${syncedCount} / ${maxChats}`;
+    if (statMsgs && totalMessages !== undefined) statMsgs.innerText = `${totalMessages.toLocaleString('pt-BR')}`;
+    if (statPct) statPct.innerText = `${pct}%`;
+    if (bar) bar.style.width = `${pct}%`;
+    if (leadName && contactName) leadName.innerText = contactName;
+    if (leadAction && actionText) leadAction.innerText = actionText;
+  }
+
+  function finishSyncModal({ totalChats, totalMessages }) {
+    const titleEl = document.getElementById('brokiva-modal-title');
+    const subtitleEl = document.getElementById('brokiva-modal-subtitle');
+    const statChats = document.getElementById('brokiva-stat-chats');
+    const statMsgs = document.getElementById('brokiva-stat-msgs');
+    const statPct = document.getElementById('brokiva-stat-pct');
+    const leadName = document.getElementById('brokiva-lead-name');
+    const leadAction = document.getElementById('brokiva-lead-action');
+    const bar = document.getElementById('brokiva-modal-progress-bar');
+    const iconWrap = document.getElementById('brokiva-modal-icon');
+    const footer = document.getElementById('brokiva-modal-footer');
+
+    if (titleEl) titleEl.innerText = '🎉 Sincronização Concluída!';
+    if (subtitleEl) subtitleEl.innerText = `${totalChats} conversas e ${totalMessages.toLocaleString('pt-BR')} mensagens importadas com sucesso!`;
+    if (statChats) statChats.innerText = `${totalChats}`;
+    if (statMsgs) statMsgs.innerText = `${totalMessages.toLocaleString('pt-BR')}`;
+    if (statPct) statPct.innerText = '100%';
+    if (bar) bar.style.width = '100%';
+    if (leadName) leadName.innerText = 'Processo concluído com êxito';
+    if (leadAction) leadAction.innerText = 'Histórico sincronizado e pronto no CRM.';
+
+    if (iconWrap) {
+      iconWrap.innerHTML = `
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      `;
+      iconWrap.style.borderColor = '#10b981';
+      iconWrap.style.color = '#10b981';
+    }
+
+    if (footer) {
+      footer.innerHTML = `
+        <button type="button" id="brokiva-close-modal-btn" class="brokiva-done-btn">
+          Concluir e Fechar
+        </button>
+      `;
+      const closeBtn = footer.querySelector('#brokiva-close-modal-btn');
+      closeBtn?.addEventListener('click', closeSyncModal);
+    }
+
+    // Auto fecha após 5 segundos
+    setTimeout(() => {
+      closeSyncModal();
+    }, 5000);
+  }
+
+  function closeSyncModal() {
+    const overlay = document.getElementById('brokiva-sync-overlay');
+    if (overlay) {
+      overlay.classList.remove('active');
+    }
+  }
+
+  // 5. Varredura Automática Paginada com Carregamento Profundo e Tela de Bloqueio
   async function executeBatchHistoryScan() {
     if (isSyncing) return;
     isSyncing = true;
@@ -985,18 +1194,25 @@
       progressStatus.innerText = 'Iniciando varredura e rolagem das conversas...';
     }
 
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', 'Varredura em lote com rolagem automática iniciada');
+    const MAX_TARGET_CHATS = 50; // Limite de conversas para sincronizar
+    let totalMessagesSynced = 0;
+
+    // Abre a tela de carregamento (modal com blur) cobrindo o WhatsApp Web
+    openSyncModal(MAX_TARGET_CHATS);
+
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', 'Varredura em lote profunda iniciada');
 
     const scrollContainer = findPaneSideScrollContainer() || document.querySelector('#pane-side');
     if (!scrollContainer) {
       logToConsoleAndCloudWatch('WARN', 'NO_PANE_SIDE', 'Container #pane-side não encontrado');
+      closeSyncModal();
       alert('Nenhum chat visível no WhatsApp Web. Certifique-se de que o WhatsApp Web está aberto.');
       isSyncing = false;
       if (btn) btn.disabled = false;
       return;
     }
 
-    // Rola suavemente para o topo antes de iniciar para garantir a varredura completa
+    // Rola suavemente para o topo antes de iniciar para garantir a varredura a partir do início
     try {
       scrollContainer.scrollTop = 0;
       scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
@@ -1005,11 +1221,15 @@
 
     const processedChatKeys = new Set();
     const syncedChats = [];
-    const MAX_TARGET_CHATS = 50; // Limite de chats por varredura
     let consecutiveScrollsWithoutNew = 0;
     let totalAttempts = 0;
 
     while (syncedChats.length < MAX_TARGET_CHATS && consecutiveScrollsWithoutNew < 5) {
+      if (cancelSyncRequested) {
+        logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_CANCELLED', 'Sincronização cancelada pelo corretor');
+        break;
+      }
+
       const visibleRows = getVisibleChatRows();
       // Localiza a próxima conversa visível que ainda não foi sincronizada nesta rodada
       const nextRow = visibleRows.find(r => !processedChatKeys.has(r.key));
@@ -1019,16 +1239,26 @@
         processedChatKeys.add(nextRow.key);
         totalAttempts++;
 
+        const currentName = nextRow.title;
+
+        updateSyncModalProgress({
+          syncedCount: syncedChats.length,
+          maxChats: MAX_TARGET_CHATS,
+          contactName: currentName,
+          actionText: 'Abrindo conversa...',
+          totalMessages: totalMessagesSynced,
+        });
+
         if (progressStatus) {
-          progressStatus.innerText = `Lendo chat ${totalAttempts} (${syncedChats.length} salvos): ${nextRow.title}...`;
+          progressStatus.innerText = `Lendo chat ${totalAttempts} (${syncedChats.length} salvos): ${currentName}...`;
         }
 
-        logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat (${syncedChats.length + 1}/${MAX_TARGET_CHATS}): ${nextRow.title}`);
+        logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat (${syncedChats.length + 1}/${MAX_TARGET_CHATS}): ${currentName}`);
 
         // Rola o item para o centro da lista antes do clique
         try {
           nextRow.clickable.scrollIntoView({ block: 'center', behavior: 'auto' });
-          await new Promise(r => setTimeout(r, 120));
+          await new Promise(r => setTimeout(r, 100));
         } catch (e) {}
 
         // Dispara eventos de ponteiro/mouse para o WhatsApp Web abrir o chat
@@ -1039,14 +1269,36 @@
           } catch (e) {}
         });
 
-        // Aguarda 950ms para o WhatsApp renderizar o histórico em #main
-        await new Promise(r => setTimeout(r, 950));
+        // Aguarda 750ms para o WhatsApp montar a conversa em #main
+        await new Promise(r => setTimeout(r, 750));
 
-        // Extrai dados da conversa aberta
+        if (cancelSyncRequested) break;
+
+        // CARREGAMENTO PROFUNDO: Rola para cima na conversa aberta para carregar mensagens antigas!
+        updateSyncModalProgress({
+          syncedCount: syncedChats.length,
+          maxChats: MAX_TARGET_CHATS,
+          contactName: currentName,
+          actionText: 'Carregando mensagens anteriores...',
+          totalMessages: totalMessagesSynced,
+        });
+
+        await deepScrollChatHistory(5, (step, total) => {
+          updateSyncModalProgress({
+            syncedCount: syncedChats.length,
+            maxChats: MAX_TARGET_CHATS,
+            contactName: currentName,
+            actionText: `Carregando histórico anterior (${step}/${total})...`,
+            totalMessages: totalMessagesSynced,
+          });
+        });
+
+        if (cancelSyncRequested) break;
+
+        // Extrai dados completos da conversa aberta com todo o histórico acumulado
         let chatData = extractActiveChatData();
         if (!chatData || !chatData.messages || chatData.messages.length === 0) {
-          // Pequena tolerância para conexões mais lentas
-          await new Promise(r => setTimeout(r, 400));
+          await new Promise(r => setTimeout(r, 300));
           chatData = extractActiveChatData();
         }
 
@@ -1056,18 +1308,29 @@
 
         if (chatData && chatData.phone) {
           syncedChats.push(chatData);
-          logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${chatData.messages.length} msgs de ${chatData.name} (${chatData.phone})`);
+          const msgsCount = chatData.messages ? chatData.messages.length : 0;
+          totalMessagesSynced += msgsCount;
+
+          logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${msgsCount} msgs de ${chatData.name} (${chatData.phone})`);
 
           // Envia imediatamente cada chat para a API da Brokiva
           safeSendMessage({
             action: 'SYNC_BATCH_CHATS',
             data: { chats: [chatData] }
           });
+
+          updateSyncModalProgress({
+            syncedCount: syncedChats.length,
+            maxChats: MAX_TARGET_CHATS,
+            contactName: `${chatData.name} (${formatPhoneDisplay(chatData.phone)})`,
+            actionText: `✓ ${msgsCount} mensagens sincronizadas`,
+            totalMessages: totalMessagesSynced,
+          });
         } else {
-          logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${nextRow.title}: Não foi possível resolver identificador do contato`);
+          logToConsoleAndCloudWatch('WARN', 'CHAT_NO_MSGS', `Chat ${currentName}: Não foi possível resolver identificador do contato`);
         }
 
-        // Atualiza barra de progresso
+        // Atualiza barra de progresso na sidebar
         const pct = Math.min(100, Math.round((syncedChats.length / MAX_TARGET_CHATS) * 100));
         if (progressFill) progressFill.style.width = `${pct}%`;
 
@@ -1082,6 +1345,14 @@
 
         const prevScrollTop = pane.scrollTop;
         const scrollStep = Math.max(320, Math.round(pane.clientHeight * 0.75));
+
+        updateSyncModalProgress({
+          syncedCount: syncedChats.length,
+          maxChats: MAX_TARGET_CHATS,
+          contactName: 'Rolando lista de conversas...',
+          actionText: 'Buscando próximas conversas do WhatsApp...',
+          totalMessages: totalMessagesSynced,
+        });
 
         if (progressStatus) {
           progressStatus.innerText = `Rolando conversas para baixo (${syncedChats.length} lidos)...`;
@@ -1108,11 +1379,16 @@
     if (btn) btn.disabled = false;
     if (progressFill) progressFill.style.width = '100%';
     if (progressStatus) {
-      progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e históricos sincronizados com a Brokiva!`;
+      progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e ${totalMessagesSynced.toLocaleString('pt-BR')} mensagens sincronizadas com a Brokiva!`;
       progressStatus.style.color = '#059669';
     }
 
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura finalizada com rolagem: ${syncedChats.length} chats sincronizados`);
+    finishSyncModal({
+      totalChats: syncedChats.length,
+      totalMessages: totalMessagesSynced,
+    });
+
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura profunda finalizada: ${syncedChats.length} chats e ${totalMessagesSynced} mensagens sincronizadas`);
   }
 
   // 6. Copiloto de IA: Sugere e insere resposta com 1 clique no WhatsApp Web

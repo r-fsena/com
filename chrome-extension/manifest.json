@@ -34,7 +34,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sidebar.html", "content.css"],
+      "resources": ["content.css"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]

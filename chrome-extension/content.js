@@ -292,6 +292,24 @@
     }
   }
 
+  function safeSendMessage(payload, callback) {
+    try {
+      if (!chrome?.runtime?.id) {
+        if (callback) callback(null);
+        return;
+      }
+      chrome.runtime.sendMessage(payload, (res) => {
+        if (chrome.runtime.lastError) {
+          if (callback) callback(null);
+          return;
+        }
+        if (callback) callback(res);
+      });
+    } catch (e) {
+      if (callback) callback(null);
+    }
+  }
+
   // Registrador de Telemetria e Logs para a UI e CloudWatch
   function logToConsoleAndCloudWatch(level, event, message, details = {}) {
     const timeStr = new Date().toLocaleTimeString();
@@ -308,16 +326,14 @@
     }
 
     // Envia evento de log para o background despachar ao CloudWatch
-    try {
-      chrome.runtime.sendMessage({
-        action: 'LOG_EVENT',
-        data: {
-          level,
-          event,
-          details: { message, ...details }
-        }
-      });
-    } catch {}
+    safeSendMessage({
+      action: 'LOG_EVENT',
+      data: {
+        level,
+        event,
+        details: { message, ...details }
+      }
+    });
   }
 
   // 1.1 Filtro de mensagens do sistema, criptografia e avisos automáticos do WhatsApp
@@ -507,42 +523,49 @@
     // 4. Extrai balões de mensagem
     const messages = [];
     messageElements.forEach((el, index) => {
-      const container = el.closest('[data-id]') || el.closest('div[role="row"]') || el;
-      const dataId = container.getAttribute('data-id') || el.getAttribute('data-id') || '';
+      if (!el) return;
+      const container = (el.closest && (el.closest('[data-id]') || el.closest('div[role="row"]'))) || el;
+      if (!container) return;
+
+      const dataId = (container.getAttribute && container.getAttribute('data-id')) || 
+                     (el.getAttribute && el.getAttribute('data-id')) || '';
       
       // Filtro 1: Ignora containers de aviso de sistema/criptografia do WhatsApp Web
-      const isSystemContainer = container.closest('[data-testid*="system"]') !== null ||
-                                container.querySelector('span[data-icon="lock-small"], span[data-icon="lock"]') !== null ||
-                                el.querySelector('span[data-icon="lock-small"], span[data-icon="lock"]') !== null ||
-                                (container.getAttribute('class') || '').includes('system');
+      const isSystemContainer = Boolean(
+        container.closest?.('[data-testid*="system"]') ||
+        container.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
+        el.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
+        (container.getAttribute?.('class') || '').includes('system')
+      );
       if (isSystemContainer) return;
 
-      const prePlain = container.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || 
-                       el.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || 
-                       container.getAttribute('data-pre-plain-text') || '';
+      const prePlain = container.querySelector?.('[data-pre-plain-text]')?.getAttribute?.('data-pre-plain-text') || 
+                       el.querySelector?.('[data-pre-plain-text]')?.getAttribute?.('data-pre-plain-text') || 
+                       (container.getAttribute ? container.getAttribute('data-pre-plain-text') : '') || '';
 
-      // Indicadores robustos de mensagem enviada pelo usuário (corretor/dono do WhatsApp):
-      // A) data-id começa com true_ (padrão absoluto do WhatsApp Web)
-      // B) Ícone de confirmação de envio/leitura (somente mensagens enviadas têm checkmark!)
-      // C) Posição horizontal no lado direito da tela (centro do balão > centro do chat)
-      // D) Classe message-out em si ou em ancestrais
-      // E) data-pre-plain-text com "Você:" ou "You:"
-      const hasCheckmark = container.querySelector(
+      const hasCheckmark = Boolean(container.querySelector?.(
         'span[data-icon*="check"], span[data-icon="msg-time"], span[data-testid*="check"], span[aria-label*="Lida"], span[aria-label*="Entregue"], span[aria-label*="Enviada"], span[aria-label*="Read"], span[aria-label*="Delivered"], span[aria-label*="Sent"]'
-      ) !== null;
+      ));
 
-      const hasMessageOutClass = container.classList.contains('message-out') || 
-                                 container.closest('.message-out') !== null || 
-                                 (container.getAttribute('class') || '').includes('message-out');
+      const hasMessageOutClass = Boolean(
+        container?.classList?.contains?.('message-out') || 
+        container?.closest?.('.message-out') || 
+        (container?.getAttribute?.('class') || '').includes('message-out')
+      );
 
       let isRightAligned = false;
       try {
-        const mainRect = main.getBoundingClientRect();
-        const boxRect = (container.querySelector('.selectable-text') || container).getBoundingClientRect();
-        const boxCenter = boxRect.left + (boxRect.width / 2);
-        const mainCenter = mainRect.left + (mainRect.width / 2);
-        if (boxCenter > mainCenter) {
-          isRightAligned = true;
+        if (main?.getBoundingClientRect) {
+          const mainRect = main.getBoundingClientRect();
+          const targetBox = container.querySelector?.('.selectable-text') || container;
+          if (targetBox?.getBoundingClientRect) {
+            const boxRect = targetBox.getBoundingClientRect();
+            const boxCenter = boxRect.left + (boxRect.width / 2);
+            const mainCenter = mainRect.left + (mainRect.width / 2);
+            if (boxCenter > mainCenter) {
+              isRightAligned = true;
+            }
+          }
         }
       } catch (e) {}
 
@@ -767,12 +790,11 @@
     // 1. Pergunta ao background worker (que consulta abas abertas do CRM e storage local)
     try {
       const res = await new Promise(resolve => {
-        chrome.runtime.sendMessage({
+        safeSendMessage({
           action: 'RESOLVE_CONTACT_BY_NAME',
           data: { name: contactName, lid: phoneOrLid }
         }, resp => {
-          if (chrome.runtime.lastError) resolve(null);
-          else resolve(resp?.result);
+          resolve(resp?.result);
         });
       });
       if (res && res.phone) {
@@ -836,7 +858,7 @@
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
     if (badge) badge.innerText = 'Salvando...';
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       action: 'SYNC_BATCH_CHATS',
       data: { chats: [chatData] }
     }, (response) => {
@@ -935,7 +957,7 @@
         logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${chatData.messages.length} msgs de ${chatData.name} (${chatData.phone})`);
 
         // Envia imediatamente cada chat para a API da Brokiva
-        chrome.runtime.sendMessage({
+        safeSendMessage({
           action: 'SYNC_BATCH_CHATS',
           data: { chats: [chatData] }
         });
@@ -976,7 +998,7 @@
       text: m.content,
     }));
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       action: 'GET_AI_SUGGESTION',
       data: {
         chatHistory: formattedHistory,

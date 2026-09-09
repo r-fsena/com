@@ -47,19 +47,13 @@ export function isWhatsAppChannelOrGroup(target: {
     return true;
   }
 
-  // 5. IDs gerados pela Meta para canais e grupos (ex: 120363404701403742)
-  const phoneDigits = (target.phone || '').replace(/\D/g, '');
-  const idDigits = (target.id || '').replace(/\D/g, '');
-
-  if (phoneDigits.startsWith('120363') && phoneDigits.length >= 15) {
-    return true;
-  }
-
-  if (idDigits.startsWith('120363') && idDigits.length >= 15) {
-    return true;
+  // 5. Se tiver indicação de LID (@lid ou campo lid), É UM CONTATO INDIVIDUAL (NÃO É GRUPO NEM CANAL)
+  if (rawCombined.includes('@lid') || Boolean(target.lid) || isLidIdentifier(target.lid)) {
+    return false;
   }
 
   // 6. Números nulos, "0" ou incompletos
+  const phoneDigits = (target.phone || '').replace(/\D/g, '');
   if (phoneDigits === '0' || (phoneDigits.length > 0 && phoneDigits.length < 8)) {
     return true;
   }

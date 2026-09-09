@@ -442,8 +442,12 @@
       return true;
     }
 
+    // Se possui indicação explícita de LID ou campo lid, é um contato individual 1:1
+    if (rawCombined.includes('@lid') || target.lid) {
+      return false;
+    }
+
     const phoneDigits = String(target.phone || '').replace(/\D/g, '');
-    if (phoneDigits.startsWith('120363') && phoneDigits.length >= 15) return true;
     if (phoneDigits === '0' || (phoneDigits.length > 0 && phoneDigits.length < 8)) return true;
 
     const nameLower = (target.name || '').toLowerCase().trim();
@@ -550,28 +554,36 @@
   // 1.5 Aguarda confirmação ativa de troca de conversa no #main (evita contaminação entre chats)
   async function waitForChatToOpen(expectedTitle, previousTitle, timeoutMs = 3500) {
     const start = Date.now();
-    const normExpected = (expectedTitle || '').toLowerCase().trim();
-    const normPrev = (previousTitle || '').toLowerCase().trim();
+    const cleanStr = (s) => (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    const normExpected = cleanStr(expectedTitle);
+    const normPrev = cleanStr(previousTitle);
 
     while (Date.now() - start < timeoutMs) {
       const main = document.querySelector('#main');
       if (main) {
         const headerSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
-        const currentTitle = (headerSpan ? (headerSpan.getAttribute('title') || headerSpan.innerText) : '').trim().toLowerCase();
+        const rawTitle = (headerSpan ? (headerSpan.getAttribute('title') || headerSpan.innerText) : '').trim();
+        const currentTitle = cleanStr(rawTitle);
 
-        // 1. Checa se o título é exatamente igual ou contém o esperado
+        // 1. Checa se o título é igual ou contém o esperado (ou as primeiras palavras coincidem)
+        const firstExpectedWord = normExpected.split(' ')[0];
         const matchesExpected = currentTitle && normExpected && (
           currentTitle === normExpected ||
           normExpected.includes(currentTitle) ||
-          currentTitle.includes(normExpected)
+          currentTitle.includes(normExpected) ||
+          (firstExpectedWord.length >= 3 && currentTitle.startsWith(firstExpectedWord))
         );
 
         // 2. Ou se comprovadamente mudou em relação ao chat anterior
         const changedFromPrev = normPrev && currentTitle && currentTitle !== normPrev;
 
-        if (matchesExpected || (changedFromPrev && currentTitle.length >= 2)) {
+        // 3. Fallback: Se decorreu mais de 1.2s e o #main já tem balões de mensagens renderizados
+        const elapsed = Date.now() - start;
+        const hasMessages = main.querySelectorAll('div[data-id], div[role="row"]').length > 0;
+
+        if (matchesExpected || (changedFromPrev && currentTitle.length >= 2) || (elapsed >= 1200 && hasMessages && currentTitle.length >= 2)) {
           // Pequena pausa para garantir que o Virtual DOM montou as mensagens da nova conversa
-          await new Promise(r => setTimeout(r, 350));
+          await new Promise(r => setTimeout(r, 250));
           return true;
         }
       }
@@ -1445,7 +1457,9 @@
           await new Promise(r => setTimeout(r, 100));
         } catch (e) {}
 
-        // Dispara eventos de ponteiro/mouse para o WhatsApp Web abrir o chat
+        // Dispara cliques nativos e eventos de ponteiro/mouse para o WhatsApp Web abrir o chat
+        try { nextRow.clickable.click(); } catch (e) {}
+        try { nextRow.span.click(); } catch (e) {}
         ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
           try {
             nextRow.clickable.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
@@ -1497,7 +1511,7 @@
         }
 
         if (chatData) {
-          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone);
+          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
         }
 
         if (chatData && chatData.phone && !isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
@@ -1507,10 +1521,19 @@
 
           logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${msgsCount} msgs de ${chatData.name} (${chatData.phone})`);
 
-          // Envia imediatamente cada chat para a API da Brokiva
-          safeSendMessage({
-            action: 'SYNC_BATCH_CHATS',
-            data: { chats: [chatData] }
+          // Envia imediatamente cada chat para a API da Brokiva e aguarda confirmação do backend
+          await new Promise((resolve) => {
+            safeSendMessage({
+              action: 'SYNC_BATCH_CHATS',
+              data: { chats: [chatData] }
+            }, (res) => {
+              if (res && res.success) {
+                logToConsoleAndCloudWatch('INFO', 'CHAT_SAVED_OK', `✓ Chat ${chatData.name} salvo com sucesso no CRM`);
+              } else {
+                logToConsoleAndCloudWatch('ERROR', 'CHAT_SAVE_FAIL', `Falha ao salvar ${chatData.name}: ${res?.error || 'sem resposta'}`);
+              }
+              resolve(res);
+            });
           });
 
           updateSyncModalProgress({
@@ -1573,8 +1596,13 @@
     if (btn) btn.disabled = false;
     if (progressFill) progressFill.style.width = '100%';
     if (progressStatus) {
-      progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e ${totalMessagesSynced.toLocaleString('pt-BR')} mensagens sincronizadas com a Brokiva!`;
-      progressStatus.style.color = '#059669';
+      if (syncedChats.length === 0) {
+        progressStatus.innerText = `⚠️ Nenhuma conversa 1:1 elegível encontrada na lista. (Grupos e canais foram ignorados).`;
+        progressStatus.style.color = '#e11d48';
+      } else {
+        progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e ${totalMessagesSynced.toLocaleString('pt-BR')} mensagens sincronizadas com a Brokiva!`;
+        progressStatus.style.color = '#059669';
+      }
     }
 
     finishSyncModal({

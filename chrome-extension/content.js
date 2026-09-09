@@ -66,6 +66,15 @@
     });
   }
 
+  function normalizeCrmUrl(raw) {
+    let url = (raw || '').trim();
+    if (!url) return 'https://crm.faithhubs.com';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`;
+    }
+    return url.replace(/\/+$/, '');
+  }
+
   // 1.1 Renderizador dinâmico de Login ou Ferramentas Ativas
   async function renderSidebarContent() {
     const bodyContainer = document.getElementById('sovereign-body-container');
@@ -203,7 +212,7 @@
 
           <div class="sovereign-field">
             <label class="sovereign-label">Servidor do CRM:</label>
-            <input type="text" id="sovereign-sidebar-crm-url" class="sovereign-input" value="${crmUrl}">
+            <input type="text" id="sovereign-sidebar-crm-url" class="sovereign-input" value="${normalizeCrmUrl(crmUrl)}" placeholder="https://crm.faithhubs.com">
           </div>
 
           <button id="sovereign-sidebar-login-btn" class="sovereign-btn-login">
@@ -214,7 +223,7 @@
 
       // Busca catálogo de imobiliárias para o select
       try {
-        fetch(`${crmUrl}/api/v1/auth/extension-login`)
+        fetch(`${normalizeCrmUrl(crmUrl)}/api/v1/auth/extension-login`)
           .then(r => r.json())
           .then(data => {
             const select = document.getElementById('sovereign-sidebar-tenant');
@@ -235,7 +244,7 @@
         const urlInput = document.getElementById('sovereign-sidebar-crm-url');
 
         if (errorEl) errorEl.style.display = 'none';
-        const targetUrl = urlInput?.value?.trim() || crmUrl;
+        const targetUrl = normalizeCrmUrl(urlInput?.value || crmUrl);
         const tenantId = tenantSelect?.value || 'tenant-amabile-barbarotti';
         const brokerVal = brokerInput?.value?.trim() || '';
 
@@ -279,7 +288,7 @@
           }
         } catch (err) {
           if (errorEl) {
-            errorEl.textContent = 'Falha de conexão com o CRM. Verifique a URL do servidor.';
+            errorEl.textContent = `Falha de conexão com o CRM (${targetUrl}). Verifique a URL do servidor.`;
             errorEl.style.display = 'block';
           }
         } finally {

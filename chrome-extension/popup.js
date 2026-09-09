@@ -17,6 +17,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const DEFAULT_CRM_URL = 'https://crm.faithhubs.com';
 
+  function normalizeCrmUrl(raw) {
+    let url = (raw || '').trim();
+    if (!url) return DEFAULT_CRM_URL;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`;
+    }
+    return url.replace(/\/+$/, '');
+  }
+
   async function renderState() {
     const config = await chrome.storage.local.get([
       'extensionSessionToken',
@@ -63,7 +72,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Executa login
   loginBtn.addEventListener('click', async () => {
     errorMsg.style.display = 'none';
-    const crmUrl = crmUrlInput.value.trim() || DEFAULT_CRM_URL;
+    const crmUrl = normalizeCrmUrl(crmUrlInput.value);
     const tenantId = tenantSelect.value;
     const brokerIdent = brokerInput.value.trim();
 

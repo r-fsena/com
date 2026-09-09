@@ -63,6 +63,7 @@ async function autoPairExtensionFromCrm() {
 }
 
 autoPairExtensionFromCrm();
+setInterval(autoPairExtensionFromCrm, 4000);
 
 // Observa alterações no localStorage pela aba do CRM
 window.addEventListener('storage', (e) => {

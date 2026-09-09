@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Contact, Deal, Conversation, Message, AIInsight } from '@/types/crm';
 import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 
@@ -15,11 +17,128 @@ const INITIAL_DEALS: Deal[] = [];
 const INITIAL_MESSAGES: Message[] = [];
 const INITIAL_INSIGHTS: Record<string, AIInsight> = {};
 
+const DEFAULT_DELETED_CHAT_KEYS = [
+  '5511915361868',
+  '11915361868',
+  'contact-zapi-5511915361868',
+  'conv-zapi-5511915361868',
+  '554896290235',
+  '4896290235',
+  '5548996290235',
+  'contact-zapi-554896290235',
+  'conv-zapi-554896290235',
+];
+
 declare global {
   var __SERVER_CRM_STATE__: ServerCRMState | undefined;
   var __GLOBAL_LID_PHONE_MAP__: Record<string, string> | undefined;
   var __GLOBAL_PHONE_LID_MAP__: Record<string, string> | undefined;
   var __GLOBAL_DELETED_CHAT_KEYS__: Set<string> | undefined;
+}
+
+function getCandidateStoragePaths(): string[] {
+  const paths: string[] = [];
+  if (process.env.CRM_STORAGE_FILE) {
+    paths.push(process.env.CRM_STORAGE_FILE);
+  }
+  // 1. Diretório data do projeto local (persistência local e Docker)
+  paths.push(path.join(process.cwd(), 'data', 'crm-state.json'));
+  // 2. Diretório alternativo .data
+  paths.push(path.join(process.cwd(), '.data', 'crm-state.json'));
+  // 3. Fallback para /tmp (ambientes serverless, AWS Lambda onde cwd é somente leitura)
+  paths.push(path.join('/tmp', 'crm-data', 'crm-state.json'));
+  paths.push(path.join('/tmp', 'crm-state.json'));
+  return paths;
+}
+
+let isSaving = false;
+let pendingSave = false;
+
+export function saveStateToDisk() {
+  if (typeof window !== 'undefined') return;
+  if (isSaving) {
+    pendingSave = true;
+    return;
+  }
+  isSaving = true;
+
+  try {
+    const payload = {
+      version: '1.0',
+      savedAt: new Date().toISOString(),
+      state: global.__SERVER_CRM_STATE__,
+      lidPhoneMap: global.__GLOBAL_LID_PHONE_MAP__,
+      phoneLidMap: global.__GLOBAL_PHONE_LID_MAP__,
+      deletedChatKeys: global.__GLOBAL_DELETED_CHAT_KEYS__ ? Array.from(global.__GLOBAL_DELETED_CHAT_KEYS__) : DEFAULT_DELETED_CHAT_KEYS,
+    };
+
+    const serialized = JSON.stringify(payload, null, 2);
+    const candidatePaths = getCandidateStoragePaths();
+
+    for (const filePath of candidatePaths) {
+      try {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+        fs.writeFileSync(tmpPath, serialized, 'utf-8');
+        fs.renameSync(tmpPath, filePath);
+        break; // Persistido com sucesso no primeiro caminho gravável
+      } catch {
+        continue;
+      }
+    }
+  } catch (err) {
+    console.error('[serverCRMStore] Falha ao persistir dados do CRM em disco:', err);
+  } finally {
+    isSaving = false;
+    if (pendingSave) {
+      pendingSave = false;
+      setTimeout(saveStateToDisk, 50);
+    }
+  }
+}
+
+export function loadStateFromDisk(): boolean {
+  if (typeof window !== 'undefined') return false;
+
+  const candidatePaths = getCandidateStoragePaths();
+  for (const filePath of candidatePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        if (!raw || !raw.trim()) continue;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.state) {
+          global.__SERVER_CRM_STATE__ = {
+            contacts: parsed.state.contacts || [],
+            deals: parsed.state.deals || [],
+            conversations: parsed.state.conversations || [],
+            messages: parsed.state.messages || [],
+            aiInsights: parsed.state.aiInsights || {},
+          };
+
+          if (parsed.lidPhoneMap) {
+            global.__GLOBAL_LID_PHONE_MAP__ = { ...(global.__GLOBAL_LID_PHONE_MAP__ || {}), ...parsed.lidPhoneMap };
+          }
+          if (parsed.phoneLidMap) {
+            global.__GLOBAL_PHONE_LID_MAP__ = { ...(global.__GLOBAL_PHONE_LID_MAP__ || {}), ...parsed.phoneLidMap };
+          }
+
+          const existingDel = global.__GLOBAL_DELETED_CHAT_KEYS__ ? Array.from(global.__GLOBAL_DELETED_CHAT_KEYS__) : DEFAULT_DELETED_CHAT_KEYS;
+          const restoredDel = Array.isArray(parsed.deletedChatKeys) ? parsed.deletedChatKeys : [];
+          global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set([...DEFAULT_DELETED_CHAT_KEYS, ...existingDel, ...restoredDel]);
+
+          console.log(`[serverCRMStore] Estado restaurado de ${filePath}: ${global.__SERVER_CRM_STATE__.conversations.length} conversas, ${global.__SERVER_CRM_STATE__.contacts.length} contatos, ${global.__SERVER_CRM_STATE__.messages.length} mensagens.`);
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn(`[serverCRMStore] Aviso ao carregar de ${filePath}:`, err);
+    }
+  }
+  return false;
 }
 
 if (!global.__SERVER_CRM_STATE__) {
@@ -42,18 +161,12 @@ if (!global.__GLOBAL_PHONE_LID_MAP__) {
 
 if (!global.__GLOBAL_DELETED_CHAT_KEYS__) {
   // Pre-popula com conversas que foram explicitamente excluídas pelo usuário (ex: Thais e Anna)
-  global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set([
-    '5511915361868',
-    '11915361868',
-    'contact-zapi-5511915361868',
-    'conv-zapi-5511915361868',
-    '554896290235',
-    '4896290235',
-    '5548996290235',
-    'contact-zapi-554896290235',
-    'conv-zapi-554896290235',
-  ]);
+  global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set(DEFAULT_DELETED_CHAT_KEYS);
 }
+
+// Carrega imediatamente dados persistidos do disco
+loadStateFromDisk();
+
 
 export const serverCRMStore = {
   // Mapeamento Bidirecional Global de WhatsApp LID <-> Telefone Canônico
@@ -72,6 +185,7 @@ export const serverCRMStore = {
       global.__GLOBAL_LID_PHONE_MAP__[l] = cleanPhone;
       global.__GLOBAL_PHONE_LID_MAP__[pKey] = l;
       global.__GLOBAL_PHONE_LID_MAP__[cleanPhone] = l;
+      saveStateToDisk();
     }
   },
 
@@ -170,7 +284,7 @@ export const serverCRMStore = {
 
   deleteChat(conversationId: string, phoneOrLid?: string): string[] {
     if (!global.__GLOBAL_DELETED_CHAT_KEYS__) {
-      global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set<string>();
+      global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set<string>(DEFAULT_DELETED_CHAT_KEYS);
     }
     const set = global.__GLOBAL_DELETED_CHAT_KEYS__;
 
@@ -226,6 +340,7 @@ export const serverCRMStore = {
     state.messages = state.messages.filter(m => !this.isChatDeleted(m.conversationId));
     state.deals = state.deals.filter(d => !this.isChatDeleted(d.contactId));
 
+    saveStateToDisk();
     return Array.from(set);
   },
 
@@ -245,6 +360,9 @@ export const serverCRMStore = {
   },
 
   getState(): ServerCRMState {
+    if (!global.__SERVER_CRM_STATE__ || (global.__SERVER_CRM_STATE__.conversations.length === 0 && global.__SERVER_CRM_STATE__.contacts.length === 0)) {
+      loadStateFromDisk();
+    }
     if (!global.__SERVER_CRM_STATE__) {
       global.__SERVER_CRM_STATE__ = {
         contacts: INITIAL_CONTACTS,
@@ -300,6 +418,7 @@ export const serverCRMStore = {
     global.__SERVER_CRM_STATE__ = fresh;
     global.__GLOBAL_LID_PHONE_MAP__ = {};
     global.__GLOBAL_PHONE_LID_MAP__ = {};
+    saveStateToDisk();
     return fresh;
   },
 
@@ -324,6 +443,7 @@ export const serverCRMStore = {
       aiInsights: partial.aiInsights ? { ...current.aiInsights, ...partial.aiInsights } : current.aiInsights,
     };
     global.__SERVER_CRM_STATE__ = next;
+    saveStateToDisk();
     return next;
   },
 

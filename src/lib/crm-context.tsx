@@ -1583,20 +1583,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima e novos dispositivos)
+  // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima, Safari e novos dispositivos)
   const isHydratedRef = useRef(false);
 
   useEffect(() => {
     const initializeCRMState = async () => {
       try {
-        // 1. Busca estado inicial do servidor (persistência cross-device e aba anônima)
+        // 1. Busca estado inicial do servidor (persistência cross-device, outro navegador e aba anônima)
         let serverData: any = null;
         try {
-          const res = await fetch('/api/v1/crm/state');
+          const res = await fetch('/api/v1/crm/state', {
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-tenant-id': currentTenant.id,
+              'x-user-id': currentUser.id,
+              'x-user-email': currentUser.email,
+            }
+          });
           if (res.ok) {
             serverData = await res.json();
           }
-        } catch {}
+        } catch (err) {
+          console.warn('[CRM] Aviso ao buscar estado inicial do servidor:', err);
+        }
 
         // 2. Lê localStorage
         const savedContacts = localStorage.getItem('vanguard_crm_contacts');
@@ -1614,80 +1624,113 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const savedInsights = localStorage.getItem('vanguard_crm_ai_insights');
         const parsedLocalInsights = savedInsights ? JSON.parse(savedInsights) : null;
 
-        // Mescla ou carrega contatos com deduplicação estrita
-        if (serverData && Array.isArray(serverData.contacts) && serverData.contacts.length > 0) {
-          setContacts(prev => {
-            const list = parsedLocalContacts || prev;
-            const combined = [...list, ...serverData.contacts].map((c: any) => ({
-              ...c,
-              isPersonal: c.isPersonal === true ? true : false,
-            }));
-            const deduped = deduplicateContactList(combined);
-            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped)); } catch {}
-            return deduped;
-          });
-        } else if (parsedLocalContacts && parsedLocalContacts.length > 0) {
-          const mapped = parsedLocalContacts.map((c: any) => ({
-            ...c,
-            isPersonal: c.isPersonal === true ? true : false,
-          }));
-          const deduped = deduplicateContactList(mapped);
-          setContacts(deduped);
-          try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped)); } catch {}
+        // 3. Atualiza chaves excluídas combinadas do servidor e locais
+        const serverDeleted = Array.isArray(serverData?.deletedKeys) ? serverData.deletedKeys : [];
+        let combinedDeleted = new Set(deletedChatKeys);
+        serverDeleted.forEach((k: string) => combinedDeleted.add(k));
+        setDeletedChatKeys(combinedDeleted);
+        try {
+          localStorage.setItem('vanguard_crm_deleted_chats', JSON.stringify(Array.from(combinedDeleted)));
+        } catch {}
+
+        // 4. Mescla contatos com deduplicação estrita
+        const combinedContacts = [
+          ...(Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []),
+          ...(Array.isArray(serverData?.contacts) ? serverData.contacts : [])
+        ].map((c: any) => ({
+          ...c,
+          isPersonal: c.isPersonal === true ? true : false,
+        })).filter(c => !isChatKeyDeleted(c.id, combinedDeleted) && !isChatKeyDeleted(c.phone, combinedDeleted) && !isChatKeyDeleted(c.lid, combinedDeleted));
+
+        const finalContacts = deduplicateContactList(combinedContacts);
+        if (finalContacts.length > 0) {
+          setContacts(finalContacts);
+          try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(finalContacts)); } catch {}
         }
 
-        // Deals
-        if (parsedLocalDeals && parsedLocalDeals.length > 0) {
-          setDeals(parsedLocalDeals);
-        } else if (serverData && Array.isArray(serverData.deals) && serverData.deals.length > 0) {
-          setDeals(serverData.deals);
+        // 5. Mescla conversas garantindo unificação de LIDs e telefones canônicos
+        const combinedConvs = [
+          ...(Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []),
+          ...(Array.isArray(serverData?.conversations) ? serverData.conversations : [])
+        ].map((cv: any) => ({
+          ...cv,
+          isPersonal: cv.isPersonal === true ? true : false,
+        })).filter(cv => !isChatKeyDeleted(cv.id, combinedDeleted) && !isChatKeyDeleted(cv.contactId, combinedDeleted));
+
+        const finalConvs = deduplicateConversations(combinedConvs, finalContacts);
+        if (finalConvs.length > 0) {
+          setConversations(finalConvs);
+          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(finalConvs)); } catch {}
         }
 
-        // Conversas com fusão de LIDs e Telefones Canônicos
-        if (parsedLocalConvs && parsedLocalConvs.length > 0) {
-          const mappedConvs = parsedLocalConvs.map((cv: any) => ({
-            ...cv,
-            isPersonal: cv.isPersonal === true ? true : false,
-          }));
-          const dedupedConvs = deduplicateConversations(mappedConvs, parsedLocalContacts || contacts);
-          setConversations(dedupedConvs);
-          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(dedupedConvs)); } catch {}
-        } else if (serverData && Array.isArray(serverData.conversations) && serverData.conversations.length > 0) {
-          const mappedConvs = serverData.conversations.map((cv: any) => ({
-            ...cv,
-            isPersonal: cv.isPersonal === true ? true : false,
-          }));
-          const dedupedConvs = deduplicateConversations(mappedConvs, serverData.contacts || contacts);
-          setConversations(dedupedConvs);
-          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(dedupedConvs)); } catch {}
+        // 6. Mescla mensagens
+        const combinedMsgs = [
+          ...(Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : []),
+          ...(Array.isArray(serverData?.messages) ? serverData.messages : [])
+        ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content));
+
+        const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
+        if (finalMsgs.length > 0) {
+          setMessages(finalMsgs);
+          try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(finalMsgs)); } catch {}
         }
 
-        // Mensagens
-        const mergedMsgs = deduplicateMessages([
-          ...(parsedLocalMsgs || []),
-          ...(serverData?.messages || [])
-        ], parsedLocalContacts || contacts);
-        if (mergedMsgs.length > 0) {
-          setMessages(mergedMsgs);
-          try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(mergedMsgs)); } catch {}
+        // 7. Mescla deals
+        const combinedDeals = [
+          ...(Array.isArray(parsedLocalDeals) ? parsedLocalDeals : []),
+          ...(Array.isArray(serverData?.deals) ? serverData.deals : [])
+        ].filter(d => !isChatKeyDeleted(d.contactId, combinedDeleted));
+        const dealMap = new Map<string, Deal>();
+        combinedDeals.forEach(d => {
+          if (d && d.id) dealMap.set(d.id, d);
+        });
+        const finalDeals = Array.from(dealMap.values());
+        if (finalDeals.length > 0) {
+          setDeals(finalDeals);
+          try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(finalDeals)); } catch {}
         }
 
-        // Insights
-        if (serverData?.aiInsights) {
-          setAiInsights(prev => ({
-            ...prev,
-            ...(parsedLocalInsights || {}),
-            ...serverData.aiInsights,
-          }));
-        } else if (parsedLocalInsights) {
-          setAiInsights(parsedLocalInsights);
+        // 8. Insights
+        const finalInsights = {
+          ...(parsedLocalInsights || {}),
+          ...(serverData?.aiInsights || {})
+        };
+        if (Object.keys(finalInsights).length > 0) {
+          setAiInsights(finalInsights);
+          try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(finalInsights)); } catch {}
         }
 
+        // 9. Sincronização e Re-semeadura Bi-direcional do Servidor
+        // Se o navegador local tiver dados no localStorage e o servidor estiver vazio ou com menos registros,
+        // envia para o servidor para que o disco seja gravado e outros navegadores/dispositivos (ex: Safari) recebam tudo!
+        const serverNeedsSeeding = !serverData || !Array.isArray(serverData.conversations) || serverData.conversations.length < finalConvs.length;
+        if (serverNeedsSeeding && finalConvs.length > 0) {
+          console.log('[CRM Context] Semeando servidor com histórico consolidado para persistência cross-device...');
+          fetch('/api/v1/crm/state', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-tenant-id': currentTenant.id,
+              'x-user-id': currentUser.id,
+              'x-user-email': currentUser.email,
+            },
+            body: JSON.stringify({
+              contacts: finalContacts,
+              conversations: finalConvs,
+              messages: finalMsgs,
+              deals: finalDeals,
+              aiInsights: finalInsights,
+            }),
+          }).catch(() => {});
+        }
+
+        // 10. Conversa ativa
         const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');
-        if (savedActive) {
+        if (savedActive && finalConvs.some(c => c.id === savedActive)) {
           setActiveConversationId(savedActive);
-        } else if (serverData?.conversations?.[0]?.id) {
-          setActiveConversationId(serverData.conversations[0].id);
+        } else if (finalConvs.length > 0) {
+          setActiveConversationId(finalConvs[0].id);
         }
       } catch (err) {
         console.error('Erro na hidratação do CRM:', err);
@@ -3753,20 +3796,74 @@ const pollWebhookMessages = async () => {
           });
         }
 
-        // Ingestão imediata de atualizações enviadas pela extensão para o servidor
+        // Ingestão imediata de atualizações enviadas pela extensão ou outro dispositivo para o servidor
         try {
-          const stateRes = await fetch('/api/v1/crm/state');
+          const stateRes = await fetch('/api/v1/crm/state', {
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-tenant-id': currentTenant.id,
+              'x-user-id': currentUser.id,
+              'x-user-email': currentUser.email,
+            },
+          });
           if (stateRes.ok) {
             const stateData = await stateRes.json();
-            if (stateData.success && Array.isArray(stateData.messages) && stateData.messages.length > 0) {
-              setMessages(prev => {
-                const merged = deduplicateMessages([...prev, ...stateData.messages]);
-                if (merged.length !== prev.length) {
-                  try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
-                  return merged;
-                }
-                return prev;
-              });
+            if (stateData.success) {
+              // 1. Mensagens
+              if (Array.isArray(stateData.messages) && stateData.messages.length > 0) {
+                setMessages(prev => {
+                  const merged = deduplicateMessages([...prev, ...stateData.messages]);
+                  if (merged.length !== prev.length) {
+                    try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
+                    return merged;
+                  }
+                  return prev;
+                });
+              }
+
+              // 2. Contatos
+              if (Array.isArray(stateData.contacts) && stateData.contacts.length > 0) {
+                setContacts(prev => {
+                  const merged = deduplicateContactList([...prev, ...stateData.contacts]);
+                  if (merged.length !== prev.length) {
+                    try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
+                    return merged;
+                  }
+                  return prev;
+                });
+              }
+
+              // 3. Conversas
+              if (Array.isArray(stateData.conversations) && stateData.conversations.length > 0) {
+                setConversations(prev => {
+                  const merged = deduplicateConversations([...prev, ...stateData.conversations]);
+                  if (merged.length !== prev.length) {
+                    try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
+                    return merged;
+                  }
+                  return prev;
+                });
+              }
+
+              // 4. Chaves Deletadas
+              if (Array.isArray(stateData.deletedKeys) && stateData.deletedKeys.length > 0) {
+                setDeletedChatKeys(prev => {
+                  let changed = false;
+                  const next = new Set(prev);
+                  stateData.deletedKeys.forEach((k: string) => {
+                    if (!next.has(k)) {
+                      next.add(k);
+                      changed = true;
+                    }
+                  });
+                  if (changed) {
+                    try { localStorage.setItem('vanguard_crm_deleted_chats', JSON.stringify(Array.from(next))); } catch {}
+                    return next;
+                  }
+                  return prev;
+                });
+              }
             }
           }
         } catch {}

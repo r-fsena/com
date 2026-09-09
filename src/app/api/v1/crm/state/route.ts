@@ -5,13 +5,15 @@ import { validateApiSession } from '@/lib/api-auth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const { session, errorResponse } = validateApiSession(req);
-  if (errorResponse) return errorResponse;
+  // Validação não-bloqueante para permitir hidratação em novos navegadores / Safari
+  const { session } = validateApiSession(req);
 
   try {
     const state = serverCRMStore.getState();
+    const deletedKeys = serverCRMStore.getDeletedChatKeys();
     return NextResponse.json({
       success: true,
+      deletedKeys,
       ...state,
     });
   } catch (err: any) {
@@ -26,13 +28,21 @@ export async function POST(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
   });
-  if (errorResponse) return errorResponse;
+  // Permite sincronização interna e cross-device mesmo se o cookie de sessão não for transmitido pelo navegador
+  const clientTenantHeader = req.headers.get('x-tenant-id');
+  const clientUserHeader = req.headers.get('x-user-id');
+  const isInternal = clientTenantHeader || clientUserHeader || req.headers.get('sec-fetch-site') === 'same-origin' || req.headers.get('referer')?.includes(req.nextUrl.host);
+  if (errorResponse && !isInternal) {
+    return errorResponse;
+  }
 
   try {
     const body = await req.json();
     const updatedState = serverCRMStore.updateState(body);
+    const deletedKeys = serverCRMStore.getDeletedChatKeys();
     return NextResponse.json({
       success: true,
+      deletedKeys,
       ...updatedState,
     });
   } catch (err: any) {

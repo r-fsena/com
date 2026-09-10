@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.9';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.10';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -865,36 +865,69 @@
     }
 
     uniqueRootContainers.forEach((container, index) => {
-      // 1. Localiza nó com data-id (no container, em filhos ou no pai [role="row"])
-      const actualDataIdEl = container.hasAttribute?.('data-id')
-        ? container
-        : (container.querySelector?.('[data-id]') || container.closest?.('[data-id]'));
-      const rawDataId = actualDataIdEl ? (actualDataIdEl.getAttribute('data-id') || '') : '';
-      if (rawDataId.includes('@g.us') || rawDataId.includes('@newsletter') || rawDataId.includes('@broadcast')) {
+      // 1. Localiza nó com data-id ESTRITAMENTE associado à mensagem (não busca em ancestrais fora de [role="row"])
+      let actualDataId = '';
+      if (container.hasAttribute?.('data-id')) {
+        actualDataId = container.getAttribute('data-id') || '';
+      } else {
+        const childWithId = container.querySelector?.('[data-id]');
+        if (childWithId) {
+          actualDataId = childWithId.getAttribute('data-id') || '';
+        } else {
+          const parentRow = container.closest?.('div[role="row"]');
+          if (parentRow && parentRow.hasAttribute?.('data-id')) {
+            actualDataId = parentRow.getAttribute('data-id') || '';
+          }
+        }
+      }
+
+      if (actualDataId.includes('@g.us') || actualDataId.includes('@newsletter') || actualDataId.includes('@broadcast')) {
         return;
       }
 
-      // ID legítimo de mensagem do WhatsApp tem o formato [true|false]_[remoteJid]_[msgId] (mínimo 3 partes)
-      const isRealMsgKey = Boolean(rawDataId && rawDataId.split('_').length >= 3);
+      // Validação estrita de ID de mensagem do WhatsApp
+      // Deve ter o padrão exato: (true|false)_[remotoJid]_[hashUnico]
+      const isRealMsgKey = Boolean(
+        actualDataId &&
+        /^(true|false)_[^@]+@(c\.us|s\.whatsapp\.net|lid)_[A-Za-z0-9\.\-_]+$/i.test(actualDataId)
+      );
+
+      const rawDataId = isRealMsgKey ? actualDataId : '';
       const isDataIdFromMe = isRealMsgKey && rawDataId.startsWith('true_');
       const isDataIdFromContact = isRealMsgKey && rawDataId.startsWith('false_');
 
-      // 2. Extração de texto isolando citação/resposta anterior (Quote)
-      // Remove o bloco de citação para impedir que "Você: [texto anterior]" contamine a resposta do cliente
+      // 2. Extração de texto isolando citação/resposta anterior (Quote) e metadados de hora
       const clone = container.cloneNode(true);
-      const quoteEls = clone.querySelectorAll(
+
+      // Remove blocos de citação (para não contaminar com "Você: [msg anterior]")
+      clone.querySelectorAll(
         '[data-testid="quoted-message"], .quoted-mention, [data-testid*="quote"], div[aria-label*="Citação"], div[aria-label*="Quoted"], div._amk4, div._amk6, div._amkb'
-      );
-      quoteEls.forEach(el => el.remove());
+      ).forEach(el => el.remove());
 
-      const textNode = clone.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
-      let content = textNode ? textNode.innerText.trim() : (clone.innerText || '').trim();
+      // Remove carimbos de hora, checks e metadados no balão clonado
+      clone.querySelectorAll(
+        '[data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu, span[data-icon*="check"], span[data-icon*="dblcheck"], span[data-icon*="time"]'
+      ).forEach(el => el.remove());
 
-      // Limpa horários grudados no final da mensagem
-      content = content.replace(/\n\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i, '').trim();
+      // Busca preferencialmente no elemento estrito de texto
+      const selectableSpan = clone.querySelector('span.selectable-text, .selectable-text');
+      let content = selectableSpan ? selectableSpan.innerText.trim() : '';
+      if (!content) {
+        const fallbackTextEl = clone.querySelector('.copyable-text span, div.copyable-text, span[dir="ltr"]');
+        content = fallbackTextEl ? fallbackTextEl.innerText.trim() : (clone.innerText || '').trim();
+      }
+
+      // Remove horários residuais grudados no final da mensagem (ex: " 14:32", "\n14:32", " 2:30 PM", " 14:32✓")
+      content = content
+        .replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '')
+        .replace(/[\s\u00a0\u200e\u200f\n\r]+$/g, '')
+        .trim();
 
       // Se o conteúdo começar com resquício de cabeçalho "Você:\n" ou "You:\n", remove
       content = content.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
+
+      // Se após a limpeza restar apenas um horário isolado (ex: "14:32"), descarta
+      if (/^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(content)) return;
 
       if (isWhatsAppSystemMessage(content)) return;
 
@@ -1055,8 +1088,10 @@
       }
 
       // Deduplicação estrita: insere no Map
+      // Se for chave nativa do WhatsApp (única por mensagem), usa-a.
+      // Se não for chave nativa, usa conteúdo + horário + remetente + índice para NUNCA colapsar mensagens diferentes
       const effectiveDataId = isRealMsgKey ? rawDataId : '';
-      const uniqueMsgKey = effectiveDataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}`;
+      const uniqueMsgKey = effectiveDataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}_${index}`;
       if (!messagesMap.has(uniqueMsgKey)) {
         const p = fallbackPhone || currentActivePhone || 'chat';
         messagesMap.set(uniqueMsgKey, {
@@ -1148,29 +1183,46 @@
   function findChatScrollContainer() {
     const main = document.querySelector('#main');
     if (!main) return null;
+
+    // 1. Busca a partir de uma mensagem real existente no chat (método mais preciso do DOM)
+    const msg = main.querySelector('div.message-in, div.message-out, div[role="row"]');
+    if (msg) {
+      let curr = msg.parentElement;
+      while (curr && curr !== main) {
+        if (curr.scrollHeight > curr.clientHeight && curr.clientHeight > 150) {
+          const style = window.getComputedStyle(curr);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+            return curr;
+          }
+        }
+        curr = curr.parentElement;
+      }
+      // Se nenhum tiver overflow auto/scroll explícito, pega o primeiro ancestral com scrollHeight > clientHeight
+      curr = msg.parentElement;
+      while (curr && curr !== main) {
+        if (curr.scrollHeight > curr.clientHeight && curr.clientHeight > 150) {
+          return curr;
+        }
+        curr = curr.parentElement;
+      }
+    }
+
+    // 2. Fallbacks diretos conhecidos do WhatsApp Web
     const directScroll = main.querySelector('div[tabindex="-1"][data-tab], div.copyable-area > div[tabindex="-1"], div[role="application"]');
     if (directScroll && directScroll.scrollHeight > directScroll.clientHeight) {
       return directScroll;
     }
 
-    const candidates = main.querySelectorAll('div[tabindex="-1"], div.copyable-area, div._ajyl, div');
-    for (const el of candidates) {
-      if (el.scrollHeight > el.clientHeight && el.clientHeight > 150) {
-        const style = window.getComputedStyle(el);
-        if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
-          return el;
-        }
-      }
-    }
     return document.querySelector('#main div[tabindex="-1"]') ||
            document.querySelector('#main .copyable-area')?.parentElement ||
            document.querySelector('#main div[role="application"]');
   }
 
-  async function deepScrollChatHistory(targetScrolls = 20, onProgress = null) {
+  async function deepScrollChatHistory(targetScrolls = 25, onProgress = null) {
+    const main = document.querySelector('#main');
     const scrollContainer = findChatScrollContainer();
     const accumulatedMessages = new Map();
-    if (!scrollContainer) {
+    if (!scrollContainer || !main) {
       harvestDomMessages(accumulatedMessages);
       return accumulatedMessages;
     }
@@ -1183,15 +1235,40 @@
     let unchangedAttempts = 0;
 
     for (let i = 0; i < targetScrolls; i++) {
+      // Rola o container para o topo absoluto
       scrollContainer.scrollTop = 0;
       scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: -800, bubbles: true }));
+
+      // Força a primeira mensagem visível a entrar no topo do viewport para disparar o IntersectionObserver do WhatsApp
+      const firstRow = main.querySelector('div.message-in, div.message-out, div[role="row"]');
+      if (firstRow) {
+        try {
+          firstRow.scrollIntoView({ block: 'start', behavior: 'instant' });
+        } catch (e) {}
+      }
+
+      // Dispara evento de roda do mouse (wheel) para cima
+      const wheelEvt = new WheelEvent('wheel', {
+        deltaY: -1200,
+        deltaMode: 0,
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      });
+      scrollContainer.dispatchEvent(wheelEvt);
+      if (firstRow) firstRow.dispatchEvent(wheelEvt);
 
       if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
       if (typeof onProgress === 'function') onProgress(i + 1, targetScrolls);
 
-      // Aguarda 750ms para o WhatsApp buscar no IndexedDB e renderizar os nós no DOM
-      await new Promise(r => setTimeout(r, 750));
+      // Aguarda 900ms para o WhatsApp buscar no IndexedDB e renderizar os nós no DOM
+      await new Promise(r => setTimeout(r, 900));
+
+      // Se houver spinner/loader ativo no topo, aguarda mais 500ms
+      const loader = main.querySelector('[data-testid="chat-history-loader"], [role="progressbar"], span[data-icon="refresh"]');
+      if (loader) {
+        await new Promise(r => setTimeout(r, 500));
+      }
 
       // Coleta mensagens da página atual no DOM e adiciona ao acumulador
       harvestDomMessages(accumulatedMessages);
@@ -1199,9 +1276,10 @@
       const currentCount = accumulatedMessages.size;
       if (currentCount === lastCount) {
         unchangedAttempts++;
-        // Se após 3 tentativas consecutivas com scroll no topo não houver novas mensagens, chegou ao topo real
-        if (unchangedAttempts >= 3 && i >= 3) {
-          console.log(`[Brokiva] Início da conversa atingido ou sem mais histórico após ${i + 1} rolagens (${currentCount} msgs).`);
+        // Só encerra precocemente se já acumulou um bom volume (>= 15 msgs) E teve 4 tentativas sem novidade,
+        // OU se já tentou pelo menos 8 rolagens
+        if (unchangedAttempts >= 4 && (currentCount >= 15 || i >= 8)) {
+          console.log(`[Brokiva] Início da conversa atingido após ${i + 1} rolagens (${currentCount} msgs).`);
           break;
         }
       } else {
@@ -1210,10 +1288,19 @@
       }
     }
 
-    // Retorna a rolagem para o final para restaurar a visualização e capturar mensagens de hoje
+    // Retorna a rolagem para o final para restaurar a visualização natural e capturar mensagens de hoje
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
     scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 300));
+
+    const allRows = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
+    const lastRow = allRows.length > 0 ? allRows[allRows.length - 1] : null;
+    if (lastRow) {
+      try {
+        lastRow.scrollIntoView({ block: 'end', behavior: 'instant' });
+      } catch (e) {}
+    }
+
+    await new Promise(r => setTimeout(r, 350));
     harvestDomMessages(accumulatedMessages);
 
     return accumulatedMessages;

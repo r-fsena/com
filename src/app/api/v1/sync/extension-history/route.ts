@@ -174,7 +174,6 @@ export async function POST(req: NextRequest) {
             if (m.messageType === 'AUDIO') cleanContent = '🎵 Mensagem de Voz';
             else if (m.messageType === 'IMAGE') cleanContent = '📷 Foto';
             else if (m.messageType === 'DOCUMENT') cleanContent = '📄 Documento';
-            else if (m.messageType === 'VIDEO') cleanContent = '🎥 Vídeo';
             else if (!m.mediaUrl) return; // Descarta balão de ruído/sistema sem conteúdo
           }
 

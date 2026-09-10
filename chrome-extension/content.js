@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.6';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.7';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -774,26 +774,29 @@
     currentActivePhone = resolvedPhone;
     currentActiveName = contactName;
 
-    // 3. Extração estrita de balões: seleciona nós raiz únicos para NUNCA duplicar balões
-    const candidateRows = Array.from(main.querySelectorAll('div[data-id], div[role="row"]'));
+    // 3. Extração estrita de balões: seleciona nós de mensagem individuais em #main
+    const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
     const uniqueRootContainers = [];
     const seenContainers = new Set();
 
-    for (const el of candidateRows) {
-      // Prioriza o container com data-id ou role=row
-      const root = el.hasAttribute('data-id') ? el : (el.closest('[data-id]') || el);
-      if (seenContainers.has(root)) continue;
-      seenContainers.add(root);
+    for (const el of rawBubbleElements) {
+      // Se for div[role="row"], obtém o balão interno .message-in ou .message-out
+      const bubble = (el.classList?.contains('message-in') || el.classList?.contains('message-out'))
+        ? el
+        : (el.querySelector?.('.message-in, .message-out') || el);
+
+      if (seenContainers.has(bubble)) continue;
+      seenContainers.add(bubble);
 
       // Descarta avisos de sistema e containers de data/hora no topo
       const isSystemContainer = Boolean(
-        root.closest?.('[data-testid*="system"]') ||
-        root.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
-        (root.getAttribute?.('class') || '').includes('system')
+        bubble.closest?.('[data-testid*="system"]') ||
+        bubble.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
+        (bubble.getAttribute?.('class') || '').includes('system')
       );
       if (isSystemContainer) continue;
 
-      uniqueRootContainers.push(root);
+      uniqueRootContainers.push(bubble);
     }
 
     // Extrai avatar do contato no cabeçalho
@@ -929,7 +932,7 @@
         isFromMe = true;
       } else if (isPrePlainFromMe) {
         isFromMe = true;
-      } else if (hasOutgoingCheckmark && !isMessageIn) {
+      } else if (hasOutgoingCheckmark) {
         isFromMe = true;
       } else if (isMessageIn) {
         isFromMe = false;
@@ -938,6 +941,8 @@
       } else {
         isFromMe = false;
       }
+
+      console.log(`[Brokiva] Msg #${index + 1} (${isFromMe ? 'ME/Corretor' : 'CLIENTE'}): "${content.slice(0, 25)}" [out: ${isMessageOut}, in: ${isMessageIn}, idOut: ${isDataIdFromMe}, idIn: ${isDataIdFromContact}, check: ${hasOutgoingCheckmark}, prePlainOut: ${isPrePlainFromMe}]`);
 
       let msgTime = '';
       if (prePlain) {

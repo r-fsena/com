@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.11';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.12';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -912,9 +912,9 @@
         '[data-testid="quoted-message"], .quoted-mention, [data-testid*="quote"], div[aria-label*="Citação"], div[aria-label*="Quoted"], div._amk4, div._amk6, div._amkb'
       ).forEach(el => el.remove());
 
-      // Remove carimbos de hora, checks e metadados no balão clonado
+      // Remove carimbos de hora, todos os SVGs, títulos de ícones (tail-out, tail-in, ic-fast-forward) e metadados
       clone.querySelectorAll(
-        '[data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu, span[data-icon*="check"], span[data-icon*="dblcheck"], span[data-icon*="time"]'
+        'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu'
       ).forEach(el => el.remove());
 
       // Busca preferencialmente no elemento estrito de texto
@@ -934,16 +934,22 @@
       // Se o conteúdo começar com resquício de cabeçalho "Você:\n" ou "You:\n", remove
       content = content.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
 
+      // Remove lixo de nomes de ícones SVG do WhatsApp Web (tail-out, tail-in, ic-fast-forward, etc.)
+      if (
+        /^(tail-in|tail-out|ic-fast-forward|fast-forward)(\s+(tail-in|tail-out|ic-fast-forward|fast-forward))*$/i.test(content) ||
+        content === 'tail-out' || content === 'tail-in' || content === 'ic-fast-forward'
+      ) {
+        content = '';
+      }
+
       // Se após a limpeza restar apenas um horário isolado (ex: "14:32"), descarta
       if (/^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(content)) return;
 
-      if (isWhatsAppSystemMessage(content)) return;
-
       let messageType = 'TEXT';
 
-      // 3. Detecção Robusta de Áudio / Mensagem de Voz (corrige "0:27 1,0x")
+      // 3. Detecção Robusta de Áudio / Mensagem de Voz (corrige "0:27 1,0x" e "ic-fast-forward")
       const hasAudioPlayer = Boolean(
-        container.querySelector('audio, [data-testid="audio-player"], span[data-icon*="audio"], span[data-icon*="ptt"], button[aria-label*="Reproduzir"], button[aria-label*="Play"]')
+        container.querySelector('audio, [data-testid="audio-player"], span[data-icon*="audio"], span[data-icon*="ptt"], span[data-icon="ic-fast-forward"], button[aria-label*="Reproduzir"], button[aria-label*="Play"]')
       );
       const isAudioText = (
         /\b\d{1,2}:\d{2}\s+(\d[.,]\d[xX]|\dx)\b/i.test(content) ||
@@ -956,7 +962,7 @@
 
       if (hasAudioPlayer || isAudioText) {
         messageType = 'AUDIO';
-        const durationMatch = content.match(/\b(\d{1,2}:\d{2})\b/);
+        const durationMatch = (container.innerText || '').match(/\b(\d{1,2}:\d{2})\b/);
         const duration = durationMatch ? durationMatch[1] : '';
         content = duration ? `🎵 Mensagem de Voz (${duration})` : '🎵 Mensagem de Voz';
       } else if (
@@ -980,6 +986,7 @@
         content = content || '📷 Foto';
       }
 
+      // Descarta mensagens vazias ou de aviso do sistema
       if (!content || isWhatsAppSystemMessage(content)) return;
 
       // 5. Identificação estrita de autoria (Você / Corretor vs Cliente)

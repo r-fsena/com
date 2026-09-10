@@ -177,6 +177,11 @@ export async function POST(req: NextRequest) {
             else if (!m.mediaUrl) return; // Descarta balão de ruído/sistema sem conteúdo
           }
 
+          // Se foi enviado como AUDIO mas contém texto real digitado pelo usuário, é uma mensagem de TEXTO legítima
+          if (m.messageType === 'AUDIO' && cleanContent && !cleanContent.includes('Mensagem de Voz') && !cleanContent.includes('[Áudio]')) {
+            m.messageType = 'TEXT';
+          }
+
           if (isWhatsAppSystemMessage(cleanContent)) return;
 
           let mTimestamp = nowIso;

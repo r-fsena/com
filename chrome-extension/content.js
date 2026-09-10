@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.13';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.14';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -917,18 +917,20 @@
         'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu'
       ).forEach(el => el.remove());
 
-      // 1. Identificação de Tipo de Mídia (Audio, Documento, Imagem, Vídeo)
-      const hasAudio = Boolean(
-        container.querySelector('audio, [data-testid="audio-player"], span[data-icon*="audio"], span[data-icon*="ptt"], span[data-icon="ic-fast-forward"], button[aria-label*="Reproduzir"], button[aria-label*="Play"]')
+      // 1. Identificação de Tipo de Mídia (Vídeo, Documento, Imagem, Áudio PTT)
+      const hasVideo = Boolean(
+        container.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"], button[aria-label*="vídeo" i]')
       );
       const hasDoc = Boolean(
         container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]')
       );
-      const hasImg = Boolean(
-        container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]') && !hasAudio
+      const hasImg = !hasVideo && Boolean(
+        container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]')
       );
-      const hasVideo = Boolean(
-        container.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"]')
+      // Áudio ESTRITO: NUNCA usar seletores genéricos como 'Reproduzir', 'Play' ou 'ic-fast-forward'!
+      // No WhatsApp Web, mensagens de voz PTT possuem player dedicado ou waveform.
+      const hasAudio = !hasVideo && !hasDoc && !hasImg && Boolean(
+        container.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i]')
       );
 
       // 2. Extração ESTRITA de texto digitado pelo usuário
@@ -965,9 +967,14 @@
       let messageType = 'TEXT';
       let content = '';
 
-      if (hasAudio) {
+      // Regra de ouro: Se o usuário digitou texto real e não há vídeo, documento ou imagem anexada,
+      // é 100% uma mensagem de TEXTO! Mensagens de voz no WhatsApp NUNCA têm texto digitado.
+      if (userTypedText && !hasDoc && !hasVideo && !hasImg) {
+        messageType = 'TEXT';
+        content = userTypedText;
+      } else if (hasAudio && !userTypedText) {
         messageType = 'AUDIO';
-        content = userTypedText || '🎵 Mensagem de Voz';
+        content = '🎵 Mensagem de Voz';
       } else if (hasDoc) {
         messageType = 'DOCUMENT';
         // Para documento: extrai apenas o nome real do arquivo (ex: "Contrato.pdf"), NUNCA o tamanho

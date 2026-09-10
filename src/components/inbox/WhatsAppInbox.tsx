@@ -1711,20 +1711,28 @@ export function WhatsAppInbox() {
                             <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
                               <Mic className="w-4 h-4" />
                             </div>
-                            <audio 
-                              controls 
-                              className="w-44 h-7"
-                            >
-                              <source src={msg.attachments?.[0]?.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'} />
-                            </audio>
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePlaybackSpeed(msg.id)}
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
-                              title="Velocidade de Reprodução"
-                            >
-                              {playbackSpeeds[msg.id] || 1}x
-                            </button>
+                            {msg.attachments?.[0]?.url && !msg.attachments[0].url.includes('soundhelix') ? (
+                              <>
+                                <audio 
+                                  controls 
+                                  className="w-44 h-7"
+                                >
+                                  <source src={msg.attachments[0].url} />
+                                </audio>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePlaybackSpeed(msg.id)}
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
+                                  title="Velocidade de Reprodução"
+                                >
+                                  {playbackSpeeds[msg.id] || 1}x
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-slate-600 font-medium">
+                                Mensagem de Voz
+                              </span>
+                            )}
                           </div>
 
                           {/* Botão e Box de Transcrição por IA */}
@@ -2182,13 +2190,7 @@ export function WhatsAppInbox() {
                           '🎵 Mensagem de voz gravada pelo corretor',
                           isInternalNote,
                           false,
-                          [{
-                            id: `att-${Date.now()}`,
-                            url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-                            fileName: `Audio_Gravado_${Date.now()}.ogg`,
-                            fileSize: 32000,
-                            mimeType: 'audio/ogg',
-                          }],
+                          undefined,
                           'AUDIO'
                         );
                       }

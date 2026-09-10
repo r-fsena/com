@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.10';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.11';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -390,7 +390,15 @@
       lower.includes('voce bloqueou este contato') ||
       lower.includes('você desbloqueou este contato') ||
       lower.includes('voce desbloqueou este contato') ||
-      lower.includes('you blocked this contact')
+      lower.includes('you blocked this contact') ||
+      lower.includes('clique para carregar') ||
+      lower.includes('clique aqui para carregar') ||
+      lower.includes('carregar mensagens mais antigas') ||
+      lower.includes('carregar conversas mais antigas') ||
+      lower.includes('carregar mensagens anteriores') ||
+      lower.includes('use o whatsapp no seu celular para ver mensagens') ||
+      lower.includes('use whatsapp on your phone to see older messages') ||
+      lower.includes('click to load older messages')
     );
   }
 
@@ -1218,6 +1226,36 @@
            document.querySelector('#main div[role="application"]');
   }
 
+  // Detecta e clica automaticamente em botões/banners de "Clique para carregar conversas mais antigas"
+  async function checkAndClickLoadMoreButton() {
+    try {
+      const main = document.querySelector('#main');
+      if (!main) return false;
+
+      // Procura botões, links ou banners interativos de carregamento de histórico
+      const candidates = Array.from(main.querySelectorAll(
+        'button, div[role="button"], span[role="button"], div[data-testid*="banner"], div[data-testid*="system"], div[data-testid*="load"]'
+      ));
+
+      for (const el of candidates) {
+        const text = (el.innerText || el.getAttribute('aria-label') || '').toLowerCase().trim();
+        if (
+          (text.includes('clique') && (text.includes('carregar') || text.includes('antig') || text.includes('anterior') || text.includes('baixar'))) ||
+          (text.includes('carregar') && (text.includes('mensagem') || text.includes('conversa') || text.includes('antig') || text.includes('anterior'))) ||
+          (text.includes('load') && text.includes('older') && text.includes('message')) ||
+          (text.includes('click') && text.includes('load'))
+        ) {
+          console.log('[Brokiva] Botão/Banner de carregamento de histórico detectado:', text);
+          const clickTarget = el.closest('button, div[role="button"], span[role="button"]') || el;
+          clickTarget.click();
+          clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+
   async function deepScrollChatHistory(targetScrolls = 25, onProgress = null) {
     const main = document.querySelector('#main');
     const scrollContainer = findChatScrollContainer();
@@ -1257,6 +1295,13 @@
       });
       scrollContainer.dispatchEvent(wheelEvt);
       if (firstRow) firstRow.dispatchEvent(wheelEvt);
+
+      // Detecta e clica automaticamente em "Clique aqui para carregar conversas mais antigas"
+      const clickedLoadMore = await checkAndClickLoadMoreButton();
+      if (clickedLoadMore) {
+        if (badge) badge.innerText = `Baixando antigas (${i + 1}/${targetScrolls})...`;
+        await new Promise(r => setTimeout(r, 1200));
+      }
 
       if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
       if (typeof onProgress === 'function') onProgress(i + 1, targetScrolls);

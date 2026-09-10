@@ -504,6 +504,64 @@
     return false;
   }
 
+  // 1.35 Converte avatar do contato em Data URL base64 autônomo (CORS-safe e persistente no CRM)
+  async function getContactAvatarDataUrl(imgElementOrSrc) {
+    if (!imgElementOrSrc) return '';
+    const src = typeof imgElementOrSrc === 'string' ? imgElementOrSrc : (imgElementOrSrc.getAttribute('src') || '');
+    if (!src) return '';
+
+    // Ignora silhueta padrão / placeholder SVG do WhatsApp
+    if (src.includes('data:image/svg+xml') || src.includes('default-user')) {
+      return '';
+    }
+
+    if (src.startsWith('data:image/jpeg') || src.startsWith('data:image/png') || src.startsWith('data:image/webp')) {
+      return src;
+    }
+
+    // 1. Canvas direto se o elemento <img> do DOM já estiver renderizado
+    if (typeof imgElementOrSrc !== 'string' && imgElementOrSrc && imgElementOrSrc.tagName === 'IMG' && imgElementOrSrc.complete && imgElementOrSrc.naturalWidth > 0) {
+      try {
+        const canvas = document.createElement('canvas');
+        const size = Math.min(imgElementOrSrc.naturalWidth, 128);
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgElementOrSrc, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        if (dataUrl && dataUrl.startsWith('data:image/jpeg') && dataUrl.length > 100) {
+          return dataUrl;
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fetch direto do blob no contexto do content script (mesma origem web.whatsapp.com)
+    if (src.startsWith('blob:')) {
+      try {
+        const res = await fetch(src);
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result || '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {}
+    }
+
+    // 3. Background worker via CONVERT_IMAGE_TO_DATA_URL (com host_permissions de *.whatsapp.net)
+    try {
+      const bgResp = await new Promise(resolve => {
+        safeSendMessage({ action: 'CONVERT_IMAGE_TO_DATA_URL', data: { url: src } }, resp => resolve(resp));
+      });
+      if (bgResp && bgResp.success && bgResp.dataUrl) {
+        return bgResp.dataUrl;
+      }
+    } catch (e) {}
+
+    return '';
+  }
+
   // 1.4 Detecta se a conversa atualmente aberta no #main é um grupo ou canal
   function isCurrentChatGroupOrChannel() {
     const main = document.querySelector('#main');
@@ -731,13 +789,42 @@
       uniqueRootContainers.push(root);
     }
 
+    // Extrai avatar do contato no cabeçalho
+    const headerAvatarImg = main.querySelector('header img[src]');
+    let avatarUrl = headerAvatarImg ? (headerAvatarImg.getAttribute('src') || '') : '';
+
     console.log(`[Brokiva] Encontrados ${uniqueRootContainers.length} balões raiz únicos em #main`);
 
     const messages = [];
     const seenMsgKeys = new Set();
+    // Tenta encontrar uma data de referência no chat caso as mensagens iniciais sejam áudios ou anexos
+    let lastKnownDateIso = '';
+    const dateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[role="row"] span[dir="auto"], span.selectable-text'));
+    for (const sp of dateSpans) {
+      const spText = (sp.innerText || '').trim().toUpperCase();
+      const dMatch = spText.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
+      if (dMatch) {
+        const d = Number(dMatch[1]), mo = Number(dMatch[2]) - 1;
+        let y = Number(dMatch[3]);
+        if (y < 100) y += 2000;
+        const dt = new Date(y, mo, d, 12, 0, 0);
+        if (!isNaN(dt.getTime())) {
+          lastKnownDateIso = dt.toISOString();
+          break;
+        }
+      } else if (spText === 'ONTEM' || spText === 'YESTERDAY') {
+        const dt = new Date();
+        dt.setDate(dt.getDate() - 1);
+        lastKnownDateIso = dt.toISOString();
+        break;
+      }
+    }
 
     uniqueRootContainers.forEach((container, index) => {
-      const dataId = (container.getAttribute && container.getAttribute('data-id')) || '';
+      // 1. Localiza nó real do balão com data-id (pode ser o container raiz ou um filho direto)
+      const actualDataIdEl = container.hasAttribute?.('data-id') ? container :
+                             (container.querySelector?.('[data-id]') || container.closest?.('[data-id]'));
+      const dataId = actualDataIdEl ? (actualDataIdEl.getAttribute('data-id') || '') : '';
       if (dataId.includes('@g.us') || dataId.includes('@newsletter') || dataId.includes('@broadcast')) {
         return;
       }
@@ -751,57 +838,140 @@
       if (isWhatsAppSystemMessage(content)) return;
 
       let messageType = 'TEXT';
-      if (container.querySelector('audio')) {
+
+      // 1. Detecção Robusta de Áudio / Mensagem de Voz (corrige "0:27 1,0x")
+      const hasAudioPlayer = Boolean(
+        container.querySelector('audio, [data-testid="audio-player"], span[data-icon*="audio"], span[data-icon*="ptt"], button[aria-label*="Reproduzir"], button[aria-label*="Play"]')
+      );
+      const isAudioText = (
+        /\b\d{1,2}:\d{2}\s+(\d[.,]\d[xX]|\dx)\b/i.test(content) ||
+        /^\s*\d{1,2}:\d{2}\s*$/i.test(content) ||
+        content.includes('1,0x') ||
+        content.includes('1.0x') ||
+        content.includes('1,5x') ||
+        content.includes('2,0x')
+      );
+
+      if (hasAudioPlayer || isAudioText) {
         messageType = 'AUDIO';
-        content = content || '🎵 Mensagem de Voz';
-      } else if (container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]')) {
+        const durationMatch = content.match(/\b(\d{1,2}:\d{2})\b/);
+        const duration = durationMatch ? durationMatch[1] : '';
+        content = duration ? `🎵 Mensagem de Voz (${duration})` : '🎵 Mensagem de Voz';
+      } else if (
+        container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]') ||
+        (/\b\d+([.,]\d+)?\s*(KB|MB|GB|B)\b/i.test(content) && content.length < 60)
+      ) {
+        // 2. Detecção Robusta de Documento / Anexo (corrige "42 KB")
+        messageType = 'DOCUMENT';
+        const sizeMatch = content.match(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B)\b/i);
+        const fileSize = sizeMatch ? sizeMatch[0] : '';
+        const nameEl = container.querySelector('span[title*="."], span.x10l6tqk[title], a[download]');
+        const fileName = (nameEl?.getAttribute('title') || nameEl?.innerText || '').trim();
+
+        if (fileName && fileName !== content && !/^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(fileName)) {
+          content = fileSize ? `📄 ${fileName} (${fileSize})` : `📄 ${fileName}`;
+        } else {
+          content = fileSize ? `📄 Documento (${fileSize})` : '📄 Documento';
+        }
+      } else if (container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]') && !hasAudioPlayer && !isAudioText) {
         messageType = 'IMAGE';
         content = content || '📷 Foto';
-      } else if (container.querySelector('span[data-icon*="document"], a[download]')) {
-        messageType = 'DOCUMENT';
-        content = content || '📄 Documento';
       }
 
       if (!content || isWhatsAppSystemMessage(content)) return;
 
-      const prePlain = container.querySelector?.('[data-pre-plain-text]')?.getAttribute?.('data-pre-plain-text') || 
-                       (container.getAttribute ? container.getAttribute('data-pre-plain-text') : '') || '';
+      const prePlainNode = container.hasAttribute?.('data-pre-plain-text') ? container :
+                           (container.querySelector?.('[data-pre-plain-text]') || container.closest?.('[data-pre-plain-text]'));
+      const prePlain = prePlainNode ? (prePlainNode.getAttribute('data-pre-plain-text') || '') : '';
 
-      const hasCheckmark = Boolean(container.querySelector(
-        'span[data-icon*="check"], span[data-icon="msg-time"], span[data-testid*="check"], span[aria-label*="Lida"], span[aria-label*="Entregue"], span[aria-label*="Enviada"], span[aria-label*="Read"], span[aria-label*="Delivered"], span[aria-label*="Sent"]'
-      ));
+      // Identificação estrita de mensagem recebida (message-in) vs enviada (message-out)
+      const hasMessageInClass = Boolean(
+        container.classList?.contains?.('message-in') ||
+        container.closest?.('.message-in') ||
+        container.querySelector?.('.message-in') ||
+        (container.getAttribute?.('class') || '').includes('message-in')
+      );
 
       const hasMessageOutClass = Boolean(
-        container.classList?.contains?.('message-out') || container.closest?.('.message-out') || (container.getAttribute?.('class') || '').includes('message-out')
+        container.classList?.contains?.('message-out') ||
+        container.closest?.('.message-out') ||
+        container.querySelector?.('.message-out') ||
+        (container.getAttribute?.('class') || '').includes('message-out')
       );
+
+      // Ícones reais de entrega no balão enviado pelo corretor (exclui status de leitura de áudios recebidos)
+      const hasCheckmark = Boolean(container.querySelector(
+        'span[data-icon="msg-dblcheck"], span[data-icon="msg-check"], span[data-icon="msg-time"], span[data-testid*="check"]'
+      ));
 
       let isFromMe = false;
       if (dataId.startsWith('true_')) {
         isFromMe = true;
       } else if (dataId.startsWith('false_')) {
-        isFromMe = hasCheckmark;
-      } else {
-        isFromMe = hasCheckmark || hasMessageOutClass || prePlain.includes('Você:') || prePlain.includes('You:');
+        isFromMe = false;
+      } else if (hasMessageInClass) {
+        isFromMe = false;
+      } else if (hasMessageOutClass) {
+        isFromMe = true;
+      } else if (prePlain.includes('Você:') || prePlain.includes('You:')) {
+        isFromMe = true;
+      } else if (hasCheckmark && !hasMessageInClass) {
+        isFromMe = true;
       }
-      if (hasCheckmark) isFromMe = true;
 
-      let msgTime = new Date().toISOString();
+      let msgTime = '';
       if (prePlain) {
         const timeMatch = prePlain.match(/\[(.*?)\]/);
         if (timeMatch && timeMatch[1]) {
           const rawTime = timeMatch[1].trim();
-          const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+          // Caso 1: 24-horas [14:04, 10/09/2024]
+          const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
           if (brMatch) {
-            const h = Number(brMatch[1]), m = Number(brMatch[2]), s = brMatch[3] ? Number(brMatch[3]) : 0;
+            let h = Number(brMatch[1]), m = Number(brMatch[2]), s = brMatch[3] ? Number(brMatch[3]) : 0;
             const d = Number(brMatch[4]), mo = Number(brMatch[5]) - 1;
             let y = Number(brMatch[6]);
             if (y < 100) y += 2000;
             const dt = new Date(y, mo, d, h, m, s);
-            if (!isNaN(dt.getTime())) msgTime = dt.toISOString();
+            if (!isNaN(dt.getTime())) {
+              msgTime = dt.toISOString();
+              lastKnownDateIso = msgTime;
+            }
           } else {
-            const dt = new Date(rawTime);
-            if (!isNaN(dt.getTime())) msgTime = dt.toISOString();
+            // Caso 2: 12-horas com AM/PM [2:04 PM, 9/10/2024]
+            const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/i);
+            if (usMatch) {
+              let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
+              const isPm = usMatch[4].toUpperCase() === 'PM';
+              if (isPm && h < 12) h += 12;
+              if (!isPm && h === 12) h = 0;
+              const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
+              let y = Number(usMatch[7]);
+              if (y < 100) y += 2000;
+              const dt = new Date(y, mo, d, h, m, s);
+              if (!isNaN(dt.getTime())) {
+                msgTime = dt.toISOString();
+                lastKnownDateIso = msgTime;
+              }
+            } else {
+              const dt = new Date(rawTime);
+              if (!isNaN(dt.getTime())) {
+                msgTime = dt.toISOString();
+                lastKnownDateIso = msgTime;
+              }
+            }
           }
+        }
+      }
+
+      // Se não veio no prePlain (comum em áudios e anexos), extrai o horário do balão e herda a data real
+      if (!msgTime) {
+        const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+        if (timeMatch) {
+          const base = lastKnownDateIso ? new Date(lastKnownDateIso) : new Date();
+          base.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+          msgTime = base.toISOString();
+        } else {
+          msgTime = lastKnownDateIso || new Date().toISOString();
         }
       }
 
@@ -828,9 +998,10 @@
       phone: resolvedPhone,
       lid: resolvedLid || undefined,
       name: contactName,
+      avatarUrl: avatarUrl || undefined,
       messages: validContentMsgs,
       lastMessagePreview: lastMsg ? lastMsg.content : '',
-      lastMessageAt: lastMsg ? lastMsg.timestamp : new Date().toISOString(),
+      lastMessageAt: lastMsg ? lastMsg.timestamp : (lastKnownDateIso || new Date().toISOString()),
     };
   }
 
@@ -1098,6 +1269,17 @@
       return;
     }
 
+    // Garante extração e conversão da foto de perfil em Data URL base64 autônomo
+    const headerImg = document.querySelector('#main header img[src]');
+    if (headerImg) {
+      try {
+        const avatarDataUrl = await getContactAvatarDataUrl(headerImg);
+        if (avatarDataUrl) {
+          chatData.avatarUrl = avatarDataUrl;
+        }
+      } catch (e) {}
+    }
+
     // Se o telefone extraído for LID, consulta o CRM pelo nome do contato para casar o telefone real
     chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
 
@@ -1215,6 +1397,9 @@
       // Ignora itens de sistema, canais e grupos
       if (isRowGroupOrChannel(rowContainer, contactTitle)) continue;
 
+      const rowImg = rowContainer.querySelector('img[src]');
+      const rowAvatarSrc = (rowImg && !rowImg.getAttribute('src')?.includes('data:image/svg')) ? rowImg.getAttribute('src') : '';
+
       seenContainers.add(rowContainer);
 
       const key = contactTitle.toLowerCase().trim();
@@ -1224,7 +1409,9 @@
           title: contactTitle,
           key,
           span: contactTitleSpan,
-          clickable: rowContainer
+          clickable: rowContainer,
+          rowImg: rowImg || null,
+          rowAvatarSrc: rowAvatarSrc || ''
         });
       }
     }
@@ -1578,6 +1765,17 @@
         }
 
         if (chatData) {
+          // Garante foto de perfil via header ou item da lista lateral convertido para base64 autônomo
+          const headerImg = document.querySelector('#main header img[src]');
+          const targetImgOrSrc = (headerImg && headerImg.getAttribute('src')) ? headerImg : (nextRow?.rowImg || nextRow?.rowAvatarSrc || chatData.avatarUrl);
+          if (targetImgOrSrc) {
+            try {
+              const avatarDataUrl = await getContactAvatarDataUrl(targetImgOrSrc);
+              if (avatarDataUrl) {
+                chatData.avatarUrl = avatarDataUrl;
+              }
+            } catch (e) {}
+          }
           chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
         }
 

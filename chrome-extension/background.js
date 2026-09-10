@@ -51,6 +51,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'CONVERT_IMAGE_TO_DATA_URL') {
+    convertUrlToDataUrl(request.data?.url)
+      .then(dataUrl => sendResponse({ success: true, dataUrl }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (request.action === 'GET_TENANTS') {
     handleGetTenants(request.data)
       .then(result => sendResponse({ success: true, result }))
@@ -58,6 +65,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+async function convertUrlToDataUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('data:image')) return url;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const blob = await res.blob();
+    const mimeType = blob.type || 'image/jpeg';
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    return `data:${mimeType};base64,${base64}`;
+  } catch (err) {
+    return '';
+  }
+}
 
 async function handleForwardLog(logData) {
   try {

@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const openWaBtn = document.getElementById('openWaBtn');
   const openCrmBtn = document.getElementById('openCrmBtn');
 
+  const versionBadge = document.getElementById('versionBadge');
+  if (versionBadge && chrome.runtime?.getManifest) {
+    versionBadge.textContent = `v${chrome.runtime.getManifest().version}`;
+  }
+
   const DEFAULT_CRM_URL = 'https://crm.faithhubs.com';
 
   function normalizeCrmUrl(raw) {

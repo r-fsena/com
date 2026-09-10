@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.7';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.8';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -774,13 +774,55 @@
     currentActivePhone = resolvedPhone;
     currentActiveName = contactName;
 
-    // 3. Extração estrita de balões: seleciona nós de mensagem individuais em #main
+    // Extrai avatar do contato no cabeçalho
+    const headerAvatarImg = main.querySelector('header img[src]');
+    let avatarUrl = headerAvatarImg ? (headerAvatarImg.getAttribute('src') || '') : '';
+
+    // Se um mapa acumulado foi passado (ex: vindo de deepScrollChatHistory), usa-o; caso contrário, faz coleta do DOM atual
+    const messagesMap = (accumulatedMessagesMap && accumulatedMessagesMap.size > 0)
+      ? accumulatedMessagesMap
+      : new Map();
+
+    if (messagesMap.size === 0) {
+      harvestDomMessages(messagesMap, resolvedPhone);
+    }
+
+    const validContentMsgs = Array.from(messagesMap.values())
+      .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
+
+    // Ordenação estritamente cronológica: da mensagem mais antiga para a mais recente
+    validContentMsgs.sort((a, b) => {
+      const tA = new Date(a.timestamp).getTime();
+      const tB = new Date(b.timestamp).getTime();
+      if (isNaN(tA) || isNaN(tB)) return 0;
+      return tA - tB;
+    });
+
+    const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
+
+    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens limpas e deduplicadas para ${contactName} (${resolvedPhone})`);
+
+    return {
+      phone: resolvedPhone,
+      lid: resolvedLid || undefined,
+      name: contactName,
+      avatarUrl: avatarUrl || undefined,
+      messages: validContentMsgs,
+      lastMessagePreview: lastMsg ? lastMsg.content : '',
+      lastMessageAt: lastMsg ? lastMsg.timestamp : new Date().toISOString(),
+    };
+  }
+
+  // Coleta balões de mensagem do DOM de #main e insere em um Map deduplicado
+  function harvestDomMessages(messagesMap, fallbackPhone = '') {
+    const main = document.querySelector('#main');
+    if (!main) return;
+
     const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
     const uniqueRootContainers = [];
     const seenContainers = new Set();
 
     for (const el of rawBubbleElements) {
-      // Se for div[role="row"], obtém o balão interno .message-in ou .message-out
       const bubble = (el.classList?.contains('message-in') || el.classList?.contains('message-out'))
         ? el
         : (el.querySelector?.('.message-in, .message-out') || el);
@@ -799,14 +841,6 @@
       uniqueRootContainers.push(bubble);
     }
 
-    // Extrai avatar do contato no cabeçalho
-    const headerAvatarImg = main.querySelector('header img[src]');
-    let avatarUrl = headerAvatarImg ? (headerAvatarImg.getAttribute('src') || '') : '';
-
-    console.log(`[Brokiva] Encontrados ${uniqueRootContainers.length} balões raiz únicos em #main`);
-
-    const messages = [];
-    const seenMsgKeys = new Set();
     // Tenta encontrar uma data de referência no chat caso as mensagens iniciais sejam áudios ou anexos
     let lastKnownDateIso = '';
     const dateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[role="row"] span[dir="auto"], span.selectable-text'));
@@ -831,10 +865,10 @@
     }
 
     uniqueRootContainers.forEach((container, index) => {
-      // 1. Localiza nó real do balão com data-id (pode ser o container raiz ou um filho direto, NUNCA um ancestral)
-      const actualDataIdEl = container.hasAttribute?.('data-id') 
-        ? container 
-        : container.querySelector?.('[data-id]');
+      // 1. Localiza nó com data-id (no container, em filhos ou no pai [role="row"])
+      const actualDataIdEl = container.hasAttribute?.('data-id')
+        ? container
+        : (container.querySelector?.('[data-id]') || container.closest?.('[data-id]'));
       const rawDataId = actualDataIdEl ? (actualDataIdEl.getAttribute('data-id') || '') : '';
       if (rawDataId.includes('@g.us') || rawDataId.includes('@newsletter') || rawDataId.includes('@broadcast')) {
         return;
@@ -845,17 +879,28 @@
       const isDataIdFromMe = isRealMsgKey && rawDataId.startsWith('true_');
       const isDataIdFromContact = isRealMsgKey && rawDataId.startsWith('false_');
 
-      const textNode = container.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
-      let content = textNode ? textNode.innerText.trim() : (container.innerText || '').trim();
+      // 2. Extração de texto isolando citação/resposta anterior (Quote)
+      // Remove o bloco de citação para impedir que "Você: [texto anterior]" contamine a resposta do cliente
+      const clone = container.cloneNode(true);
+      const quoteEls = clone.querySelectorAll(
+        '[data-testid="quoted-message"], .quoted-mention, [data-testid*="quote"], div[aria-label*="Citação"], div[aria-label*="Quoted"], div._amk4, div._amk6, div._amkb'
+      );
+      quoteEls.forEach(el => el.remove());
+
+      const textNode = clone.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
+      let content = textNode ? textNode.innerText.trim() : (clone.innerText || '').trim();
 
       // Limpa horários grudados no final da mensagem
       content = content.replace(/\n\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i, '').trim();
+
+      // Se o conteúdo começar com resquício de cabeçalho "Você:\n" ou "You:\n", remove
+      content = content.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
 
       if (isWhatsAppSystemMessage(content)) return;
 
       let messageType = 'TEXT';
 
-      // 1. Detecção Robusta de Áudio / Mensagem de Voz (corrige "0:27 1,0x")
+      // 3. Detecção Robusta de Áudio / Mensagem de Voz (corrige "0:27 1,0x")
       const hasAudioPlayer = Boolean(
         container.querySelector('audio, [data-testid="audio-player"], span[data-icon*="audio"], span[data-icon*="ptt"], button[aria-label*="Reproduzir"], button[aria-label*="Play"]')
       );
@@ -877,7 +922,7 @@
         container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]') ||
         (/\b\d+([.,]\d+)?\s*(KB|MB|GB|B)\b/i.test(content) && content.length < 60)
       ) {
-        // 2. Detecção Robusta de Documento / Anexo (corrige "42 KB")
+        // 4. Detecção Robusta de Documento / Anexo (corrige "42 KB")
         messageType = 'DOCUMENT';
         const sizeMatch = content.match(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B)\b/i);
         const fileSize = sizeMatch ? sizeMatch[0] : '';
@@ -896,11 +941,12 @@
 
       if (!content || isWhatsAppSystemMessage(content)) return;
 
+      // 5. Identificação estrita de autoria (Você / Corretor vs Cliente)
       const prePlainNode = container.hasAttribute?.('data-pre-plain-text') ? container :
                            (container.querySelector?.('[data-pre-plain-text]') || container.closest?.('[data-pre-plain-text]'));
-      const prePlain = prePlainNode ? (prePlainNode.getAttribute('data-pre-plain-text') || '') : '';
+      const rawPrePlain = prePlainNode ? (prePlainNode.getAttribute('data-pre-plain-text') || '') : '';
+      const cleanPrePlain = rawPrePlain.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
 
-      // Identificação estrita de mensagem enviada (.message-out) vs recebida (.message-in)
       const isMessageOut = Boolean(
         container.classList?.contains?.('message-out') ||
         container.querySelector?.('.message-out') ||
@@ -913,40 +959,48 @@
         container.closest?.('.message-in')
       );
 
-      // Ícones de entrega do corretor (msg-dblcheck, msg-check, msg-time) só existem em mensagens enviadas por mim
       const hasOutgoingCheckmark = Boolean(container.querySelector(
         'span[data-icon="msg-dblcheck"], span[data-icon="msg-check"], span[data-icon="msg-time"], span[data-testid*="check"]'
       ));
 
       const isPrePlainFromMe = Boolean(
-        prePlain.includes('Você:') ||
-        prePlain.includes('You:') ||
-        (currentBrokerName && prePlain.toLowerCase().includes(currentBrokerName.toLowerCase() + ':'))
+        /(?:\[.*?\]\s*)?(?:você|voce|you)\s*:/i.test(cleanPrePlain) ||
+        /\b(você|voce|you)\b/i.test(cleanPrePlain) ||
+        (currentBrokerName && cleanPrePlain.toLowerCase().includes(currentBrokerName.toLowerCase() + ':'))
       );
+
+      let hasOutgoingBg = false;
+      try {
+        const bg = window.getComputedStyle(container).backgroundColor || '';
+        if (bg.includes('217, 253, 211') || bg.includes('0, 92, 75') || bg.includes('217, 253') || bg.includes('0, 92')) {
+          hasOutgoingBg = true;
+        }
+      } catch (e) {}
 
       // Determinação de autoria: marcadores de envio do corretor têm precedência definitiva
       let isFromMe = false;
-      if (isMessageOut) {
+      if (isDataIdFromMe) {
         isFromMe = true;
-      } else if (isDataIdFromMe) {
+      } else if (isMessageOut) {
         isFromMe = true;
       } else if (isPrePlainFromMe) {
         isFromMe = true;
       } else if (hasOutgoingCheckmark) {
         isFromMe = true;
-      } else if (isMessageIn) {
-        isFromMe = false;
+      } else if (hasOutgoingBg) {
+        isFromMe = true;
       } else if (isDataIdFromContact) {
+        isFromMe = false;
+      } else if (isMessageIn) {
         isFromMe = false;
       } else {
         isFromMe = false;
       }
 
-      console.log(`[Brokiva] Msg #${index + 1} (${isFromMe ? 'ME/Corretor' : 'CLIENTE'}): "${content.slice(0, 25)}" [out: ${isMessageOut}, in: ${isMessageIn}, idOut: ${isDataIdFromMe}, idIn: ${isDataIdFromContact}, check: ${hasOutgoingCheckmark}, prePlainOut: ${isPrePlainFromMe}]`);
-
+      // 6. Extração de Data e Hora
       let msgTime = '';
-      if (prePlain) {
-        const timeMatch = prePlain.match(/\[(.*?)\]/);
+      if (cleanPrePlain) {
+        const timeMatch = cleanPrePlain.match(/\[(.*?)\]/);
         if (timeMatch && timeMatch[1]) {
           const rawTime = timeMatch[1].trim();
           // Caso 1: 24-horas [14:04, 10/09/2024]
@@ -988,7 +1042,7 @@
         }
       }
 
-      // Se não veio no prePlain (comum em áudios e anexos), extrai o horário do balão e herda a data real
+      // Se não veio no prePlain (comum em áudios e anexos), extrai o horário do balão e herda a data de referência
       if (!msgTime) {
         const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
         if (timeMatch) {
@@ -1000,35 +1054,20 @@
         }
       }
 
-      // Deduplicação interna: impede rigorosamente balões duplicados no array
+      // Deduplicação estrita: insere no Map
       const effectiveDataId = isRealMsgKey ? rawDataId : '';
       const uniqueMsgKey = effectiveDataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}`;
-      if (seenMsgKeys.has(uniqueMsgKey)) return;
-      seenMsgKeys.add(uniqueMsgKey);
-
-      messages.push({
-        id: effectiveDataId || `wpp-ext-${resolvedPhone}-${index}-${Date.now()}`,
-        content,
-        fromMe: isFromMe,
-        timestamp: msgTime,
-        messageType,
-      });
+      if (!messagesMap.has(uniqueMsgKey)) {
+        const p = fallbackPhone || currentActivePhone || 'chat';
+        messagesMap.set(uniqueMsgKey, {
+          id: effectiveDataId || `wpp-ext-${p}-${messagesMap.size}-${Date.now()}`,
+          content,
+          fromMe: isFromMe,
+          timestamp: msgTime,
+          messageType,
+        });
+      }
     });
-
-    const validContentMsgs = messages.filter(m => m.content && !isWhatsAppSystemMessage(m.content));
-    const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
-
-    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens limpas e deduplicadas para ${contactName} (${resolvedPhone})`);
-
-    return {
-      phone: resolvedPhone,
-      lid: resolvedLid || undefined,
-      name: contactName,
-      avatarUrl: avatarUrl || undefined,
-      messages: validContentMsgs,
-      lastMessagePreview: lastMsg ? lastMsg.content : '',
-      lastMessageAt: lastMsg ? lastMsg.timestamp : (lastKnownDateIso || new Date().toISOString()),
-    };
   }
 
   let lastLeadSignature = '';
@@ -1128,29 +1167,56 @@
            document.querySelector('#main div[role="application"]');
   }
 
-  async function deepScrollChatHistory(targetScrolls = 6, onProgress = null) {
+  async function deepScrollChatHistory(targetScrolls = 20, onProgress = null) {
     const scrollContainer = findChatScrollContainer();
-    if (!scrollContainer) return;
+    const accumulatedMessages = new Map();
+    if (!scrollContainer) {
+      harvestDomMessages(accumulatedMessages);
+      return accumulatedMessages;
+    }
 
     const badge = document.getElementById('sovereign-sync-badge');
-    let lastCount = document.querySelectorAll('#main div[data-id], #main div[role="row"]').length;
+
+    // 1. Coleta inicial das mensagens mais recentes visíveis agora (hoje)
+    harvestDomMessages(accumulatedMessages);
+    let lastCount = accumulatedMessages.size;
+    let unchangedAttempts = 0;
 
     for (let i = 0; i < targetScrolls; i++) {
       scrollContainer.scrollTop = 0;
       scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: -600, bubbles: true }));
+      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: -800, bubbles: true }));
 
       if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
       if (typeof onProgress === 'function') onProgress(i + 1, targetScrolls);
 
-      await new Promise(r => setTimeout(r, 450));
+      // Aguarda 750ms para o WhatsApp buscar no IndexedDB e renderizar os nós no DOM
+      await new Promise(r => setTimeout(r, 750));
 
-      const currentCount = document.querySelectorAll('#main div[data-id], #main div[role="row"]').length;
-      if (currentCount === lastCount && i >= 2) {
-        break; // Topo da conversa atingido
+      // Coleta mensagens da página atual no DOM e adiciona ao acumulador
+      harvestDomMessages(accumulatedMessages);
+
+      const currentCount = accumulatedMessages.size;
+      if (currentCount === lastCount) {
+        unchangedAttempts++;
+        // Se após 3 tentativas consecutivas com scroll no topo não houver novas mensagens, chegou ao topo real
+        if (unchangedAttempts >= 3 && i >= 3) {
+          console.log(`[Brokiva] Início da conversa atingido ou sem mais histórico após ${i + 1} rolagens (${currentCount} msgs).`);
+          break;
+        }
+      } else {
+        unchangedAttempts = 0;
+        lastCount = currentCount;
       }
-      lastCount = currentCount;
     }
+
+    // Retorna a rolagem para o final para restaurar a visualização e capturar mensagens de hoje
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    harvestDomMessages(accumulatedMessages);
+
+    return accumulatedMessages;
   }
 
   async function extractPhoneFromContactDrawer() {
@@ -1284,10 +1350,12 @@
 
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_START', 'Iniciando leitura da conversa aberta...');
 
-    // Rola para cima profundamente para carregar todo o histórico anterior
-    await deepScrollChatHistory(8);
+    // Rola para cima profundamente para carregar todo o histórico anterior (até 25 páginas)
+    const accumulatedMap = await deepScrollChatHistory(25, (step, total) => {
+      if (badge) badge.innerText = `Lendo antigas (${step}/${total})...`;
+    });
 
-    const chatData = extractActiveChatData();
+    const chatData = extractActiveChatData(accumulatedMap);
     if (!chatData || !chatData.phone || chatData.messages.length === 0) {
       logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_EMPTY', `Conversa sem mensagens ou não identificada. (Phone: ${chatData?.phone || 'n/d'}, Msgs: ${chatData?.messages?.length || 0})`);
       alert('Abra uma conversa individual com mensagens no WhatsApp antes de sincronizar.');
@@ -1771,7 +1839,7 @@
           totalMessages: totalMessagesSynced,
         });
 
-        await deepScrollChatHistory(5, (step, total) => {
+        const accumulatedMap = await deepScrollChatHistory(15, (step, total) => {
           updateSyncModalProgress({
             syncedCount: syncedChats.length,
             maxChats: MAX_TARGET_CHATS,
@@ -1784,10 +1852,10 @@
         if (cancelSyncRequested) break;
 
         // Extrai dados completos da conversa aberta com todo o histórico acumulado
-        let chatData = extractActiveChatData();
+        let chatData = extractActiveChatData(accumulatedMap);
         if (!chatData || !chatData.messages || chatData.messages.length === 0) {
           await new Promise(r => setTimeout(r, 350));
-          chatData = extractActiveChatData();
+          chatData = extractActiveChatData(accumulatedMap);
         }
 
         if (chatData) {

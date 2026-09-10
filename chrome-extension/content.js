@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.8';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.9';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -659,7 +659,7 @@
   }
 
   // 2. Extrai dados da conversa ativa no WhatsApp Web (Blindada contra duplicações e grupos)
-  function extractActiveChatData() {
+  function extractActiveChatData(accumulatedMessagesMap = null) {
     const main = document.querySelector('#main');
     if (!main) {
       console.log('[Brokiva] #main não encontrado');

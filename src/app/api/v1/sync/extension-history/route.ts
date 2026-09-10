@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
-import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage, isLidIdentifier, cleanLid } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, formatCanonicalPhone } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { validateApiSession } from '@/lib/api-auth';
@@ -133,9 +133,12 @@ export async function POST(req: NextRequest) {
       const contactId = existingContact ? existingContact.id : defaultContactId;
       const conversationId = existingConv ? existingConv.id : defaultConversationId;
 
-      const contactName = chat.name && !chat.name.startsWith('+') && !chat.name.startsWith('WhatsApp')
-        ? chat.name.trim()
-        : (existingContact?.name || `WhatsApp ${cleanPhone.slice(-4)}`);
+      let contactName = (chat.name || '').trim();
+      if (!contactName || contactName === 'Contato WhatsApp' || contactName.toLowerCase() === 'whatsapp') {
+        contactName = existingContact?.name || formatCanonicalPhone(cleanPhone) || `Contato ${cleanPhone.slice(-4)}`;
+      } else if (contactName.startsWith('+')) {
+        contactName = formatCanonicalPhone(cleanPhone) || contactName;
+      }
 
       // 1. Processa mensagens do chat
       let lastMsgText = chat.lastMessagePreview || '';

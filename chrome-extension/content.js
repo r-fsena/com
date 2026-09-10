@@ -606,9 +606,30 @@
       return null;
     }
 
-    // 1. Identifica nome e título no header do chat
-    const headerTitleSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
-    const contactName = headerTitleSpan ? (headerTitleSpan.getAttribute('title') || headerTitleSpan.innerText).trim() : 'Contato WhatsApp';
+    // 1. Identifica nome e título no header do chat (ignora status como online, visto por último, etc.)
+    let contactName = '';
+    const headerSpans = Array.from(main.querySelectorAll('header span[title], header div[data-testid="conversation-info-header"] span, header div[role="button"] span[title], header span[dir="auto"]'));
+    for (const s of headerSpans) {
+      const t = (s.getAttribute('title') || s.innerText || '').trim();
+      const lower = t.toLowerCase();
+      if (
+        t &&
+        t.length >= 1 &&
+        !lower.includes('online') &&
+        !lower.includes('visto por último') &&
+        !lower.includes('last seen') &&
+        !lower.includes('clique aqui') &&
+        !lower.includes('dados do') &&
+        !lower.includes('typing') &&
+        !lower.includes('digitando')
+      ) {
+        contactName = t;
+        break;
+      }
+    }
+    if (!contactName) {
+      contactName = 'Contato WhatsApp';
+    }
 
     // 2. Localiza telefone do contato e LID
     let resolvedPhone = '';
@@ -936,28 +957,41 @@
 
   async function extractPhoneFromContactDrawer() {
     try {
-      const headerBtn = document.querySelector('#main header div[role="button"], #main header div[tabindex="0"], #main header span[title]');
+      const main = document.querySelector('#main');
+      if (!main) return null;
+
+      // O botão clicável do cabeçalho que abre a gaveta de dados do contato
+      const titleSpan = main.querySelector('header span[title], header div[data-testid="conversation-info-header"] span, header span[dir="auto"]');
+      const headerBtn = titleSpan?.closest('div[role="button"], div[tabindex="0"]') || titleSpan;
       if (!headerBtn) return null;
 
       headerBtn.click();
-      await new Promise(r => setTimeout(r, 450));
 
-      const sidePanel = document.querySelector('div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"], div[data-testid="chat-info-drawer"]');
       let foundPhone = null;
-      if (sidePanel) {
-        const text = sidePanel.innerText || '';
-        const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
-                           text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
-        if (phoneMatch) {
-          foundPhone = phoneMatch[0].replace(/\D/g, '');
+      // Aguarda até 900ms a gaveta lateral montar no DOM
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await new Promise(r => setTimeout(r, 110));
+        const sidePanel = document.querySelector(
+          'div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"], div[data-testid="chat-info-drawer"], div[tabindex="-1"] div[role="region"]'
+        );
+        if (sidePanel) {
+          const text = sidePanel.innerText || '';
+          const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/) ||
+                             text.match(/\+?\d{1,3}\s?\(?\d{2,3}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
+                             text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
+          if (phoneMatch) {
+            foundPhone = phoneMatch[0].replace(/\D/g, '');
+            if (foundPhone.length >= 10) break;
+          }
         }
       }
 
+      // Fecha a gaveta lateral
       const closeBtn = document.querySelector('div[tabindex="-1"] span[data-icon="x"]')?.closest('button') ||
                        document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar"], div[tabindex="-1"] button[aria-label*="Close"]') ||
                        document.querySelector('[data-testid="btn-closer"]');
       if (closeBtn) closeBtn.click();
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 120));
 
       return foundPhone;
     } catch (e) {
@@ -966,29 +1000,26 @@
   }
 
   async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid, allowDrawer = false) {
-    if (!phoneOrLid) return '';
-    const phoneStr = String(phoneOrLid);
+    const phoneStr = String(phoneOrLid || '').trim();
 
+    // Se já é um telefone canônico brasileiro válido
     const isSynthetic = phoneStr.includes('554863562855') || phoneStr.startsWith('55486356');
     if (!isSynthetic && phoneStr.length >= 10 && phoneStr.length <= 13 && phoneStr.startsWith('55')) {
       return phoneStr;
     }
 
-    // 1. Pergunta ao background worker (que consulta abas abertas do CRM e storage local)
-    try {
-      const res = await new Promise(resolve => {
-        safeSendMessage({
-          action: 'RESOLVE_CONTACT_BY_NAME',
-          data: { name: contactName, lid: phoneStr }
-        }, resp => {
-          resolve(resp?.result);
-        });
-      });
-      if (res && res.phone && typeof res.phone === 'string') {
-        console.log(`[Brokiva] Telefone resolvido pelo CRM para ${contactName}: ${res.phone}`);
-        return res.phone;
-      }
-    } catch (e) {}
+    // 1. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial da agenda
+    if (allowDrawer) {
+      try {
+        const drawerPhone = await extractPhoneFromContactDrawer();
+        if (drawerPhone && typeof drawerPhone === 'string' && drawerPhone.length >= 8) {
+          const fullPhone = (drawerPhone.startsWith('55') || drawerPhone.length > 11) ? drawerPhone : `55${drawerPhone}`;
+          if (phoneStr) rememberLidPhone(phoneStr, fullPhone);
+          console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para "${contactName}": ${fullPhone}`);
+          return fullPhone;
+        }
+      } catch (e) {}
+    }
 
     // 2. Consulta cache local diretamente no storage sincronizado pelo crm-bridge
     try {
@@ -1000,27 +1031,47 @@
         if (found && found.phone) {
           const clean = String(found.phone).replace(/\D/g, '');
           if (clean.length >= 10 && clean.length <= 13) {
-            console.log(`[Brokiva] Telefone extraído do cache de contatos CRM para ${contactName}: ${clean}`);
+            console.log(`[Brokiva] Telefone extraído do cache de contatos CRM para "${contactName}": ${clean}`);
             return clean;
           }
         }
       }
     } catch (e) {}
 
-    // 3. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial (somente quando explicitamente permitido)
-    if (allowDrawer) {
-      try {
-        const drawerPhone = await extractPhoneFromContactDrawer();
-        if (drawerPhone && typeof drawerPhone === 'string' && drawerPhone.length >= 10 && drawerPhone.length <= 13) {
-          const fullPhone = drawerPhone.startsWith('55') ? drawerPhone : `55${drawerPhone}`;
-          rememberLidPhone(phoneStr, fullPhone);
-          console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para ${contactName}: ${fullPhone}`);
-          return fullPhone;
-        }
-      } catch (e) {}
+    // 3. Pergunta ao background worker (que consulta abas abertas do CRM e storage local)
+    try {
+      const res = await new Promise(resolve => {
+        safeSendMessage({
+          action: 'RESOLVE_CONTACT_BY_NAME',
+          data: { name: contactName, lid: phoneStr }
+        }, resp => {
+          resolve(resp?.result);
+        });
+      });
+      if (res && res.phone && typeof res.phone === 'string') {
+        console.log(`[Brokiva] Telefone resolvido pelo CRM para "${contactName}": ${res.phone}`);
+        return res.phone;
+      }
+    } catch (e) {}
+
+    // 4. Se tiver LID numérico, usa o LID
+    if (phoneStr && phoneStr.length >= 8) {
+      return isSynthetic ? (phoneStr.replace(/\D/g, '') || '') : phoneStr;
     }
 
-    return isSynthetic ? (phoneStr.replace(/\D/g, '') || '') : phoneStr;
+    // 5. Fallback final determinístico: se o contato não tem telefone exposto nem LID,
+    // gera identificador numérico único para NUNCA descartar a conversa
+    if (contactName && contactName !== 'Contato WhatsApp') {
+      let hash = 0;
+      for (let i = 0; i < contactName.length; i++) {
+        hash = ((hash << 5) - hash) + contactName.charCodeAt(i);
+        hash |= 0;
+      }
+      const cleanHash = String(Math.abs(hash)).padStart(8, '0').slice(0, 8);
+      return `5500${cleanHash}`;
+    }
+
+    return '';
   }
 
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
@@ -1102,63 +1153,78 @@
     const pane = findPaneSideScrollContainer() || document.querySelector('#pane-side');
     if (!pane) return [];
 
-    const candidateSpans = Array.from(pane.querySelectorAll('span[title], div[role="gridcell"] span[title], span[dir="auto"][title]'));
     const rows = [];
     const seenContainers = new Set();
     const seenKeys = new Set();
     const paneRect = pane.getBoundingClientRect();
 
-    for (const span of candidateSpans) {
-      const title = (span.getAttribute('title') || span.innerText || '').trim();
-      if (!title || title.length < 1) continue;
+    // Localiza os contêineres principais de cada linha de chat na lista virtual
+    const rawRowContainers = Array.from(pane.querySelectorAll('div[role="row"], div[data-testid="cell-frame-container"], div[role="listitem"]'));
 
-      const rowContainer = span.closest('div[role="row"], div[role="listitem"], div[data-testid="cell-frame-container"], div[tabindex="-1"]') || span;
+    for (const container of rawRowContainers) {
+      const rowContainer = container.getAttribute('role') === 'row' ? container : (container.closest('div[role="row"]') || container);
       if (seenContainers.has(rowContainer)) continue;
 
-      // Ignora itens de sistema, canais e grupos
-      if (isRowGroupOrChannel(rowContainer, title)) continue;
-
-      // Ignora nós sem dimensão real
-      const rect = span.getBoundingClientRect();
-      if (rect.height === 0 || rect.width === 0) continue;
-
+      // Validação de visibilidade no viewport
       const rowRect = rowContainer.getBoundingClientRect();
-      // Permite elementos no viewport do pane-side (com margem de tolerância)
+      if (rowRect.height === 0 || rowRect.width === 0) continue;
       if (rowRect.bottom < (paneRect.top - 50) || rowRect.top > (paneRect.bottom + 100)) continue;
+
+      // Busca o span do NOME do contato dentro desta linha específica
+      // O nome do contato no WhatsApp Web fica dentro de cell-frame-title ou é o span[dir="auto"] principal superior
+      const allSpansInRow = Array.from(rowContainer.querySelectorAll(
+        'div[data-testid="cell-frame-title"] span[title], ' +
+        'div[data-testid="cell-frame-title"] span[dir="auto"], ' +
+        'span[dir="auto"][title], ' +
+        'span[title], ' +
+        'span[dir="auto"]'
+      ));
+
+      let contactTitleSpan = null;
+      let contactTitle = '';
+
+      for (const span of allSpansInRow) {
+        const rawT = (span.getAttribute('title') || span.innerText || '').trim();
+        const lowerT = rawT.toLowerCase();
+
+        // Ignora status de mensagens, ícones, datas e horas
+        if (
+          !rawT ||
+          rawT.length < 1 ||
+          lowerT === 'lida' ||
+          lowerT === 'entregue' ||
+          lowerT === 'enviada' ||
+          lowerT === 'pendente' ||
+          lowerT === 'read' ||
+          lowerT === 'delivered' ||
+          lowerT === 'sent' ||
+          /^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(rawT) ||
+          /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(rawT)
+        ) {
+          continue;
+        }
+
+        contactTitleSpan = span;
+        contactTitle = rawT;
+        break;
+      }
+
+      if (!contactTitleSpan || !contactTitle) continue;
+
+      // Ignora itens de sistema, canais e grupos
+      if (isRowGroupOrChannel(rowContainer, contactTitle)) continue;
 
       seenContainers.add(rowContainer);
 
-      const key = title.toLowerCase().trim();
+      const key = contactTitle.toLowerCase().trim();
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
         rows.push({
-          title,
+          title: contactTitle,
           key,
-          span,
+          span: contactTitleSpan,
           clickable: rowContainer
         });
-      }
-    }
-
-    // Fallback: se não achou com span[title], tenta via seletores de gridcell
-    if (rows.length === 0) {
-      const gridcells = Array.from(pane.querySelectorAll('div[role="gridcell"], div[role="row"], div[data-testid="cell-frame-container"]'));
-      for (const cell of gridcells) {
-        const firstSpan = cell.querySelector('span[dir="auto"], span.x10l6tqk, span');
-        const title = (firstSpan?.getAttribute('title') || firstSpan?.innerText || '').trim();
-        if (!title || title.length < 2) continue;
-        if (isRowGroupOrChannel(cell, title)) continue;
-
-        const key = title.toLowerCase().trim();
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
-          rows.push({
-            title,
-            key,
-            span: firstSpan || cell,
-            clickable: cell
-          });
-        }
       }
     }
 

@@ -154,9 +154,31 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(chat.messages) && chat.messages.length > 0) {
         const seenInBatch = new Set<string>();
         chat.messages.forEach((m, idx) => {
-          const mContent = (m.content || '').trim();
-          if (!mContent && !m.mediaUrl) return;
-          if (isWhatsAppSystemMessage(mContent)) return;
+          let cleanContent = (m.content || '').trim();
+
+          // Remove horários residuais colados no final (ex: " 14:32", "\n14:32", " 2:30 PM", " 14:32✓")
+          cleanContent = cleanContent.replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '').trim();
+
+          // Remove menções de tamanho de arquivo (ex: " (42 KB)", " 42 KB", "1.2 MB", etc.)
+          cleanContent = cleanContent.replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '');
+          cleanContent = cleanContent.replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '').trim();
+
+          // Remove nomes de ícones SVG do WhatsApp Web (tail-out, tail-in, ic-fast-forward)
+          cleanContent = cleanContent.replace(/\b(tail-in|tail-out|ic-fast-forward|fast-forward)\b/gi, '').trim();
+
+          // Limpa múltiplos espaços
+          cleanContent = cleanContent.replace(/\s{2,}/g, ' ').trim();
+
+          // Se o conteúdo for puramente vazio, horário ou ruído, atribui fallback limpo ou descarta
+          if (!cleanContent || /^\d{1,2}:\d{2}$/.test(cleanContent) || /^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(cleanContent)) {
+            if (m.messageType === 'AUDIO') cleanContent = '🎵 Mensagem de Voz';
+            else if (m.messageType === 'IMAGE') cleanContent = '📷 Foto';
+            else if (m.messageType === 'DOCUMENT') cleanContent = '📄 Documento';
+            else if (m.messageType === 'VIDEO') cleanContent = '🎥 Vídeo';
+            else if (!m.mediaUrl) return; // Descarta balão de ruído/sistema sem conteúdo
+          }
+
+          if (isWhatsAppSystemMessage(cleanContent)) return;
 
           let mTimestamp = nowIso;
           if (m.timestamp) {
@@ -166,7 +188,7 @@ export async function POST(req: NextRequest) {
 
           const mId = m.id || `ext-msg-${cleanPhone}-${idx}-${mTimestamp}`;
           const isFromMe = Boolean(m.fromMe);
-          const batchDedupeKey = m.id || `${conversationId}-${mContent}-${mTimestamp.slice(0, 19)}-${isFromMe}`;
+          const batchDedupeKey = m.id || `${conversationId}-${cleanContent}-${mTimestamp.slice(0, 19)}-${isFromMe}`;
           if (seenInBatch.has(batchDedupeKey)) return;
           seenInBatch.add(batchDedupeKey);
 
@@ -178,7 +200,7 @@ export async function POST(req: NextRequest) {
             senderUserId: isFromMe ? brokerUserId : undefined,
             senderName: isFromMe ? (brokerName || 'Corretor') : contactName,
             messageType: (m.messageType || 'TEXT') as MessageType,
-            content: mContent || (m.messageType === 'AUDIO' ? '🎵 Mensagem de Voz' : m.messageType === 'IMAGE' ? '📷 Foto' : 'Mensagem'),
+            content: cleanContent || (m.messageType === 'AUDIO' ? '🎵 Mensagem de Voz' : m.messageType === 'IMAGE' ? '📷 Foto' : 'Mensagem'),
             attachments: m.mediaUrl ? [{
               id: `att-${mId}`,
               url: m.mediaUrl,
@@ -192,7 +214,7 @@ export async function POST(req: NextRequest) {
           });
 
           importedMessagesCount++;
-          lastMsgText = mContent;
+          lastMsgText = cleanContent;
           lastMsgTime = mTimestamp;
         });
       }

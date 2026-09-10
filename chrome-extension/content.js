@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.12';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.13';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -917,77 +917,97 @@
         'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu'
       ).forEach(el => el.remove());
 
-      // Busca preferencialmente no elemento estrito de texto
-      const selectableSpan = clone.querySelector('span.selectable-text, .selectable-text');
-      let content = selectableSpan ? selectableSpan.innerText.trim() : '';
-      if (!content) {
-        const fallbackTextEl = clone.querySelector('.copyable-text span, div.copyable-text, span[dir="ltr"]');
-        content = fallbackTextEl ? fallbackTextEl.innerText.trim() : (clone.innerText || '').trim();
-      }
-
-      // Remove horários residuais grudados no final da mensagem (ex: " 14:32", "\n14:32", " 2:30 PM", " 14:32✓")
-      content = content
-        .replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '')
-        .replace(/[\s\u00a0\u200e\u200f\n\r]+$/g, '')
-        .trim();
-
-      // Se o conteúdo começar com resquício de cabeçalho "Você:\n" ou "You:\n", remove
-      content = content.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
-
-      // Remove lixo de nomes de ícones SVG do WhatsApp Web (tail-out, tail-in, ic-fast-forward, etc.)
-      if (
-        /^(tail-in|tail-out|ic-fast-forward|fast-forward)(\s+(tail-in|tail-out|ic-fast-forward|fast-forward))*$/i.test(content) ||
-        content === 'tail-out' || content === 'tail-in' || content === 'ic-fast-forward'
-      ) {
-        content = '';
-      }
-
-      // Se após a limpeza restar apenas um horário isolado (ex: "14:32"), descarta
-      if (/^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(content)) return;
-
-      let messageType = 'TEXT';
-
-      // 3. Detecção Robusta de Áudio / Mensagem de Voz (corrige "0:27 1,0x" e "ic-fast-forward")
-      const hasAudioPlayer = Boolean(
+      // 1. Identificação de Tipo de Mídia (Audio, Documento, Imagem, Vídeo)
+      const hasAudio = Boolean(
         container.querySelector('audio, [data-testid="audio-player"], span[data-icon*="audio"], span[data-icon*="ptt"], span[data-icon="ic-fast-forward"], button[aria-label*="Reproduzir"], button[aria-label*="Play"]')
       );
-      const isAudioText = (
-        /\b\d{1,2}:\d{2}\s+(\d[.,]\d[xX]|\dx)\b/i.test(content) ||
-        /^\s*\d{1,2}:\d{2}\s*$/i.test(content) ||
-        content.includes('1,0x') ||
-        content.includes('1.0x') ||
-        content.includes('1,5x') ||
-        content.includes('2,0x')
+      const hasDoc = Boolean(
+        container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]')
+      );
+      const hasImg = Boolean(
+        container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]') && !hasAudio
+      );
+      const hasVideo = Boolean(
+        container.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"]')
       );
 
-      if (hasAudioPlayer || isAudioText) {
-        messageType = 'AUDIO';
-        const durationMatch = (container.innerText || '').match(/\b(\d{1,2}:\d{2})\b/);
-        const duration = durationMatch ? durationMatch[1] : '';
-        content = duration ? `🎵 Mensagem de Voz (${duration})` : '🎵 Mensagem de Voz';
-      } else if (
-        container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]') ||
-        (/\b\d+([.,]\d+)?\s*(KB|MB|GB|B)\b/i.test(content) && content.length < 60)
-      ) {
-        // 4. Detecção Robusta de Documento / Anexo (corrige "42 KB")
-        messageType = 'DOCUMENT';
-        const sizeMatch = content.match(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B)\b/i);
-        const fileSize = sizeMatch ? sizeMatch[0] : '';
-        const nameEl = container.querySelector('span[title*="."], span.x10l6tqk[title], a[download]');
-        const fileName = (nameEl?.getAttribute('title') || nameEl?.innerText || '').trim();
+      // 2. Extração ESTRITA de texto digitado pelo usuário
+      // No WhatsApp Web, NENHUM metadado de áudio, documento ou hora fica dentro de span.selectable-text!
+      const selectableSpan = clone.querySelector('span.selectable-text, .selectable-text');
+      let userTypedText = selectableSpan ? selectableSpan.innerText.trim() : '';
 
-        if (fileName && fileName !== content && !/^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(fileName)) {
-          content = fileSize ? `📄 ${fileName} (${fileSize})` : `📄 ${fileName}`;
-        } else {
-          content = fileSize ? `📄 Documento (${fileSize})` : '📄 Documento';
+      // 3. Sanitização do texto digitado
+      if (userTypedText) {
+        userTypedText = userTypedText
+          // Remove horários residuais colados no final (ex: " 14:32", "\n14:32", " 2:30 PM", " 14:32✓")
+          .replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '')
+          // Remove tamanhos de arquivo residuais (ex: " (42 KB)", " 42 KB", "1.2 MB", etc.)
+          .replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '')
+          .replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '')
+          // Remove velocidades de reprodução de áudio (ex: "1,0x", "1.5x", "2x")
+          .replace(/\b\d([.,]\d)?[xX]\b/g, '')
+          // Remove nomes de ícones do WhatsApp Web (tail-out, tail-in, ic-fast-forward)
+          .replace(/\b(tail-in|tail-out|ic-fast-forward|fast-forward)\b/gi, '')
+          // Limpa múltiplos espaços
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
+        // Se começar com cabeçalho "Você:" ou "You:", remove
+        userTypedText = userTypedText.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
+
+        // Se após a limpeza for apenas um horário ou ruído, zera
+        if (/^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(userTypedText) || userTypedText.length === 0) {
+          userTypedText = '';
         }
-      } else if (container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]') && !hasAudioPlayer && !isAudioText) {
-        messageType = 'IMAGE';
-        content = content || '📷 Foto';
       }
 
-      // Descarta mensagens vazias ou de aviso do sistema
+      // 4. Determinação final de messageType e content LIMPO (SEM tamanhos, SEM durações, SEM ruído técnico)
+      let messageType = 'TEXT';
+      let content = '';
+
+      if (hasAudio) {
+        messageType = 'AUDIO';
+        content = userTypedText || '🎵 Mensagem de Voz';
+      } else if (hasDoc) {
+        messageType = 'DOCUMENT';
+        // Para documento: extrai apenas o nome real do arquivo (ex: "Contrato.pdf"), NUNCA o tamanho
+        const nameEl = container.querySelector('span[title*="."], span.x10l6tqk[title], a[download]');
+        let rawFileName = (nameEl?.getAttribute('title') || nameEl?.innerText || '').trim();
+        // Remove menções de tamanho e quebras do nome
+        rawFileName = rawFileName
+          .replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '')
+          .replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '')
+          .replace(/[\n\r]+/g, ' ')
+          .trim();
+
+        if (rawFileName && !/^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(rawFileName) && rawFileName.length > 2) {
+          content = `📄 ${rawFileName}`;
+        } else {
+          content = userTypedText || '📄 Documento';
+        }
+      } else if (hasVideo) {
+        messageType = 'VIDEO';
+        content = userTypedText || '🎥 Vídeo';
+      } else if (hasImg) {
+        messageType = 'IMAGE';
+        content = userTypedText || '📷 Foto';
+      } else {
+        messageType = 'TEXT';
+        content = userTypedText;
+      }
+
+      // 5. Descarta definitivamente se não houver conteúdo real ou se for aviso de sistema
       if (!content || isWhatsAppSystemMessage(content)) return;
+
+      // Validação final de segurança: impede que qualquer string que seja puramente tamanho de arquivo ou ruído seja enviada
+      if (
+        /^\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)$/i.test(content) ||
+        /^\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)$/i.test(content) ||
+        /^\d{1,2}:\d{2}\s+(\d[.,]\d[xX]|\dx)$/i.test(content) ||
+        content === 'tail-out' || content === 'tail-in' || content === 'ic-fast-forward'
+      ) {
+        return;
+      }
 
       // 5. Identificação estrita de autoria (Você / Corretor vs Cliente)
       const prePlainNode = container.hasAttribute?.('data-pre-plain-text') ? container :

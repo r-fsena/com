@@ -16,6 +16,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.5';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -31,7 +32,7 @@
             <div class="sovereign-brand-icon">B</div>
             <div>
               <div class="sovereign-title" style="display:flex; align-items:center;">
-                Brokiva <span style="font-size:10px; background:#3742AC; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v1.0.3</span>
+                Brokiva <span style="font-size:10px; background:#3742AC; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v${extVersion}</span>
               </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>

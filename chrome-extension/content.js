@@ -11,12 +11,19 @@
   let isSyncing = false;
   let currentActivePhone = '';
   let currentActiveName = '';
+  let currentBrokerName = 'Rafael Sena';
+
+  try {
+    chrome?.storage?.local?.get(['brokerName'], res => {
+      if (res?.brokerName) currentBrokerName = res.brokerName;
+    });
+  } catch (e) {}
 
   // 1. Injeta a Sidebar do CRM no DOM com suporte a Login Próprio e Persistente
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.5';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.6';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -821,13 +828,19 @@
     }
 
     uniqueRootContainers.forEach((container, index) => {
-      // 1. Localiza nó real do balão com data-id (pode ser o container raiz ou um filho direto)
-      const actualDataIdEl = container.hasAttribute?.('data-id') ? container :
-                             (container.querySelector?.('[data-id]') || container.closest?.('[data-id]'));
-      const dataId = actualDataIdEl ? (actualDataIdEl.getAttribute('data-id') || '') : '';
-      if (dataId.includes('@g.us') || dataId.includes('@newsletter') || dataId.includes('@broadcast')) {
+      // 1. Localiza nó real do balão com data-id (pode ser o container raiz ou um filho direto, NUNCA um ancestral)
+      const actualDataIdEl = container.hasAttribute?.('data-id') 
+        ? container 
+        : container.querySelector?.('[data-id]');
+      const rawDataId = actualDataIdEl ? (actualDataIdEl.getAttribute('data-id') || '') : '';
+      if (rawDataId.includes('@g.us') || rawDataId.includes('@newsletter') || rawDataId.includes('@broadcast')) {
         return;
       }
+
+      // ID legítimo de mensagem do WhatsApp tem o formato [true|false]_[remoteJid]_[msgId] (mínimo 3 partes)
+      const isRealMsgKey = Boolean(rawDataId && rawDataId.split('_').length >= 3);
+      const isDataIdFromMe = isRealMsgKey && rawDataId.startsWith('true_');
+      const isDataIdFromContact = isRealMsgKey && rawDataId.startsWith('false_');
 
       const textNode = container.querySelector('.selectable-text, .copyable-text span, div.copyable-text, span.selectable-text, span[dir="ltr"]');
       let content = textNode ? textNode.innerText.trim() : (container.innerText || '').trim();
@@ -884,39 +897,46 @@
                            (container.querySelector?.('[data-pre-plain-text]') || container.closest?.('[data-pre-plain-text]'));
       const prePlain = prePlainNode ? (prePlainNode.getAttribute('data-pre-plain-text') || '') : '';
 
-      // Identificação estrita de mensagem recebida (message-in) vs enviada (message-out)
-      const hasMessageInClass = Boolean(
-        container.classList?.contains?.('message-in') ||
-        container.closest?.('.message-in') ||
-        container.querySelector?.('.message-in') ||
-        (container.getAttribute?.('class') || '').includes('message-in')
-      );
-
-      const hasMessageOutClass = Boolean(
+      // Identificação estrita de mensagem enviada (.message-out) vs recebida (.message-in)
+      const isMessageOut = Boolean(
         container.classList?.contains?.('message-out') ||
-        container.closest?.('.message-out') ||
         container.querySelector?.('.message-out') ||
-        (container.getAttribute?.('class') || '').includes('message-out')
+        container.closest?.('.message-out')
       );
 
-      // Ícones reais de entrega no balão enviado pelo corretor (exclui status de leitura de áudios recebidos)
-      const hasCheckmark = Boolean(container.querySelector(
+      const isMessageIn = Boolean(
+        container.classList?.contains?.('message-in') ||
+        container.querySelector?.('.message-in') ||
+        container.closest?.('.message-in')
+      );
+
+      // Ícones de entrega do corretor (msg-dblcheck, msg-check, msg-time) só existem em mensagens enviadas por mim
+      const hasOutgoingCheckmark = Boolean(container.querySelector(
         'span[data-icon="msg-dblcheck"], span[data-icon="msg-check"], span[data-icon="msg-time"], span[data-testid*="check"]'
       ));
 
+      const isPrePlainFromMe = Boolean(
+        prePlain.includes('Você:') ||
+        prePlain.includes('You:') ||
+        (currentBrokerName && prePlain.toLowerCase().includes(currentBrokerName.toLowerCase() + ':'))
+      );
+
+      // Determinação de autoria: marcadores de envio do corretor têm precedência definitiva
       let isFromMe = false;
-      if (dataId.startsWith('true_')) {
+      if (isMessageOut) {
         isFromMe = true;
-      } else if (dataId.startsWith('false_')) {
+      } else if (isDataIdFromMe) {
+        isFromMe = true;
+      } else if (isPrePlainFromMe) {
+        isFromMe = true;
+      } else if (hasOutgoingCheckmark && !isMessageIn) {
+        isFromMe = true;
+      } else if (isMessageIn) {
         isFromMe = false;
-      } else if (hasMessageInClass) {
+      } else if (isDataIdFromContact) {
         isFromMe = false;
-      } else if (hasMessageOutClass) {
-        isFromMe = true;
-      } else if (prePlain.includes('Você:') || prePlain.includes('You:')) {
-        isFromMe = true;
-      } else if (hasCheckmark && !hasMessageInClass) {
-        isFromMe = true;
+      } else {
+        isFromMe = false;
       }
 
       let msgTime = '';
@@ -976,12 +996,13 @@
       }
 
       // Deduplicação interna: impede rigorosamente balões duplicados no array
-      const uniqueMsgKey = dataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}`;
+      const effectiveDataId = isRealMsgKey ? rawDataId : '';
+      const uniqueMsgKey = effectiveDataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}`;
       if (seenMsgKeys.has(uniqueMsgKey)) return;
       seenMsgKeys.add(uniqueMsgKey);
 
       messages.push({
-        id: dataId || `wpp-ext-${resolvedPhone}-${index}-${Date.now()}`,
+        id: effectiveDataId || `wpp-ext-${resolvedPhone}-${index}-${Date.now()}`,
         content,
         fromMe: isFromMe,
         timestamp: msgTime,

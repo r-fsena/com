@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const updatedState = serverCRMStore.updateState(body);
+    const payload = { ...body };
+    if (body.user && !body.users) {
+      payload.users = [body.user];
+    }
+    const updatedState = serverCRMStore.updateState(payload);
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
     return NextResponse.json({
       success: true,

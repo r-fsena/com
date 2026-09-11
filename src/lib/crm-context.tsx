@@ -876,11 +876,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed = parsed.filter((u: User) => 
               u.email?.toLowerCase() === 'rafael@faithhubs.com' ||
+              u.email?.toLowerCase() === 'amabile.barbarotti@gmail.com' ||
               u.role === 'SUPERADMIN' ||
               (!u.email?.includes('vanguardprime') && !u.email?.includes('camila') && !u.email?.includes('lucas') && !u.email?.includes('juliana'))
             );
-            if (!parsed.some((u: User) => u.email?.toLowerCase() === 'rafael@faithhubs.com')) {
-              parsed.unshift(MOCK_USERS[0]);
+            // Garante que TODOS os usuários essenciais de MOCK_USERS (Rafael e Amábile) existam
+            for (const mockU of MOCK_USERS) {
+              if (!parsed.some((u: User) => u.email?.toLowerCase() === mockU.email?.toLowerCase())) {
+                parsed.push(mockU);
+              }
             }
             // Deduplica estritamente por e-mail (nunca permite mais de 1 usuário por e-mail)
             const seenEmails = new Set<string>();
@@ -909,9 +913,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           const session = JSON.parse(saved);
           if (session.userEmail) {
-            const found = MOCK_USERS.find(x => x.email.toLowerCase() === session.userEmail.toLowerCase());
+            const clean = session.userEmail.toLowerCase().trim();
+            // 1. Procura primeiro nos usuários salvos localmente
+            try {
+              const savedUsersRaw = localStorage.getItem('vanguard_crm_users');
+              if (savedUsersRaw) {
+                const parsedUsers = JSON.parse(savedUsersRaw);
+                const foundInParsed = parsedUsers.find((x: User) => x.email?.toLowerCase().trim() === clean);
+                if (foundInParsed) return foundInParsed;
+              }
+            } catch {}
+            // 2. Procura em MOCK_USERS (Rafael e Amábile)
+            const found = MOCK_USERS.find(x => x.email.toLowerCase().trim() === clean);
             if (found) return found;
-            if (session.userEmail.toLowerCase().includes('rafael') || session.userEmail.toLowerCase().includes('admin')) {
+            if (clean.includes('rafael') || clean.includes('admin')) {
               return MOCK_USERS[0];
             }
           }
@@ -933,6 +948,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setUsers(prev => {
       const updated = prev.map(u => u.id === userId ? { ...u, ...updates } : u);
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      // Persistência central no servidor para todos os navegadores/dispositivos
+      if (typeof window !== 'undefined') {
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: updated }),
+        }).catch(err => console.warn('[CRMContext] Aviso ao sincronizar atualização de usuário com servidor:', err));
+      }
       return updated;
     });
     if (currentUser.id === userId) {
@@ -990,6 +1013,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
       const updated = [...prev, newUser];
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      if (typeof window !== 'undefined') {
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: updated }),
+        }).catch(err => console.warn('[CRMContext] Aviso ao sincronizar novo usuário com servidor:', err));
+      }
       return updated;
     });
 
@@ -1049,6 +1079,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return u;
       });
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      if (typeof window !== 'undefined') {
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: updated }),
+        }).catch(err => console.warn('[CRMContext] Aviso ao sincronizar status com servidor:', err));
+      }
       return updated;
     });
   };
@@ -1143,6 +1180,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setUsers(prev => {
       const updated = prev.filter(u => u.id !== userId);
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
+      if (typeof window !== 'undefined') {
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: updated }),
+        }).catch(err => console.warn('[CRMContext] Aviso ao sincronizar exclusão com servidor:', err));
+      }
       return updated;
     });
   };
@@ -1892,6 +1936,33 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         try {
           localStorage.setItem('vanguard_crm_deleted_chats', JSON.stringify(Array.from(combinedDeleted)));
         } catch {}
+
+        // 3.1 Sincroniza usuários do servidor (persistência cross-device de equipe e corretores)
+        if (Array.isArray(serverData?.users) && serverData.users.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            for (const u of MOCK_USERS) {
+              if (u.email) map.set(u.email.toLowerCase().trim(), { ...u });
+            }
+            for (const u of prev) {
+              if (u.email) {
+                const k = u.email.toLowerCase().trim();
+                const existing = map.get(k);
+                map.set(k, { ...(existing || {}), ...u });
+              }
+            }
+            for (const u of serverData.users) {
+              if (u.email) {
+                const k = u.email.toLowerCase().trim();
+                const existing = map.get(k);
+                map.set(k, { ...(existing || {}), ...u });
+              }
+            }
+            const finalUsers = Array.from(map.values());
+            try { localStorage.setItem('vanguard_crm_users', JSON.stringify(finalUsers)); } catch {}
+            return finalUsers;
+          });
+        }
 
         // 4. Mescla contatos com deduplicação estrita
         const combinedContacts = [

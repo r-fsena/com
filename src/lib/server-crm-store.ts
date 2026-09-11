@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { Contact, Deal, Conversation, Message, AIInsight } from '@/types/crm';
+import { Contact, Deal, Conversation, Message, AIInsight, User } from '@/types/crm';
+import { MOCK_USERS } from '@/lib/mock-data';
 import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 
 export interface ServerCRMState {
@@ -9,6 +10,7 @@ export interface ServerCRMState {
   conversations: Conversation[];
   messages: Message[];
   aiInsights: Record<string, AIInsight>;
+  users?: User[];
 }
 
 // Base de dados limpa para produção e operação real
@@ -16,6 +18,33 @@ const INITIAL_CONTACTS: Contact[] = [];
 const INITIAL_DEALS: Deal[] = [];
 const INITIAL_MESSAGES: Message[] = [];
 const INITIAL_INSIGHTS: Record<string, AIInsight> = {};
+
+export function mergeUserLists(oldUsers: User[] = [], newUsers: User[] = []): User[] {
+  const map = new Map<string, User>();
+  // 1. Sempre inclui MOCK_USERS como garantia básica de root/admin
+  for (const u of MOCK_USERS) {
+    if (u && u.email) {
+      map.set(u.email.toLowerCase().trim(), { ...u });
+    }
+  }
+  // 2. Mescla oldUsers
+  for (const u of oldUsers) {
+    if (u && u.email) {
+      const emailKey = u.email.toLowerCase().trim();
+      const existing = map.get(emailKey);
+      map.set(emailKey, { ...(existing || {}), ...u });
+    }
+  }
+  // 3. Mescla newUsers (têm precedência para senhas atualizadas, status, etc)
+  for (const u of newUsers) {
+    if (u && u.email) {
+      const emailKey = u.email.toLowerCase().trim();
+      const existing = map.get(emailKey);
+      map.set(emailKey, { ...(existing || {}), ...u });
+    }
+  }
+  return Array.from(map.values());
+}
 
 const DEFAULT_DELETED_CHAT_KEYS = [
   '5511915361868',
@@ -110,12 +139,14 @@ export function loadStateFromDisk(): boolean {
         if (!raw || !raw.trim()) continue;
         const parsed = JSON.parse(raw);
         if (parsed && parsed.state) {
+          const rawUsers = Array.isArray(parsed.state.users) ? parsed.state.users : [];
           global.__SERVER_CRM_STATE__ = {
             contacts: parsed.state.contacts || [],
             deals: parsed.state.deals || [],
             conversations: parsed.state.conversations || [],
             messages: parsed.state.messages || [],
             aiInsights: parsed.state.aiInsights || {},
+            users: mergeUserLists(MOCK_USERS, rawUsers),
           };
 
           if (parsed.lidPhoneMap) {
@@ -147,6 +178,7 @@ if (!global.__SERVER_CRM_STATE__) {
     conversations: [],
     messages: INITIAL_MESSAGES,
     aiInsights: INITIAL_INSIGHTS,
+    users: mergeUserLists(MOCK_USERS, []),
   };
 }
 
@@ -403,16 +435,33 @@ export const serverCRMStore = {
         isPersonal: c.isPersonal === true ? true : false,
       }));
     }
+    if (!global.__SERVER_CRM_STATE__.users || global.__SERVER_CRM_STATE__.users.length === 0) {
+      global.__SERVER_CRM_STATE__.users = mergeUserLists(MOCK_USERS, []);
+    }
     return global.__SERVER_CRM_STATE__;
   },
 
+  getUsers(): User[] {
+    const state = this.getState();
+    return state.users && state.users.length > 0 ? state.users : MOCK_USERS;
+  },
+
+  saveUser(user: User): User[] {
+    const state = this.getState();
+    state.users = mergeUserLists(state.users || [], [user]);
+    saveStateToDisk();
+    return state.users;
+  },
+
   resetState(): ServerCRMState {
+    const currentUsers = global.__SERVER_CRM_STATE__?.users || mergeUserLists(MOCK_USERS, []);
     const fresh: ServerCRMState = {
       contacts: [],
       deals: [],
       conversations: [],
       messages: [],
       aiInsights: {},
+      users: currentUsers,
     };
     global.__SERVER_CRM_STATE__ = fresh;
     global.__GLOBAL_LID_PHONE_MAP__ = {};
@@ -477,6 +526,7 @@ export const serverCRMStore = {
       conversations: remainingConvs,
       messages: remainingMessages,
       aiInsights: remainingInsights,
+      users: current.users || mergeUserLists(MOCK_USERS, []),
     };
 
     global.__SERVER_CRM_STATE__ = next;
@@ -486,6 +536,9 @@ export const serverCRMStore = {
 
   updateState(partial: Partial<ServerCRMState>): ServerCRMState {
     const current = this.getState();
+
+    // Se novos usuários forem fornecidos, mescla preservando unicidade por e-mail
+    const mergedUsers = partial.users ? mergeUserLists(current.users || [], partial.users) : (current.users || mergeUserLists(MOCK_USERS, []));
 
     // Se novos contatos forem fornecidos, processa e registra pares LID <-> Telefone
     const mergedContacts = partial.contacts ? this.mergeContacts(current.contacts, partial.contacts) : current.contacts;
@@ -503,6 +556,7 @@ export const serverCRMStore = {
       conversations: cleanConvs,
       messages: mergedMessages,
       aiInsights: partial.aiInsights ? { ...current.aiInsights, ...partial.aiInsights } : current.aiInsights,
+      users: mergedUsers,
     };
     global.__SERVER_CRM_STATE__ = next;
     saveStateToDisk();

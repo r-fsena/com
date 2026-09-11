@@ -109,6 +109,26 @@ export const MOCK_USERS: User[] = [
       'Nunca usar gírias ou mensagens prolixas'
     ],
     aiModel: 'anthropic.claude-3-5-sonnet'
+  },
+  {
+    id: 'user-amabile-admin',
+    tenantId: 'tenant-amabile-barbarotti',
+    name: 'Amábile Barbarotti',
+    email: 'amabile.barbarotti@gmail.com',
+    phone: '+55 11 99999-8877',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    role: 'ADMIN',
+    isActive: true,
+    status: 'ACTIVE',
+    passwordSet: true,
+    aiPersonaPrompt: 'Você é a copiloto comercial de Amábile Barbarotti Imóveis. Conduza atendimentos com sofisticação, simpatia, clareza e foco consultivo para agendamento de visitas aos imóveis de alto padrão.',
+    aiTone: 'CONSULTATIVE',
+    aiDirectives: [
+      'Sempre convidar cordialmente para uma visita presencial ou café de alinhamento',
+      'Destacar sofisticação, localização nobre e liquidez do imóvel',
+      'Manter atendimento humanizado, atencioso e de alto padrão'
+    ],
+    aiModel: 'anthropic.claude-3-5-sonnet'
   }
 ];
 

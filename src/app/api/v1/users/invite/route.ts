@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { sendUserInvitationEmail } from '@/lib/email-service';
 import { validateApiSession } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
+import { serverCRMStore } from '@/lib/server-crm-store';
+import { User } from '@/types/crm';
 
 const inviteSchema = z.object({
   email: z.string().email('E-mail inválido'),
@@ -53,6 +55,26 @@ export async function POST(req: NextRequest) {
       temporaryPassword: validated.temporaryPassword,
       isResend: validated.isResend,
     });
+
+    // Persiste o usuário convidado no banco central do servidor
+    const invitedUser: User = {
+      id: `user-${Date.now()}`,
+      tenantId: validated.tenantId || 'tenant-amabile-barbarotti',
+      name: validated.name,
+      email: validated.email.toLowerCase().trim(),
+      phone: '',
+      role: validated.role as any,
+      isActive: true,
+      status: validated.temporaryPassword ? 'ACTIVE' : 'INVITED',
+      passwordSet: Boolean(validated.temporaryPassword),
+      password: validated.temporaryPassword,
+      invitedAt: new Date().toISOString(),
+    };
+    try {
+      serverCRMStore.updateState({ users: [invitedUser] });
+    } catch (storeErr) {
+      console.warn('[API /users/invite] Aviso ao persistir usuário em store:', storeErr);
+    }
 
     return NextResponse.json({
       success: true,

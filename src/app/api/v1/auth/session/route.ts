@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MOCK_USERS } from '@/lib/mock-data';
+import { serverCRMStore } from '@/lib/server-crm-store';
 import { signSessionPayload, verifySessionToken } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -33,10 +34,19 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { email, userId, role, tenantId } = body;
+    const { email, userId, role, tenantId, name } = body;
 
     const userEmail = (email || 'rafael@faithhubs.com').toLowerCase().trim();
-    const foundUser = MOCK_USERS.find(u => u.email.toLowerCase() === userEmail || u.id === userId) || MOCK_USERS[0];
+    const allUsers = serverCRMStore.getUsers();
+    const foundUser = allUsers.find(u => u.email.toLowerCase() === userEmail || (userId && u.id === userId))
+      || MOCK_USERS.find(u => u.email.toLowerCase() === userEmail || (userId && u.id === userId))
+      || {
+        id: userId || `user-${Date.now()}`,
+        email: userEmail,
+        name: name || userEmail.split('@')[0],
+        role: role || 'BROKER',
+        tenantId: tenantId || 'tenant-amabile-barbarotti',
+      };
 
     const sessionPayload = {
       userId: foundUser.id,

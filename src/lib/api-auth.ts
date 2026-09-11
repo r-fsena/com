@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { UserRole } from '@/types/crm';
 import { MOCK_USERS } from '@/lib/mock-data';
+import { serverCRMStore } from '@/lib/server-crm-store';
+
+function getAllKnownUsers() {
+  try {
+    return serverCRMStore.getUsers();
+  } catch {
+    return MOCK_USERS;
+  }
+}
 
 export interface AuthenticatedSession {
   userId: string;
@@ -113,9 +122,10 @@ export function validateApiSession(req: NextRequest, options?: {
   }
 
   // 3.1 Verificação de cabeçalhos de usuário autenticado da UI interna do CRM
+  const allKnownUsers = getAllKnownUsers();
   if (!userEmail && (clientEmailHeader || clientUserHeader)) {
     const targetEmail = clientEmailHeader.toLowerCase().trim();
-    const foundUser = MOCK_USERS.find(u => (targetEmail && u.email.toLowerCase() === targetEmail) || (clientUserHeader && u.id === clientUserHeader));
+    const foundUser = allKnownUsers.find(u => (targetEmail && u.email.toLowerCase() === targetEmail) || (clientUserHeader && u.id === clientUserHeader));
     if (foundUser) {
       userEmail = foundUser.email;
       userId = foundUser.id;
@@ -136,7 +146,7 @@ export function validateApiSession(req: NextRequest, options?: {
   }
 
   // 5. Localiza o usuário correspondente no catálogo
-  const foundUser = MOCK_USERS.find(u => 
+  const foundUser = allKnownUsers.find(u => 
     (userId && u.id === userId) || 
     (userEmail && u.email.toLowerCase() === userEmail)
   );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MOCK_USERS, MOCK_TENANTS } from '@/lib/mock-data';
+import { serverCRMStore } from '@/lib/server-crm-store';
 import { signSessionPayload } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
@@ -30,7 +31,8 @@ export async function GET(req: NextRequest) {
     primaryColor: t.primaryColor || '#3742AC',
   }));
 
-  const brokers = MOCK_USERS.filter(u => u.isActive).map(u => ({
+  const allUsers = serverCRMStore.getUsers();
+  const brokers = allUsers.filter(u => u.isActive).map(u => ({
     id: u.id,
     name: u.name,
     email: u.email,
@@ -77,7 +79,11 @@ export async function POST(req: NextRequest) {
     const foundTenant = MOCK_TENANTS.find(t => t.id === targetTenantId || t.slug === targetTenantId) || MOCK_TENANTS[0];
 
     // Localiza usuário existente ou provisiona credencial de corretor para o tenant selecionado
-    let foundUser = MOCK_USERS.find(u => 
+    const allKnownBrokers = serverCRMStore.getUsers();
+    let foundUser = allKnownBrokers.find(u => 
+      (cleanEmail && u.email.toLowerCase() === cleanEmail) ||
+      (name && u.name.toLowerCase().trim() === String(name).toLowerCase().trim())
+    ) || MOCK_USERS.find(u => 
       (cleanEmail && u.email.toLowerCase() === cleanEmail) ||
       (name && u.name.toLowerCase().trim() === String(name).toLowerCase().trim())
     );

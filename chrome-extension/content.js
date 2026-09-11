@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.19';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.20';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -921,6 +921,16 @@
         'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz'
       ).forEach(el => el.remove());
 
+      // Remove nós folha que contêm exclusivamente horários (ex: "14:53", "12:59", "22:24✓") para não colar no texto
+      clone.querySelectorAll('span, div').forEach(el => {
+        if (el.children.length === 0) {
+          const t = (el.innerText || '').trim();
+          if (/^(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)([\s\u200e\u200f]*[✓✔︎]?)*$/i.test(t)) {
+            el.remove();
+          }
+        }
+      });
+
       // Remove pílulas e balões de reações para não tratar emojis como fotos ou texto fantasma
       clone.querySelectorAll(
         '[data-testid*="reaction"], [aria-label*="reaç" i], [aria-label*="reaction" i], div._amkw, div._amkx'
@@ -953,8 +963,8 @@
       // 3. Sanitização do texto digitado
       if (userTypedText) {
         userTypedText = userTypedText
-          // Remove horários residuais colados no final (ex: " 14:32", "\n14:32", " 2:30 PM", " 14:32✓")
-          .replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '')
+          // Remove horários colados no final, COM OU SEM espaço antes (ex: "chegou13:42" -> "chegou", "quer?22:24" -> "quer?")
+          .replace(/(?:\s*|[\u00a0\u200e\u200f\n\r]*)(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)([\s\u200e\u200f]*[✓✔︎]?)*$/i, '')
           // Remove tamanhos de arquivo residuais (ex: " (42 KB)", " 42 KB", "1.2 MB", etc.)
           .replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '')
           .replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '')
@@ -1404,26 +1414,36 @@
       if (!main) return null;
 
       // O botão clicável do cabeçalho que abre a gaveta de dados do contato
-      const titleSpan = main.querySelector('header span[title], header div[data-testid="conversation-info-header"] span, header span[dir="auto"]');
-      const headerBtn = titleSpan?.closest('div[role="button"], div[tabindex="0"]') || titleSpan;
-      if (!headerBtn) return null;
+      const headerClickable = main.querySelector('header [data-testid="conversation-info-header"]') ||
+                              main.querySelector('header div[role="button"]') ||
+                              main.querySelector('header div[tabindex="0"]') ||
+                              main.querySelector('header span[title]')?.closest('div[role="button"]') ||
+                              main.querySelector('header span[title]') ||
+                              main.querySelector('header');
+      if (!headerClickable) return null;
 
-      headerBtn.click();
+      headerClickable.click();
 
       let foundPhone = null;
-      // Aguarda até 900ms a gaveta lateral montar no DOM
-      for (let attempt = 0; attempt < 8; attempt++) {
-        await new Promise(r => setTimeout(r, 110));
+      let foundPushName = null;
+      // Aguarda até 1200ms a gaveta lateral montar no DOM
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise(r => setTimeout(r, 120));
         const sidePanel = document.querySelector(
-          'div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"], div[data-testid="chat-info-drawer"], div[tabindex="-1"] div[role="region"]'
+          'div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"], div[data-testid="chat-info-drawer"], div[tabindex="-1"] div[role="region"], div[role="region"][aria-label*="Dados" i], div[role="region"][aria-label*="Contact" i]'
         );
         if (sidePanel) {
           const text = sidePanel.innerText || '';
           const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/) ||
+                             text.match(/\+?55\s?\d{2}\s?9?\d{8}/) ||
                              text.match(/\+?\d{1,3}\s?\(?\d{2,3}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
                              text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
           if (phoneMatch) {
             foundPhone = phoneMatch[0].replace(/\D/g, '');
+            const pushMatch = text.match(/~\s*([^\n\r]+)/);
+            if (pushMatch && pushMatch[1]) {
+              foundPushName = pushMatch[1].trim();
+            }
             if (foundPhone.length >= 10) break;
           }
         }
@@ -1431,10 +1451,11 @@
 
       // Fecha a gaveta lateral
       const closeBtn = document.querySelector('div[tabindex="-1"] span[data-icon="x"]')?.closest('button') ||
-                       document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar"], div[tabindex="-1"] button[aria-label*="Close"]') ||
+                       document.querySelector('header button[aria-label*="Fechar" i], header button[aria-label*="Close" i]') ||
+                       document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar" i], div[tabindex="-1"] button[aria-label*="Close" i]') ||
                        document.querySelector('[data-testid="btn-closer"]');
       if (closeBtn) closeBtn.click();
-      await new Promise(r => setTimeout(r, 120));
+      await new Promise(r => setTimeout(r, 150));
 
       return foundPhone;
     } catch (e) {
@@ -1648,8 +1669,13 @@
 
     // ETAPA 3: Extração Detalhada e Estatísticas
     const chatData = extractActiveChatData(accumulatedMap);
-    if (chatData && !chatData.phone && resolvedPhone) {
-      chatData.phone = resolvedPhone;
+    if (chatData && (!chatData.phone || chatData.phone.length < 10)) {
+      if (badge) badge.innerText = 'Lendo telefone...';
+      const resolved = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone || resolvedPhone, true);
+      if (resolved && resolved.length >= 10) {
+        chatData.phone = resolved;
+        resolvedPhone = resolved;
+      }
     }
     const msgs = chatData?.messages || [];
 
@@ -1671,8 +1697,20 @@
     const sampleList = msgs.slice(-12).map((m, idx) => {
       const remetente = m.fromMe ? 'Você (Corretor)' : `${chatData?.name || 'Cliente'}`;
       const preview = (m.content || '').length > 55 ? (m.content || '').slice(0, 55) + '...' : m.content;
-      const hora = m.timestamp ? m.timestamp.replace('T', ' ').slice(0, 16) : 'sem data';
-      return `  [${hora}] ${remetente} (${m.messageType}): "${preview}"`;
+      let horaFormatada = 'sem data';
+      if (m.timestamp) {
+        try {
+          const d = new Date(m.timestamp);
+          const dia = String(d.getDate()).padStart(2, '0');
+          const mes = String(d.getMonth() + 1).padStart(2, '0');
+          const hora = String(d.getHours()).padStart(2, '0');
+          const min = String(d.getMinutes()).padStart(2, '0');
+          horaFormatada = `${dia}/${mes} ${hora}:${min}`;
+        } catch (e) {
+          horaFormatada = m.timestamp.slice(11, 16);
+        }
+      }
+      return `  [${horaFormatada}] ${remetente} (${m.messageType}): "${preview}"`;
     });
 
     const report = [
@@ -1680,7 +1718,7 @@
       '🔍 RELATÓRIO DE DIAGNÓSTICO ISOLADO (BROKIVA)',
       '====================================================',
       `👤 Contato Aberto: ${chatData?.name || contactName || 'N/D'}`,
-      `📱 Telefone Detectado: ${chatData?.phone || resolvedPhone || 'Não identificado'}`,
+      `📱 Telefone Detectado: ${chatData?.phone ? '+' + chatData.phone : (resolvedPhone ? '+' + resolvedPhone : 'Não identificado')}`,
       `🆔 LID: ${chatData?.lid || resolvedLid || 'Nenhum'}`,
       `📄 Botão "Carregar antigas": ${foundLoadMoreBtn ? 'SIM (detectado e acionado)' : 'NÃO presente no DOM'}`,
       `📊 Balões no DOM: ${initialRows} antes do scroll | ${postScrollRows} após scroll (+${postScrollRows - initialRows})`,

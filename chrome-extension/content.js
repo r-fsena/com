@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.32';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.33';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -38,13 +38,13 @@
           <div class="sovereign-brand">
             <div class="sovereign-brand-icon">B</div>
             <div>
-              <div class="sovereign-title" style="display:flex; align-items:center;">
-                Brokiva <span id="sovereign-version-badge" style="font-size:10px; background:#3742AC; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700; cursor:pointer;" title="Versão da extensão (Clique 5x para alternar Diagnóstico)">v${extVersion}</span>
+              <div class="sovereign-title">
+                Brokiva <span id="sovereign-version-badge" class="sovereign-version-badge" title="Versão da extensão (Clique 5x para alternar Diagnóstico)">v${extVersion}</span>
               </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
           </div>
-          <button id="sovereign-close-btn" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:18px;">✕</button>
+          <button id="sovereign-close-btn" class="sovereign-close-btn" title="Fechar barra lateral">✕</button>
         </div>
 
         <!-- Container do Perfil do Corretor Ativo -->
@@ -140,7 +140,10 @@
               <div class="sovereign-broker-avatar">${initials}</div>
               <div style="min-width:0;">
                 <div class="sovereign-broker-name">${brokerName}</div>
-                <div class="sovereign-broker-tenant">${tenantName}</div>
+                <div class="sovereign-broker-tenant">
+                  <span class="sovereign-pulse-dot"></span>
+                  <span>${tenantName}</span>
+                </div>
               </div>
             </div>
             <button id="sovereign-btn-logout-sidebar" class="sovereign-btn-logout" title="Desconectar ou trocar de corretor">Sair</button>
@@ -165,7 +168,7 @@
             Extrai conversas e todo o histórico passado para o seu CRM sem limites.
           </p>
           <button id="sovereign-batch-sync-btn" class="sovereign-btn-sync" style="background:#3742AC;">
-            <span>⚡ Sincronizar Histórico Completo</span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Sincronizar Histórico Completo</span>
           </button>
           <div id="sovereign-progress-bar" class="sovereign-progress-bar">
             <div id="sovereign-progress-fill" class="sovereign-progress-fill" style="background:#3742AC;"></div>
@@ -187,23 +190,23 @@
           </div>
 
           <button id="sovereign-sync-current-btn" class="sovereign-btn-sync" style="background:#0f172a; margin-top:6px;">
-            <span>📥 Salvar Histórico Desta Conversa</span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Salvar Histórico Desta Conversa</span>
           </button>
 ${isDeveloperMode ? `
           <button id="sovereign-diagnostic-btn" class="sovereign-btn-sync" style="background:#475569; margin-top:6px;">
-            <span>🔍 Diagnosticar Conversa (Passo a Passo)</span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Diagnosticar Conversa (Passo a Passo)</span>
           </button>
 ` : ""}
         </div>
 
         <!-- Card do Copiloto de IA -->
         <div class="sovereign-ai-card">
-          <div class="sovereign-ai-badge">✦ Copiloto Brokiva IA</div>
+          <div class="sovereign-ai-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:3px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Copiloto Brokiva IA</div>
           <p style="font-size:11px; color:#cbd5e1; margin-bottom:10px;">
             Analisa o momento do cliente e gera respostas persuasivas com 1 clique.
           </p>
           <button id="sovereign-ai-generate-btn" class="sovereign-btn-sync" style="background:#3742AC;">
-            <span>✨ Sugerir Respostas Inteligentes</span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Sugerir Respostas Inteligentes</span>
           </button>
           <div id="sovereign-ai-suggestions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
         </div>

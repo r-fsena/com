@@ -1,272 +1,185 @@
-/* Sovereign CRM WhatsApp Web Sidebar Injection */
+/* ==========================================================================
+   SOVEREIGN CRM DESIGN SYSTEM - BROKIVA WHATSAPP EXTENSION
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Cabin:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600;1,700&display=swap");
 
 :root {
-  --sovereign-primary: #059669;
-  --sovereign-primary-hover: #047857;
-  --sovereign-dark: #0f172a;
-  --sovereign-card-bg: rgba(255, 255, 255, 0.95);
-  --sovereign-border: #e2e8f0;
+  --sovereign-bg: #F0F3FA;
+  --sovereign-navy: #202759;
+  --sovereign-navy-dark: #121636;
+  --sovereign-indigo: #3742AC;
+  --sovereign-indigo-hover: #2b348a;
+  --sovereign-indigo-light: rgba(55, 66, 172, 0.08);
+  --sovereign-emerald: #10b981;
+  --sovereign-emerald-dark: #059669;
+  --sovereign-emerald-light: #dcfce7;
+  --sovereign-emerald-text: #15803d;
+  --sovereign-slate-900: #0f172a;
+  --sovereign-slate-800: #1e293b;
+  --sovereign-slate-600: #475569;
+  --sovereign-slate-400: #94a3b8;
+  --sovereign-slate-200: #e2e8f0;
+  --sovereign-border: rgba(226, 232, 240, 0.85);
+  --sovereign-card-shadow: 0 8px 24px rgba(30, 41, 102, 0.035);
+  --sovereign-card-hover-shadow: 0 14px 34px rgba(30, 41, 102, 0.06);
+  --sovereign-font: "Cabin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 #sovereign-crm-root {
   position: fixed;
   top: 0;
   right: 0;
-  width: 360px;
+  width: 380px;
   height: 100vh;
   z-index: 99999;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--sovereign-font);
   box-sizing: border-box;
-  transform: translateX(360px);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateX(380px);
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
+  color: var(--sovereign-slate-900);
 }
 
 #sovereign-crm-root.open {
   transform: translateX(0);
 }
 
-/* Botão Toggle Flutuante */
+/* Botão Toggle Flutuante Lateral Sovereign */
 #sovereign-toggle-btn {
   position: absolute;
-  top: 20px;
-  left: -46px;
-  width: 46px;
-  height: 44px;
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  top: 24px;
+  left: -48px;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #3742AC 0%, #202759 100%);
   color: white;
-  border-radius: 14px 0 0 14px;
+  border-radius: 16px 0 0 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: -4px 4px 16px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s ease;
+  box-shadow: -6px 8px 24px rgba(32, 39, 89, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-right: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
 
 #sovereign-toggle-btn:hover {
-  transform: scale(1.05);
-  background: #047857;
+  transform: scale(1.06);
+  background: linear-gradient(135deg, #2b348a 0%, #151a3d 100%);
+  box-shadow: -8px 10px 28px rgba(32, 39, 89, 0.38);
 }
 
-/* Painel Principal */
+/* Painel Principal Sovereign */
 .sovereign-panel {
   width: 100%;
   height: 100%;
-  background: #f8fafc;
-  border-left: 1px solid #e2e8f0;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.08);
+  background: var(--sovereign-bg);
+  border-left: 1px solid var(--sovereign-border);
+  box-shadow: -12px 0 36px rgba(30, 41, 102, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  font-family: var(--sovereign-font);
 }
 
-/* Header */
+/* Header Sovereign */
 .sovereign-header {
-  background: #0f172a;
+  background: linear-gradient(135deg, #202759 0%, #15193c 100%);
   color: white;
-  padding: 16px;
+  padding: 16px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .sovereign-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .sovereign-brand-icon {
+  width: 32px;
+  height: 32px;
+  background: #3742AC;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: white;
+  box-shadow: 0 4px 12px rgba(55, 66, 172, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+.sovereign-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+}
+
+.sovereign-subtitle {
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.sovereign-version-badge {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.15s ease;
+}
+
+.sovereign-version-badge:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
+}
+
+.sovereign-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
   width: 28px;
   height: 28px;
-  background: #059669;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 900;
+  cursor: pointer;
   font-size: 14px;
-}
-
-.sovereign-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-}
-
-.sovereign-subtitle {
-  font-size: 10px;
-  color: #94a3b8;
-}
-
-/* Conteúdo Rolável */
-.sovereign-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* Card de Status de Sincronização */
-.sovereign-card {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.sovereign-card-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #64748b;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-/* Botão de Sincronização em Massa */
-.sovereign-btn-sync {
-  width: 100%;
-  background: #059669;
-  color: white;
-  border: none;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: background 0.15s ease, transform 0.1s ease;
-}
-
-.sovereign-btn-sync:hover {
-  background: #047857;
-}
-
-.sovereign-btn-sync:active {
-  transform: scale(0.98);
-}
-
-.sovereign-progress-bar {
-  width: 100%;
-  height: 6px;
-  background: #e2e8f0;
-  border-radius: 999px;
-  overflow: hidden;
-  margin-top: 10px;
-  display: none;
-}
-
-.sovereign-progress-fill {
-  height: 100%;
-  width: 0%;
-  background: #059669;
-  transition: width 0.2s ease;
-}
-
-/* Perfil do Lead Ativo */
-.sovereign-lead-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.sovereign-lead-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: #e2e8f0;
-}
-
-.sovereign-lead-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.sovereign-lead-phone {
-  font-size: 11px;
-  color: #64748b;
-}
-
-.sovereign-lead-pill {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  background: #dcfce7;
-  color: #15803d;
-}
-
-/* Copiloto de IA */
-.sovereign-ai-card {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  color: white;
-  border-radius: 16px;
-  padding: 14px;
-}
-
-.sovereign-ai-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.sovereign-ai-reply {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 11px;
-  color: #e2e8f0;
-  margin-top: 6px;
-  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.sovereign-ai-reply:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: #34d399;
+.sovereign-close-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
   color: white;
+  transform: scale(1.05);
 }
 
-.sovereign-ai-reply::after {
-  content: " ↗ Inserir no WhatsApp";
-  font-size: 9px;
-  color: #34d399;
-  font-weight: 700;
-  float: right;
-}
-
-/* -------------------------------------------------------------
- * SOVEREIGN LOGIN & BROKER PROFILE STYLES
- * ------------------------------------------------------------- */
+/* Card do Perfil do Corretor Ativo */
 .sovereign-broker-bar {
-  background: white;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 12px 16px;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 12px 14px;
+  margin: 14px 16px 0 16px;
+  border: 1px solid var(--sovereign-border);
+  box-shadow: 0 4px 16px rgba(30, 41, 102, 0.03);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -278,13 +191,14 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1;
 }
 
 .sovereign-broker-avatar {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: #3742AC;
+  background: linear-gradient(135deg, #3742AC 0%, #202759 100%);
   color: white;
   display: flex;
   align-items: center;
@@ -292,37 +206,52 @@
   font-weight: 700;
   font-size: 13px;
   flex-shrink: 0;
-  border: 1px solid rgba(55, 66, 172, 0.2);
+  box-shadow: 0 3px 8px rgba(55, 66, 172, 0.2);
 }
 
 .sovereign-broker-name {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--sovereign-slate-900);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sovereign-broker-tenant {
-  font-size: 10px;
-  color: #64748b;
+  font-size: 10.5px;
+  color: var(--sovereign-slate-600);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+}
+
+.sovereign-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sovereign-emerald);
+  box-shadow: 0 0 6px var(--sovereign-emerald);
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .sovereign-btn-logout {
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  color: #475569;
-  font-size: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: var(--sovereign-slate-600);
+  font-size: 10.5px;
   font-weight: 600;
-  padding: 5px 9px;
+  padding: 5px 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  font-family: inherit;
 }
 
 .sovereign-btn-logout:hover {
@@ -331,13 +260,209 @@
   color: #dc2626;
 }
 
+/* Conteúdo Rolável */
+.sovereign-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Scrollbar Estilizada */
+.sovereign-body::-webkit-scrollbar {
+  width: 5px;
+}
+.sovereign-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sovereign-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+.sovereign-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Cards Sovereign */
+.sovereign-card {
+  background: #ffffff;
+  border: 1px solid var(--sovereign-border);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: var(--sovereign-card-shadow);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sovereign-card:hover {
+  box-shadow: var(--sovereign-card-hover-shadow);
+  border-color: rgba(55, 66, 172, 0.18);
+}
+
+.sovereign-card-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #64748b;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Botões Sovereign */
+.sovereign-btn-sync {
+  width: 100%;
+  background: linear-gradient(135deg, #3742AC 0%, #2b348a 100%);
+  color: white;
+  border: none;
+  border-radius: 14px;
+  padding: 11px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(55, 66, 172, 0.24);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sovereign-btn-sync:hover {
+  background: linear-gradient(135deg, #2b348a 0%, #202759 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(55, 66, 172, 0.32);
+}
+
+.sovereign-btn-sync:active {
+  transform: scale(0.98);
+}
+
+.sovereign-progress-bar {
+  width: 100%;
+  height: 7px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 10px;
+  display: none;
+}
+
+.sovereign-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #3742AC 0%, #10b981 100%);
+  transition: width 0.2s ease;
+}
+
+/* Perfil do Lead Ativo */
+.sovereign-lead-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sovereign-lead-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f1f5f9;
+  border: 1px solid var(--sovereign-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #3742AC;
+}
+
+.sovereign-lead-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sovereign-slate-900);
+}
+
+.sovereign-lead-phone {
+  font-size: 11px;
+  color: var(--sovereign-slate-600);
+  margin-top: 1px;
+}
+
+.sovereign-lead-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2.5px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--sovereign-emerald-light);
+  color: var(--sovereign-emerald-text);
+}
+
+/* Copiloto de IA Sovereign */
+.sovereign-ai-card {
+  background: linear-gradient(145deg, #202759 0%, #121636 100%);
+  color: white;
+  border-radius: 22px;
+  padding: 16px;
+  box-shadow: 0 12px 32px rgba(32, 39, 89, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.sovereign-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.sovereign-ai-reply {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: #f1f5f9;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.sovereign-ai-reply:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(52, 211, 153, 0.4);
+  transform: translateY(-1px);
+}
+
+.sovereign-ai-reply::after {
+  content: " ↗ Inserir";
+  font-size: 9.5px;
+  color: #34d399;
+  font-weight: 700;
+}
+
 /* Card de Login Sovereign */
 .sovereign-login-card {
   background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 18px;
-  padding: 20px;
-  box-shadow: 0 4px 20px -2px rgba(55, 66, 172, 0.08);
+  border: 1px solid var(--sovereign-border);
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 8px 30px rgba(55, 66, 172, 0.08);
 }
 
 .sovereign-login-badge {
@@ -348,23 +473,23 @@
   color: #3742AC;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   margin-bottom: 12px;
 }
 
 .sovereign-login-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--sovereign-slate-900);
   margin-bottom: 4px;
 }
 
 .sovereign-login-desc {
-  font-size: 11px;
-  color: #64748b;
-  line-height: 1.4;
-  margin-bottom: 16px;
+  font-size: 11.5px;
+  color: var(--sovereign-slate-600);
+  line-height: 1.45;
+  margin-bottom: 18px;
 }
 
 .sovereign-field {
@@ -381,11 +506,11 @@
 
 .sovereign-input, .sovereign-select {
   width: 100%;
-  padding: 9px 12px;
+  padding: 10px 12px;
   background: #f8fafc;
   border: 1.5px solid #cbd5e1;
-  border-radius: 10px;
-  color: #0f172a;
+  border-radius: 12px;
+  color: var(--sovereign-slate-900);
   font-size: 12px;
   font-family: inherit;
   outline: none;
@@ -396,29 +521,30 @@
 .sovereign-input:focus, .sovereign-select:focus {
   border-color: #3742AC;
   background: white;
-  box-shadow: 0 0 0 3px rgba(55, 66, 172, 0.12);
+  box-shadow: 0 0 0 3px rgba(55, 66, 172, 0.15);
 }
 
 .sovereign-btn-login {
   width: 100%;
-  background: #3742AC;
+  background: linear-gradient(135deg, #3742AC 0%, #202759 100%);
   color: white;
   border: none;
-  border-radius: 12px;
-  padding: 11px;
+  border-radius: 14px;
+  padding: 12px;
   font-size: 13px;
   font-weight: 700;
+  font-family: inherit;
   cursor: pointer;
   transition: all 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 4px 12px rgba(55, 66, 172, 0.25);
+  box-shadow: 0 4px 14px rgba(55, 66, 172, 0.28);
 }
 
 .sovereign-btn-login:hover {
-  background: #2b348a;
+  background: linear-gradient(135deg, #2b348a 0%, #15193c 100%);
   transform: translateY(-1px);
 }
 
@@ -433,7 +559,7 @@
   border: 1px solid #fecaca;
   color: #b91c1c;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
   margin-bottom: 12px;
@@ -456,7 +582,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--sovereign-font);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -472,7 +598,7 @@
   max-width: 500px;
   background: #0f172a;
   border: 1px solid #1e293b;
-  border-radius: 24px;
+  border-radius: 28px;
   padding: 32px 28px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 60px rgba(55, 66, 172, 0.2);
   color: #f8fafc;
@@ -554,7 +680,7 @@
 .brokiva-stat-card {
   background: #1e293b;
   border: 1px solid #334155;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
@@ -582,7 +708,7 @@
 .brokiva-current-lead-card {
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid #334155;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 12px 16px;
   display: flex;
   align-items: center;
@@ -643,7 +769,7 @@
 
 .brokiva-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #3742AC 0%, #059669 100%);
+  background: linear-gradient(90deg, #3742AC 0%, #10b981 100%);
   border-radius: 999px;
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
@@ -669,12 +795,13 @@
   background: transparent;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 6px 14px;
-  border-radius: 10px;
+  padding: 7px 16px;
+  border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  font-family: inherit;
 }
 
 .brokiva-cancel-btn:hover {
@@ -684,22 +811,22 @@
 }
 
 .brokiva-done-btn {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
   border: none;
   padding: 10px 24px;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.4);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
   margin: 10px auto 0;
   display: inline-block;
   transition: all 0.2s;
+  font-family: inherit;
 }
 
 .brokiva-done-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(5, 150, 105, 0.6);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.6);
 }
-

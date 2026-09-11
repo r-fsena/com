@@ -3,77 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <title>Brokiva CRM Sync</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cabin:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600;1,700&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: "Cabin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     body {
-      width: 340px;
+      width: 350px;
       padding: 16px;
-      background: #f8fafc;
+      background: #F0F3FA;
       color: #0f172a;
     }
     .header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 14px;
-      border-bottom: 1px solid #e2e8f0;
       padding-bottom: 12px;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.9);
     }
     .logo-badge {
-      width: 32px;
-      height: 32px;
-      background: #3742AC;
-      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #3742AC 0%, #202759 100%);
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: white;
       font-weight: 800;
-      font-size: 15px;
-      box-shadow: 0 2px 8px rgba(55, 66, 172, 0.25);
+      font-size: 17px;
+      box-shadow: 0 4px 14px rgba(55, 66, 172, 0.28);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      flex-shrink: 0;
     }
     h1 {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 800;
       color: #0f172a;
+      letter-spacing: -0.2px;
     }
     p.sub {
-      font-size: 10px;
+      font-size: 10.5px;
       color: #64748b;
+      margin-top: 1px;
     }
     .badge-v {
       font-size: 10px;
       background: rgba(55, 66, 172, 0.1);
       color: #3742AC;
-      padding: 2px 6px;
-      border-radius: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
       font-weight: 700;
+      border: 1px solid rgba(55, 66, 172, 0.15);
     }
     .card {
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 14px;
-      padding: 14px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      background: #ffffff;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(30, 41, 102, 0.035);
       margin-bottom: 12px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    /* Estilo do Card Conectado */
+    .card:hover {
+      box-shadow: 0 12px 30px rgba(30, 41, 102, 0.055);
+      border-color: rgba(55, 66, 172, 0.18);
+    }
+    /* Card Conectado */
     .broker-header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 12px;
     }
     .broker-avatar {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: #3742AC;
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #3742AC 0%, #202759 100%);
       color: white;
       display: flex;
       align-items: center;
@@ -81,92 +94,127 @@
       font-weight: 700;
       font-size: 14px;
       flex-shrink: 0;
+      box-shadow: 0 4px 10px rgba(55, 66, 172, 0.2);
     }
     .broker-name {
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 700;
       color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .broker-tenant {
       font-size: 11px;
       color: #64748b;
+      margin-top: 1px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .status-pill {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      font-size: 10px;
+      gap: 6px;
+      font-size: 10.5px;
       font-weight: 700;
-      padding: 3px 8px;
+      padding: 4px 10px;
       border-radius: 999px;
       background: #dcfce7;
       color: #15803d;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
+      border: 1px solid rgba(22, 163, 74, 0.2);
+    }
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
     }
     /* Formulário */
     .form-group {
       margin-bottom: 12px;
     }
-    label {
+    label.field-label {
       display: block;
       font-size: 11px;
       font-weight: 700;
       color: #334155;
-      margin-bottom: 4px;
+      margin-bottom: 5px;
     }
-    input, select {
+    input[type="text"], select {
       width: 100%;
-      padding: 8px 10px;
+      padding: 9px 12px;
       background: #f8fafc;
       border: 1.5px solid #cbd5e1;
-      border-radius: 8px;
+      border-radius: 12px;
       color: #0f172a;
       font-size: 12px;
+      font-family: inherit;
       outline: none;
-      transition: border 0.15s ease;
+      transition: all 0.15s ease;
     }
-    input:focus, select:focus {
+    input[type="text"]:focus, select:focus {
       border-color: #3742AC;
       background: white;
+      box-shadow: 0 0 0 3px rgba(55, 66, 172, 0.12);
     }
     .btn-primary {
       width: 100%;
-      background: #3742AC;
+      background: linear-gradient(135deg, #3742AC 0%, #202759 100%);
       color: white;
       border: none;
-      border-radius: 10px;
-      padding: 10px;
-      font-size: 12px;
+      border-radius: 14px;
+      padding: 11px;
+      font-size: 12.5px;
       font-weight: 700;
+      font-family: inherit;
       cursor: pointer;
-      transition: background 0.15s ease;
+      transition: all 0.15s ease;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      margin-top: 6px;
+      gap: 7px;
+      margin-top: 8px;
+      box-shadow: 0 4px 14px rgba(55, 66, 172, 0.25);
     }
     .btn-primary:hover {
-      background: #2b348a;
+      background: linear-gradient(135deg, #2b348a 0%, #15193c 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(55, 66, 172, 0.35);
     }
     .btn-secondary {
       width: 100%;
-      background: #f1f5f9;
+      background: #ffffff;
       color: #334155;
-      border: 1px solid #cbd5e1;
-      border-radius: 10px;
-      padding: 8px;
-      font-size: 11px;
-      font-weight: 600;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 14px;
+      padding: 9px;
+      font-size: 11.5px;
+      font-weight: 700;
+      font-family: inherit;
       cursor: pointer;
-      margin-top: 6px;
+      margin-top: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
+      transition: all 0.15s ease;
     }
     .btn-secondary:hover {
-      background: #e2e8f0;
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      color: #0f172a;
     }
     .btn-logout {
       width: 100%;
@@ -175,9 +223,11 @@
       color: #94a3b8;
       font-size: 11px;
       font-weight: 600;
+      font-family: inherit;
       padding: 8px;
       cursor: pointer;
-      margin-top: 4px;
+      margin-top: 6px;
+      transition: color 0.15s ease;
     }
     .btn-logout:hover {
       color: #dc2626;
@@ -186,11 +236,78 @@
       background: #fef2f2;
       border: 1px solid #fecaca;
       color: #b91c1c;
-      padding: 6px 10px;
-      border-radius: 8px;
+      padding: 8px 12px;
+      border-radius: 10px;
       font-size: 11px;
-      margin-bottom: 10px;
+      font-weight: 600;
+      margin-bottom: 12px;
       display: none;
+    }
+    /* Switch Estilo iOS / Sovereign */
+    .switch-card {
+      background: #ffffff;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 18px;
+      padding: 12px 14px;
+      box-shadow: 0 4px 16px rgba(30, 41, 102, 0.025);
+    }
+    .switch-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+    .switch-text {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #334155;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .switch-container {
+      position: relative;
+      width: 36px;
+      height: 20px;
+    }
+    .switch-input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+    .switch-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #cbd5e1;
+      border-radius: 999px;
+      transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      border-radius: 50%;
+      transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .switch-input:checked + .switch-slider {
+      background-color: #3742AC;
+    }
+    .switch-input:checked + .switch-slider:before {
+      transform: translateX(16px);
+    }
+    .switch-desc {
+      font-size: 9.5px;
+      color: #94a3b8;
+      margin-top: 4px;
+      line-height: 1.35;
     }
   </style>
 </head>
@@ -200,7 +317,7 @@
     <div style="flex:1;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h1>Brokiva</h1>
-        <span class="badge-v" id="versionBadge">v1.0.32</span>
+        <span class="badge-v" id="versionBadge">v1.0.33</span>
       </div>
       <p class="sub">Relacionamentos que viram negócios</p>
     </div>
@@ -213,14 +330,24 @@
         <div id="brokerAvatar" class="broker-avatar">RS</div>
         <div style="min-width:0; flex:1;">
           <div id="brokerName" class="broker-name">Rafael Sena</div>
-          <div id="brokerTenant" class="broker-tenant">Amábile Barbarotti Imóveis</div>
+          <div id="brokerTenant" class="broker-tenant">
+            <span class="pulse-dot"></span>
+            <span>Amábile Barbarotti Imóveis</span>
+          </div>
         </div>
       </div>
       <div class="status-pill">
-        <span>●</span> Conectado & Sincronizando
+        <span class="pulse-dot"></span>
+        <span>Conectado & Sincronizando</span>
       </div>
-      <button id="openWaBtn" class="btn-primary">💬 Abrir WhatsApp Web</button>
-      <button id="openCrmBtn" class="btn-secondary">↗ Acessar Brokiva CRM</button>
+      <button id="openWaBtn" class="btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Abrir WhatsApp Web</span>
+      </button>
+      <button id="openCrmBtn" class="btn-secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        <span>Acessar Brokiva CRM</span>
+      </button>
       <button id="logoutBtn" class="btn-logout">Trocar Corretor / Desconectar</button>
     </div>
   </div>
@@ -231,36 +358,43 @@
       <div id="errorMsg" class="error-msg"></div>
 
       <div class="form-group">
-        <label for="tenantSelect">Imobiliária / Espaço:</label>
+        <label class="field-label" for="tenantSelect">Imobiliária / Espaço:</label>
         <select id="tenantSelect">
           <option value="tenant-amabile-barbarotti" selected>Amábile Barbarotti Imóveis</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label for="brokerInput">Seu Nome ou E-mail:</label>
+        <label class="field-label" for="brokerInput">Seu Nome ou E-mail:</label>
         <input type="text" id="brokerInput" value="Rafael Sena" placeholder="Ex: Rafael Sena">
       </div>
 
       <div class="form-group">
-        <label for="crmUrlInput">Servidor do CRM:</label>
+        <label class="field-label" for="crmUrlInput">Servidor do CRM:</label>
         <input type="text" id="crmUrlInput" value="https://crm.faithhubs.com" placeholder="https://crm.faithhubs.com">
       </div>
 
-      <button id="loginBtn" class="btn-primary">✦ Conectar Extensão</button>
+      <button id="loginBtn" class="btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        <span>Conectar Extensão</span>
+      </button>
     </div>
   </div>
 
-    <!-- FERRAMENTAS AVANÇADAS / FEATURE FLAG (PADRÃO: DESATIVADO) -->
-  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-top: 6px;">
-    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;">
-      <span style="font-size: 11px; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 5px;">
-        🛠️ Ferramentas de Diagnóstico
+  <!-- FERRAMENTAS AVANÇADAS / FEATURE FLAG -->
+  <div class="switch-card">
+    <label class="switch-label">
+      <span class="switch-text">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Ferramentas de Diagnóstico</span>
       </span>
-      <input type="checkbox" id="developerModeToggle" style="cursor: pointer; width: 15px; height: 15px; accent-color: #3742AC;">
+      <div class="switch-container">
+        <input type="checkbox" id="developerModeToggle" class="switch-input">
+        <span class="switch-slider"></span>
+      </div>
     </label>
-    <p style="font-size: 9.5px; color: #94a3b8; margin-top: 4px; line-height: 1.3;">
-      Habilita o passo a passo de diagnóstico e o console CloudWatch na barra do WhatsApp Web. (Padrão: Oculto para clientes).
+    <p class="switch-desc">
+      Habilita diagnóstico e telemetria avançada na barra do WhatsApp Web. (Padrão: Oculto para clientes).
     </p>
   </div>
 

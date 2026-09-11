@@ -55,7 +55,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const displayName = config.brokerName || 'Corretor';
       brokerNameEl.textContent = displayName;
-      brokerTenantEl.textContent = config.tenantName || 'Amábile Barbarotti Imóveis';
+      const tenantDisplayName = config.tenantName || 'Amábile Barbarotti Imóveis';
+      brokerTenantEl.innerHTML = `<span class="pulse-dot"></span> <span>${tenantDisplayName}</span>`;
 
       const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
       brokerAvatarEl.textContent = initials || 'BR';

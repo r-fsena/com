@@ -318,18 +318,22 @@
   function safeSendMessage(payload, callback) {
     try {
       if (!chrome?.runtime?.id) {
-        if (callback) callback(null);
+        console.warn('[Brokiva] Contexto da extensão invalidado. Atualize a página do WhatsApp Web (F5).');
+        if (callback) callback({ success: false, error: 'Contexto da extensão invalidado após atualização. Por favor, recarregue esta página do WhatsApp Web (F5).' });
         return;
       }
       chrome.runtime.sendMessage(payload, (res) => {
         if (chrome.runtime.lastError) {
-          if (callback) callback(null);
+          const errMsg = chrome.runtime.lastError.message || 'Falha na comunicação com o worker da extensão';
+          console.warn('[Brokiva safeSendMessage] lastError:', errMsg);
+          if (callback) callback({ success: false, error: `${errMsg}. Recarregue a página do WhatsApp Web (F5).` });
           return;
         }
-        if (callback) callback(res);
+        if (callback) callback(res || { success: false, error: 'Resposta vazia do worker' });
       });
     } catch (e) {
-      if (callback) callback(null);
+      console.warn('[Brokiva safeSendMessage] Exception:', e);
+      if (callback) callback({ success: false, error: e?.message || 'Falha na execução do script da extensão' });
     }
   }
 
@@ -1694,9 +1698,15 @@
         }
         alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!`);
       } else {
-        logToConsoleAndCloudWatch('ERROR', 'SYNC_SINGLE_FAILED', `Falha ao sincronizar: ${response?.error || 'Erro desconhecido'}`);
+        const err = response?.error || 'Erro desconhecido na sincronização.';
+        logToConsoleAndCloudWatch('ERROR', 'SYNC_SINGLE_FAILED', `Falha ao sincronizar: ${err}`);
         if (badge) badge.innerText = 'Erro';
-        console.error('[Brokiva] Erro ao sincronizar conversa atual:', response?.error);
+        console.error('[Brokiva] Erro ao sincronizar conversa atual:', err);
+        if (err.includes('recarregue') || err.includes('Recarregue') || err.includes('Atualize') || err.includes('invalidated')) {
+          alert(`⚠️ Conexão reiniciada:\n\nA extensão Brokiva foi recarregada no navegador. Por favor, dê F5 (ou Cmd+R) na página do WhatsApp Web para reconectar.`);
+        } else {
+          alert(`Erro ao sincronizar: ${err}`);
+        }
       }
     });
   }

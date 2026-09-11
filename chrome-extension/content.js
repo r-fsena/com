@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.22';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.23';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -893,6 +893,82 @@
     return null;
   }
 
+  // Extrai data pura (Date com meio-dia) de string data-pre-plain-text
+  function extractDateFromPrePlain(rawPre) {
+    if (!rawPre) return null;
+    const clean = rawPre.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
+    const timeMatch = clean.match(/\[(.*?)\]/);
+    if (!timeMatch || !timeMatch[1]) return null;
+    const rawTime = timeMatch[1].trim();
+    const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
+    if (brMatch) {
+      const d = Number(brMatch[4]), mo = Number(brMatch[5]) - 1;
+      let y = Number(brMatch[6]);
+      if (y < 100) y += 2000;
+      const dt = new Date(y, mo, d, 12, 0, 0);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+    const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/i);
+    if (usMatch) {
+      const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
+      let y = Number(usMatch[7]);
+      if (y < 100) y += 2000;
+      const dt = new Date(y, mo, d, 12, 0, 0);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+    return null;
+  }
+
+  // Resolve a data exata de um balão inspecionando vizinhos anteriores e posteriores no DOM
+  function getContextualDateForContainer(container, currentWalkingDateIso) {
+    const parentRow = container.closest?.('div[role="row"]') || container;
+
+    // 1. Procura para trás (mensagens anteriores no mesmo bloco de chat)
+    let curr = parentRow.previousElementSibling;
+    let stepsBack = 0;
+    while (curr && stepsBack < 30) {
+      const text = (curr.innerText || '').trim();
+      if (text && text.length < 50) {
+        const parsed = parsePortugueseWhatsAppDate(text);
+        if (parsed) return parsed;
+      }
+      const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
+      if (preNode) {
+        const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
+        const dt = extractDateFromPrePlain(rawPre);
+        if (dt) return dt;
+      }
+      curr = curr.previousElementSibling;
+      stepsBack++;
+    }
+
+    // 2. Procura para a frente (mensagens posteriores no mesmo bloco de chat)
+    curr = parentRow.nextElementSibling;
+    let stepsForward = 0;
+    while (curr && stepsForward < 30) {
+      const text = (curr.innerText || '').trim();
+      if (text && text.length < 50) {
+        const parsed = parsePortugueseWhatsAppDate(text);
+        if (parsed) return parsed;
+      }
+      const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
+      if (preNode) {
+        const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
+        const dt = extractDateFromPrePlain(rawPre);
+        if (dt) return dt;
+      }
+      curr = curr.nextElementSibling;
+      stepsForward++;
+    }
+
+    if (currentWalkingDateIso) {
+      const parsed = new Date(currentWalkingDateIso);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+
+    return new Date();
+  }
+
   // Coleta balões de mensagem do DOM de #main e insere em um Map deduplicado
   function harvestDomMessages(messagesMap, fallbackPhone = '') {
     const main = document.querySelector('#main');
@@ -1237,17 +1313,20 @@
         }
       }
 
-      // Se não veio no prePlain (comum em mídias, fotos e documentos), combina o horário do balão com a data do fluxo
       if (!msgTime) {
+        // Se não veio no prePlain (comum em mídias, fotos e documentos), combina o horário do balão com a data contextual do bloco
+        const contextualDate = getContextualDateForContainer(container, currentWalkingDateIso);
         const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
         if (timeMatch) {
-          const base = currentWalkingDateIso ? new Date(currentWalkingDateIso) : new Date();
-          base.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
-          msgTime = base.toISOString();
+          const d = new Date(contextualDate.getTime());
+          d.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+          msgTime = d.toISOString();
         } else {
-          msgTime = currentWalkingDateIso || new Date().toISOString();
+          msgTime = contextualDate.toISOString();
         }
       }
+
+
 
       // 9. Deduplicação e armazenamento no Map
       const effectiveDataId = isRealMsgKey ? rawDataId : '';

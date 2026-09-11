@@ -172,10 +172,19 @@ export async function POST(req: NextRequest) {
           // Se o conteúdo for puramente vazio, horário ou ruído, atribui fallback limpo ou descarta
           if (!cleanContent || /^\d{1,2}:\d{2}$/.test(cleanContent) || /^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(cleanContent)) {
             if (m.messageType === 'AUDIO') cleanContent = '🎵 Mensagem de Voz';
-            else if (m.messageType === 'IMAGE') cleanContent = '📷 Foto';
+            else if (m.messageType === 'IMAGE') {
+              if (!m.mediaUrl) return; // Descarta foto fantasma sem mídia
+              cleanContent = '📷 Foto';
+            }
             else if (m.messageType === 'DOCUMENT') cleanContent = '📄 Documento';
             else if (!m.mediaUrl) return; // Descarta balão de ruído/sistema sem conteúdo
           }
+
+          // Descarta mensagens fantasmas de fotos geradas sem arquivo e sem ID nativo do WhatsApp
+          const isGhostPhoto = (m.messageType === 'IMAGE' || cleanContent === '📷 Foto') &&
+                               !m.mediaUrl &&
+                               (!m.id || (!m.id.startsWith('true_') && !m.id.startsWith('false_')));
+          if (isGhostPhoto) return;
 
           // Se foi enviado como AUDIO mas contém texto real digitado pelo usuário, é uma mensagem de TEXTO legítima
           if (m.messageType === 'AUDIO' && cleanContent && !cleanContent.includes('Mensagem de Voz') && !cleanContent.includes('[Áudio]')) {

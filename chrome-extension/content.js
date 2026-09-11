@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.14';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.15';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -826,27 +826,24 @@
     const main = document.querySelector('#main');
     if (!main) return;
 
-    const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
+    // Apenas balões de mensagens autênticos: message-in ou message-out (nunca nós soltos com role="row")
+    const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out'));
     const uniqueRootContainers = [];
     const seenContainers = new Set();
 
     for (const el of rawBubbleElements) {
-      const bubble = (el.classList?.contains('message-in') || el.classList?.contains('message-out'))
-        ? el
-        : (el.querySelector?.('.message-in, .message-out') || el);
-
-      if (seenContainers.has(bubble)) continue;
-      seenContainers.add(bubble);
+      if (seenContainers.has(el)) continue;
+      seenContainers.add(el);
 
       // Descarta avisos de sistema e containers de data/hora no topo
       const isSystemContainer = Boolean(
-        bubble.closest?.('[data-testid*="system"]') ||
-        bubble.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
-        (bubble.getAttribute?.('class') || '').includes('system')
+        el.closest?.('[data-testid*="system"]') ||
+        el.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
+        (el.getAttribute?.('class') || '').includes('system')
       );
       if (isSystemContainer) continue;
 
-      uniqueRootContainers.push(bubble);
+      uniqueRootContainers.push(el);
     }
 
     // Tenta encontrar uma data de referência no chat caso as mensagens iniciais sejam áudios ou anexos
@@ -917,6 +914,11 @@
         'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu'
       ).forEach(el => el.remove());
 
+      // Remove pílulas e balões de reações para não tratar emojis como fotos ou texto fantasma
+      clone.querySelectorAll(
+        '[data-testid*="reaction"], [aria-label*="reaç" i], [aria-label*="reaction" i], div._amkw, div._amkx, span.x1i10hfl'
+      ).forEach(el => el.remove());
+
       // 1. Identificação de Tipo de Mídia (Vídeo, Documento, Imagem, Áudio PTT)
       const hasVideo = Boolean(
         container.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"], button[aria-label*="vídeo" i]')
@@ -924,8 +926,11 @@
       const hasDoc = Boolean(
         container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]')
       );
+      // Imagem ESTRITA: deve possuir container de mídia oficial do WhatsApp ou imagem blob real.
+      // NUNCA usar img[src*="data:"] pois no WhatsApp Web todos os emojis e reações são data-URLs!
       const hasImg = !hasVideo && Boolean(
-        container.querySelector('img[src*="blob:"], img[src*="data:"], div[data-testid="image-thumb"]')
+        container.querySelector('div[data-testid="image-thumb"], div[data-testid="media-image"], div[data-testid="image-wrapper"]') ||
+        container.querySelector('img[src*="blob:"]:not(.emoji):not([data-plain-text]):not([data-testid*="avatar"])')
       );
       // Áudio ESTRITO: NUNCA usar seletores genéricos como 'Reproduzir', 'Play' ou 'ic-fast-forward'!
       // No WhatsApp Web, mensagens de voz PTT possuem player dedicado ou waveform.
@@ -1003,8 +1008,9 @@
         content = userTypedText;
       }
 
-      // 5. Descarta definitivamente se não houver conteúdo real ou se for aviso de sistema
+      // Descarta mensagens puramente vazias, avisos de sistema ou fotos fantasmas sem imagem real
       if (!content || isWhatsAppSystemMessage(content)) return;
+      if ((content === '📷 Foto' || content === 'Foto') && !hasImg) return;
 
       // Validação final de segurança: impede que qualquer string que seja puramente tamanho de arquivo ou ruído seja enviada
       if (
@@ -1119,13 +1125,20 @@
 
       // Se não veio no prePlain (comum em áudios e anexos), extrai o horário do balão e herda a data de referência
       if (!msgTime) {
-        const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+        const timeEl = container.querySelector('[data-testid="msg-meta"], [data-testid*="time"], span.x1rg5ohu, div._amjz');
+        const timeText = (timeEl ? timeEl.innerText : container.innerText) || '';
+        const timeMatch = timeText.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
         if (timeMatch) {
           const base = lastKnownDateIso ? new Date(lastKnownDateIso) : new Date();
           base.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
           msgTime = base.toISOString();
+        } else if (lastKnownDateIso && isRealMsgKey) {
+          msgTime = lastKnownDateIso;
+        } else if (isRealMsgKey) {
+          msgTime = new Date().toISOString();
         } else {
-          msgTime = lastKnownDateIso || new Date().toISOString();
+          // Se não possui carimbo de hora nem chave real de mensagem do WhatsApp, é um nó fantasma (ex: reação, botão, painel)
+          return;
         }
       }
 

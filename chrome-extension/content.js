@@ -1075,17 +1075,23 @@ const PT_MONTH_NAMES = {
     if (!main) return;
 
     // Coleta todos os elementos do chat em ordem cronológica de cima para baixo
-    const rawElements = Array.from(main.querySelectorAll('div[role="row"], div.message-in, div.message-out, div[data-testid*="system"]'));
+    // Evita duplicidade entre div[role="row"] que já contenha balões filhos específicos (.message-in / .message-out)
+    const allCandidates = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"], div[data-testid*="system"]'));
     const uniqueElements = [];
     const seenElements = new Set();
 
-    for (const el of rawElements) {
+    for (const el of allCandidates) {
+      if (el.getAttribute('role') === 'row' && el.querySelector('.message-in, .message-out')) {
+        continue;
+      }
       if (seenElements.has(el)) continue;
       seenElements.add(el);
       uniqueElements.push(el);
     }
 
     let currentWalkingDateIso = '';
+    let lastSeenValidTimeMs = 0;
+    let lastDeterminedFromMe = null;
 
     // Pré-carrega uma data inicial do topo se houver
     const initialDateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[role="row"] span[dir="auto"]'));
@@ -1115,12 +1121,13 @@ const PT_MONTH_NAMES = {
         }
       }
 
-      // 2. Determina o container do balão de mensagem
+      // 2. Determina o container do balão de mensagem e row pai
       const container = (element.classList?.contains('message-in') || element.classList?.contains('message-out'))
         ? element
         : (element.querySelector?.('.message-in, .message-out') || element);
+      const parentRow = container.closest?.('div[role="row"]') || container;
 
-      // Localiza nó com data-id ESTRITAMENTE associado à mensagem
+      // Localiza nó com data-id associado à mensagem
       let actualDataId = '';
       if (container.hasAttribute?.('data-id')) {
         actualDataId = container.getAttribute('data-id') || '';
@@ -1128,11 +1135,8 @@ const PT_MONTH_NAMES = {
         const childWithId = container.querySelector?.('[data-id]');
         if (childWithId) {
           actualDataId = childWithId.getAttribute('data-id') || '';
-        } else {
-          const parentRow = container.closest?.('div[role="row"]');
-          if (parentRow && parentRow.hasAttribute?.('data-id')) {
-            actualDataId = parentRow.getAttribute('data-id') || '';
-          }
+        } else if (parentRow && parentRow.hasAttribute?.('data-id')) {
+          actualDataId = parentRow.getAttribute('data-id') || '';
         }
       }
 
@@ -1140,15 +1144,11 @@ const PT_MONTH_NAMES = {
         return;
       }
 
-      // Validação estrita de ID de mensagem do WhatsApp
-      const isRealMsgKey = Boolean(
-        actualDataId &&
-        /^(true|false)_[^@]+@(c\.us|s\.whatsapp\.net|lid)_[A-Za-z0-9\.\-_]+$/i.test(actualDataId)
-      );
-
+      // Validação resiliente de ID de mensagem do WhatsApp
+      const isDataIdFromMe = actualDataId.startsWith('true_') || Boolean(container.closest?.('[data-id^="true_"]'));
+      const isDataIdFromContact = actualDataId.startsWith('false_') || Boolean(container.closest?.('[data-id^="false_"]'));
+      const isRealMsgKey = isDataIdFromMe || isDataIdFromContact;
       const rawDataId = isRealMsgKey ? actualDataId : '';
-      const isDataIdFromMe = isRealMsgKey && rawDataId.startsWith('true_');
-      const isDataIdFromContact = isRealMsgKey && rawDataId.startsWith('false_');
 
       // 3. Extração de texto isolando citação/resposta anterior (Quote) e metadados de hora
       const clone = container.cloneNode(true);
@@ -1347,27 +1347,42 @@ const PT_MONTH_NAMES = {
         return;
       }
 
-      // 7. Identificação de autoria (Você / Corretor vs Cliente)
+      // 7. Identificação de autoria (Você / Corretor vs Cliente) com múltiplos níveis de confirmação
       const prePlainNode = container.hasAttribute?.('data-pre-plain-text') ? container :
-                           (container.querySelector?.('[data-pre-plain-text]') || container.closest?.('[data-pre-plain-text]'));
+                           (container.querySelector?.('[data-pre-plain-text]') || parentRow.querySelector?.('[data-pre-plain-text]') || container.closest?.('[data-pre-plain-text]'));
       const rawPrePlain = prePlainNode ? (prePlainNode.getAttribute('data-pre-plain-text') || '') : '';
       const cleanPrePlain = rawPrePlain.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
 
       const isMessageOut = Boolean(
         container.classList?.contains?.('message-out') ||
         container.querySelector?.('.message-out') ||
-        container.closest?.('.message-out')
+        container.closest?.('.message-out') ||
+        parentRow.classList?.contains?.('message-out') ||
+        parentRow.querySelector?.('.message-out')
       );
 
       const isMessageIn = Boolean(
         container.classList?.contains?.('message-in') ||
         container.querySelector?.('.message-in') ||
-        container.closest?.('.message-in')
+        container.closest?.('.message-in') ||
+        parentRow.classList?.contains?.('message-in') ||
+        parentRow.querySelector?.('.message-in')
       );
 
-      const hasOutgoingCheckmark = Boolean(container.querySelector(
-        'span[data-icon="msg-dblcheck"], span[data-icon="msg-check"], span[data-icon="msg-time"], span[data-testid*="check"]'
-      ));
+      const hasTailOut = Boolean(
+        container.querySelector?.('[data-icon*="tail-out"]') ||
+        parentRow.querySelector?.('[data-icon*="tail-out"]')
+      );
+
+      const hasTailIn = Boolean(
+        container.querySelector?.('[data-icon*="tail-in"]') ||
+        parentRow.querySelector?.('[data-icon*="tail-in"]')
+      );
+
+      const hasOutgoingCheckmark = Boolean(
+        container.querySelector?.('span[data-icon*="check"], span[data-icon*="dblcheck"], span[data-icon="msg-time"], span[data-testid*="check"], span[data-testid*="status"]') ||
+        parentRow.querySelector?.('span[data-icon*="check"], span[data-icon*="dblcheck"], span[data-icon="msg-time"], span[data-testid*="check"]')
+      );
 
       const isPrePlainFromMe = Boolean(
         /(?:\[.*?\]\s*)?(?:você|voce|you)\s*:/i.test(cleanPrePlain) ||
@@ -1377,32 +1392,62 @@ const PT_MONTH_NAMES = {
 
       let hasOutgoingBg = false;
       try {
-        const bg = window.getComputedStyle(container).backgroundColor || '';
-        if (bg.includes('217, 253, 211') || bg.includes('0, 92, 75') || bg.includes('217, 253') || bg.includes('0, 92')) {
-          hasOutgoingBg = true;
+        const bgCandidates = [container, parentRow, container.firstElementChild];
+        for (const el of bgCandidates) {
+          if (!el) continue;
+          const bg = window.getComputedStyle(el).backgroundColor || '';
+          if (bg.includes('217, 253, 211') || bg.includes('0, 92, 75') || bg.includes('217, 253') || bg.includes('0, 92')) {
+            hasOutgoingBg = true;
+            break;
+          }
+        }
+      } catch (e) {}
+
+      // Verificação visual geométrica (mensagens de saída ficam alinhadas à direita do chat)
+      let isVisuallyRightAligned = false;
+      try {
+        const rowRect = parentRow.getBoundingClientRect();
+        const boxRect = container.getBoundingClientRect();
+        if (rowRect.width > 200 && boxRect.width > 50) {
+          const rightDist = rowRect.right - boxRect.right;
+          const leftDist = boxRect.left - rowRect.left;
+          if (rightDist < 140 && leftDist > 60) {
+            isVisuallyRightAligned = true;
+          }
         }
       } catch (e) {}
 
       let isFromMe = false;
       if (isDataIdFromMe) {
         isFromMe = true;
+      } else if (isDataIdFromContact) {
+        isFromMe = false;
+      } else if (hasTailOut) {
+        isFromMe = true;
+      } else if (hasTailIn) {
+        isFromMe = false;
       } else if (isMessageOut) {
         isFromMe = true;
+      } else if (isMessageIn) {
+        isFromMe = false;
       } else if (isPrePlainFromMe) {
         isFromMe = true;
       } else if (hasOutgoingCheckmark) {
         isFromMe = true;
       } else if (hasOutgoingBg) {
         isFromMe = true;
-      } else if (isDataIdFromContact) {
-        isFromMe = false;
-      } else if (isMessageIn) {
-        isFromMe = false;
+      } else if (isVisuallyRightAligned) {
+        isFromMe = true;
+      } else if (lastDeterminedFromMe !== null && !isMessageIn && !hasTailIn) {
+        // Herança de cluster sequencial (ex: foto de comprovante enviada em sequência imediata a uma mensagem do corretor)
+        isFromMe = lastDeterminedFromMe;
       } else {
         isFromMe = false;
       }
 
-      // 8. Extração e Resolução Robusta de Data e Hora
+      lastDeterminedFromMe = isFromMe;
+
+      // 8. Extração e Resolução Robusta de Data e Hora com Garantia de Ordem Monotônica
       let msgTime = '';
       if (cleanPrePlain) {
         const dt = parseWhatsAppTimestamp(cleanPrePlain);
@@ -1413,26 +1458,64 @@ const PT_MONTH_NAMES = {
       }
 
       if (!msgTime) {
-        // Se não veio no prePlain (comum em mídias, fotos e documentos), combina o horário do balão com a data contextual do bloco
-        const contextualDate = getContextualDateForContainer(container, currentWalkingDateIso);
-        const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-        if (timeMatch) {
-          const d = new Date(contextualDate.getTime());
-          d.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+        // Tenta extrair hora explícita do balão (meta, time, aria-label ou innerText)
+        const timeCandidates = [
+          container.querySelector('[data-testid="msg-meta"]')?.innerText,
+          container.querySelector('[data-testid*="time"]')?.innerText,
+          container.querySelector('span[dir="auto"]')?.innerText,
+          container.querySelector('div._amjz')?.innerText,
+          container.getAttribute?.('aria-label'),
+          parentRow.getAttribute?.('aria-label'),
+          container.innerText
+        ];
 
-          // PROTEÇÃO CONTRA MENSAGENS NO FUTURO:
-          // Se a hora cair no futuro em relação a agora, esta mensagem de mídia NUNCA pode ser de hoje!
+        let foundHour = null;
+        let foundMin = null;
+        for (const cand of timeCandidates) {
+          if (!cand) continue;
+          const cleanCand = cand.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ');
+          const m = cleanCand.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+          if (m) {
+            foundHour = Number(m[1]);
+            foundMin = Number(m[2]);
+            break;
+          }
+        }
+
+        const contextualDate = getContextualDateForContainer(container, currentWalkingDateIso);
+        if (foundHour !== null && foundMin !== null) {
+          const d = new Date(contextualDate.getTime());
+          d.setHours(foundHour, foundMin, 0, 0);
+
+          // PROTEÇÃO CONTRA MENSAGENS NO FUTURO
           if (d.getTime() > Date.now() + 60000) {
             d.setDate(d.getDate() - 1);
           }
-
           msgTime = d.toISOString();
+        } else if (lastSeenValidTimeMs > 0) {
+          // SE NÃO TEM HORA EXPLÍCITA (ex: foto/mídia sem legenda):
+          // No DOM do WhatsApp, a ordem física é estritamente cronológica.
+          // Logo, a mídia foi enviada logo após a mensagem anterior!
+          msgTime = new Date(lastSeenValidTimeMs + 1000).toISOString();
         } else {
           msgTime = contextualDate.toISOString();
         }
       }
 
-
+      // GARANTIA DE MONOTONICIDADE CRONOLÓGICA:
+      // O DOM do WhatsApp caminha estritamente para a frente.
+      // Se o horário calculado cair antes da mensagem anterior no mesmo bloco de chat,
+      // herda o timestamp imediatamente posterior para preservar a ordem física perfeita no CRM!
+      const currentParsedMs = new Date(msgTime).getTime();
+      if (!isNaN(currentParsedMs)) {
+        if (lastSeenValidTimeMs > 0 && currentParsedMs < lastSeenValidTimeMs) {
+          msgTime = new Date(lastSeenValidTimeMs + 1000).toISOString();
+          lastSeenValidTimeMs = lastSeenValidTimeMs + 1000;
+        } else {
+          lastSeenValidTimeMs = Math.max(lastSeenValidTimeMs, currentParsedMs);
+        }
+        currentWalkingDateIso = msgTime;
+      }
 
       // 9. Deduplicação e armazenamento no Map
       const effectiveDataId = isRealMsgKey ? rawDataId : '';
@@ -1452,6 +1535,7 @@ const PT_MONTH_NAMES = {
       }
     });
   }
+
 
   let lastLeadSignature = '';
 

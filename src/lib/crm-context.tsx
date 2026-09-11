@@ -2262,6 +2262,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           return {
             ...c,
             isPersonal: nextPersonalState,
+            ...(nextPersonalState ? {
+              preferredPropertyType: undefined,
+              monthlyIncome: undefined,
+              downPaymentAvailable: undefined,
+              maxPropertyValue: undefined,
+              targetRegions: [],
+              temperature: 'COLD' as const,
+              aiPriorityScore: 0,
+            } : {}),
             updatedAt: new Date().toISOString(),
           };
         }
@@ -3078,6 +3087,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     if (isPersonal) {
       updates.isPersonal = true;
+      updates.preferredPropertyType = undefined;
+      updates.monthlyIncome = undefined;
+      updates.downPaymentAvailable = undefined;
+      updates.maxPropertyValue = undefined;
+      updates.targetRegions = [];
+      updates.temperature = 'COLD';
+      updates.aiPriorityScore = 0;
     } else {
       if (insight.extractedData.urgencyLevel === 'ALTA') {
         updates.temperature = 'HOT';

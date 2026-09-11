@@ -88,14 +88,21 @@ export class BedrockCopilotClient {
 
     // 0. Classificação Prévia da Natureza do Diálogo
     // Detecta se a conversa tem termos e intenção imobiliária genuína
-    const realEstateKeywordsRegex = /\b(im[oó]vel|im[oó]veis|apartamento|apartamentos|apto|aptos|casa\b|casas\b|cobertura|terreno|terrenos|lote\b|lotes\b|condom[íi]nio|empreendimento|lan[çc]amento|planta\b|decorado|visita\s+ao\s+im[oó]vel|plant[ãa]o|corretor|corretora|imobili[áa]ria|financiamento\s+imobili[áa]rio|financiar\s+im[oó]vel|fgts|proposta\s+de\s+compra|permuta\s+de\s+im[oó]vel|aluguel|alugar|loca[çc][ãa]o|comprar\s+im[oó]vel|compra\s+de\s+im[oó]vel|escritura|habite-se)\b/i;
+    const realEstateKeywordsRegex = /\b(im[oó]vel|im[oó]veis|apartamento|apartamentos|apto|aptos|cobertura|coberturas|penthouse|terreno|terrenos|loteamento|lotes?\s+residenciais?|casa\s+em\s+condom[íi]nio|casa\s+de\s+condom[íi]nio|condom[íi]nio\s+fechado|casa\s+t[ée]rrea|sobrado|mans[ãa]o|casa\s+de\s+alto\s+padr[ãa]o|(?:comprar|procura(?:ndo)?|busca(?:ndo)?|quer(?:o)?|interesse\s+em)\s+(?:uma?\s+)?casa|empreendimento|lan[çc]amento\s+imobili[áa]rio|im[oó]vel\s+na\s+planta|planta\s+humanizada|planta\s+baixa|decorado|visita\s+ao\s+im[oó]vel|visitar\s+(?:o\s+)?im[oó]vel|plant[ãa]o\s+de\s+vendas|corretor|corretora|imobili[áa]ria|financiamento\s+imobili[áa]rio|financiar\s+im[oó]vel|fgts|proposta\s+de\s+compra|permuta\s+de\s+im[oó]vel|aluguel\s+de\s+im[oó]vel|loca[çc][ãa]o\s+de\s+im[oó]vel|escritura|habite-se)\b/i;
 
-    const hasRealEstateContext = realEstateKeywordsRegex.test(fullText);
+    const personalIndicatorsRegex = /\b(amor\b|vida\b|meu\s+bem|mozi|marido\b|esposa\b|filho\b|filha\b|m[ãa]e\b|pai\b|irm[ãa]\b|maninho\b|p[ãa]o\b|chapa\b|almo[çc]o|jantar|caf[ée]|mercado\b|compras|dormir|acord(ar|ei|ou)|em\s+casa\b|pra\s+casa\b|para\s+casa\b|indo\s+pra|t[ôo]\s+chegando|chegando\s+em|t[ôo]\s+aqui|to\s+aqui)\b/i;
 
-    // SE A CONVERSA FOR PURAMENTE PESSOAL OU OPERACIONAL (não imobiliária):
-    if (!hasRealEstateContext) {
+    const contactNameLower = (contactContext?.name || '').toLowerCase();
+    const isKnownPersonalContact = contactContext?.tags?.some((t: string) => t.toLowerCase().includes('pessoal')) ||
+      ['amor', 'esposa', 'marido', 'mãe', 'pai', 'filho', 'filha', 'irmão', 'irmã'].some(n => contactNameLower.includes(n));
+
+    const hasExplicitRealEstateIntent = realEstateKeywordsRegex.test(fullText);
+    const hasPersonalContext = personalIndicatorsRegex.test(fullText) || isKnownPersonalContact;
+
+    // Se NÃO houver intenção imobiliária explícita, ou se houver contexto pessoal sem compra de imóvel:
+    if (!hasExplicitRealEstateIntent || (hasPersonalContext && !/(comprar|financiamento|visita\s+ao\s+imóvel|proposta|lançamento)/i.test(fullText))) {
       const hasPaymentMentions = /(comprovante|pagamento|paguei|transfer[êe]ncia|pix|dep[oó]sito|conta\b|valor\b|banco\b|r\$)/i.test(fullText);
-      const hasRoutineMentions = /(p[ãa]o|chapa|almo[çc]o|jantar|cheg(ou|amos|ei)|amor|quer\b|vida\b|fam[íi]lia|filh)/i.test(fullText);
+      const hasRoutineMentions = /(p[ãa]o|chapa|almo[çc]o|jantar|cheg(ou|amos|ei)|amor|quer\b|vida\b|fam[íi]lia|filh|rotina)/i.test(fullText);
 
       let factualSummary = 'Conversa de cunho pessoal ou informal, sem menção a transações imobiliárias.';
       if (hasPaymentMentions && hasRoutineMentions) {
@@ -141,7 +148,7 @@ export class BedrockCopilotClient {
         sentiment: 'POSITIVE',
         intent: 'DUVIDA_GERAL',
         suggestedResponse: 'Perfeito, recebido por aqui! Obrigado.',
-        confidenceScore: 95,
+        confidenceScore: 98,
       };
     }
 
@@ -331,7 +338,7 @@ export class BedrockCopilotClient {
       }
 
       // Casa
-      if (/\b(casa em condom[íi]nio|casa de condom[íi]nio|condom[íi]nio fechado|casa t[ée]rrea|sobrado|mans[ãa]o|casa)\b/i.test(text)) {
+      if (/\b(casa em condom[íi]nio|casa de condom[íi]nio|condom[íi]nio fechado|casa t[ée]rrea|sobrado|mans[ãa]o|casa de alto padr[ãa]o|(?:comprar|procura(?:ndo)?|busca(?:ndo)?|quer(?:o)?|interesse em)\s+(?:uma?\s+)?casa)\b/i.test(text)) {
         scores['Casa em Condomínio'] += 3 * weight;
       }
 

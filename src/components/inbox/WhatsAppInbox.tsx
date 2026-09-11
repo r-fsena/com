@@ -486,19 +486,23 @@ export function WhatsAppInbox() {
   }, [activeConversation?.id, activeMessages.length]);
 
   // Jornada e Prontidão de Qualificação do Lead (MQL -> SQL)
-  // Sem pontuação fictícia de base: pontua estritamente dados reais coletados
-  const hasPropertyInterest = Boolean(activeContact?.preferredPropertyType);
-  const hasFinancialData = Boolean((activeContact?.maxPropertyValue && activeContact.maxPropertyValue > 0) || (activeContact?.downPaymentAvailable && activeContact.downPaymentAvailable > 0) || (activeContact?.monthlyIncome && activeContact.monthlyIncome > 0));
-  const hasRegionInterest = Boolean((activeContact?.targetRegions || []).length > 0 && !activeContact?.targetRegions?.includes('Geral') && !activeContact?.targetRegions?.includes('Região Central / Metropolitana'));
-  const hasEngagement = Boolean(activeContact?.temperature === 'HOT');
+  // Sem pontuação fictícia de base: contatos pessoais ou sem dados reais ficam estritamente em 0%
+  const isLeadPersonal = Boolean(activeContact?.isPersonal || activeConversation?.isPersonal);
+
+  const hasPropertyInterest = !isLeadPersonal && Boolean(activeContact?.preferredPropertyType);
+  const hasFinancialData = !isLeadPersonal && Boolean((activeContact?.maxPropertyValue && activeContact.maxPropertyValue > 0) || (activeContact?.downPaymentAvailable && activeContact.downPaymentAvailable > 0) || (activeContact?.monthlyIncome && activeContact.monthlyIncome > 0));
+  const hasRegionInterest = !isLeadPersonal && Boolean((activeContact?.targetRegions || []).length > 0 && !activeContact?.targetRegions?.includes('Geral') && !activeContact?.targetRegions?.includes('Região Central / Metropolitana'));
+  const hasEngagement = !isLeadPersonal && Boolean(activeContact?.temperature === 'HOT');
 
   let qualificationScore = 0;
-  if (hasPropertyInterest) qualificationScore += 25;
-  if (hasFinancialData) qualificationScore += 35;
-  if (hasRegionInterest) qualificationScore += 25;
-  if (hasEngagement) qualificationScore += 15;
+  if (!isLeadPersonal) {
+    if (hasPropertyInterest) qualificationScore += 25;
+    if (hasFinancialData) qualificationScore += 35;
+    if (hasRegionInterest) qualificationScore += 25;
+    if (hasEngagement) qualificationScore += 15;
+  }
 
-  const isLeadQualified = qualificationScore >= 75 || Boolean(activeDeal);
+  const isLeadQualified = !isLeadPersonal && (qualificationScore >= 75 || Boolean(activeDeal));
 
   // Handlers do Módulo de Imóveis Apresentados
   const handleSavePresentedProperty = () => {
@@ -651,9 +655,17 @@ export function WhatsAppInbox() {
               updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 95);
             }
           } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
-            if (!activeContact.isPersonal) {
-              updates.isPersonal = true;
-            }
+            updates.isPersonal = true;
+            updates.preferredPropertyType = null;
+            updates.monthlyIncome = null;
+            updates.downPaymentAvailable = null;
+            updates.maxPropertyValue = null;
+            updates.targetRegions = [];
+            updates.temperature = 'COLD';
+            updates.aiPriorityScore = 0;
+            setEditedMonthlyIncome('');
+            setEditedDownPayment('');
+            setEditedMaxBudget('');
           }
 
           if (Object.keys(updates).length > 0) {
@@ -791,9 +803,17 @@ export function WhatsAppInbox() {
             updates.aiPriorityScore = 95;
           }
         } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
-          if (!activeContact.isPersonal) {
-            updates.isPersonal = true;
-          }
+          updates.isPersonal = true;
+          updates.preferredPropertyType = null;
+          updates.monthlyIncome = null;
+          updates.downPaymentAvailable = null;
+          updates.maxPropertyValue = null;
+          updates.targetRegions = [];
+          updates.temperature = 'COLD';
+          updates.aiPriorityScore = 0;
+          setEditedMonthlyIncome('');
+          setEditedDownPayment('');
+          setEditedMaxBudget('');
         }
 
         if (Object.keys(updates).length > 0) {
@@ -2499,89 +2519,115 @@ export function WhatsAppInbox() {
             {/* ---------------------------------------------------- */}
             {/* 1. JORNADA & STATUS DE QUALIFICAÇÃO DO LEAD (MQL)     */}
             {/* ---------------------------------------------------- */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 shadow-xs space-y-3">
+            <div className={`border rounded-2xl p-3.5 shadow-xs space-y-3 ${isLeadPersonal ? 'bg-slate-50/80 border-slate-200' : 'bg-white border-slate-200/90'}`}>
               {/* Header com Badge de Status */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <div className={`p-1.5 rounded-lg ${isLeadQualified ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    <ShieldCheck className="w-4 h-4" />
+                  <div className={`p-1.5 rounded-lg ${isLeadPersonal ? 'bg-slate-200 text-slate-700' : isLeadQualified ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {isLeadPersonal ? <UserMinus className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900">Jornada de Qualificação</h4>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      {isLeadPersonal ? 'Contato Pessoal / Não-Lead' : 'Jornada de Qualificação'}
+                    </h4>
                     <span className="text-[10px] text-slate-500 font-medium">
-                      {activeDeal ? 'Oportunidade Ativa no Funil' : isLeadQualified ? 'Lead Qualificado (MQL)' : 'Em Triagem Inicial'}
+                      {isLeadPersonal ? 'Ignorado no funil e métricas de vendas' : activeDeal ? 'Oportunidade Ativa no Funil' : isLeadQualified ? 'Lead Qualificado (MQL)' : 'Em Triagem Inicial'}
                     </span>
                   </div>
                 </div>
 
                 <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow-2xs ${
-                  activeDeal
+                  isLeadPersonal
+                    ? 'bg-slate-200 text-slate-700 border border-slate-300'
+                    : activeDeal
                     ? 'bg-blue-600 text-white'
                     : isLeadQualified
                     ? 'bg-emerald-600 text-white animate-pulse'
                     : 'bg-slate-100 text-slate-600'
                 }`}>
-                  {activeDeal ? 'No Kanban' : isLeadQualified ? '✨ Qualificado' : `${qualificationScore}% Coletado`}
+                  {isLeadPersonal ? '👤 Não é Lead' : activeDeal ? 'No Kanban' : isLeadQualified ? '✨ Qualificado' : `${qualificationScore}% Coletado`}
                 </span>
               </div>
 
-              {/* Barra de Progresso da Qualificação */}
-              <div>
-                <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
-                  <span>Maturidade do Lead</span>
-                  <span className="font-mono text-emerald-600">{qualificationScore}%</span>
+              {isLeadPersonal ? (
+                <div className="bg-white border border-slate-200/90 rounded-xl p-3 text-center space-y-2">
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-800">
+                    <UserMinus className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Contato Pessoal Identificado</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Este diálogo foi classificado como rotina pessoal. Não gera pontuação imobiliária nem impacta as métricas de conversão do CRM.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => toggleContactPersonal(activeContact.id)}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Converter para Lead Comercial</span>
+                  </button>
                 </div>
-                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 rounded-full ${
-                      qualificationScore >= 75
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                        : qualificationScore >= 50
-                        ? 'bg-gradient-to-r from-amber-400 to-emerald-400'
-                        : 'bg-slate-300'
-                    }`}
-                    style={{ width: `${Math.min(qualificationScore, 100)}%` }}
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  {/* Barra de Progresso da Qualificação */}
+                  <div>
+                    <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
+                      <span>Maturidade do Lead</span>
+                      <span className="font-mono text-emerald-600">{qualificationScore}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-500 rounded-full ${
+                          qualificationScore >= 75
+                            ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                            : qualificationScore >= 50
+                            ? 'bg-gradient-to-r from-amber-400 to-emerald-400'
+                            : 'bg-slate-300'
+                        }`}
+                        style={{ width: `${Math.min(qualificationScore, 100)}%` }}
+                      />
+                    </div>
+                  </div>
 
-              {/* Checklist Visual dos 4 Pilares */}
-              <div className="grid grid-cols-2 gap-1.5 pt-1">
-                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
-                  hasPropertyInterest ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
-                }`}>
-                  <span>{hasPropertyInterest ? '✓' : '○'}</span>
-                  <span className="truncate">🏢 {activeContact.preferredPropertyType ? (activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento') : 'Imóvel (Não inf.)'}</span>
-                </div>
+                  {/* Checklist Visual dos 4 Pilares */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-1">
+                    <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                      hasPropertyInterest ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>
+                      <span>{hasPropertyInterest ? '✓' : '○'}</span>
+                      <span className="truncate">🏢 {activeContact.preferredPropertyType ? (activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento') : 'Imóvel (Não inf.)'}</span>
+                    </div>
 
-                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
-                  hasFinancialData ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
-                }`}>
-                  <span>{hasFinancialData ? '✓' : '○'}</span>
-                  <span className="truncate">💰 {activeContact.maxPropertyValue ? `R$ ${(activeContact.maxPropertyValue / 1000).toFixed(0)}k` : (activeContact.downPaymentAvailable ? `Entrada ${(activeContact.downPaymentAvailable/1000).toFixed(0)}k` : 'Orçamento')}</span>
-                </div>
+                    <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                      hasFinancialData ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>
+                      <span>{hasFinancialData ? '✓' : '○'}</span>
+                      <span className="truncate">💰 {activeContact.maxPropertyValue ? `R$ ${(activeContact.maxPropertyValue / 1000).toFixed(0)}k` : (activeContact.downPaymentAvailable ? `Entrada ${(activeContact.downPaymentAvailable/1000).toFixed(0)}k` : 'Orçamento')}</span>
+                    </div>
 
-                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
-                  (activeContact.targetRegions || []).length > 0 ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
-                }`}>
-                  <span>{(activeContact.targetRegions || []).length > 0 ? '✓' : '○'}</span>
-                  <span className="truncate">📍 {(activeContact.targetRegions || []).length > 0 ? activeContact.targetRegions?.[0] : 'Região (Não inf.)'}</span>
-                </div>
+                    <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                      (activeContact.targetRegions || []).length > 0 ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>
+                      <span>{(activeContact.targetRegions || []).length > 0 ? '✓' : '○'}</span>
+                      <span className="truncate">📍 {(activeContact.targetRegions || []).length > 0 ? activeContact.targetRegions?.[0] : 'Região (Não inf.)'}</span>
+                    </div>
 
-                <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
-                  hasEngagement ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
-                }`}>
-                  <span>{hasEngagement ? '✓' : '○'}</span>
-                  <span className="truncate">{activeContact.temperature === 'HOT' ? '🔥 Quente' : 'Engajamento'}</span>
-                </div>
-              </div>
+                    <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
+                      hasEngagement ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>
+                      <span>{hasEngagement ? '✓' : '○'}</span>
+                      <span className="truncate">{activeContact.temperature === 'HOT' ? '🔥 Quente' : 'Engajamento'}</span>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Resumo da IA */}
-              <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-2.5">
-                <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold text-emerald-900 mb-1">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-emerald-600" />
-                    <span>Resumo do Perfil (IA Copilot):</span>
+              <div className={`rounded-xl p-2.5 border ${isLeadPersonal ? 'bg-slate-100/70 border-slate-200' : 'bg-emerald-50/60 border-emerald-200/80'}`}>
+                <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold mb-1">
+                  <div className={`flex items-center gap-1.5 ${isLeadPersonal ? 'text-slate-800' : 'text-emerald-900'}`}>
+                    <Sparkles className={`w-3 h-3 ${isLeadPersonal ? 'text-slate-600' : 'text-emerald-600'}`} />
+                    <span>Resumo do Contexto (IA Copilot):</span>
                   </div>
                   {activeInsight?.conversationType === 'PERSONAL_OR_OTHER' && (
                     <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-medium">
@@ -2594,12 +2640,12 @@ export function WhatsAppInbox() {
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-emerald-950 leading-relaxed italic">
+                <p className={`text-[11px] leading-relaxed italic ${isLeadPersonal ? 'text-slate-700' : 'text-emerald-950'}`}>
                   "{activeInsight?.summary || 'A IA analisa o diálogo em tempo real para gerar o resumo do perfil e oportunidades comerciais.'}"
                 </p>
 
                 {/* Objeções Detectadas */}
-                {(activeInsight?.detectedObjections || []).length > 0 && (
+                {(activeInsight?.detectedObjections || []).length > 0 && !isLeadPersonal && (
                   <div className="mt-2 pt-1.5 border-t border-emerald-200/60">
                     <span className="text-[9px] font-bold text-emerald-950 block mb-1">🛡️ Ponto de Atenção / Objeções:</span>
                     <div className="flex flex-wrap gap-1">
@@ -2614,7 +2660,7 @@ export function WhatsAppInbox() {
               </div>
 
               {/* Botão de Promoção Imediata para o Kanban */}
-              {!activeDeal && (
+              {!activeDeal && !isLeadPersonal && (
                 <button
                   type="button"
                   onClick={() => {

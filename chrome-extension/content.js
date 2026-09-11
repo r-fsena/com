@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.20';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.21';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -1556,9 +1556,9 @@
     });
 
     const chatData = extractActiveChatData(accumulatedMap);
-    if (!chatData || !chatData.phone || chatData.messages.length === 0) {
-      logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_EMPTY', `Conversa sem mensagens ou não identificada. (Phone: ${chatData?.phone || 'n/d'}, Msgs: ${chatData?.messages?.length || 0})`);
-      alert('Abra uma conversa individual com mensagens no WhatsApp antes de sincronizar.');
+    if (!chatData || chatData.messages.length === 0) {
+      logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_EMPTY', `Conversa sem mensagens. (Msgs: ${chatData?.messages?.length || 0})`);
+      alert('Abra uma conversa com mensagens no WhatsApp antes de sincronizar.');
       if (badge) badge.innerText = 'Pronto';
       return;
     }
@@ -1574,8 +1574,15 @@
       } catch (e) {}
     }
 
-    // Se o telefone extraído for LID, consulta o CRM pelo nome do contato para casar o telefone real
+    // Resolve o telefone ANTES de validar (abre gaveta lateral para contatos salvos por apelido como "Amor")
     chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
+
+    if (!chatData.phone || chatData.phone.length < 8) {
+      logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_NO_PHONE', `Telefone de ${chatData.name} não identificado`);
+      alert(`Não foi possível identificar o telefone de ${chatData.name}.`);
+      if (badge) badge.innerText = 'Pronto';
+      return;
+    }
 
     if (isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
       alert('Este chat foi identificado como grupo ou canal e não será importado para o CRM.');

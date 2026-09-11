@@ -803,11 +803,24 @@
     const validContentMsgs = Array.from(messagesMap.values())
       .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
 
+    // Alinhamento monótono: se mensagem A estava fisicamente antes de B no DOM, seu timestamp não pode ser maior que B
+    for (let i = 0; i < validContentMsgs.length - 1; i++) {
+      const curr = validContentMsgs[i];
+      const next = validContentMsgs[i + 1];
+      const tCurr = new Date(curr.timestamp).getTime();
+      const tNext = new Date(next.timestamp).getTime();
+      if (!isNaN(tCurr) && !isNaN(tNext) && tCurr > tNext) {
+        // Corrige inconsistência de contexto para manter fidelidade visual da tela
+        const d = new Date(tNext - 1000);
+        curr.timestamp = d.toISOString();
+      }
+    }
+
     // Ordenação estritamente cronológica: da mensagem mais antiga para a mais recente
     validContentMsgs.sort((a, b) => {
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
-      if (isNaN(tA) || isNaN(tB)) return 0;
+      if (isNaN(tA) || isNaN(tB)) return (a.domOrder || 0) - (b.domOrder || 0);
       return tA - tB;
     });
 
@@ -1184,19 +1197,20 @@ const PT_MONTH_NAMES = {
         '[data-testid*="reaction"], [aria-label*="reaç" i], [aria-label*="reaction" i], div._amkw, div._amkx'
       ).forEach(el => el.remove());
 
-      // 4. Identificação de Tipo de Mídia
+      // 4. Identificação de Tipo de Mídia (no clone limpo, sem contaminação de citações)
       const hasVideo = Boolean(
-        container.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"], button[aria-label*="vídeo" i]')
+        clone.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"], button[aria-label*="vídeo" i]')
       );
       const hasDoc = Boolean(
-        container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]')
+        clone.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]')
       );
       const hasImg = !hasVideo && Boolean(
-        container.querySelector('div[data-testid="image-thumb"], div[data-testid="media-image"], div[data-testid="image-wrapper"]') ||
-        container.querySelector('img[src*="blob:"]:not(.emoji):not([data-plain-text]):not([data-testid*="avatar"])')
+        clone.querySelector('div[data-testid="image-thumb"], div[data-testid="media-image"], div[data-testid="image-wrapper"]') ||
+        clone.querySelector('img[src*="blob:"]:not(.emoji):not([data-plain-text]):not([data-testid*="avatar"])')
       );
       const isVoiceOrAudio = Boolean(
-        container.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i], button[aria-label*="áudio" i]')
+        clone.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i], button[aria-label*="áudio" i]') ||
+        container.querySelector('audio, [data-testid="audio-player"]')
       );
       const hasAudio = !hasVideo && !hasDoc && !hasImg && isVoiceOrAudio;
 

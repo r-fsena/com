@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
   try {
     const candidatePaths = [
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-latest.zip'),
+      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.34.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.33.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.32.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.31.zip'),
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename="brokiva-chrome-extension-v1.0.33.zip"',
+        'Content-Disposition': 'attachment; filename="brokiva-chrome-extension-v1.0.34.zip"',
         'Cache-Control': 'public, max-age=3600, s-maxage=3600',
       },
     });

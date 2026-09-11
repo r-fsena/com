@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.33';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.34';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -57,11 +57,50 @@
 
     document.body.appendChild(root);
 
-    // Eventos de toggle e fechar
+    // Controle de Expansão/Recuo com Compressão Fluida da Tela do WhatsApp
     const toggleBtn = document.getElementById('sovereign-toggle-btn');
     const closeBtn = document.getElementById('sovereign-close-btn');
-    toggleBtn?.addEventListener('click', () => root.classList.toggle('open'));
-    closeBtn?.addEventListener('click', () => root.classList.remove('open'));
+
+    function setSidebarState(isOpen) {
+      const waApp = document.getElementById('app') || document.querySelector('#app');
+      if (isOpen) {
+        root.classList.add('open');
+        document.body.classList.add('sovereign-layout-compressed');
+        if (waApp) {
+          waApp.style.setProperty('width', 'calc(100vw - 380px)', 'important');
+          waApp.style.setProperty('max-width', 'calc(100vw - 380px)', 'important');
+          waApp.style.setProperty('transition', 'width 0.32s cubic-bezier(0.16, 1, 0.3, 1)', 'important');
+        }
+        if (toggleBtn) {
+          toggleBtn.title = 'Recolher Brokiva CRM';
+          toggleBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+        }
+      } else {
+        root.classList.remove('open');
+        document.body.classList.remove('sovereign-layout-compressed');
+        if (waApp) {
+          waApp.style.removeProperty('width');
+          waApp.style.removeProperty('max-width');
+        }
+        if (toggleBtn) {
+          toggleBtn.title = 'Abrir Brokiva CRM (Expandir Menu)';
+          toggleBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`;
+        }
+      }
+
+      // Notifica componentes virtuais do WhatsApp Web para reajuste imediato e suave
+      window.dispatchEvent(new Event('resize'));
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 350);
+    }
+
+    toggleBtn?.addEventListener('click', () => {
+      const isCurrentlyOpen = root.classList.contains('open');
+      setSidebarState(!isCurrentlyOpen);
+    });
+
+    closeBtn?.addEventListener('click', () => {
+      setSidebarState(false);
+    });
 
     // Alternar modo desenvolvedor/diagnóstico ao clicar 5x no badge de versão
     let badgeClickCount = 0;

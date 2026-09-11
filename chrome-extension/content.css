@@ -830,3 +830,16 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(16, 185, 129, 0.6);
 }
+
+/* ==========================================================================
+   COMPRESSÃO E REORDENAÇÃO FLUIDA DO WHATSAPP WEB (SIDE-BY-SIDE)
+   ========================================================================== */
+
+#app {
+  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+body.sovereign-layout-compressed #app {
+  width: calc(100vw - 380px) !important;
+  max-width: calc(100vw - 380px) !important;
+}

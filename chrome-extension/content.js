@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.21';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.22';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -825,59 +825,122 @@
     };
   }
 
+  // Utilitário para converter divisores de data do WhatsApp Web em português para objeto Date real
+  function parsePortugueseWhatsAppDate(text, fallbackYear = new Date().getFullYear()) {
+    if (!text || typeof text !== 'string') return null;
+    const clean = text.trim().toUpperCase();
+
+    if (clean === 'HOJE' || clean === 'TODAY') {
+      const d = new Date();
+      d.setHours(12, 0, 0, 0);
+      return d;
+    }
+    if (clean === 'ONTEM' || clean === 'YESTERDAY') {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      d.setHours(12, 0, 0, 0);
+      return d;
+    }
+
+    const weekdays = {
+      'DOMINGO': 0, 'SEGUNDA-FEIRA': 1, 'TERÇA-FEIRA': 2, 'QUARTA-FEIRA': 3,
+      'QUINTA-FEIRA': 4, 'SEXTA-FEIRA': 5, 'SÁBADO': 6,
+      'SEGUNDA': 1, 'TERCA': 2, 'TERÇA': 2, 'QUARTA': 3, 'QUINTA': 4, 'SEXTA': 5, 'SABADO': 6
+    };
+    for (const [wName, wDay] of Object.entries(weekdays)) {
+      if (clean === wName || clean.startsWith(wName)) {
+        const d = new Date();
+        const currentDay = d.getDay();
+        let diff = currentDay - wDay;
+        if (diff <= 0) diff += 7;
+        d.setDate(d.getDate() - diff);
+        d.setHours(12, 0, 0, 0);
+        return d;
+      }
+    }
+
+    const months = {
+      'JANEIRO': 0, 'FEVEREIRO': 1, 'MARÇO': 2, 'MARCO': 2, 'ABRIL': 3,
+      'MAIO': 4, 'JUNHO': 5, 'JULHO': 6, 'AGOSTO': 7,
+      'SETEMBRO': 8, 'OUTUBRO': 9, 'NOVEMBRO': 10, 'DEZEMBRO': 11
+    };
+    const mMatch = clean.match(/(\d{1,2})\s+DE\s+([A-ZÇ]+)(?:\s+DE\s+(\d{2,4}))?/);
+    if (mMatch) {
+      const day = Number(mMatch[1]);
+      const monthName = mMatch[2];
+      let year = mMatch[3] ? Number(mMatch[3]) : fallbackYear;
+      if (year < 100) year += 2000;
+      if (months[monthName] !== undefined) {
+        const dt = new Date(year, months[monthName], day, 12, 0, 0);
+        if (!isNaN(dt.getTime())) return dt;
+      }
+    }
+
+    const numMatch = clean.match(/(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/);
+    if (numMatch) {
+      const day = Number(numMatch[1]);
+      const month = Number(numMatch[2]) - 1;
+      let year = numMatch[3] ? Number(numMatch[3]) : fallbackYear;
+      if (year < 100) year += 2000;
+      const dt = new Date(year, month, day, 12, 0, 0);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+
+    return null;
+  }
+
   // Coleta balões de mensagem do DOM de #main e insere em um Map deduplicado
   function harvestDomMessages(messagesMap, fallbackPhone = '') {
     const main = document.querySelector('#main');
     if (!main) return;
 
-    const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
-    const uniqueRootContainers = [];
-    const seenContainers = new Set();
+    // Coleta todos os elementos do chat em ordem cronológica de cima para baixo
+    const rawElements = Array.from(main.querySelectorAll('div[role="row"], div.message-in, div.message-out, div[data-testid*="system"]'));
+    const uniqueElements = [];
+    const seenElements = new Set();
 
-    for (const el of rawBubbleElements) {
-      const bubble = (el.classList?.contains('message-in') || el.classList?.contains('message-out'))
-        ? el
-        : (el.querySelector?.('.message-in, .message-out') || el);
-
-      if (seenContainers.has(bubble)) continue;
-      seenContainers.add(bubble);
-
-      // Descarta avisos de sistema e containers de data/hora no topo
-      const isSystemContainer = Boolean(
-        bubble.closest?.('[data-testid*="system"]') ||
-        bubble.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
-        (bubble.getAttribute?.('class') || '').includes('system')
-      );
-      if (isSystemContainer) continue;
-
-      uniqueRootContainers.push(bubble);
+    for (const el of rawElements) {
+      if (seenElements.has(el)) continue;
+      seenElements.add(el);
+      uniqueElements.push(el);
     }
 
-    // Tenta encontrar uma data de referência no chat caso as mensagens iniciais sejam áudios ou anexos
-    let lastKnownDateIso = '';
-    const dateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[role="row"] span[dir="auto"], span.selectable-text'));
-    for (const sp of dateSpans) {
-      const spText = (sp.innerText || '').trim().toUpperCase();
-      const dMatch = spText.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
-      if (dMatch) {
-        const d = Number(dMatch[1]), mo = Number(dMatch[2]) - 1;
-        let y = Number(dMatch[3]);
-        if (y < 100) y += 2000;
-        const dt = new Date(y, mo, d, 12, 0, 0);
-        if (!isNaN(dt.getTime())) {
-          lastKnownDateIso = dt.toISOString();
-          break;
-        }
-      } else if (spText === 'ONTEM' || spText === 'YESTERDAY') {
-        const dt = new Date();
-        dt.setDate(dt.getDate() - 1);
-        lastKnownDateIso = dt.toISOString();
+    let currentWalkingDateIso = '';
+
+    // Pré-carrega uma data inicial do topo se houver
+    const initialDateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[role="row"] span[dir="auto"]'));
+    for (const sp of initialDateSpans) {
+      const parsed = parsePortugueseWhatsAppDate(sp.innerText || '');
+      if (parsed) {
+        currentWalkingDateIso = parsed.toISOString();
         break;
       }
     }
 
-    uniqueRootContainers.forEach((container, index) => {
-      // 1. Localiza nó com data-id ESTRITAMENTE associado à mensagem (não busca em ancestrais fora de [role="row"])
+    uniqueElements.forEach((element, index) => {
+      // 1. Verifica se este elemento é um divisor de data do sistema no fluxo do chat
+      const isSystemDateContainer = Boolean(
+        element.getAttribute?.('data-testid')?.includes('system') ||
+        (!element.classList?.contains('message-in') && !element.classList?.contains('message-out') && !element.querySelector('.message-in, .message-out'))
+      );
+
+      if (isSystemDateContainer) {
+        const text = (element.innerText || '').trim();
+        if (text && text.length < 50) {
+          const parsed = parsePortugueseWhatsAppDate(text);
+          if (parsed) {
+            currentWalkingDateIso = parsed.toISOString();
+            return;
+          }
+        }
+      }
+
+      // 2. Determina o container do balão de mensagem
+      const container = (element.classList?.contains('message-in') || element.classList?.contains('message-out'))
+        ? element
+        : (element.querySelector?.('.message-in, .message-out') || element);
+
+      // Localiza nó com data-id ESTRITAMENTE associado à mensagem
       let actualDataId = '';
       if (container.hasAttribute?.('data-id')) {
         actualDataId = container.getAttribute('data-id') || '';
@@ -898,7 +961,6 @@
       }
 
       // Validação estrita de ID de mensagem do WhatsApp
-      // Deve ter o padrão exato: (true|false)_[remotoJid]_[hashUnico]
       const isRealMsgKey = Boolean(
         actualDataId &&
         /^(true|false)_[^@]+@(c\.us|s\.whatsapp\.net|lid)_[A-Za-z0-9\.\-_]+$/i.test(actualDataId)
@@ -908,7 +970,7 @@
       const isDataIdFromMe = isRealMsgKey && rawDataId.startsWith('true_');
       const isDataIdFromContact = isRealMsgKey && rawDataId.startsWith('false_');
 
-      // 2. Extração de texto isolando citação/resposta anterior (Quote) e metadados de hora
+      // 3. Extração de texto isolando citação/resposta anterior (Quote) e metadados de hora
       const clone = container.cloneNode(true);
 
       // Remove blocos de citação (para não contaminar com "Você: [msg anterior]")
@@ -921,7 +983,7 @@
         'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz'
       ).forEach(el => el.remove());
 
-      // Remove nós folha que contêm exclusivamente horários (ex: "14:53", "12:59", "22:24✓") para não colar no texto
+      // Remove nós folha que contêm exclusivamente horários (ex: "14:53", "12:59", "22:24✓")
       clone.querySelectorAll('span, div').forEach(el => {
         if (el.children.length === 0) {
           const t = (el.innerText || '').trim();
@@ -931,78 +993,71 @@
         }
       });
 
-      // Remove pílulas e balões de reações para não tratar emojis como fotos ou texto fantasma
+      // Remove pílulas e balões de reações
       clone.querySelectorAll(
         '[data-testid*="reaction"], [aria-label*="reaç" i], [aria-label*="reaction" i], div._amkw, div._amkx'
       ).forEach(el => el.remove());
 
-      // 1. Identificação de Tipo de Mídia (Vídeo, Documento, Imagem, Áudio PTT)
+      // 4. Identificação de Tipo de Mídia
       const hasVideo = Boolean(
         container.querySelector('video, span[data-icon*="video"], div[data-testid="video-thumb"], button[aria-label*="vídeo" i]')
       );
       const hasDoc = Boolean(
         container.querySelector('span[data-icon*="document"], a[download], [data-testid="document-thumb"], span[data-icon="media-document"]')
       );
-      // Imagem ESTRITA: deve possuir container de mídia oficial do WhatsApp ou imagem blob real.
-      // NUNCA usar img[src*="data:"] pois no WhatsApp Web todos os emojis e reações são data-URLs!
       const hasImg = !hasVideo && Boolean(
         container.querySelector('div[data-testid="image-thumb"], div[data-testid="media-image"], div[data-testid="image-wrapper"]') ||
         container.querySelector('img[src*="blob:"]:not(.emoji):not([data-plain-text]):not([data-testid*="avatar"])')
       );
-      // Áudio ESTRITO: NUNCA usar seletores genéricos como 'Reproduzir', 'Play' ou 'ic-fast-forward'!
-      // No WhatsApp Web, mensagens de voz PTT possuem player dedicado ou waveform.
       const hasAudio = !hasVideo && !hasDoc && !hasImg && Boolean(
         container.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i]')
       );
 
-      // 2. Extração RESILIENTE de texto digitado pelo usuário
+      // 5. Extração de texto digitado pelo usuário
       const textNode = clone.querySelector('span.selectable-text, .selectable-text, .copyable-text span, div.copyable-text, span[dir="ltr"]');
       let userTypedText = (textNode ? textNode.innerText : clone.innerText) || '';
       userTypedText = userTypedText.trim();
 
-      // 3. Sanitização do texto digitado
       if (userTypedText) {
         userTypedText = userTypedText
-          // Remove horários colados no final, COM OU SEM espaço antes (ex: "chegou13:42" -> "chegou", "quer?22:24" -> "quer?")
+          // Remove horários colados no final
           .replace(/(?:\s*|[\u00a0\u200e\u200f\n\r]*)(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)([\s\u200e\u200f]*[✓✔︎]?)*$/i, '')
-          // Remove tamanhos de arquivo residuais (ex: " (42 KB)", " 42 KB", "1.2 MB", etc.)
+          // Remove tamanhos de arquivo residuais
           .replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '')
           .replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '')
-          // Remove velocidades de reprodução de áudio (ex: "1,0x", "1.5x", "2x")
+          // Remove velocidades de reprodução de áudio
           .replace(/\b\d([.,]\d)?[xX]\b/g, '')
-          // Remove nomes de ícones do WhatsApp Web (tail-out, tail-in, ic-fast-forward)
+          // Remove nomes de ícones do WhatsApp Web
           .replace(/\b(tail-in|tail-out|ic-fast-forward|fast-forward)\b/gi, '')
-          // Limpa múltiplos espaços
           .replace(/\s{2,}/g, ' ')
           .trim();
 
-        // Se começar com cabeçalho "Você:" ou "You:", remove
-        userTypedText = userTypedText.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
+        if (userTypedText.startsWith('Você:') || userTypedText.startsWith('You:')) {
+          userTypedText = userTypedText.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
+        }
 
-        // Se após a limpeza for apenas um horário ou ruído, zera
         if (/^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(userTypedText) || userTypedText.length === 0) {
           userTypedText = '';
         }
       }
 
-      // 4. Determinação final de messageType e content LIMPO (SEM tamanhos, SEM durações, SEM ruído técnico)
+      // 6. Determinação de messageType, content e captura de mídias/thumbnails
       let messageType = 'TEXT';
       let content = '';
+      let mediaUrl = '';
+      let fileName = '';
 
-      // Regra de ouro: Se o usuário digitou texto real e não há vídeo, documento ou imagem anexada,
-      // é 100% uma mensagem de TEXTO! Mensagens de voz no WhatsApp NUNCA têm texto digitado.
       if (userTypedText && !hasDoc && !hasVideo && !hasImg) {
         messageType = 'TEXT';
         content = userTypedText;
       } else if (hasAudio && !userTypedText) {
         messageType = 'AUDIO';
         content = '🎵 Mensagem de Voz';
+        fileName = 'Audio.ogg';
       } else if (hasDoc) {
         messageType = 'DOCUMENT';
-        // Para documento: extrai apenas o nome real do arquivo (ex: "Contrato.pdf"), NUNCA o tamanho
         const nameEl = container.querySelector('span[title*="."], span.x10l6tqk[title], a[download]');
         let rawFileName = (nameEl?.getAttribute('title') || nameEl?.innerText || '').trim();
-        // Remove menções de tamanho e quebras do nome
         rawFileName = rawFileName
           .replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '')
           .replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '')
@@ -1010,26 +1065,62 @@
           .trim();
 
         if (rawFileName && !/^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(rawFileName) && rawFileName.length > 2) {
+          fileName = rawFileName;
           content = `📄 ${rawFileName}`;
         } else {
+          fileName = 'Documento.pdf';
           content = userTypedText || '📄 Documento';
+        }
+
+        const linkEl = container.querySelector('a[href]');
+        if (linkEl && linkEl.href && linkEl.href.startsWith('http')) {
+          mediaUrl = linkEl.href;
         }
       } else if (hasVideo) {
         messageType = 'VIDEO';
         content = userTypedText || '🎥 Vídeo';
+        fileName = 'Video.mp4';
       } else if (hasImg) {
         messageType = 'IMAGE';
         content = userTypedText || '📷 Foto';
+        fileName = 'Foto.jpg';
+
+        // Captura thumbnail de imagem diretamente para visualização no CRM
+        const imgEl = container.querySelector('div[data-testid="image-thumb"] img, div[data-testid="media-image"] img, img[src*="blob:"]:not(.emoji), img[src*="data:image"]:not(.emoji)');
+        if (imgEl) {
+          const src = imgEl.getAttribute('src') || imgEl.src || '';
+          if (src.startsWith('data:image')) {
+            mediaUrl = src;
+          } else if (imgEl.complete && imgEl.naturalWidth > 0) {
+            try {
+              const canvas = document.createElement('canvas');
+              const maxDim = 400;
+              let w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                else { w = Math.round((w * maxDim) / h); h = maxDim; }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(imgEl, 0, 0, w, h);
+              mediaUrl = canvas.toDataURL('image/jpeg', 0.8);
+            } catch (e) {
+              if (src.startsWith('http')) mediaUrl = src;
+            }
+          } else if (src.startsWith('http')) {
+            mediaUrl = src;
+          }
+        }
       } else {
         messageType = 'TEXT';
         content = userTypedText;
       }
 
-      // Descarta mensagens puramente vazias, avisos de sistema ou fotos fantasmas sem imagem real
+      // Descarta mensagens puramente vazias ou ruído de sistema
       if (!content || isWhatsAppSystemMessage(content)) return;
       if ((content === '📷 Foto' || content === 'Foto') && !hasImg) return;
 
-      // Validação final de segurança: impede que qualquer string que seja puramente tamanho de arquivo ou ruído seja enviada
       if (
         /^\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)$/i.test(content) ||
         /^\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)$/i.test(content) ||
@@ -1039,7 +1130,7 @@
         return;
       }
 
-      // 5. Identificação estrita de autoria (Você / Corretor vs Cliente)
+      // 7. Identificação de autoria (Você / Corretor vs Cliente)
       const prePlainNode = container.hasAttribute?.('data-pre-plain-text') ? container :
                            (container.querySelector?.('[data-pre-plain-text]') || container.closest?.('[data-pre-plain-text]'));
       const rawPrePlain = prePlainNode ? (prePlainNode.getAttribute('data-pre-plain-text') || '') : '';
@@ -1075,7 +1166,6 @@
         }
       } catch (e) {}
 
-      // Determinação de autoria: marcadores de envio do corretor têm precedência definitiva
       let isFromMe = false;
       if (isDataIdFromMe) {
         isFromMe = true;
@@ -1095,13 +1185,12 @@
         isFromMe = false;
       }
 
-      // 6. Extração de Data e Hora
+      // 8. Extração e Resolução de Data e Hora
       let msgTime = '';
       if (cleanPrePlain) {
         const timeMatch = cleanPrePlain.match(/\[(.*?)\]/);
         if (timeMatch && timeMatch[1]) {
           const rawTime = timeMatch[1].trim();
-          // Caso 1: 24-horas [14:04, 10/09/2024]
           const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
           if (brMatch) {
             let h = Number(brMatch[1]), m = Number(brMatch[2]), s = brMatch[3] ? Number(brMatch[3]) : 0;
@@ -1111,10 +1200,9 @@
             const dt = new Date(y, mo, d, h, m, s);
             if (!isNaN(dt.getTime())) {
               msgTime = dt.toISOString();
-              lastKnownDateIso = msgTime;
+              currentWalkingDateIso = msgTime;
             }
           } else {
-            // Caso 2: 12-horas com AM/PM [2:04 PM, 9/10/2024]
             const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/i);
             if (usMatch) {
               let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
@@ -1127,34 +1215,32 @@
               const dt = new Date(y, mo, d, h, m, s);
               if (!isNaN(dt.getTime())) {
                 msgTime = dt.toISOString();
-                lastKnownDateIso = msgTime;
+                currentWalkingDateIso = msgTime;
               }
             } else {
               const dt = new Date(rawTime);
               if (!isNaN(dt.getTime())) {
                 msgTime = dt.toISOString();
-                lastKnownDateIso = msgTime;
+                currentWalkingDateIso = msgTime;
               }
             }
           }
         }
       }
 
-      // Se não veio no prePlain (comum em áudios e anexos), extrai o horário do balão e herda a data de referência
+      // Se não veio no prePlain (comum em mídias, fotos e documentos), combina o horário do balão com a data do fluxo
       if (!msgTime) {
         const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
         if (timeMatch) {
-          const base = lastKnownDateIso ? new Date(lastKnownDateIso) : new Date();
+          const base = currentWalkingDateIso ? new Date(currentWalkingDateIso) : new Date();
           base.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
           msgTime = base.toISOString();
         } else {
-          msgTime = lastKnownDateIso || new Date().toISOString();
+          msgTime = currentWalkingDateIso || new Date().toISOString();
         }
       }
 
-      // Deduplicação estrita: insere no Map
-      // Se for chave nativa do WhatsApp (única por mensagem), usa-a.
-      // Se não for chave nativa, usa conteúdo + horário + remetente + índice para NUNCA colapsar mensagens diferentes
+      // 9. Deduplicação e armazenamento no Map
       const effectiveDataId = isRealMsgKey ? rawDataId : '';
       const uniqueMsgKey = effectiveDataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}_${index}`;
       if (!messagesMap.has(uniqueMsgKey)) {
@@ -1165,6 +1251,8 @@
           fromMe: isFromMe,
           timestamp: msgTime,
           messageType,
+          mediaUrl: mediaUrl || undefined,
+          fileName: fileName || undefined,
         });
       }
     });

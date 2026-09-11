@@ -634,7 +634,6 @@ export const serverCRMStore = {
 
   mergeMessages(oldMsgs: Message[], newMsgs: Message[], contacts: Contact[]): Message[] {
     const map = new Map<string, Message>();
-    const all = [...oldMsgs, ...newMsgs];
 
     // Índice de remapeamento de LID -> Telefone Canônico para unificação de conversa
     const lidToPhone = new Map<string, string>();
@@ -645,6 +644,28 @@ export const serverCRMStore = {
         lidToPhone.set(cleanLid(c.lid), p);
       }
     });
+
+    // Identifica conversas para as quais um lote novo de mensagens está sendo ingerido
+    const freshSyncConvIds = new Set<string>();
+    newMsgs.forEach(m => {
+      if (m.conversationId) freshSyncConvIds.add(m.conversationId);
+    });
+
+    // Se temos um novo lote estruturado da extensão para uma conversa, descarta placeholders sintéticos
+    // e mensagens temporárias anteriores da extensão que possam conter carimbos de hora desatualizados
+    const filteredOldMsgs = oldMsgs.filter(m => {
+      if (!freshSyncConvIds.has(m.conversationId)) return true;
+      if (m.content && m.content.startsWith('Conversa ativa no WhatsApp com')) return false;
+
+      const isOldExtMsg = m.id.startsWith('ext-msg-') || m.id.startsWith('wpp-ext-');
+      const isIncomingFromExt = newMsgs.some(nm => nm.conversationId === m.conversationId && (nm.id.startsWith('ext-msg-') || nm.id.startsWith('wpp-ext-') || nm.id.startsWith('false_') || nm.id.startsWith('true_')));
+      if (isOldExtMsg && isIncomingFromExt) {
+        return false;
+      }
+      return true;
+    });
+
+    const all = [...filteredOldMsgs, ...newMsgs];
 
     all.forEach(m => {
       if (!m || !m.conversationId || this.isChatDeleted(m.conversationId)) return;
@@ -673,10 +694,12 @@ export const serverCRMStore = {
       if (!existing) {
         map.set(key, normalizedMsg);
       } else {
-        // Promove de CONTACT para USER caso venha nova versão com identificação correta
-        if (existing.senderType === 'CONTACT' && normalizedMsg.senderType === 'USER') {
-          map.set(key, normalizedMsg);
-        }
+        map.set(key, {
+          ...existing,
+          ...normalizedMsg,
+          attachments: normalizedMsg.attachments || existing.attachments,
+          timestamp: normalizedMsg.timestamp || existing.timestamp,
+        });
       }
     });
 

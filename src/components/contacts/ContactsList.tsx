@@ -27,6 +27,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ImportLeadsModal } from './ImportLeadsModal';
+import { BatchAIQualificationModal } from '@/components/crm/BatchAIQualificationModal';
 
 interface ContactsListProps {
   onOpenNewLead: () => void;
@@ -41,6 +42,7 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
   const [sourceFilter, setSourceFilter] = useState('ALL');
   const [inactivityFilter, setInactivityFilter] = useState<'ALL' | 'UNANSWERED' | 'OVER_48H' | 'OVER_7D'>('ALL');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isBatchQualifyModalOpen, setIsBatchQualifyModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -153,6 +155,16 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin' : ''}`} />
             <span>{isSyncingWhatsApp ? 'Sincronizando...' : 'Sincronizar WhatsApp'}</span>
+          </button>
+
+          {/* Botão Qualificar Base com IA */}
+          <button
+            onClick={() => setIsBatchQualifyModalOpen(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-[#3742AC] to-indigo-600 hover:from-[#2e3792] hover:to-indigo-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-xs cursor-pointer active:scale-95"
+            title="Classificar e qualificar toda a base de contatos com Inteligência Artificial"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Qualificar Base com IA</span>
           </button>
 
           {/* Botão Importar Planilha / WhatsApp Modal */}
@@ -476,6 +488,13 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onSuccess={(count) => showToast(`🎉 ${count} leads importados com sucesso para o CRM!`)}
+      />
+
+      {/* Modal de Qualificação em Massa com IA */}
+      <BatchAIQualificationModal
+        isOpen={isBatchQualifyModalOpen}
+        onClose={() => setIsBatchQualifyModalOpen(false)}
+        onComplete={() => showToast('✨ Base de contatos qualificada com sucesso pelo Copilot!')}
       />
     </div>
   );

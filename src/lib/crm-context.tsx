@@ -7,6 +7,7 @@ import {
   User, 
   WhatsAppInstance, 
   Contact, 
+  PropertyType,
   PresentedProperty,
   BrokerNote,
   Pipeline, 
@@ -164,6 +165,7 @@ interface CRMContextType {
   aiInsights: Record<string, AIInsight>;
   updateAIInsight: (conversationId: string, insight: Partial<AIInsight>) => void;
   applyAIExtractionToContact: (conversationId: string, contactId: string) => void;
+  applyBatchAIQualifications: (qualifications: any[]) => void;
   recordAIFeedback: (conversationId: string, feedback: 'ACCEPTED' | 'EDITED' | 'REJECTED') => void;
 
   // Tarefas e Alertas
@@ -3125,6 +3127,145 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // Salvar Lote de Qualificações de IA em Massa (Batch AI Lead Qualification)
+  const applyBatchAIQualifications = (qualifications: Array<{
+    conversationId: string;
+    contactId: string;
+    isPersonal: boolean;
+    conversationType: 'REAL_ESTATE_LEAD' | 'PERSONAL_OR_OTHER' | 'OPERATIONAL_OR_VENDOR';
+    summary: string;
+    extractedData: any;
+    detectedObjections?: string[];
+    responseOptions?: any[];
+    sentiment?: any;
+    intent?: any;
+    suggestedResponse?: string;
+    confidenceScore?: number;
+  }>) => {
+    if (!qualifications || qualifications.length === 0) return;
+
+    const qualMapByContactId = new Map<string, typeof qualifications[0]>();
+    const qualMapByConvId = new Map<string, typeof qualifications[0]>();
+    qualifications.forEach(q => {
+      qualMapByContactId.set(q.contactId, q);
+      qualMapByConvId.set(q.conversationId, q);
+    });
+
+    const propTypeMapper = (type?: string): PropertyType => {
+      if (!type) return 'APARTMENT';
+      const lower = type.toLowerCase();
+      if (lower.includes('cobertura') || lower.includes('penthouse')) return 'PENTHOUSE';
+      if (lower.includes('casa') || lower.includes('condomínio')) return 'HOUSE';
+      if (lower.includes('studio') || lower.includes('loft')) return 'STUDIO';
+      if (lower.includes('terreno') || lower.includes('lote')) return 'LAND';
+      if (lower.includes('comercial') || lower.includes('sala')) return 'COMMERCIAL';
+      return 'APARTMENT';
+    };
+
+    // 1. Atualiza Contatos em Bloco
+    setContacts(prev => {
+      const updated = prev.map(c => {
+        const q = qualMapByContactId.get(c.id);
+        if (!q) return c;
+
+        if (q.isPersonal) {
+          return {
+            ...c,
+            isPersonal: true,
+            preferredPropertyType: undefined,
+            monthlyIncome: undefined,
+            downPaymentAvailable: undefined,
+            maxPropertyValue: undefined,
+            targetRegions: [],
+            temperature: 'COLD' as const,
+            aiPriorityScore: 0,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+
+        const propType = q.extractedData?.propertyType ? propTypeMapper(q.extractedData.propertyType) : c.preferredPropertyType;
+        const monthly = q.extractedData?.monthlyIncome || c.monthlyIncome;
+        const down = q.extractedData?.downPayment || c.downPaymentAvailable;
+        const maxBudget = q.extractedData?.maxBudget || c.maxPropertyValue;
+        const region = q.extractedData?.preferredRegion && !q.extractedData.preferredRegion.includes('Central / Metropolitana')
+          ? [q.extractedData.preferredRegion]
+          : c.targetRegions;
+        const isHot = q.extractedData?.urgencyLevel === 'ALTA';
+
+        return {
+          ...c,
+          isPersonal: false,
+          preferredPropertyType: propType,
+          monthlyIncome: monthly,
+          downPaymentAvailable: down,
+          maxPropertyValue: maxBudget,
+          targetRegions: region,
+          temperature: isHot ? ('HOT' as const) : (c.temperature || 'WARM'),
+          aiPriorityScore: isHot ? 95 : (c.aiPriorityScore || 80),
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: updated }),
+        }).catch(() => {});
+      } catch {}
+
+      return updated;
+    });
+
+    // 2. Atualiza Conversas em Bloco
+    setConversations(prev => {
+      const updated = prev.map(conv => {
+        const q = qualMapByConvId.get(conv.id) || qualMapByContactId.get(conv.contactId);
+        if (!q) return conv;
+        return {
+          ...conv,
+          isPersonal: q.isPersonal,
+        };
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated));
+      } catch {}
+
+      return updated;
+    });
+
+    // 3. Atualiza Insights de IA em Bloco
+    setAiInsights(prev => {
+      const updated = { ...prev };
+      qualifications.forEach(q => {
+        updated[q.conversationId] = {
+          id: prev[q.conversationId]?.id || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          tenantId: currentTenant.id,
+          contactId: q.contactId,
+          conversationId: q.conversationId,
+          summary: q.summary,
+          conversationType: q.conversationType,
+          extractedData: q.extractedData,
+          detectedObjections: q.detectedObjections || [],
+          responseOptions: q.responseOptions || [],
+          sentiment: q.sentiment || 'POSITIVE',
+          intent: q.intent || 'DUVIDA_GERAL',
+          suggestedResponse: q.suggestedResponse || '',
+          confidenceScore: q.confidenceScore || 96,
+          createdAt: new Date().toISOString(),
+        };
+      });
+
+      try {
+        localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(updated));
+      } catch {}
+
+      return updated;
+    });
+  };
+
   const updateAIInsight = (conversationId: string, insight: Partial<AIInsight>) => {
     setAiInsights(prev => {
       const existing = prev[conversationId] || {
@@ -5033,6 +5174,7 @@ const pollWebhookMessages = async () => {
       aiInsights,
       updateAIInsight,
       applyAIExtractionToContact,
+      applyBatchAIQualifications,
       recordAIFeedback,
       tasks: scopedTasks,
       toggleTask,

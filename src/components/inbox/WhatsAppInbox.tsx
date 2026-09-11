@@ -65,6 +65,7 @@ import {
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { PropertyType, PresentedProperty, Message, Contact } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
+import { BatchAIQualificationModal } from '@/components/crm/BatchAIQualificationModal';
 
 const MOCK_CATALOG_PROPERTIES = [
   {
@@ -202,6 +203,7 @@ export function WhatsAppInbox() {
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showLeadDrawer, setShowLeadDrawer] = useState(false);
   const [showChatOptionsDropdown, setShowChatOptionsDropdown] = useState(false);
+  const [isBatchQualifyModalOpen, setIsBatchQualifyModalOpen] = useState(false);
   const [selectedNoteCategory, setSelectedNoteCategory] = useState<'GENERAL' | 'CALL' | 'VISIT' | 'FINANCIAL' | 'OBJECTION' | 'PROPOSAL'>('GENERAL');
   const [newTagInput, setNewTagInput] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -1161,14 +1163,26 @@ export function WhatsAppInbox() {
               )}
             </div>
 
-            <button
-              onClick={() => syncWhatsAppChats()}
-              disabled={isSyncingWhatsApp}
-              className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
-              title="Sincronizar mensagens"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin text-[#3742AC]' : ''}`} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsBatchQualifyModalOpen(true)}
+                className="flex items-center gap-1 bg-gradient-to-r from-[#3742AC] to-indigo-600 hover:from-[#2e3792] hover:to-indigo-700 text-white text-[10px] font-extrabold px-2.5 py-1.5 rounded-xl transition shadow-2xs cursor-pointer active:scale-95"
+                title="Classificar e qualificar conversas com IA em massa"
+              >
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>Qualificar com IA</span>
+              </button>
+
+              <button
+                onClick={() => syncWhatsAppChats()}
+                disabled={isSyncingWhatsApp}
+                className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
+                title="Sincronizar mensagens"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin text-[#3742AC]' : ''}`} />
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -3540,6 +3554,12 @@ export function WhatsAppInbox() {
       <ImportLeadsModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
+      />
+
+      {/* Modal de Qualificação em Massa por IA */}
+      <BatchAIQualificationModal
+        isOpen={isBatchQualifyModalOpen}
+        onClose={() => setIsBatchQualifyModalOpen(false)}
       />
     </div>
   );

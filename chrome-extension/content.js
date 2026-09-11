@@ -1447,6 +1447,7 @@ const PT_MONTH_NAMES = {
           messageType,
           mediaUrl: mediaUrl || undefined,
           fileName: fileName || undefined,
+          domOrder: index,
         });
       }
     });
@@ -1684,7 +1685,7 @@ const PT_MONTH_NAMES = {
       } catch (e) {}
     }
 
-    await new Promise(r => setTimeout(r, 700));
+    await new Promise(r => setTimeout(r, 900));
     harvestDomMessages(accumulatedMessages);
 
     return accumulatedMessages;
@@ -2275,13 +2276,21 @@ const PT_MONTH_NAMES = {
       const key = contactTitle.toLowerCase().trim();
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
+
+        // Extrai snippet da última mensagem e indicador de envio da lista lateral (#pane-side)
+        const secEl = rowContainer.querySelector('div[data-testid="last-msg-status"], div[data-testid="cell-frame-secondary"] span[title], div[data-testid="cell-frame-secondary"] span[dir="auto"], div[data-testid="cell-frame-secondary"]');
+        const rowPreview = (secEl?.getAttribute('title') || secEl?.innerText || '').trim();
+        const hasOutgoingCheck = Boolean(rowContainer.querySelector('span[data-icon*="status-"], span[data-testid*="status-"], [data-icon="status-dblcheck"], [data-icon="status-check"], [data-icon="status-time"]') || /^(você|voce|you)\s*:/i.test(rowPreview));
+
         rows.push({
           title: contactTitle,
           key,
           span: contactTitleSpan,
           clickable: rowContainer,
           rowImg: rowImg || null,
-          rowAvatarSrc: rowAvatarSrc || ''
+          rowAvatarSrc: rowAvatarSrc || '',
+          rowPreview,
+          isOutgoing: hasOutgoingCheck,
         });
       }
     }
@@ -2635,6 +2644,21 @@ const PT_MONTH_NAMES = {
         }
 
         if (chatData) {
+          // Se chatData não capturou mensagens do DOM mas nextRow no #pane-side possui preview
+          if ((!chatData.messages || chatData.messages.length === 0) && nextRow?.rowPreview) {
+            const cleanSnippet = nextRow.rowPreview.replace(/^(você|voce|you)\s*:\s*/i, '').trim();
+            if (cleanSnippet && !isWhatsAppSystemMessage(cleanSnippet)) {
+              chatData.lastMessagePreview = cleanSnippet;
+              chatData.messages = [{
+                id: `wpp-row-${chatData.phone}-${Date.now()}`,
+                content: cleanSnippet,
+                fromMe: Boolean(nextRow.isOutgoing),
+                timestamp: new Date().toISOString(),
+                messageType: 'TEXT',
+              }];
+            }
+          }
+
           // Garante foto de perfil via header ou item da lista lateral convertido para base64 autônomo
           const headerImg = document.querySelector('#main header img[src]');
           const targetImgOrSrc = (headerImg && headerImg.getAttribute('src')) ? headerImg : (nextRow?.rowImg || nextRow?.rowAvatarSrc || chatData.avatarUrl);

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent, canonicalPhoneKey } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -63,7 +63,7 @@ import {
   UserMinus
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
-import { PropertyType, PresentedProperty, Message } from '@/types/crm';
+import { PropertyType, PresentedProperty, Message, Contact } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 
 const MOCK_CATALOG_PROPERTIES = [
@@ -296,10 +296,38 @@ export function WhatsAppInbox() {
         return arePhonesEquivalent(c.phone, convDigits);
       });
       if (byPhone) return byPhone;
+
+      // Match por chave canônica
+      const pKey = canonicalPhoneKey(convDigits);
+      if (pKey) {
+        const byKey = contacts.find(c => c.phone && canonicalPhoneKey(c.phone) === pKey);
+        if (byKey) return byKey;
+      }
     }
 
-    return contacts[0] || null;
-  }, [contacts, activeConversation]);
+    // 3. Fallback inteligente: constrói perfil sintetizado do lead da conversa para NUNCA exibir contatos aleatórios
+    const fallbackName = (activeConversation as any).name || (convDigits ? `Contato ${convDigits.slice(-4)}` : 'Lead WhatsApp');
+    const fullPhone = convDigits ? `+${convDigits.startsWith('55') ? convDigits : `55${convDigits}`}` : '';
+    const fallbackContact: Contact = {
+      id: activeConversation.contactId || `contact-zapi-${convDigits || 'lead'}`,
+      tenantId: activeConversation.tenantId || currentTenant.id,
+      name: fallbackName,
+      phone: fullPhone,
+      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(fallbackName)}&background=059669&color=fff`,
+      source: 'WHATSAPP',
+      temperature: 'WARM',
+      aiPriorityScore: 85,
+      tags: ['WhatsApp Sincronizado'],
+      targetRegions: [],
+      notesCount: 0,
+      consentGiven: true,
+      hasOptedOut: false,
+      isPersonal: activeConversation.isPersonal ?? false,
+      createdAt: activeConversation.lastMessageAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return fallbackContact;
+  }, [contacts, activeConversation, currentTenant.id]);
 
   const activeMessages = React.useMemo(() => {
     if (!activeConversation) return [];
@@ -325,6 +353,9 @@ export function WhatsAppInbox() {
       if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
         allowedConvIds.add(`conv-zapi-55${cleanPhone}`);
       }
+      if (cleanPhone.startsWith('55') && cleanPhone.length >= 12) {
+        allowedConvIds.add(`conv-zapi-${cleanPhone.slice(2)}`);
+      }
     }
     if (cleanLid && cleanLid.length >= 8) {
       allowedConvIds.add(`conv-zapi-${cleanLid}`);
@@ -339,7 +370,13 @@ export function WhatsAppInbox() {
         // 1. Match direto por ID canônico de conversa
         if (allowedConvIds.has(m.conversationId)) return true;
 
-        // 2. Se a mensagem possui campo phone explícito, valida de forma estrita
+        // 2. Match por equivalência de telefone
+        const mDigits = m.conversationId.replace(/\D/g, '');
+        if (cleanPhone && mDigits && arePhonesEquivalent(cleanPhone, mDigits)) {
+          return true;
+        }
+
+        // 3. Se a mensagem possui campo phone explícito, valida de forma estrita
         const mPhone = (m as any).phone ? String((m as any).phone).replace(/\D/g, '') : '';
         if (mPhone && cleanPhone && !isLidIdentifier(mPhone) && !isLidIdentifier(cleanPhone)) {
           const pA = mPhone.startsWith('55') ? mPhone : `55${mPhone}`;
@@ -355,11 +392,10 @@ export function WhatsAppInbox() {
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
 
     // Se não há mensagens gravadas ainda, mas a conversa possui um preview real de última mensagem,
-    // sintetiza a mensagem inicial para que o chat não fique vazio (nunca sintetiza mensagens de sistema/criptografia)
+    // sintetiza a mensagem inicial para que o chat não fique vazio
     if (
       matched.length === 0 && 
       activeConversation.lastMessagePreview && 
-      activeConversation.lastMessagePreview !== '📱 Conversa sincronizada via WhatsApp' &&
       !isWhatsAppSystemMessage(activeConversation.lastMessagePreview)
     ) {
       const syntheticMsg: Message = {
@@ -777,12 +813,28 @@ export function WhatsAppInbox() {
       return false;
     }
 
-    // Oculta conversas vazias/fantasmas (chats excluídos que não possuem mensagens)
-    const convMsgs = messages.filter(m => m.conversationId === c.id && !m.isInternalNote && m.content && !isWhatsAppSystemMessage(m.content));
-    const isGhostEmpty = convMsgs.length === 0 && 
-      (!c.unreadCount || c.unreadCount === 0) && 
-      (!c.lastMessagePreview || c.lastMessagePreview.includes('Conversa sincronizada') || isWhatsAppSystemMessage(c.lastMessagePreview));
-    if (isGhostEmpty) return false;
+    // Identifica contato associado antes dos filtros
+    const contact = contacts.find(cnt => cnt.id === c.contactId) || contacts.find(cnt => {
+      const cDigits = (cnt.phone || '').replace(/\D/g, '');
+      const convDigits = (c.id || c.contactId || '').replace(/\D/g, '');
+      return cDigits && convDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits) || arePhonesEquivalent(cDigits, convDigits));
+    });
+
+    // Filtra mensagens da conversa com tolerância a formatos de ID
+    const convDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
+    const convMsgs = messages.filter(m => {
+      if (m.isInternalNote || !m.content || isWhatsAppSystemMessage(m.content)) return false;
+      if (m.conversationId === c.id) return true;
+      if (c.contactId && (m.conversationId === c.contactId || m.conversationId === `conv-${c.contactId}`)) return true;
+      const mDigits = m.conversationId.replace(/\D/g, '');
+      if (convDigits && mDigits && arePhonesEquivalent(convDigits, mDigits)) return true;
+      if (contact?.phone && arePhonesEquivalent(contact.phone, m.conversationId)) return true;
+      return false;
+    });
+
+    // Oculta conversas estritamente vazias sem contato, sem mensagens e sem preview
+    const isCompletelyEmpty = !contact && convMsgs.length === 0 && !c.lastMessagePreview && (!c.unreadCount || c.unreadCount === 0);
+    if (isCompletelyEmpty) return false;
 
     // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
     const convInstance = instances.find(i => i.id === c.instanceId || i.zapiInstanceId === c.instanceId);
@@ -797,13 +849,7 @@ export function WhatsAppInbox() {
       return false;
     }
 
-    const contact = contacts.find(cnt => cnt.id === c.contactId) || contacts.find(cnt => {
-      const cDigits = (cnt.phone || '').replace(/\D/g, '');
-      const convDigits = (c.id || c.contactId || '').replace(/\D/g, '');
-      return cDigits && convDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits));
-    });
-
-    // Filtra canais do WhatsApp (newsletters), grupos, transmissões e contatos da agenda sem nenhuma conversa
+    // Filtra canais do WhatsApp (newsletters), grupos, transmissões e contatos inválidos
     if (!isRealWhatsAppConversation({
       id: c.id,
       phone: contact?.phone || c.contactId,
@@ -1242,7 +1288,16 @@ export function WhatsAppInbox() {
 
                     {/* Preview da Mensagem */}
                     {(() => {
-                      const convMsgs = messages.filter(m => m.conversationId === conv.id && !m.isInternalNote && m.content && !isWhatsAppSystemMessage(m.content));
+                      const itemConvDigits = (conv.id + (conv.contactId || '')).replace(/\D/g, '');
+                      const convMsgs = messages.filter(m => {
+                        if (m.isInternalNote || !m.content || isWhatsAppSystemMessage(m.content)) return false;
+                        if (m.conversationId === conv.id) return true;
+                        if (conv.contactId && (m.conversationId === conv.contactId || m.conversationId === `conv-${conv.contactId}`)) return true;
+                        const mDigits = m.conversationId.replace(/\D/g, '');
+                        if (itemConvDigits && mDigits && arePhonesEquivalent(itemConvDigits, mDigits)) return true;
+                        if (contact?.phone && arePhonesEquivalent(contact.phone, m.conversationId)) return true;
+                        return false;
+                      });
                       const latest = convMsgs.length > 0 ? convMsgs[convMsgs.length - 1] : null;
                       const rawPreview = (conv.lastMessagePreview && !isWhatsAppSystemMessage(conv.lastMessagePreview) && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber'))
                         ? conv.lastMessagePreview

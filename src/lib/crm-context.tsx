@@ -1600,11 +1600,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 if (isChatKeyDeleted(c.id, initialDel) || isChatKeyDeleted(c.contactId, initialDel)) return false;
                 const digits = (c.id + (c.contactId || '')).replace(/\D/g, '');
                 if (digits && isChatKeyDeleted(digits, initialDel)) return false;
-                // Descarta conversas vazias/excluídas que ficaram apenas com o placeholder padrão
-                const isGhost = (!c.unreadCount || c.unreadCount === 0) && 
-                  (!c.lastMessagePreview || c.lastMessagePreview.includes('Conversa sincronizada') || isWhatsAppSystemMessage(c.lastMessagePreview));
-                if (isGhost) return false;
-                return isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt });
+                // Conversas válidas do WhatsApp
+                return isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }) || Boolean(c.lastMessagePreview && c.lastMessagePreview.length > 0);
               })
               .map((c: Conversation) => {
                 const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
@@ -1708,7 +1705,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Reatribui conversationId caso seja de um LID conhecido, para fundir na conversa do telefone
+      // Reatribui conversationId padronizando para conv-zapi-55...
       let convId = m.conversationId;
       const rawDigits = convId.replace(/\D/g, '');
       if (isLidIdentifier(rawDigits)) {
@@ -1720,8 +1717,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           } catch {}
         }
         if (mapped) {
-          convId = `conv-zapi-${mapped}`;
+          const fullMapped = mapped.startsWith('55') ? mapped : `55${mapped}`;
+          convId = `conv-zapi-${fullMapped}`;
         }
+      } else if (rawDigits && !isLidIdentifier(rawDigits)) {
+        const full = (!rawDigits.startsWith('55') && (rawDigits.length === 10 || rawDigits.length === 11)) ? `55${rawDigits}` : rawDigits;
+        convId = `conv-zapi-${full}`;
       }
 
       const normalizedMsg: Message = convId !== m.conversationId ? { ...m, conversationId: convId } : m;
@@ -1799,6 +1800,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!canonicalPhone) canonicalPhone = rawDigits;
+      if (canonicalPhone && !isLidIdentifier(canonicalPhone) && !canonicalPhone.startsWith('55') && (canonicalPhone.length === 10 || canonicalPhone.length === 11)) {
+        canonicalPhone = `55${canonicalPhone}`;
+      }
 
       const canonicalConvId = canonicalPhone && !isLidIdentifier(canonicalPhone) ? `conv-zapi-${canonicalPhone}` : conv.id;
       const cleanPreview = (conv.lastMessagePreview && isWhatsAppSystemMessage(conv.lastMessagePreview))
@@ -2009,11 +2013,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         console.log('[Brokiva CRM] Mensagens sincronizadas recebidas da extensão:', event.data.data);
         const { messages: incomingMsgs, contacts: incomingContacts, conversations: incomingConvs } = event.data.data;
 
-        let mergedContacts = contacts;
+        let currentContactsList = contacts;
         if (Array.isArray(incomingContacts) && incomingContacts.length > 0) {
           setContacts(prev => {
             const next = deduplicateContactList([...prev, ...incomingContacts]);
-            mergedContacts = next;
+            currentContactsList = next;
             try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(next)); } catch {}
             return next;
           });
@@ -2023,7 +2027,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           const syncedConvIds = new Set(incomingMsgs.map((m: Message) => m.conversationId));
           setMessages(prev => {
             const otherMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
-            const merged = deduplicateMessages([...otherMessages, ...incomingMsgs], mergedContacts);
+            const merged = deduplicateMessages([...otherMessages, ...incomingMsgs], currentContactsList);
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
             return merged;
           });
@@ -2031,7 +2035,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         if (Array.isArray(incomingConvs) && incomingConvs.length > 0) {
           setConversations(prev => {
-            const merged = deduplicateConversations([...prev, ...incomingConvs], mergedContacts);
+            const merged = deduplicateConversations([...prev, ...incomingConvs], currentContactsList);
             try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
             return merged;
           });
@@ -3015,35 +3019,40 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     // 1. Procura conversa direta pelo contactId
     let targetConv = conversations.find(c => c.contactId === contactId);
 
-    // 2. Se não achou, procura se existe conversa para o telefone do contato
     const contact = contacts.find(c => c.id === contactId);
-    if (!targetConv && contact?.phone) {
-      const cleanPhone = contact.phone.replace(/\D/g, '');
+    const cleanPhone = contact?.phone ? contact.phone.replace(/\D/g, '') : '';
+    const fullPhone = cleanPhone ? (cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`) : '';
+    const canonicalId = fullPhone ? `conv-zapi-${fullPhone}` : `conv-${contactId}`;
+
+    // 2. Se não achou por contactId direto, procura pelo ID canônico ou equivalência de telefone
+    if (!targetConv && cleanPhone) {
       targetConv = conversations.find(c => {
-        const cnt = contacts.find(x => x.id === c.contactId);
-        return cnt?.phone?.replace(/\D/g, '') === cleanPhone;
+        if (c.id === canonicalId || c.id === `conv-zapi-${cleanPhone}`) return true;
+        const cDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
+        return arePhonesEquivalent(cDigits, cleanPhone);
       });
     }
 
     // 3. Se ainda não existir conversa, cria e registra agora mesmo
     if (!targetConv && contact) {
       const newConv: Conversation = {
-        id: `conv-${contact.id}`,
-        tenantId: currentTenant.id,
+        id: canonicalId,
+        tenantId: contact.tenantId || currentTenant.id,
         instanceId: instances[0]?.id || 'instance-01',
         contactId: contact.id,
         assignedUserId: contact.assignedUserId || currentUser.id,
-        status: 'OPEN',
+        status: 'PENDING_TEAM',
         unreadCount: 0,
         lastMessagePreview: 'Conversa iniciada pelo CRM',
         lastMessageAt: new Date().toISOString(),
         slaBreached: false,
         isPinned: false,
         isArchived: false,
+        isPersonal: contact.isPersonal ?? false,
       };
 
       setConversations(prev => {
-        const updated = [newConv, ...prev.filter(c => c.id !== newConv.id)];
+        const updated = deduplicateConversations([newConv, ...prev], contacts);
         try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
         return updated;
       });
@@ -4071,7 +4080,9 @@ const pollWebhookMessages = async () => {
               if (Array.isArray(stateData.messages) && stateData.messages.length > 0) {
                 setMessages(prev => {
                   const merged = deduplicateMessages([...prev, ...stateData.messages]);
-                  if (merged.length !== prev.length) {
+                  const prevKey = prev.length > 0 ? `${prev.length}-${prev[prev.length - 1]?.id}-${prev[prev.length - 1]?.timestamp}` : '';
+                  const nextKey = merged.length > 0 ? `${merged.length}-${merged[merged.length - 1]?.id}-${merged[merged.length - 1]?.timestamp}` : '';
+                  if (prevKey !== nextKey) {
                     try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
                     return merged;
                   }
@@ -4083,7 +4094,9 @@ const pollWebhookMessages = async () => {
               if (Array.isArray(stateData.contacts) && stateData.contacts.length > 0) {
                 setContacts(prev => {
                   const merged = deduplicateContactList([...prev, ...stateData.contacts]);
-                  if (merged.length !== prev.length) {
+                  const prevKey = prev.map(c => `${c.id}_${c.updatedAt}`).join('|');
+                  const nextKey = merged.map(c => `${c.id}_${c.updatedAt}`).join('|');
+                  if (prevKey !== nextKey) {
                     try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
                     return merged;
                   }
@@ -4095,7 +4108,9 @@ const pollWebhookMessages = async () => {
               if (Array.isArray(stateData.conversations) && stateData.conversations.length > 0) {
                 setConversations(prev => {
                   const merged = deduplicateConversations([...prev, ...stateData.conversations]);
-                  if (merged.length !== prev.length) {
+                  const prevKey = prev.map(c => `${c.id}_${c.lastMessagePreview}_${c.lastMessageAt}`).join('|');
+                  const nextKey = merged.map(c => `${c.id}_${c.lastMessagePreview}_${c.lastMessageAt}`).join('|');
+                  if (prevKey !== nextKey) {
                     try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
                     return merged;
                   }

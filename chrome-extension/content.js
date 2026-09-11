@@ -1051,7 +1051,12 @@
       let mediaUrl = '';
       let fileName = '';
 
-      if (userTypedText && !hasDoc && !hasVideo && !hasImg) {
+      const isUrlMessage = userTypedText && /^(https?:\/\/[^\s]+)$/i.test(userTypedText.trim());
+
+      if (isUrlMessage && !hasVideo && !hasImg) {
+        messageType = 'TEXT';
+        content = userTypedText.trim();
+      } else if (userTypedText && !hasDoc && !hasVideo && !hasImg) {
         messageType = 'TEXT';
         content = userTypedText;
       } else if (hasAudio && !userTypedText) {
@@ -1801,7 +1806,12 @@
 
     const sampleList = msgs.slice(-12).map((m, idx) => {
       const remetente = m.fromMe ? 'Você (Corretor)' : `${chatData?.name || 'Cliente'}`;
-      const preview = (m.content || '').length > 55 ? (m.content || '').slice(0, 55) + '...' : m.content;
+      let preview = m.content || '';
+      if (m.messageType === 'IMAGE') {
+        preview = m.mediaUrl ? '📷 Foto com miniatura pronta para visualização' : '📷 Foto enviada no WhatsApp';
+      } else if (preview.length > 55) {
+        preview = preview.slice(0, 55) + '...';
+      }
       let horaFormatada = 'sem data';
       if (m.timestamp) {
         try {

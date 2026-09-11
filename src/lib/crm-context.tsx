@@ -1634,7 +1634,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const initialDel = getStoredDeletedChatKeys();
-            parsed = parsed.filter((m: Message) => m.tenantId !== 'tenant-vanguard-01' && !isChatKeyDeleted(m.conversationId, initialDel) && !isWhatsAppSystemMessage(m.content));
+            parsed = parsed.filter((m: Message) => {
+              if (m.tenantId === 'tenant-vanguard-01') return false;
+              if (isChatKeyDeleted(m.conversationId, initialDel)) return false;
+              if (!m.content) return false;
+              const clean = m.content.trim().toLowerCase();
+              if (isWhatsAppSystemMessage(m.content)) return false;
+              if (/^\d([.,]\d)?[xX]$/i.test(clean)) return false;
+              if (clean.includes('mensagem apagada') || clean.includes('esta mensagem foi apagada') || clean.includes('message was deleted')) return false;
+              if (clean === 'tail-out' || clean === 'tail-in' || clean === 'ic-fast-forward') return false;
+              // Remove resíduos corrompidos de horários da conversa de Amor no dia 10/09
+              const convDigits = (m.conversationId || '').replace(/\D/g, '');
+              if ((convDigits.includes('554899797603') || convDigits.includes('5548999797603')) && m.timestamp && m.timestamp.startsWith('2026-09-10')) {
+                const timeStr = m.timestamp.slice(11, 16);
+                if (timeStr > '14:53' && timeStr < '22:24') return false;
+              }
+              return true;
+            });
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
             return parsed;
           }
@@ -1675,6 +1691,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      const cleanLower = content.toLowerCase();
+      if (
+        /^\d([.,]\d)?[xX]$/i.test(content) ||
+        cleanLower.includes('mensagem apagada') ||
+        cleanLower.includes('esta mensagem foi apagada') ||
+        cleanLower.includes('message was deleted') ||
+        cleanLower === 'tail-out' ||
+        cleanLower === 'tail-in' ||
+        cleanLower === 'ic-fast-forward'
+      ) {
+        return;
+      }
+
       // Reatribui conversationId caso seja de um LID conhecido, para fundir na conversa do telefone
       let convId = m.conversationId;
       const rawDigits = convId.replace(/\D/g, '');
@@ -1694,6 +1723,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const normalizedMsg: Message = convId !== m.conversationId ? { ...m, conversationId: convId } : m;
       const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
+
+      // Higieniza mensagens corrompidas que ficaram com carimbo entre 14:54 e 22:23 na conversa de Amor no dia 10/09
+      const rawConvDigits = convId.replace(/\D/g, '');
+      if ((rawConvDigits.includes('554899797603') || rawConvDigits.includes('5548999797603')) && m.timestamp && m.timestamp.startsWith('2026-09-10')) {
+        const timeStr = m.timestamp.slice(11, 16);
+        if (timeStr > '14:53' && timeStr < '22:24') return;
+      }
+
       const key = isNativeWppId ? m.id! : `${convId}-${content}-${timeKey}-${m.senderType}`;
       const existing = map.get(key);
 
@@ -1986,8 +2023,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (Array.isArray(incomingMsgs) && incomingMsgs.length > 0) {
+          const syncedConvIds = new Set(incomingMsgs.map((m: Message) => m.conversationId));
           setMessages(prev => {
-            const merged = deduplicateMessages([...prev, ...incomingMsgs], mergedContacts);
+            const otherMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
+            const merged = deduplicateMessages([...otherMessages, ...incomingMsgs], mergedContacts);
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
             return merged;
           });
@@ -3422,13 +3461,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // 3. Merge de Mensagens (NUNCA apaga mensagens!)
+        // 3. Merge de Mensagens (Substitui histórico da conversa sincronizada pelo lote limpo)
         let finalMessages: Message[] = [];
         if (data.messages && data.messages.length > 0) {
+          const syncedConvIds = new Set(data.messages.map((m: Message) => m.conversationId));
           setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id));
-            const newOnes = data.messages.filter((m: Message) => !existingIds.has(m.id) && !isChatKeyDeleted(m.conversationId, deletedChatKeys));
-            const merged = deduplicateMessages([...prev, ...newOnes]);
+            const otherConvsMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
+            const validIncoming = data.messages.filter((m: Message) => !isChatKeyDeleted(m.conversationId, deletedChatKeys));
+            const merged = deduplicateMessages([...otherConvsMessages, ...validIncoming]);
             finalMessages = merged;
             try {
               localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged));

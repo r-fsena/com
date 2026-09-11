@@ -672,9 +672,34 @@ export const serverCRMStore = {
       const content = (m.content || '').trim();
       if (!content || isWhatsAppSystemMessage(content)) return;
 
-      // Normaliza conversationId: se for um LID conhecido, reatribui para o telefone canônico!
+      const cleanLower = content.toLowerCase();
+      if (
+        /^\d([.,]\d)?[xX]$/i.test(content) ||
+        cleanLower.includes('mensagem apagada') ||
+        cleanLower.includes('esta mensagem foi apagada') ||
+        cleanLower.includes('message was deleted') ||
+        cleanLower === 'tail-out' ||
+        cleanLower === 'tail-in' ||
+        cleanLower === 'ic-fast-forward'
+      ) {
+        return;
+      }
+
       let convId = m.conversationId;
       const convDigits = convId.replace(/\D/g, '');
+
+      // Higieniza mensagens fantasmas residuais que foram salvas com carimbo de hora incorreto entre 14:54 e 22:23 de 10/09 para a conversa de Amor
+      if (
+        (convId.includes('554899797603') || convId.includes('5548999797603') || convDigits.includes('554899797603') || convDigits.includes('5548999797603')) &&
+        m.timestamp && m.timestamp.startsWith('2026-09-10')
+      ) {
+        const timeStr = m.timestamp.slice(11, 16);
+        if (timeStr > '14:53' && timeStr < '22:24') {
+          return;
+        }
+      }
+
+      // Normaliza conversationId: se for um LID conhecido, reatribui para o telefone canônico!
       if (isLidIdentifier(convDigits)) {
         const mappedPhone = lidToPhone.get(cleanLid(convDigits)) || this.resolvePhoneFromLid(convDigits);
         if (mappedPhone) {

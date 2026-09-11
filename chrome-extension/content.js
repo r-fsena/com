@@ -318,21 +318,18 @@
   function safeSendMessage(payload, callback) {
     try {
       if (!chrome?.runtime?.id) {
-        console.warn('[Brokiva] Contexto da extensão invalidado. Atualize a página do WhatsApp Web (F5).');
         if (callback) callback({ success: false, error: 'Contexto da extensão invalidado após atualização. Por favor, recarregue esta página do WhatsApp Web (F5).' });
         return;
       }
       chrome.runtime.sendMessage(payload, (res) => {
         if (chrome.runtime.lastError) {
           const errMsg = chrome.runtime.lastError.message || 'Falha na comunicação com o worker da extensão';
-          console.warn('[Brokiva safeSendMessage] lastError:', errMsg);
           if (callback) callback({ success: false, error: `${errMsg}. Recarregue a página do WhatsApp Web (F5).` });
           return;
         }
         if (callback) callback(res || { success: false, error: 'Resposta vazia do worker' });
       });
     } catch (e) {
-      console.warn('[Brokiva safeSendMessage] Exception:', e);
       if (callback) callback({ success: false, error: e?.message || 'Falha na execução do script da extensão' });
     }
   }

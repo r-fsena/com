@@ -5,17 +5,39 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-extension-token, x-tenant-id',
+};
+
+function jsonWithCors(data: any, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));
+  return NextResponse.json(data, { ...init, headers });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+}
+
 export async function POST(req: NextRequest) {
   // Rate limiting (Máx 120 logs/min por IP)
   const clientIp = getClientIp(req.headers);
   const rateCheck = checkRateLimit(`ext-logs:${clientIp}`, 120, 60);
   if (!rateCheck.allowed) {
-    return NextResponse.json({ success: false, error: 'Rate limit excedido para logs' }, { status: 429 });
+    return jsonWithCors({ success: false, error: 'Rate limit excedido para logs' }, { status: 429 });
   }
 
   // Validação de Sessão ou Token de Extensão
   const { session, errorResponse } = validateApiSession(req);
-  if (errorResponse) return errorResponse;
+  if (errorResponse) {
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => errorResponse.headers.set(k, v));
+    return errorResponse;
+  }
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -33,22 +55,25 @@ export async function POST(req: NextRequest) {
 
     await recordExtensionLog(entry);
 
-    return NextResponse.json({ success: true, recorded: entry });
+    return jsonWithCors({ success: true, recorded: entry });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return jsonWithCors({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function GET(req: NextRequest) {
   // Apenas Administradores podem consultar logs brutos de telemetria
   const { session, errorResponse } = validateApiSession(req, { requireSuperAdmin: true });
-  if (errorResponse) return errorResponse;
+  if (errorResponse) {
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => errorResponse.headers.set(k, v));
+    return errorResponse;
+  }
 
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get('limit') || 50);
   const logs = getExtensionLogs(limit);
 
-  return NextResponse.json({
+  return jsonWithCors({
     success: true,
     count: logs.length,
     logs,

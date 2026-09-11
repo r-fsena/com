@@ -1835,12 +1835,12 @@ const PT_MONTH_NAMES = {
         if (bgRes && bgRes.success) {
           return bgRes;
         }
-        console.warn("[Brokiva] Worker desconectado ou sem resposta. Acionando fallback direto via fetch...", bgRes?.error);
+        console.log("[Brokiva] Worker desconectado ou sem resposta. Acionando fallback direto via fetch...", bgRes?.error);
       } catch (err) {
-        console.warn("[Brokiva] Falha ao contatar worker. Acionando fallback direto via fetch...", err?.message);
+        console.log("[Brokiva] Falha ao contatar worker. Acionando fallback direto via fetch...", err?.message);
       }
     } else {
-      console.warn("[Brokiva] Runtime desconectado (extensão recarregada). Usando envio direto via fetch para o CRM...");
+      console.log("[Brokiva] Runtime desconectado (extensão recarregada). Usando envio direto via fetch para o CRM...");
     }
 
     // Tentativa 2: Fallback Direto e Robusto via Fetch para o CRM (sobrevive a reload de extensão sem precisar de F5)
@@ -1875,6 +1875,7 @@ const PT_MONTH_NAMES = {
 
       const response = await fetch(endpoint, {
         method: "POST",
+        mode: "cors",
         headers,
         body: JSON.stringify({
           tenantId,
@@ -1965,7 +1966,7 @@ const PT_MONTH_NAMES = {
           const err = response?.error || "Erro desconhecido na sincronização.";
           logToConsoleAndCloudWatch("WARN", "SYNC_SINGLE_FAILED", `Falha ao sincronizar: ${err}`);
           if (badge) badge.innerText = "Erro";
-          console.warn("[Brokiva] Aviso ao sincronizar conversa atual:", err);
+          console.log("[Brokiva] Aviso ao sincronizar conversa atual:", err);
           if (err.includes("recarregue") || err.includes("Recarregue") || err.includes("Atualize") || err.includes("invalidated")) {
             alert(`⚠️ Conexão reiniciada:\n\nA extensão Brokiva foi recarregada no navegador. Por favor, dê F5 (ou Cmd+R) na página do WhatsApp Web para reconectar.`);
           } else {

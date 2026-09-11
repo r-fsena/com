@@ -10,6 +10,25 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-extension-token, x-tenant-id',
+};
+
+function jsonWithCors(data: any, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));
+  return NextResponse.json(data, { ...init, headers });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+}
+
 const IngestMessageSchema = z.object({
   id: z.string().optional(),
   content: z.string().default(''),
@@ -49,7 +68,7 @@ export async function POST(req: NextRequest) {
   const clientIp = getClientIp(req.headers);
   const rateCheck = checkRateLimit(`ext-sync:${clientIp}`, 60, 60);
   if (!rateCheck.allowed) {
-    return NextResponse.json({
+    return jsonWithCors({
       success: false,
       error: `Limite de requisições excedido. Aguarde ${rateCheck.resetInSeconds}s.`,
     }, { status: 429 });
@@ -57,14 +76,17 @@ export async function POST(req: NextRequest) {
 
   // 2. Validação de Sessão ou Token da Extensão
   const { session, errorResponse } = validateApiSession(req);
-  if (errorResponse) return errorResponse;
+  if (errorResponse) {
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => errorResponse.headers.set(k, v));
+    return errorResponse;
+  }
 
   try {
     const body = await req.json().catch(() => ({}));
     const parsed = BatchSyncSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json({
+      return jsonWithCors({
         success: false,
         error: 'Estrutura de dados inválida',
         details: parsed.error.format(),
@@ -328,7 +350,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       message: `Sincronização concluída: ${importedContactsCount} contatos e ${importedMessagesCount} mensagens ingeridas com sucesso!`,
       contactsCount: importedContactsCount,
@@ -339,7 +361,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('Erro na sincronização da extensão:', error);
-    return NextResponse.json({
+    return jsonWithCors({
       success: false,
       error: error.message || 'Falha ao processar histórico da extensão',
     }, { status: 500 });

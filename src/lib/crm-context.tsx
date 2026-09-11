@@ -1903,10 +1903,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         })).filter(c => !isChatKeyDeleted(c.id, combinedDeleted) && !isChatKeyDeleted(c.phone, combinedDeleted) && !isChatKeyDeleted(c.lid, combinedDeleted));
 
         const finalContacts = deduplicateContactList(combinedContacts);
-        if (finalContacts.length > 0) {
-          setContacts(finalContacts);
-          try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(finalContacts)); } catch {}
-        }
+        setContacts(finalContacts);
+        try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(finalContacts)); } catch {}
 
         // 5. Mescla conversas garantindo unificação de LIDs e telefones canônicos
         const combinedConvs = [
@@ -1918,10 +1916,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         })).filter(cv => !isChatKeyDeleted(cv.id, combinedDeleted) && !isChatKeyDeleted(cv.contactId, combinedDeleted));
 
         const finalConvs = deduplicateConversations(combinedConvs, finalContacts);
-        if (finalConvs.length > 0) {
-          setConversations(finalConvs);
-          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(finalConvs)); } catch {}
-        }
+        setConversations(finalConvs);
+        try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(finalConvs)); } catch {}
 
         // 6. Mescla mensagens
         const combinedMsgs = [
@@ -1930,10 +1926,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content));
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
-        if (finalMsgs.length > 0) {
-          setMessages(finalMsgs);
-          try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(finalMsgs)); } catch {}
-        }
+        setMessages(finalMsgs);
+        try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(finalMsgs)); } catch {}
 
         // 7. Mescla deals
         const combinedDeals = [
@@ -1945,20 +1939,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (d && d.id) dealMap.set(d.id, d);
         });
         const finalDeals = Array.from(dealMap.values());
-        if (finalDeals.length > 0) {
-          setDeals(finalDeals);
-          try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(finalDeals)); } catch {}
-        }
+        setDeals(finalDeals);
+        try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(finalDeals)); } catch {}
 
         // 8. Insights
         const finalInsights = {
           ...(parsedLocalInsights || {}),
           ...(serverData?.aiInsights || {})
         };
-        if (Object.keys(finalInsights).length > 0) {
-          setAiInsights(finalInsights);
-          try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(finalInsights)); } catch {}
-        }
+        setAiInsights(finalInsights);
+        try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(finalInsights)); } catch {}
 
         // 9. Sincronização e Re-semeadura Bi-direcional do Servidor
         // Se o navegador local tiver dados no localStorage e o servidor estiver vazio ou com menos registros,
@@ -2053,28 +2043,28 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isHydratedRef.current) return;
     try {
-      if (contacts.length > 0) localStorage.setItem('vanguard_crm_contacts', JSON.stringify(contacts));
+      localStorage.setItem('vanguard_crm_contacts', JSON.stringify(contacts));
     } catch {}
   }, [contacts]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
     try {
-      if (deals.length > 0) localStorage.setItem('vanguard_crm_deals', JSON.stringify(deals));
+      localStorage.setItem('vanguard_crm_deals', JSON.stringify(deals));
     } catch {}
   }, [deals]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
     try {
-      if (conversations.length > 0) localStorage.setItem('vanguard_crm_conversations', JSON.stringify(conversations));
+      localStorage.setItem('vanguard_crm_conversations', JSON.stringify(conversations));
     } catch {}
   }, [conversations]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
     try {
-      if (messages.length > 0) localStorage.setItem('vanguard_crm_messages', JSON.stringify(messages));
+      localStorage.setItem('vanguard_crm_messages', JSON.stringify(messages));
     } catch {}
   }, [messages]);
 
@@ -3699,11 +3689,28 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const resetCRMDatabase = async (resyncAfter = true): Promise<{ success: boolean; message: string }> => {
+  const resetCRMDatabase = async (resyncAfter = false): Promise<{ success: boolean; message: string }> => {
     try {
       setIsSyncingWhatsApp(true);
-      // 1. Limpa o servidor via endpoint dedicado
-      await fetch('/api/v1/crm/reset', { method: 'POST' }).catch(() => {});
+      // 1. Limpa o servidor via endpoint dedicado com autenticação e escopo de tenant
+      try {
+        await fetch('/api/v1/crm/reset', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify({
+            tenantId: currentTenant.id,
+            wipeAll: false,
+          }),
+        });
+      } catch (netErr) {
+        console.warn('Aviso de rede ao resetar dados no servidor:', netErr);
+      }
 
       // 2. Limpa estados no frontend
       setContacts([]);
@@ -3711,8 +3718,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       setMessages([]);
       setDeals([]);
       setActiveConversationId(null);
+      setAiInsights({});
 
-      // 3. Limpa chaves do localStorage
+      // 3. Limpa chaves do localStorage e grava arrays vazios para evitar restauração de dados antigos
       if (typeof window !== 'undefined') {
         try {
           localStorage.removeItem('vanguard_crm_contacts');
@@ -3721,6 +3729,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('vanguard_crm_deals');
           localStorage.removeItem('vanguard_crm_ai_insights');
           localStorage.removeItem('vanguard_crm_active_conv_id');
+          localStorage.setItem('vanguard_crm_contacts', JSON.stringify([]));
+          localStorage.setItem('vanguard_crm_conversations', JSON.stringify([]));
+          localStorage.setItem('vanguard_crm_messages', JSON.stringify([]));
+          localStorage.setItem('vanguard_crm_deals', JSON.stringify([]));
+          localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify({}));
         } catch {}
       }
 
@@ -3731,7 +3744,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       return {
         success: true,
-        message: 'Base de dados resetada com sucesso e sincronização limpa concluída.',
+        message: resyncAfter
+          ? 'Base de dados resetada com sucesso e sincronização limpa concluída.'
+          : 'Base de dados de leads e conversas zerada com sucesso!',
       };
     } catch (err: any) {
       console.error('Erro ao resetar base do CRM:', err);

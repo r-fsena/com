@@ -1178,9 +1178,19 @@ export function WhatsAppInbox() {
                 onClick={() => syncWhatsAppChats()}
                 disabled={isSyncingWhatsApp}
                 className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
-                title="Sincronizar mensagens"
+                title="Sincronizar mensagens do WhatsApp"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWhatsApp ? 'animate-spin text-[#3742AC]' : ''}`} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                disabled={isSyncingWhatsApp}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer disabled:opacity-50"
+                title="Zerar base de leads e conversas"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -3514,36 +3524,52 @@ export function WhatsAppInbox() {
               <Trash2 className="w-6 h-6" />
             </div>
             <div className="text-center space-y-1">
-              <h3 className="text-base font-bold text-slate-900">Zerar Base & Resincronizar WhatsApp?</h3>
+              <h3 className="text-base font-bold text-slate-900">Limpeza da Base de Dados</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Esta ação limpará todas as conversas, mensagens e leads antigos em cache no CRM, e fará uma <strong>puxada 100% limpa diretamente do seu WhatsApp ativo</strong>.
+                Você pode optar por <strong>apenas zerar a base</strong> (deixando o ambiente totalmente limpo com 0 leads) ou <strong>zerar e recarregar diretamente do WhatsApp ativo</strong>.
               </p>
             </div>
             <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-[11px] text-slate-600 space-y-1">
               <div className="flex items-center gap-1.5 font-semibold text-emerald-700">
-                <Check className="w-3.5 h-3.5" /> A instância conectada continuará ativa
+                <Check className="w-3.5 h-3.5" /> O pareamento da instância WhatsApp continuará ativo
               </div>
-              <div className="flex items-center gap-1.5 font-semibold text-emerald-700">
-                <Check className="w-3.5 h-3.5" /> Os números e nomes reais serão reimportados do zero
+              <div className="flex items-center gap-1.5 font-semibold text-slate-600">
+                <Check className="w-3.5 h-3.5 text-emerald-600" /> Remove contatos, conversas e mensagens deste ambiente
               </div>
             </div>
-            <div className="flex items-center gap-2 pt-2">
+            <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowResetModal(false)}
-                className="flex-1 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                onClick={async () => {
+                  setShowResetModal(false);
+                  await resetCRMDatabase(false);
+                }}
+                disabled={isSyncingWhatsApp}
+                className="w-full py-2.5 px-4 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                Cancelar
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Apenas Zerar Base (0 Leads e Conversas)</span>
               </button>
+
               <button
                 type="button"
                 onClick={async () => {
                   setShowResetModal(false);
                   await resetCRMDatabase(true);
                 }}
-                className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+                disabled={isSyncingWhatsApp}
+                className="w-full py-2.5 px-4 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                Sim, Zerar e Recarregar
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Zerar e Resincronizar do WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="w-full py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
               </button>
             </div>
           </div>

@@ -84,7 +84,6 @@ export function saveStateToDisk() {
         const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
         fs.writeFileSync(tmpPath, serialized, 'utf-8');
         fs.renameSync(tmpPath, filePath);
-        break; // Persistido com sucesso no primeiro caminho gravável
       } catch {
         continue;
       }
@@ -420,6 +419,69 @@ export const serverCRMStore = {
     global.__GLOBAL_PHONE_LID_MAP__ = {};
     saveStateToDisk();
     return fresh;
+  },
+
+  resetTenantState(tenantId?: string): ServerCRMState {
+    if (!tenantId || tenantId === 'all') {
+      return this.resetState();
+    }
+
+    const current = this.getState();
+    const isAmabile = tenantId === 'tenant-amabile-barbarotti' || tenantId.includes('amabile');
+
+    const removedContactIds = new Set<string>();
+    const remainingContacts = current.contacts.filter(c => {
+      const match = c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId.includes('amabile')));
+      if (match) {
+        removedContactIds.add(c.id);
+        if (c.phone) removedContactIds.add(c.phone);
+        if (c.lid) removedContactIds.add(c.lid);
+        return false;
+      }
+      return true;
+    });
+
+    const removedConvIds = new Set<string>();
+    const remainingConvs = current.conversations.filter(cv => {
+      const match = cv.tenantId === tenantId ||
+                    (isAmabile && (!cv.tenantId || cv.tenantId.includes('amabile'))) ||
+                    removedContactIds.has(cv.contactId) ||
+                    removedContactIds.has(cv.id);
+      if (match) {
+        removedConvIds.add(cv.id);
+        return false;
+      }
+      return true;
+    });
+
+    const remainingDeals = current.deals.filter(d => {
+      const match = d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId.includes('amabile'))) || removedContactIds.has(d.contactId);
+      return !match;
+    });
+
+    const remainingMessages = current.messages.filter(m => {
+      const match = m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId.includes('amabile'))) || removedConvIds.has(m.conversationId);
+      return !match;
+    });
+
+    const remainingInsights: Record<string, AIInsight> = {};
+    for (const [key, insight] of Object.entries(current.aiInsights || {})) {
+      if (!removedContactIds.has(key) && !removedConvIds.has(key)) {
+        remainingInsights[key] = insight;
+      }
+    }
+
+    const next: ServerCRMState = {
+      contacts: remainingContacts,
+      deals: remainingDeals,
+      conversations: remainingConvs,
+      messages: remainingMessages,
+      aiInsights: remainingInsights,
+    };
+
+    global.__SERVER_CRM_STATE__ = next;
+    saveStateToDisk();
+    return next;
   },
 
   updateState(partial: Partial<ServerCRMState>): ServerCRMState {

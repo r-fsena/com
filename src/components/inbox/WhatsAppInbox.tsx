@@ -504,6 +504,13 @@ export function WhatsAppInbox() {
 
   const isLeadQualified = !isLeadPersonal && (qualificationScore >= 75 || Boolean(activeDeal));
 
+  // Fecha o drawer de qualificação se o contato for pessoal (não-lead)
+  React.useEffect(() => {
+    if (isLeadPersonal && showLeadDrawer) {
+      setShowLeadDrawer(false);
+    }
+  }, [isLeadPersonal, activeContact?.id]);
+
   // Handlers do Módulo de Imóveis Apresentados
   const handleSavePresentedProperty = () => {
     if (!activeContact || !propName.trim()) return;
@@ -687,7 +694,9 @@ export function WhatsAppInbox() {
     if (!activeConversation || !activeContact) return;
     try {
       setIsAnalyzingAI(true);
-      setShowLeadDrawer(true); // Abre o Perfil 360 imediatamente
+      if (!isLeadPersonal) {
+        setShowLeadDrawer(true);
+      }
 
       let chatHistory = activeMessages
         .filter(m => !m.isInternalNote && m.content)
@@ -814,6 +823,7 @@ export function WhatsAppInbox() {
           setEditedMonthlyIncome('');
           setEditedDownPayment('');
           setEditedMaxBudget('');
+          setShowLeadDrawer(false);
         }
 
         if (Object.keys(updates).length > 0) {
@@ -1511,15 +1521,26 @@ export function WhatsAppInbox() {
                 {/* 3. Botão Qualificação do Lead */}
                 <button
                   type="button"
-                  onClick={() => setShowLeadDrawer(!showLeadDrawer)}
-                  className={`px-3.5 py-1.5 rounded-full border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                    showLeadDrawer
-                      ? 'bg-[#3742AC] text-white border-[#3742AC]'
-                      : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+                  disabled={isLeadPersonal}
+                  onClick={() => {
+                    if (!isLeadPersonal) {
+                      setShowLeadDrawer(!showLeadDrawer);
+                    }
+                  }}
+                  className={`px-3.5 py-1.5 rounded-full border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs ${
+                    isLeadPersonal
+                      ? 'bg-slate-100 text-slate-400 border-slate-200/80 cursor-not-allowed opacity-60 select-none'
+                      : showLeadDrawer
+                      ? 'bg-[#3742AC] text-white border-[#3742AC] cursor-pointer'
+                      : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 cursor-pointer'
                   }`}
-                  title="Abrir / Ocultar Qualificação do Lead"
+                  title={
+                    isLeadPersonal
+                      ? "Qualificação desativada para Contato Pessoal. Clique em 'Tornar Lead' para habilitar."
+                      : "Abrir / Ocultar Qualificação do Lead"
+                  }
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className={`w-3.5 h-3.5 ${isLeadPersonal ? 'text-slate-400' : showLeadDrawer ? 'text-white' : 'text-[#3742AC]'}`} />
                   <span>Qualificação do Lead</span>
                 </button>
 

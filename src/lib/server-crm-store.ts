@@ -674,7 +674,10 @@ export const serverCRMStore = {
 
       const cleanLower = content.toLowerCase();
       if (
-        /^\d([.,]\d)?[xX]$/i.test(content) ||
+        /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(content) ||
+        /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(cleanLower) ||
+        cleanLower === '1,0×' ||
+        cleanLower === '1,0x' ||
         cleanLower.includes('mensagem apagada') ||
         cleanLower.includes('esta mensagem foi apagada') ||
         cleanLower.includes('message was deleted') ||
@@ -682,6 +685,11 @@ export const serverCRMStore = {
         cleanLower === 'tail-in' ||
         cleanLower === 'ic-fast-forward'
       ) {
+        return;
+      }
+
+      // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
+      if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) {
         return;
       }
 

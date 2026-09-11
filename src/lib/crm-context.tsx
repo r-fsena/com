@@ -1640,9 +1640,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               if (!m.content) return false;
               const clean = m.content.trim().toLowerCase();
               if (isWhatsAppSystemMessage(m.content)) return false;
-              if (/^\d([.,]\d)?[xX]$/i.test(clean)) return false;
+              if (/^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(clean) || clean === '1,0×' || clean === '1,0x') return false;
               if (clean.includes('mensagem apagada') || clean.includes('esta mensagem foi apagada') || clean.includes('message was deleted')) return false;
               if (clean === 'tail-out' || clean === 'tail-in' || clean === 'ic-fast-forward') return false;
+              // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
+              if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) return false;
               // Remove resíduos corrompidos de horários da conversa de Amor no dia 10/09
               const convDigits = (m.conversationId || '').replace(/\D/g, '');
               if ((convDigits.includes('554899797603') || convDigits.includes('5548999797603')) && m.timestamp && m.timestamp.startsWith('2026-09-10')) {
@@ -1693,7 +1695,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       const cleanLower = content.toLowerCase();
       if (
-        /^\d([.,]\d)?[xX]$/i.test(content) ||
+        /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(content) ||
+        /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(cleanLower) ||
+        cleanLower === '1,0×' ||
+        cleanLower === '1,0x' ||
         cleanLower.includes('mensagem apagada') ||
         cleanLower.includes('esta mensagem foi apagada') ||
         cleanLower.includes('message was deleted') ||
@@ -1701,6 +1706,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         cleanLower === 'tail-in' ||
         cleanLower === 'ic-fast-forward'
       ) {
+        return;
+      }
+
+      // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
+      if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) {
         return;
       }
 

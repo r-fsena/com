@@ -890,31 +890,111 @@
     return null;
   }
 
-  // Extrai data pura (Date com meio-dia) de string data-pre-plain-text
-  function extractDateFromPrePlain(rawPre) {
+const PT_MONTH_NAMES = {
+    'JAN': 0, 'JANEIRO': 0, 'FEV': 1, 'FEVEREIRO': 1, 'MAR': 2, 'MARÇO': 2, 'MARCO': 2,
+    'ABR': 3, 'ABRIL': 3, 'MAI': 4, 'MAIO': 4, 'JUN': 5, 'JUNHO': 5,
+    'JUL': 6, 'JULHO': 6, 'AGO': 7, 'AGOSTO': 7, 'SET': 8, 'SETEMBRO': 8,
+    'OUT': 9, 'OUTUBRO': 9, 'NOV': 10, 'NOVEMBRO': 10, 'DEZ': 11, 'DEZEMBRO': 11
+  };
+
+  // Parser Universal de Timestamps do WhatsApp Web (suporta datas com ano, sem ano, por extenso, US, etc.)
+  function parseWhatsAppTimestamp(rawPre, fallbackDate = null) {
     if (!rawPre) return null;
     const clean = rawPre.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
     const timeMatch = clean.match(/\[(.*?)\]/);
     if (!timeMatch || !timeMatch[1]) return null;
     const rawTime = timeMatch[1].trim();
-    const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
-    if (brMatch) {
-      const d = Number(brMatch[4]), mo = Number(brMatch[5]) - 1;
-      let y = Number(brMatch[6]);
+
+    const currentYear = new Date().getFullYear();
+
+    // 1. Formato BR com data e ano: 18:36, 31/08/2026 ou 18:36:00, 31/08/26
+    const brFull = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
+    if (brFull) {
+      let h = Number(brFull[1]), m = Number(brFull[2]), s = brFull[3] ? Number(brFull[3]) : 0;
+      const d = Number(brFull[4]), mo = Number(brFull[5]) - 1;
+      let y = Number(brFull[6]);
       if (y < 100) y += 2000;
-      const dt = new Date(y, mo, d, 12, 0, 0);
+      const dt = new Date(y, mo, d, h, m, s);
       if (!isNaN(dt.getTime())) return dt;
     }
-    const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/i);
-    if (usMatch) {
-      const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
-      let y = Number(usMatch[7]);
+
+    // 2. Formato BR SEM ano (muito frequente no WhatsApp Web): 18:36, 31/08 ou 18:36, 31/8
+    const brNoYear = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})$/);
+    if (brNoYear) {
+      let h = Number(brNoYear[1]), m = Number(brNoYear[2]), s = brNoYear[3] ? Number(brNoYear[3]) : 0;
+      const d = Number(brNoYear[4]), mo = Number(brNoYear[5]) - 1;
+      const dt = new Date(currentYear, mo, d, h, m, s);
+      if (!isNaN(dt.getTime())) {
+        if (dt.getTime() > Date.now() + 60000) {
+          dt.setFullYear(currentYear - 1);
+        }
+        return dt;
+      }
+    }
+
+    // 3. Formato com nome de mês em português: 18:36, 31 de ago. de 2026 ou 18:36, 31 de agosto
+    const ptMonthMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\s+DE\s+([A-ZÇ]+)\.?(?:\s+DE\s+(\d{2,4}))?/i);
+    if (ptMonthMatch) {
+      let h = Number(ptMonthMatch[1]), m = Number(ptMonthMatch[2]), s = ptMonthMatch[3] ? Number(ptMonthMatch[3]) : 0;
+      const d = Number(ptMonthMatch[4]);
+      const mStr = ptMonthMatch[5].toUpperCase();
+      let y = ptMonthMatch[6] ? Number(ptMonthMatch[6]) : currentYear;
       if (y < 100) y += 2000;
-      const dt = new Date(y, mo, d, 12, 0, 0);
+      const mo = PT_MONTH_NAMES[mStr] !== undefined ? PT_MONTH_NAMES[mStr] : 0;
+      const dt = new Date(y, mo, d, h, m, s);
+      if (!isNaN(dt.getTime())) {
+        if (dt.getTime() > Date.now() + 60000 && !ptMonthMatch[6]) {
+          dt.setFullYear(currentYear - 1);
+        }
+        return dt;
+      }
+    }
+
+    // 4. Formato US: 6:36 PM, 08/31/2026 ou 6:36 PM, 8/31
+    const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/i);
+    if (usMatch) {
+      let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
+      const isPm = usMatch[4].toUpperCase() === 'PM';
+      if (isPm && h < 12) h += 12;
+      if (!isPm && h === 12) h = 0;
+      const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
+      let y = usMatch[7] ? Number(usMatch[7]) : currentYear;
+      if (y < 100) y += 2000;
+      const dt = new Date(y, mo, d, h, m, s);
       if (!isNaN(dt.getTime())) return dt;
+    }
+
+    // 5. Se tiver apenas o horário (ex: [18:36]) e tivermos fallbackDate
+    const timeOnlyMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+    if (timeOnlyMatch && fallbackDate) {
+      let h = Number(timeOnlyMatch[1]), m = Number(timeOnlyMatch[2]), s = timeOnlyMatch[3] ? Number(timeOnlyMatch[3]) : 0;
+      if (timeOnlyMatch[4]) {
+        const isPm = timeOnlyMatch[4].toUpperCase() === 'PM';
+        if (isPm && h < 12) h += 12;
+        if (!isPm && h === 12) h = 0;
+      }
+      const dt = new Date(fallbackDate.getTime());
+      dt.setHours(h, m, s, 0);
+      return dt;
+    }
+
+    const dt = new Date(rawTime);
+    if (!isNaN(dt.getTime())) return dt;
+
+    return null;
+  }
+
+  // Extrai data pura (Date com meio-dia) de string data-pre-plain-text
+  function extractDateFromPrePlain(rawPre) {
+    const dt = parseWhatsAppTimestamp(rawPre);
+    if (dt) {
+      const d = new Date(dt.getTime());
+      d.setHours(12, 0, 0, 0);
+      return d;
     }
     return null;
   }
+
 
   // Resolve a data exata de um balão inspecionando vizinhos anteriores e posteriores no DOM
   function getContextualDateForContainer(container, currentWalkingDateIso) {
@@ -923,7 +1003,7 @@
     // 1. Procura para trás (mensagens anteriores no mesmo bloco de chat)
     let curr = parentRow.previousElementSibling;
     let stepsBack = 0;
-    while (curr && stepsBack < 30) {
+    while (curr && stepsBack < 40) {
       const text = (curr.innerText || '').trim();
       if (text && text.length < 50) {
         const parsed = parsePortugueseWhatsAppDate(text);
@@ -942,7 +1022,7 @@
     // 2. Procura para a frente (mensagens posteriores no mesmo bloco de chat)
     curr = parentRow.nextElementSibling;
     let stepsForward = 0;
-    while (curr && stepsForward < 30) {
+    while (curr && stepsForward < 40) {
       const text = (curr.innerText || '').trim();
       if (text && text.length < 50) {
         const parsed = parsePortugueseWhatsAppDate(text);
@@ -960,10 +1040,17 @@
 
     if (currentWalkingDateIso) {
       const parsed = new Date(currentWalkingDateIso);
-      if (!isNaN(parsed.getTime())) return parsed;
+      if (!isNaN(parsed.getTime())) {
+        const d = new Date(parsed.getTime());
+        d.setHours(12, 0, 0, 0);
+        return d;
+      }
     }
 
-    return new Date();
+    // Se tudo falhar, retorna ontem caso não haja outra referência, para nunca forçar para hoje à tarde
+    const def = new Date();
+    def.setHours(12, 0, 0, 0);
+    return def;
   }
 
   // Coleta balões de mensagem do DOM de #main e insere em um Map deduplicado
@@ -1060,11 +1147,19 @@
         'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz'
       ).forEach(el => el.remove());
 
-      // Remove nós folha que contêm exclusivamente horários (ex: "14:53", "12:59", "22:24✓")
-      clone.querySelectorAll('span, div').forEach(el => {
+      // Remove botões de player de áudio e controles de velocidade (1,0×, 1.5×, 2×)
+      clone.querySelectorAll(
+        'button, [data-testid="audio-player"], [data-testid="ptt-waveform"], audio, span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"]'
+      ).forEach(el => el.remove());
+
+      // Remove nós folha que contêm exclusivamente horários (ex: "14:53", "12:59", "22:24✓") ou velocidades
+      clone.querySelectorAll('span, div, button').forEach(el => {
         if (el.children.length === 0) {
           const t = (el.innerText || '').trim();
-          if (/^(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)([\s\u200e\u200f]*[✓✔︎]?)*$/i.test(t)) {
+          if (
+            /^(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)([\s\u200e\u200f]*[✓✔︎]?)*$/i.test(t) ||
+            /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?\s*$/i.test(t)
+          ) {
             el.remove();
           }
         }
@@ -1086,9 +1181,10 @@
         container.querySelector('div[data-testid="image-thumb"], div[data-testid="media-image"], div[data-testid="image-wrapper"]') ||
         container.querySelector('img[src*="blob:"]:not(.emoji):not([data-plain-text]):not([data-testid*="avatar"])')
       );
-      const hasAudio = !hasVideo && !hasDoc && !hasImg && Boolean(
-        container.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i]')
+      const isVoiceOrAudio = Boolean(
+        container.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i], button[aria-label*="áudio" i]')
       );
+      const hasAudio = !hasVideo && !hasDoc && !hasImg && isVoiceOrAudio;
 
       // 5. Extração de texto digitado pelo usuário
       const textNode = clone.querySelector('span.selectable-text, .selectable-text, .copyable-text span, div.copyable-text, span[dir="ltr"]');
@@ -1102,12 +1198,23 @@
           // Remove tamanhos de arquivo residuais
           .replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '')
           .replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '')
-          // Remove velocidades de reprodução de áudio
-          .replace(/\b\d([.,]\d)?[xX]\b/g, '')
+          // Remove velocidades de reprodução de áudio em qualquer formato (1,0×, 1.5×, 2x, etc.)
+          .replace(/\b\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]\b/gi, '')
           // Remove nomes de ícones do WhatsApp Web
           .replace(/\b(tail-in|tail-out|ic-fast-forward|fast-forward)\b/gi, '')
           .replace(/\s{2,}/g, ' ')
           .trim();
+
+        // Limpeza de contatos compartilhados do WhatsApp Web
+        if (userTypedText.includes('contatoVer todos') || userTypedText.includes('e 1 outro contato')) {
+          userTypedText = userTypedText.replace(/e\s+\d+\s+outro\s+contato/gi, '').replace(/Ver\s+todos/gi, '').trim();
+          userTypedText = '👤 Contato compartilhado: ' + userTypedText;
+        }
+
+        // Se sobrou apenas velocidade de reprodução ou número curto com multiplicador
+        if (/^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(userTypedText)) {
+          userTypedText = '';
+        }
 
         if (userTypedText.startsWith('Você:') || userTypedText.startsWith('You:')) {
           userTypedText = userTypedText.replace(/^(Você|Voce|You)\s*[:\n]+/i, '').trim();
@@ -1132,7 +1239,7 @@
       } else if (userTypedText && !hasDoc && !hasVideo && !hasImg) {
         messageType = 'TEXT';
         content = userTypedText;
-      } else if (hasAudio && !userTypedText) {
+      } else if ((hasAudio || isVoiceOrAudio) && (!userTypedText || /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(userTypedText))) {
         messageType = 'AUDIO';
         content = '🎵 Mensagem de Voz';
         fileName = 'Audio.ogg';
@@ -1203,10 +1310,21 @@
       if (!content || isWhatsAppSystemMessage(content)) return;
       if ((content === '📷 Foto' || content === 'Foto') && !hasImg) return;
 
+      // Converte qualquer resíduo puramente numérico ou de velocidade em áudio ou descarta
+      if (/^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(content)) {
+        if (isVoiceOrAudio) {
+          messageType = 'AUDIO';
+          content = '🎵 Mensagem de Voz';
+          fileName = 'Audio.ogg';
+        } else {
+          return;
+        }
+      }
+
       if (
         /^\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)$/i.test(content) ||
         /^\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)$/i.test(content) ||
-        /^\d{1,2}:\d{2}\s+(\d[.,]\d[xX]|\dx)$/i.test(content) ||
+        /^\d{1,2}:\d{2}\s+(\d[.,]\d[xX\u00d7]|\d[xX\u00d7])$/i.test(content) ||
         content === 'tail-out' || content === 'tail-in' || content === 'ic-fast-forward'
       ) {
         return;
@@ -1267,46 +1385,13 @@
         isFromMe = false;
       }
 
-      // 8. Extração e Resolução de Data e Hora
+      // 8. Extração e Resolução Robusta de Data e Hora
       let msgTime = '';
       if (cleanPrePlain) {
-        const timeMatch = cleanPrePlain.match(/\[(.*?)\]/);
-        if (timeMatch && timeMatch[1]) {
-          const rawTime = timeMatch[1].trim();
-          const brMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
-          if (brMatch) {
-            let h = Number(brMatch[1]), m = Number(brMatch[2]), s = brMatch[3] ? Number(brMatch[3]) : 0;
-            const d = Number(brMatch[4]), mo = Number(brMatch[5]) - 1;
-            let y = Number(brMatch[6]);
-            if (y < 100) y += 2000;
-            const dt = new Date(y, mo, d, h, m, s);
-            if (!isNaN(dt.getTime())) {
-              msgTime = dt.toISOString();
-              currentWalkingDateIso = msgTime;
-            }
-          } else {
-            const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/i);
-            if (usMatch) {
-              let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
-              const isPm = usMatch[4].toUpperCase() === 'PM';
-              if (isPm && h < 12) h += 12;
-              if (!isPm && h === 12) h = 0;
-              const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
-              let y = Number(usMatch[7]);
-              if (y < 100) y += 2000;
-              const dt = new Date(y, mo, d, h, m, s);
-              if (!isNaN(dt.getTime())) {
-                msgTime = dt.toISOString();
-                currentWalkingDateIso = msgTime;
-              }
-            } else {
-              const dt = new Date(rawTime);
-              if (!isNaN(dt.getTime())) {
-                msgTime = dt.toISOString();
-                currentWalkingDateIso = msgTime;
-              }
-            }
-          }
+        const dt = parseWhatsAppTimestamp(cleanPrePlain);
+        if (dt) {
+          msgTime = dt.toISOString();
+          currentWalkingDateIso = msgTime;
         }
       }
 
@@ -1317,6 +1402,13 @@
         if (timeMatch) {
           const d = new Date(contextualDate.getTime());
           d.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+
+          // PROTEÇÃO CONTRA MENSAGENS NO FUTURO:
+          // Se a hora cair no futuro em relação a agora, esta mensagem de mídia NUNCA pode ser de hoje!
+          if (d.getTime() > Date.now() + 60000) {
+            d.setDate(d.getDate() - 1);
+          }
+
           msgTime = d.toISOString();
         } else {
           msgTime = contextualDate.toISOString();

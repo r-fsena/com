@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.23';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.32';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -39,7 +39,7 @@
             <div class="sovereign-brand-icon">B</div>
             <div>
               <div class="sovereign-title" style="display:flex; align-items:center;">
-                Brokiva <span style="font-size:10px; background:#3742AC; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700;">v${extVersion}</span>
+                Brokiva <span id="sovereign-version-badge" style="font-size:10px; background:#3742AC; color:white; padding:1px 6px; border-radius:4px; margin-left:8px; font-weight:700; cursor:pointer;" title="Versão da extensão (Clique 5x para alternar Diagnóstico)">v${extVersion}</span>
               </div>
               <div class="sovereign-subtitle">Relacionamentos que viram negócios</div>
             </div>
@@ -63,6 +63,22 @@
     toggleBtn?.addEventListener('click', () => root.classList.toggle('open'));
     closeBtn?.addEventListener('click', () => root.classList.remove('open'));
 
+    // Alternar modo desenvolvedor/diagnóstico ao clicar 5x no badge de versão
+    let badgeClickCount = 0;
+    let badgeClickTimer = null;
+    document.getElementById('sovereign-version-badge')?.addEventListener('click', async () => {
+      badgeClickCount++;
+      clearTimeout(badgeClickTimer);
+      badgeClickTimer = setTimeout(() => { badgeClickCount = 0; }, 2500);
+      if (badgeClickCount >= 5) {
+        badgeClickCount = 0;
+        const current = await chrome.storage.local.get(['developerMode']);
+        const nextVal = !current.developerMode;
+        await chrome.storage.local.set({ developerMode: nextVal });
+        alert(nextVal ? "🛠️ Modo Diagnóstico e Telemetria Ativado!" : "🔒 Modo Diagnóstico Desativado (Padrão de Produção).");
+      }
+    });
+
     // Renderiza conteúdo baseado na sessão da extensão
     renderSidebarContent();
 
@@ -72,7 +88,7 @@
         chrome.storage.onChanged.addListener((changes, area) => {
           try {
             if (!chrome?.runtime?.id) return;
-            if (area === 'local' && (changes?.extensionSessionToken || changes?.brokerName)) {
+            if (area === 'local' && (changes?.extensionSessionToken || changes?.brokerName || changes?.developerMode)) {
               renderSidebarContent().catch(() => {});
             }
           } catch (e) {}
@@ -104,8 +120,11 @@
         'brokerEmail',
         'tenantName',
         'tenantId',
-        'crmUrl'
+        'crmUrl',
+        'developerMode'
       ]);
+
+      const isDeveloperMode = Boolean(storage.developerMode);
 
     const isConnected = Boolean(storage.extensionSessionToken && storage.brokerName);
     const crmUrl = storage.crmUrl || 'https://crm.faithhubs.com';
@@ -170,9 +189,11 @@
           <button id="sovereign-sync-current-btn" class="sovereign-btn-sync" style="background:#0f172a; margin-top:6px;">
             <span>📥 Salvar Histórico Desta Conversa</span>
           </button>
+${isDeveloperMode ? `
           <button id="sovereign-diagnostic-btn" class="sovereign-btn-sync" style="background:#475569; margin-top:6px;">
             <span>🔍 Diagnosticar Conversa (Passo a Passo)</span>
           </button>
+` : ""}
         </div>
 
         <!-- Card do Copiloto de IA -->
@@ -187,6 +208,7 @@
           <div id="sovereign-ai-suggestions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
         </div>
 
+${isDeveloperMode ? `
         <!-- Card de Logs & Telemetria CloudWatch -->
         <div class="sovereign-card" style="background:#0f172a; border:1px solid #334155; color:#cbd5e1;">
           <div class="sovereign-card-title" style="color:#94a3b8; display:flex; justify-content:space-between;">
@@ -197,12 +219,15 @@
             <div style="color:#64748b;">[Aguardando comando...]</div>
           </div>
         </div>
+` : ""}
       `;
 
       // Conecta botões das ferramentas
       document.getElementById('sovereign-batch-sync-btn')?.addEventListener('click', () => executeBatchHistoryScan());
       document.getElementById('sovereign-sync-current-btn')?.addEventListener('click', () => syncCurrentActiveChat());
-      document.getElementById('sovereign-diagnostic-btn')?.addEventListener('click', () => runStepByStepDiagnostic());
+      if (isDeveloperMode) {
+        document.getElementById('sovereign-diagnostic-btn')?.addEventListener('click', () => runStepByStepDiagnostic());
+      }
       document.getElementById('sovereign-ai-generate-btn')?.addEventListener('click', () => triggerAiSuggestion());
 
       // Atualiza lead ativo se houver conversa aberta

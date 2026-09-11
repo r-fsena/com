@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const logoutBtn = document.getElementById('logoutBtn');
   const openWaBtn = document.getElementById('openWaBtn');
   const openCrmBtn = document.getElementById('openCrmBtn');
+  const developerModeToggle = document.getElementById('developerModeToggle');
 
   const versionBadge = document.getElementById('versionBadge');
   if (versionBadge && chrome.runtime?.getManifest) {
@@ -33,6 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function renderState() {
     const config = await chrome.storage.local.get([
+      'developerMode',
       'extensionSessionToken',
       'brokerName',
       'brokerEmail',
@@ -42,6 +44,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
 
     const isConnected = Boolean(config.extensionSessionToken && config.brokerName);
+
+    if (developerModeToggle) {
+      developerModeToggle.checked = Boolean(config.developerMode);
+    }
 
     if (isConnected) {
       connectedView.style.display = 'block';
@@ -148,6 +154,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   openCrmBtn.addEventListener('click', async () => {
     const config = await chrome.storage.local.get(['crmUrl']);
     chrome.tabs.create({ url: config.crmUrl || DEFAULT_CRM_URL });
+  });
+
+  developerModeToggle?.addEventListener('change', async () => {
+    await chrome.storage.local.set({ developerMode: developerModeToggle.checked });
   });
 
   await renderState();

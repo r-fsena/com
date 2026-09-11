@@ -1457,7 +1457,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-slate-900">Extensão Brokiva para Google Chrome</h3>
                     <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                      v1.0.31 Oficial
+                      v1.0.32 Oficial
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5 max-w-xl leading-relaxed">
@@ -1468,7 +1468,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
 
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.31.zip"
+                download="brokiva-chrome-extension-v1.0.32.zip"
                 className="inline-flex items-center justify-center gap-2 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] px-4 py-2.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer shrink-0"
               >
                 <Download className="w-4 h-4" />

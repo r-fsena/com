@@ -803,25 +803,14 @@
     const validContentMsgs = Array.from(messagesMap.values())
       .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
 
-    // Alinhamento monótono: se mensagem A estava fisicamente antes de B no DOM, seu timestamp não pode ser maior que B
-    for (let i = 0; i < validContentMsgs.length - 1; i++) {
-      const curr = validContentMsgs[i];
-      const next = validContentMsgs[i + 1];
-      const tCurr = new Date(curr.timestamp).getTime();
-      const tNext = new Date(next.timestamp).getTime();
-      if (!isNaN(tCurr) && !isNaN(tNext) && tCurr > tNext) {
-        // Corrige inconsistência de contexto para manter fidelidade visual da tela
-        const d = new Date(tNext - 1000);
-        curr.timestamp = d.toISOString();
-      }
-    }
-
-    // Ordenação estritamente cronológica: da mensagem mais antiga para a mais recente
+    // Ordenação estritamente cronológica (do mais antigo para o mais recente)
     validContentMsgs.sort((a, b) => {
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
-      if (isNaN(tA) || isNaN(tB)) return (a.domOrder || 0) - (b.domOrder || 0);
-      return tA - tB;
+      if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+        return tA - tB;
+      }
+      return (a.domOrder || 0) - (b.domOrder || 0);
     });
 
     const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
@@ -1695,7 +1684,7 @@ const PT_MONTH_NAMES = {
       } catch (e) {}
     }
 
-    await new Promise(r => setTimeout(r, 350));
+    await new Promise(r => setTimeout(r, 700));
     harvestDomMessages(accumulatedMessages);
 
     return accumulatedMessages;
@@ -2626,7 +2615,7 @@ const PT_MONTH_NAMES = {
           totalMessages: totalMessagesSynced,
         });
 
-        const accumulatedMap = await deepScrollChatHistory(15, (step, total) => {
+        const accumulatedMap = await deepScrollChatHistory(1, (step, total) => {
           updateSyncModalProgress({
             syncedCount: syncedChats.length,
             maxChats: MAX_TARGET_CHATS,

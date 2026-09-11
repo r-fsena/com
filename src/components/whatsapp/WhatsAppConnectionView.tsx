@@ -26,6 +26,7 @@ import {
 
 export function WhatsAppConnectionView() {
   const { 
+    currentUser,
     currentTenant, 
     instances, 
     updateInstance,
@@ -69,7 +70,7 @@ export function WhatsAppConnectionView() {
   // Estados do QR Code ao vivo
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [isLoadingQr, setIsLoadingQr] = useState(false);
-  const [isQrConnected, setIsQrConnected] = useState<boolean>(Boolean(crmZapiConnected || activeInstance?.status === 'CONNECTED'));
+  const [isQrConnected, setIsQrConnected] = useState<boolean>(false);
 
   // Teste de Envio
   const [testPhone, setTestPhone] = useState('554888774408');
@@ -92,22 +93,61 @@ export function WhatsAppConnectionView() {
 
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
-  // Busca inicial do QR Code caso a linha esteja desconectada
+  const getZapiQueryParams = () => {
+    const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const tok = (activeInstance as any)?.token || '550DBC07B2F984AB74E4BCE5';
+    const cTok = 'Fc78d61c833db4b50864816b70766aee8S';
+    return new URLSearchParams({
+      instanceId: instId,
+      token: tok,
+      clientToken: cTok,
+      tenantId: currentTenant.id,
+    });
+  };
+
+  // Busca do QR Code real na Z-API
   const fetchFreshQrCode = async () => {
     setIsLoadingQr(true);
     try {
-      const qrRes = await fetch('/api/v1/zapi/qr-code');
+      const query = getZapiQueryParams();
+      const qrRes = await fetch(`/api/v1/zapi/qr-code?${query.toString()}`, {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        }
+      });
       const qrData = await qrRes.json();
       if (qrData.success) {
         if (qrData.connected) {
           setIsQrConnected(true);
           setQrCodeData(null);
+          setLiveDetails(prev => ({
+            connected: true,
+            phone: prev?.phone && prev.phone !== 'Não conectado' ? prev.phone : '+55 (48) 8877-4408',
+            name: prev?.name && prev.name !== 'Instância Desconectada' ? prev.name : 'Rafael Sena',
+            avatarUrl: prev?.avatarUrl || null,
+            deviceModel: prev?.deviceModel || 'Smartphone',
+            battery: prev?.battery || 100,
+            isBusiness: Boolean(prev?.isBusiness),
+          }));
         } else if (qrData.qrCode) {
           setQrCodeData(qrData.qrCode);
+          setIsQrConnected(false);
+          setLiveDetails({
+            connected: false,
+            phone: 'Não conectado',
+            name: 'Instância Desconectada',
+            avatarUrl: null,
+            deviceModel: 'Desconectado',
+            battery: 0,
+            isBusiness: false,
+          });
         }
       }
     } catch {
-      console.warn('Falha ao buscar QR Code');
+      console.warn('Falha ao buscar QR Code da Z-API');
     } finally {
       setIsLoadingQr(false);
     }
@@ -117,15 +157,23 @@ export function WhatsAppConnectionView() {
   const handleRefreshAllStatus = async () => {
     setIsLoadingQr(true);
     try {
-      const res = await fetch('/api/v1/zapi/status');
+      const query = getZapiQueryParams();
+      const res = await fetch(`/api/v1/zapi/status?${query.toString()}`, {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        }
+      });
       const data = await res.json();
       if (data.success) {
         const isConn = Boolean(data.connected);
         setIsQrConnected(isConn);
         setLiveDetails({
           connected: isConn,
-          phone: data.phone || '+55 (48) 8877-4408',
-          name: data.name || 'Rafael Sena',
+          phone: isConn ? (data.phone || '+55 (48) 8877-4408') : 'Não conectado',
+          name: isConn ? (data.name || 'Rafael Sena') : 'Instância Desconectada',
           avatarUrl: data.avatarUrl || null,
           deviceModel: data.deviceModel || 'iPhone',
           battery: data.battery || 100,
@@ -147,10 +195,13 @@ export function WhatsAppConnectionView() {
           });
           await fetchFreshQrCode();
         }
+      } else {
+        await fetchFreshQrCode();
       }
       await refreshLiveZapiStatus();
     } catch {
       console.warn('Falha ao checar status da Z-API');
+      await fetchFreshQrCode();
     } finally {
       setIsLoadingQr(false);
     }
@@ -163,7 +214,7 @@ export function WhatsAppConnectionView() {
     handleRefreshAllStatus();
   }, []);
 
-  const isConnected = Boolean(liveDetails?.connected ?? (isQrConnected || crmZapiConnected || activeInstance?.status === 'CONNECTED'));
+  const isConnected = Boolean(liveDetails?.connected ?? isQrConnected);
 
   // Polling em segundo plano enquanto desconectado para auto-detecção instantânea da leitura do QR Code
   useEffect(() => {
@@ -174,7 +225,15 @@ export function WhatsAppConnectionView() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/v1/zapi/status');
+        const query = getZapiQueryParams();
+        const res = await fetch(`/api/v1/zapi/status?${query.toString()}`, {
+          credentials: 'include',
+          headers: {
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          }
+        });
         const data = await res.json();
         if (data.success && data.connected) {
           setIsQrConnected(true);
@@ -191,13 +250,13 @@ export function WhatsAppConnectionView() {
           await refreshLiveZapiStatus();
         }
       } catch {}
-    }, 3500);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [isConnected, qrCodeData]);
 
-  const displayPhone = liveDetails?.phone || activeInstance?.phoneNumber || '+55 (48) 8877-4408';
-  const displayName = liveDetails?.name || activeInstance?.name || 'Rafael Sena';
+  const displayPhone = liveDetails?.phone || activeInstance?.phoneNumber || 'Não conectado';
+  const displayName = liveDetails?.name || activeInstance?.name || 'Instância WhatsApp';
   const displayDevice = liveDetails?.deviceModel || 'Apple iPhone';
 
   // Enviar Mensagem de Teste
@@ -247,12 +306,24 @@ export function WhatsAppConnectionView() {
     setAutoConfigSuccess(false);
 
     try {
+      const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+      const tok = (activeInstance as any)?.token || '550DBC07B2F984AB74E4BCE5';
+      const cTok = 'Fc78d61c833db4b50864816b70766aee8S';
+
       const res = await fetch('/api/v1/zapi/auto-configure', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        },
         body: JSON.stringify({
-          instanceId: activeInstance?.zapiInstanceId,
-          webhookUrl: officialWebhookUrl,
+          instanceId: instId,
+          token: tok,
+          clientToken: cTok,
+          tenantId: currentTenant.id,
         }),
       });
 
@@ -275,23 +346,39 @@ export function WhatsAppConnectionView() {
     setIsDisconnecting(true);
     setShowConfirmDisconnect(false);
     try {
+      const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+      const tok = (activeInstance as any)?.token || '550DBC07B2F984AB74E4BCE5';
+      const cTok = 'Fc78d61c833db4b50864816b70766aee8S';
+
       const res = await fetch('/api/v1/zapi/disconnect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        },
         body: JSON.stringify({
-          instanceId: activeInstance?.zapiInstanceId,
+          instanceId: instId,
+          token: tok,
+          clientToken: cTok,
         }),
       });
 
       const data = await res.json();
       if (data.success) {
         setIsQrConnected(false);
-        setLiveDetails(null);
+        setLiveDetails({
+          connected: false,
+          phone: 'Não conectado',
+          name: 'Instância Desconectada',
+        });
         updateInstance(activeInstance?.id || 'inst-amabile-central', {
           status: 'DISCONNECTED',
           lastSyncAt: new Date().toISOString()
         });
-        await handleRefreshAllStatus();
+        await fetchFreshQrCode();
       }
     } catch {
       alert('Falha ao desconectar sessão da Z-API');

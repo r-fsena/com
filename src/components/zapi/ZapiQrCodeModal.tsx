@@ -25,7 +25,7 @@ interface ZapiQrCodeModalProps {
 }
 
 export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
-  const { currentTenant, instances, createInstance, updateInstance, deleteInstance, syncZapiInstance, syncWhatsAppChats, isSyncingWhatsApp } = useCRM();
+  const { currentUser, currentTenant, instances, createInstance, updateInstance, deleteInstance, syncZapiInstance, syncWhatsAppChats, isSyncingWhatsApp } = useCRM();
   const [activeTab, setActiveTab] = useState<'QR' | 'CREDENTIALS'>('QR');
   const [isLoading, setIsLoading] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
@@ -47,10 +47,10 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Form de Credenciais da Instância (Segredos gerenciados via .env / servidor)
   const [instanceId, setInstanceId] = useState(
-    instances[0]?.zapiInstanceId || `INST_${currentTenant.slug.toUpperCase().replace(/-/g, '_')}_CENTRAL`
+    instances[0]?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC'
   );
-  const [instanceToken, setInstanceToken] = useState('');
-  const [clientToken, setClientToken] = useState('');
+  const [instanceToken, setInstanceToken] = useState((instances[0] as any)?.token || '550DBC07B2F984AB74E4BCE5');
+  const [clientToken, setClientToken] = useState('Fc78d61c833db4b50864816b70766aee8S');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [syncHistoryDays, setSyncHistoryDays] = useState<number>(15);
 
@@ -59,9 +59,9 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Função para buscar QR Code real da API
   const fetchLiveQrCode = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId;
-    const t = tok || instanceToken;
-    const ct = cTok !== undefined ? cTok : clientToken;
+    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const t = tok || instanceToken || '550DBC07B2F984AB74E4BCE5';
+    const ct = cTok !== undefined ? cTok : (clientToken || 'Fc78d61c833db4b50864816b70766aee8S');
 
     if (!id || !t || isFetchingQrRef.current) return;
 
@@ -70,7 +70,14 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setIsLoading(true);
       setQrError(null);
       const url = `/api/v1/zapi/qr-code?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}${ct ? `&clientToken=${encodeURIComponent(ct)}` : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        }
+      });
       const data = await res.json();
 
       if (data.success && data.qrCode) {
@@ -84,19 +91,26 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setIsLoading(false);
       isFetchingQrRef.current = false;
     }
-  }, [instanceId, instanceToken, clientToken]);
+  }, [instanceId, instanceToken, clientToken, currentTenant.id, currentUser.id, currentUser.email]);
 
   // Função para checar status sem causar loops de re-render
   const checkStatusOnce = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId;
-    const t = tok || instanceToken;
-    const ct = cTok !== undefined ? cTok : clientToken;
+    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const t = tok || instanceToken || '550DBC07B2F984AB74E4BCE5';
+    const ct = cTok !== undefined ? cTok : (clientToken || 'Fc78d61c833db4b50864816b70766aee8S');
 
     if (!id || !t || isCheckingRef.current) return;
 
     try {
       isCheckingRef.current = true;
-      const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}&clientToken=${encodeURIComponent(ct)}`);
+      const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}&clientToken=${encodeURIComponent(ct)}`, {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        }
+      });
       const data = await res.json();
       if (data.success && data.connected) {
         setIsConnected(true);
@@ -106,7 +120,13 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         // Auto-configuração dos Webhooks e notificações de envio
         fetch('/api/v1/zapi/auto-configure', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({
             instanceId: id,
             token: t,

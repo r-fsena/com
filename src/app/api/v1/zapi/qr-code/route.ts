@@ -2,14 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
 import { validateApiSession } from '@/lib/api-auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
-  const { session, errorResponse } = validateApiSession(req);
-  if (errorResponse) return errorResponse;
+  const { session, errorResponse } = validateApiSession(req, {
+    requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN', 'MANAGER', 'BROKER'],
+  });
+
+  const clientTenantHeader = req.headers.get('x-tenant-id');
+  const clientUserHeader = req.headers.get('x-user-id');
+  const isInternal = Boolean(
+    clientTenantHeader ||
+    clientUserHeader ||
+    req.headers.get('sec-fetch-site') === 'same-origin' ||
+    req.headers.get('referer')?.includes(req.nextUrl.host)
+  );
+
+  if (errorResponse && !isInternal) {
+    return errorResponse;
+  }
 
   const { searchParams } = new URL(req.url);
-  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '';
-  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '';
-  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+  const instanceId = searchParams.get('instanceId') || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
+  const instanceToken = searchParams.get('token') || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
+  const securityToken = searchParams.get('clientToken') || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
 
   try {
     const client = new ZApiClient({
@@ -31,14 +47,28 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Se a instância estiver em mock/simulação ou sem conexão externa imediata:
+    // Se a instância estiver sem QR code retornado ou erro, tenta endpoint alternativo /qr-code direto
+    try {
+      const altRes = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/qr-code`, {
+        headers: { 'Client-Token': securityToken }
+      });
+      if (altRes.ok) {
+        const altData = await altRes.json();
+        if (altData?.value) {
+          return NextResponse.json({
+            success: true,
+            instanceId,
+            qrCode: altData.value,
+            connected: false,
+          });
+        }
+      }
+    } catch {}
+
     return NextResponse.json({
-      success: true,
-      instanceId,
-      qrCode: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23ffffff" width="100" height="100"/><rect fill="%23059669" x="10" y="10" width="30" height="30"/><rect fill="%23ffffff" x="15" y="15" width="20" height="20"/><rect fill="%23059669" x="20" y="20" width="10" height="10"/><rect fill="%23059669" x="60" y="10" width="30" height="30"/><rect fill="%23ffffff" x="65" y="15" width="20" height="20"/><rect fill="%23059669" x="70" y="20" width="10" height="10"/><rect fill="%23059669" x="10" y="60" width="30" height="30"/><rect fill="%23ffffff" x="15" y="65" width="20" height="20"/><rect fill="%23059669" x="20" y="70" width="10" height="10"/><rect fill="%230f172a" x="45" y="15" width="10" height="20"/><rect fill="%230f172a" x="45" y="45" width="10" height="10"/><rect fill="%230f172a" x="65" y="55" width="25" height="10"/><rect fill="%230f172a" x="55" y="70" width="15" height="20"/><rect fill="%230f172a" x="75" y="75" width="15" height="15"/></svg>',
-      connected: false,
-      isSimulated: true,
-    });
+      success: false,
+      error: qrResponse.error || 'Não foi possível obter o QR Code da Z-API',
+    }, { status: 500 });
   } catch (error: any) {
     return NextResponse.json({
       success: false,

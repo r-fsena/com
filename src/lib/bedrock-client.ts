@@ -441,7 +441,7 @@ export class BedrockCopilotClient {
    */
   private extractMoneyMaxBudget(text: string): number | undefined {
     if (!text) return undefined;
-    const p1 = /(?:or[çc]amento|budget|teto|limite|capacidade|valor m[áa]ximo|pre[çc]o m[áa]ximo|faixa de pre[çc]o|faixa de valor)(?:\s+(?:é|de|em|seria|fica|em torno de|por volta de|na faixa de|at[ée]))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
+    const p1 = /(?:or[çc]amento(?:\s+m[áa]ximo)?|budget|teto|limite|capacidade|valor\s+m[áa]ximo|pre[çc]o\s+m[áa]ximo|faixa\s+de\s+(?:pre[çc]o|valor))(?:\s+(?:é|de|em|seria|fica|em torno de|por volta de|na faixa de|at[ée]))?\s*(?:de)?\s*(?:r\$)?\s*([\d\.\,]+)\s*(mil(?:h[õo]es)?|k|m(?:ilhões|ilhao|ilhe|i)?)?/i;
     const m1 = text.match(p1);
     if (m1) {
       const val = this.parseMoney(m1[1], m1[2]);
@@ -559,7 +559,7 @@ export class BedrockCopilotClient {
     while ((match = dynamicRegex.exec(originalText)) !== null) {
       const candidate = match[1].trim();
       const lowerCand = candidate.toLowerCase();
-      if (!['um', 'uma', 'este', 'esta', 'outro', 'outra', 'algum', 'alguma', 'bom', 'boa', 'grande', 'whatsapp', 'decorado', 'plantao', 'plantão'].includes(lowerCand)) {
+      if (!['um', 'uma', 'este', 'esta', 'outro', 'outra', 'algum', 'alguma', 'bom', 'boa', 'grande', 'whatsapp', 'decorado', 'plantao', 'plantão', 'instagram', 'facebook', 'anúncio', 'anuncio', 'google', 'site', 'olá', 'ola'].includes(lowerCand)) {
         if (!found.some(f => f.toLowerCase() === lowerCand) && candidate.length > 2) {
           found.push(candidate);
         }

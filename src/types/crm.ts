@@ -238,7 +238,7 @@ export interface Deal {
 }
 
 export type MessageSenderType = 'CONTACT' | 'USER' | 'SYSTEM' | 'AI_BOT';
-export type MessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'TEMPLATE';
+export type MessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'TEMPLATE' | 'VIDEO' | 'STICKER';
 export type MessageStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
 
 export interface Attachment {

@@ -16,7 +16,13 @@ const IngestMessageSchema = z.object({
   fromMe: z.boolean().default(false),
   timestamp: z.string().or(z.number()).optional(),
   senderName: z.string().optional(),
-  messageType: z.enum(['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE']).default('TEXT'),
+  messageType: z.string().optional().transform(v => {
+    const norm = (v || 'TEXT').toUpperCase();
+    if (['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE', 'VIDEO', 'STICKER'].includes(norm)) {
+      return norm as MessageType;
+    }
+    return 'TEXT' as MessageType;
+  }).default('TEXT'),
   mediaUrl: z.string().optional(),
   fileName: z.string().optional(),
 });
@@ -204,13 +210,13 @@ export async function POST(req: NextRequest) {
             senderUserId: isFromMe ? brokerUserId : undefined,
             senderName: isFromMe ? (brokerName || 'Corretor') : contactName,
             messageType: (m.messageType || 'TEXT') as MessageType,
-            content: cleanContent || (m.messageType === 'AUDIO' ? '🎵 Mensagem de Voz' : m.messageType === 'IMAGE' ? '📷 Foto' : 'Mensagem'),
+            content: cleanContent || (m.messageType === 'AUDIO' ? '🎵 Mensagem de Voz' : m.messageType === 'IMAGE' ? '📷 Foto' : m.messageType === 'VIDEO' ? '🎥 Vídeo' : 'Mensagem'),
             attachments: m.mediaUrl ? [{
               id: `att-${mId}`,
               url: m.mediaUrl,
-              fileName: m.fileName || (m.messageType === 'AUDIO' ? 'Audio.ogg' : m.messageType === 'IMAGE' ? 'Foto.jpg' : 'Documento.pdf'),
+              fileName: m.fileName || (m.messageType === 'AUDIO' ? 'Audio.ogg' : m.messageType === 'IMAGE' ? 'Foto.jpg' : m.messageType === 'VIDEO' ? 'Video.mp4' : 'Documento.pdf'),
               fileSize: 1024,
-              mimeType: m.messageType === 'AUDIO' ? 'audio/ogg' : m.messageType === 'IMAGE' ? 'image/jpeg' : 'application/pdf',
+              mimeType: m.messageType === 'AUDIO' ? 'audio/ogg' : m.messageType === 'IMAGE' ? 'image/jpeg' : m.messageType === 'VIDEO' ? 'video/mp4' : 'application/pdf',
             }] : undefined,
             status: 'DELIVERED',
             isInternalNote: false,

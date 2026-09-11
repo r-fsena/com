@@ -16,7 +16,7 @@ const DEFAULT_ZAPI_CLIENT_TOKEN = 'Fc78d61c833db4b50864816b70766aee8S';
 
 const SendMessageSchema = z.object({
   content: z.string().default(''),
-  messageType: z.enum(['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE']).default('TEXT'),
+  messageType: z.enum(['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE', 'VIDEO', 'STICKER']).default('TEXT'),
   mediaUrl: z.string().optional(),
   fileName: z.string().optional(),
   isInternalNote: z.boolean().default(false),

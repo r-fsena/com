@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.16';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.17';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -912,14 +912,14 @@
         '[data-testid="quoted-message"], .quoted-mention, [data-testid*="quote"], div[aria-label*="Citação"], div[aria-label*="Quoted"], div._amk4, div._amk6, div._amkb'
       ).forEach(el => el.remove());
 
-      // Remove carimbos de hora, todos os SVGs, títulos de ícones (tail-out, tail-in, ic-fast-forward) e metadados
+      // Remove carimbos de hora, todos os SVGs, títulos de ícones e metadados
       clone.querySelectorAll(
-        'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz, div.x1rg5ohu, span.x1rg5ohu'
+        'svg, span[data-icon], div[data-icon], [data-testid="msg-meta"], [data-testid*="time"], div._amjz'
       ).forEach(el => el.remove());
 
       // Remove pílulas e balões de reações para não tratar emojis como fotos ou texto fantasma
       clone.querySelectorAll(
-        '[data-testid*="reaction"], [aria-label*="reaç" i], [aria-label*="reaction" i], div._amkw, div._amkx, span.x1i10hfl'
+        '[data-testid*="reaction"], [aria-label*="reaç" i], [aria-label*="reaction" i], div._amkw, div._amkx'
       ).forEach(el => el.remove());
 
       // 1. Identificação de Tipo de Mídia (Vídeo, Documento, Imagem, Áudio PTT)
@@ -941,10 +941,10 @@
         container.querySelector('audio, [data-testid="audio-player"], [data-testid="ptt-waveform"], span[data-icon="ptt-play"], span[data-icon="ptt-pause"], span[data-icon="audio-play"], span[data-icon="audio-pause"], button[aria-label*="mensagem de voz" i], button[aria-label*="voice message" i]')
       );
 
-      // 2. Extração ESTRITA de texto digitado pelo usuário
-      // No WhatsApp Web, NENHUM metadado de áudio, documento ou hora fica dentro de span.selectable-text!
-      const selectableSpan = clone.querySelector('span.selectable-text, .selectable-text');
-      let userTypedText = selectableSpan ? selectableSpan.innerText.trim() : '';
+      // 2. Extração RESILIENTE de texto digitado pelo usuário
+      const textNode = clone.querySelector('span.selectable-text, .selectable-text, .copyable-text span, div.copyable-text, span[dir="ltr"]');
+      let userTypedText = (textNode ? textNode.innerText : clone.innerText) || '';
+      userTypedText = userTypedText.trim();
 
       // 3. Sanitização do texto digitado
       if (userTypedText) {
@@ -2045,7 +2045,7 @@
               }
             } catch (e) {}
           }
-          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
+          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, false);
         }
 
         if (chatData && chatData.phone && !isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {

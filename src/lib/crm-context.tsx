@@ -1675,12 +1675,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Descarta mensagens fantasmas de fotos geradas sem arquivo e sem ID nativo do WhatsApp
-      const isGhostPhoto = (m.messageType === 'IMAGE' || content === '📷 Foto') &&
-                           (!m.attachments || m.attachments.length === 0 || !m.attachments[0].url) &&
-                           (!m.id || (!m.id.startsWith('true_') && !m.id.startsWith('false_')));
-      if (isGhostPhoto) return;
-
       // Reatribui conversationId caso seja de um LID conhecido, para fundir na conversa do telefone
       let convId = m.conversationId;
       const rawDigits = convId.replace(/\D/g, '');

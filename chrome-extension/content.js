@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.15';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.16';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -826,24 +826,27 @@
     const main = document.querySelector('#main');
     if (!main) return;
 
-    // Apenas balões de mensagens autênticos: message-in ou message-out (nunca nós soltos com role="row")
-    const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out'));
+    const rawBubbleElements = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
     const uniqueRootContainers = [];
     const seenContainers = new Set();
 
     for (const el of rawBubbleElements) {
-      if (seenContainers.has(el)) continue;
-      seenContainers.add(el);
+      const bubble = (el.classList?.contains('message-in') || el.classList?.contains('message-out'))
+        ? el
+        : (el.querySelector?.('.message-in, .message-out') || el);
+
+      if (seenContainers.has(bubble)) continue;
+      seenContainers.add(bubble);
 
       // Descarta avisos de sistema e containers de data/hora no topo
       const isSystemContainer = Boolean(
-        el.closest?.('[data-testid*="system"]') ||
-        el.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
-        (el.getAttribute?.('class') || '').includes('system')
+        bubble.closest?.('[data-testid*="system"]') ||
+        bubble.querySelector?.('span[data-icon="lock-small"], span[data-icon="lock"]') ||
+        (bubble.getAttribute?.('class') || '').includes('system')
       );
       if (isSystemContainer) continue;
 
-      uniqueRootContainers.push(el);
+      uniqueRootContainers.push(bubble);
     }
 
     // Tenta encontrar uma data de referência no chat caso as mensagens iniciais sejam áudios ou anexos
@@ -1125,20 +1128,13 @@
 
       // Se não veio no prePlain (comum em áudios e anexos), extrai o horário do balão e herda a data de referência
       if (!msgTime) {
-        const timeEl = container.querySelector('[data-testid="msg-meta"], [data-testid*="time"], span.x1rg5ohu, div._amjz');
-        const timeText = (timeEl ? timeEl.innerText : container.innerText) || '';
-        const timeMatch = timeText.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+        const timeMatch = (container.innerText || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
         if (timeMatch) {
           const base = lastKnownDateIso ? new Date(lastKnownDateIso) : new Date();
           base.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
           msgTime = base.toISOString();
-        } else if (lastKnownDateIso && isRealMsgKey) {
-          msgTime = lastKnownDateIso;
-        } else if (isRealMsgKey) {
-          msgTime = new Date().toISOString();
         } else {
-          // Se não possui carimbo de hora nem chave real de mensagem do WhatsApp, é um nó fantasma (ex: reação, botão, painel)
-          return;
+          msgTime = lastKnownDateIso || new Date().toISOString();
         }
       }
 

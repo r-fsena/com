@@ -651,12 +651,6 @@ export const serverCRMStore = {
       const content = (m.content || '').trim();
       if (!content || isWhatsAppSystemMessage(content)) return;
 
-      // Descarta mensagens fantasmas de fotos geradas sem arquivo e sem ID nativo do WhatsApp
-      const isGhostPhoto = (m.messageType === 'IMAGE' || content === '📷 Foto') &&
-                           (!m.attachments || m.attachments.length === 0 || !m.attachments[0].url) &&
-                           (!m.id || (!m.id.startsWith('true_') && !m.id.startsWith('false_')));
-      if (isGhostPhoto) return;
-
       // Normaliza conversationId: se for um LID conhecido, reatribui para o telefone canônico!
       let convId = m.conversationId;
       const convDigits = convId.replace(/\D/g, '');

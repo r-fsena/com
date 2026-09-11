@@ -1645,12 +1645,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               if (clean === 'tail-out' || clean === 'tail-in' || clean === 'ic-fast-forward') return false;
               // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
               if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) return false;
-              // Remove resíduos corrompidos de horários da conversa de Amor no dia 10/09
-              const convDigits = (m.conversationId || '').replace(/\D/g, '');
-              if ((convDigits.includes('554899797603') || convDigits.includes('5548999797603')) && m.timestamp && m.timestamp.startsWith('2026-09-10')) {
-                const timeStr = m.timestamp.slice(11, 16);
-                if (timeStr > '14:53' && timeStr < '22:24') return false;
-              }
               return true;
             });
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
@@ -1733,13 +1727,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const normalizedMsg: Message = convId !== m.conversationId ? { ...m, conversationId: convId } : m;
       const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
-
-      // Higieniza mensagens corrompidas que ficaram com carimbo entre 14:54 e 22:23 na conversa de Amor no dia 10/09
-      const rawConvDigits = convId.replace(/\D/g, '');
-      if ((rawConvDigits.includes('554899797603') || rawConvDigits.includes('5548999797603')) && m.timestamp && m.timestamp.startsWith('2026-09-10')) {
-        const timeStr = m.timestamp.slice(11, 16);
-        if (timeStr > '14:53' && timeStr < '22:24') return;
-      }
 
       const key = isNativeWppId ? m.id! : `${convId}-${content}-${timeKey}-${m.senderType}`;
       const existing = map.get(key);

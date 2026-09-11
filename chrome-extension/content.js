@@ -897,7 +897,7 @@ const PT_MONTH_NAMES = {
     'OUT': 9, 'OUTUBRO': 9, 'NOV': 10, 'NOVEMBRO': 10, 'DEZ': 11, 'DEZEMBRO': 11
   };
 
-  // Parser Universal de Timestamps do WhatsApp Web (suporta datas com ano, sem ano, por extenso, US, etc.)
+  // Parser Universal de Timestamps do WhatsApp Web (suporta datas com ano, sem ano, por extenso, relativos como 'ontem', US, etc.)
   function parseWhatsAppTimestamp(rawPre, fallbackDate = null) {
     if (!rawPre) return null;
     const clean = rawPre.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
@@ -907,7 +907,20 @@ const PT_MONTH_NAMES = {
 
     const currentYear = new Date().getFullYear();
 
-    // 1. Formato BR com data e ano: 18:36, 31/08/2026 ou 18:36:00, 31/08/26
+    // 1. Formatos relativos comuns no WhatsApp Web: [13:42, ontem], [13:42, Ontem], [13:42, hoje], [13:42, Hoje]
+    const relMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(ontem|yesterday|hoje|today)/i);
+    if (relMatch) {
+      let h = Number(relMatch[1]), m = Number(relMatch[2]), s = relMatch[3] ? Number(relMatch[3]) : 0;
+      const word = relMatch[4].toLowerCase();
+      const dt = new Date();
+      if (word === 'ontem' || word === 'yesterday') {
+        dt.setDate(dt.getDate() - 1);
+      }
+      dt.setHours(h, m, s, 0);
+      return dt;
+    }
+
+    // 2. Formato BR com data e ano: 18:36, 31/08/2026 ou 18:36:00, 31/08/26
     const brFull = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
     if (brFull) {
       let h = Number(brFull[1]), m = Number(brFull[2]), s = brFull[3] ? Number(brFull[3]) : 0;
@@ -918,7 +931,7 @@ const PT_MONTH_NAMES = {
       if (!isNaN(dt.getTime())) return dt;
     }
 
-    // 2. Formato BR SEM ano (muito frequente no WhatsApp Web): 18:36, 31/08 ou 18:36, 31/8
+    // 3. Formato BR SEM ano (muito frequente no WhatsApp Web): 18:36, 31/08 ou 18:36, 31/8
     const brNoYear = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})$/);
     if (brNoYear) {
       let h = Number(brNoYear[1]), m = Number(brNoYear[2]), s = brNoYear[3] ? Number(brNoYear[3]) : 0;
@@ -932,7 +945,7 @@ const PT_MONTH_NAMES = {
       }
     }
 
-    // 3. Formato com nome de mês em português: 18:36, 31 de ago. de 2026 ou 18:36, 31 de agosto
+    // 4. Formato com nome de mês em português: 18:36, 31 de ago. de 2026 ou 18:36, 31 de agosto
     const ptMonthMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\s+DE\s+([A-ZÇ]+)\.?(?:\s+DE\s+(\d{2,4}))?/i);
     if (ptMonthMatch) {
       let h = Number(ptMonthMatch[1]), m = Number(ptMonthMatch[2]), s = ptMonthMatch[3] ? Number(ptMonthMatch[3]) : 0;
@@ -950,7 +963,7 @@ const PT_MONTH_NAMES = {
       }
     }
 
-    // 4. Formato US: 6:36 PM, 08/31/2026 ou 6:36 PM, 8/31
+    // 5. Formato US: 6:36 PM, 08/31/2026 ou 6:36 PM, 8/31
     const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/i);
     if (usMatch) {
       let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
@@ -964,16 +977,17 @@ const PT_MONTH_NAMES = {
       if (!isNaN(dt.getTime())) return dt;
     }
 
-    // 5. Se tiver apenas o horário (ex: [18:36]) e tivermos fallbackDate
+    // 6. Se tiver apenas o horário: [13:42] ou [13:42:00]
     const timeOnlyMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
-    if (timeOnlyMatch && fallbackDate) {
+    if (timeOnlyMatch) {
       let h = Number(timeOnlyMatch[1]), m = Number(timeOnlyMatch[2]), s = timeOnlyMatch[3] ? Number(timeOnlyMatch[3]) : 0;
       if (timeOnlyMatch[4]) {
         const isPm = timeOnlyMatch[4].toUpperCase() === 'PM';
         if (isPm && h < 12) h += 12;
         if (!isPm && h === 12) h = 0;
       }
-      const dt = new Date(fallbackDate.getTime());
+      const ref = fallbackDate || new Date();
+      const dt = new Date(ref.getTime());
       dt.setHours(h, m, s, 0);
       return dt;
     }
@@ -1911,7 +1925,7 @@ const PT_MONTH_NAMES = {
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_START', 'Iniciando leitura da conversa aberta...');
 
     // Rola para cima profundamente para carregar todo o histórico anterior (até 25 páginas)
-    const accumulatedMap = await deepScrollChatHistory(25, (step, total) => {
+    const accumulatedMap = await deepScrollChatHistory(2, (step, total) => {
       if (badge) badge.innerText = `Lendo antigas (${step}/${total})...`;
     });
 

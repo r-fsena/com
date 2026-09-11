@@ -1712,6 +1712,100 @@
   }
 
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
+  // Despacho Resiliente de Sincronização: tenta worker e faz fallback autônomo via fetch() direto
+  async function dispatchSyncBatchChats(chats) {
+    if (!chats || !Array.isArray(chats) || chats.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    // Tentativa 1: Via Background Service Worker se runtime estiver ativo
+    let canUseRuntime = false;
+    try {
+      canUseRuntime = Boolean(typeof chrome !== "undefined" && chrome?.runtime && chrome.runtime.id);
+    } catch (_) {
+      canUseRuntime = false;
+    }
+
+    if (canUseRuntime) {
+      try {
+        const bgRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({
+            action: "SYNC_BATCH_CHATS",
+            data: { chats }
+          }, (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(res || { success: false, error: "Resposta vazia do worker" });
+            }
+          });
+        });
+        if (bgRes && bgRes.success) {
+          return bgRes;
+        }
+        console.warn("[Brokiva] Worker desconectado ou sem resposta. Acionando fallback direto via fetch...", bgRes?.error);
+      } catch (err) {
+        console.warn("[Brokiva] Falha ao contatar worker. Acionando fallback direto via fetch...", err?.message);
+      }
+    } else {
+      console.warn("[Brokiva] Runtime desconectado (extensão recarregada). Usando envio direto via fetch para o CRM...");
+    }
+
+    // Tentativa 2: Fallback Direto e Robusto via Fetch para o CRM (sobrevive a reload de extensão sem precisar de F5)
+    try {
+      let crmUrl = "https://crm.faithhubs.com";
+      let tenantId = "default-tenant";
+      let brokerUserId = undefined;
+      let brokerName = "Corretor";
+      let sessionToken = null;
+
+      try {
+        if (typeof chrome !== "undefined" && chrome?.storage?.local) {
+          const cfg = await chrome.storage.local.get(["crmUrl", "tenantId", "brokerUserId", "brokerName", "extensionSessionToken"]);
+          if (cfg?.crmUrl) crmUrl = cfg.crmUrl;
+          if (cfg?.tenantId) tenantId = cfg.tenantId;
+          if (cfg?.brokerUserId) brokerUserId = cfg.brokerUserId;
+          if (cfg?.brokerName) brokerName = cfg.brokerName;
+          if (cfg?.extensionSessionToken) sessionToken = cfg.extensionSessionToken;
+        }
+      } catch (_) {}
+
+      crmUrl = (crmUrl || "https://crm.faithhubs.com").replace(/\/+$/, "");
+      const endpoint = crmUrl + "/api/v1/sync/extension-history";
+
+      const headers = {
+        "Content-Type": "application/json",
+        "x-extension-token": "brokiva-ext-sync-secret-2026",
+      };
+      if (sessionToken) {
+        headers["Authorization"] = "Bearer " + sessionToken;
+      }
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          tenantId,
+          brokerUserId,
+          brokerName,
+          chats,
+        }),
+      });
+
+      const resText = await response.text();
+      let resJson = {};
+      try { resJson = JSON.parse(resText); } catch (_) {}
+
+      if (response.ok && resJson.success) {
+        return { success: true, count: resJson.count || chats.length };
+      } else {
+        return { success: false, error: resJson.error || ("HTTP " + response.status + ": " + resText.slice(0, 100)) };
+      }
+    } catch (netErr) {
+      return { success: false, error: "Falha de conexão com o CRM: " + (netErr?.message || netErr) };
+    }
+  }
+
   async function syncCurrentActiveChat() {
     if (isCurrentChatGroupOrChannel()) {
       alert('Grupos, canais e comunidades não são importados para o CRM como leads comerciais.');
@@ -1766,30 +1860,26 @@
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
     if (badge) badge.innerText = 'Salvando...';
 
-    safeSendMessage({
-      action: 'SYNC_BATCH_CHATS',
-      data: { chats: [chatData] }
-    }, (response) => {
-      if (response && response.success) {
-        logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_SUCCESS', `✓ Sucesso! ${chatData.messages.length} msgs enviadas para Brokiva`);
-        if (badge) {
-          badge.innerText = `✓ ${chatData.messages.length} msgs`;
-          badge.style.background = '#dcfce7';
-          badge.style.color = '#15803d';
-        }
-        alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!`);
-      } else {
-        const err = response?.error || 'Erro desconhecido na sincronização.';
-        logToConsoleAndCloudWatch('ERROR', 'SYNC_SINGLE_FAILED', `Falha ao sincronizar: ${err}`);
-        if (badge) badge.innerText = 'Erro';
-        console.error('[Brokiva] Erro ao sincronizar conversa atual:', err);
-        if (err.includes('recarregue') || err.includes('Recarregue') || err.includes('Atualize') || err.includes('invalidated')) {
-          alert(`⚠️ Conexão reiniciada:\n\nA extensão Brokiva foi recarregada no navegador. Por favor, dê F5 (ou Cmd+R) na página do WhatsApp Web para reconectar.`);
+    const response = await dispatchSyncBatchChats([chatData]);
+        if (response && response.success) {
+          logToConsoleAndCloudWatch("INFO", "SYNC_SINGLE_SUCCESS", `✓ Sucesso! ${chatData.messages.length} msgs enviadas para Brokiva`);
+          if (badge) {
+            badge.innerText = `✓ ${chatData.messages.length} msgs`;
+            badge.style.background = "#dcfce7";
+            badge.style.color = "#15803d";
+          }
+          alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!`);
         } else {
-          alert(`Erro ao sincronizar: ${err}`);
+          const err = response?.error || "Erro desconhecido na sincronização.";
+          logToConsoleAndCloudWatch("WARN", "SYNC_SINGLE_FAILED", `Falha ao sincronizar: ${err}`);
+          if (badge) badge.innerText = "Erro";
+          console.warn("[Brokiva] Aviso ao sincronizar conversa atual:", err);
+          if (err.includes("recarregue") || err.includes("Recarregue") || err.includes("Atualize") || err.includes("invalidated")) {
+            alert(`⚠️ Conexão reiniciada:\n\nA extensão Brokiva foi recarregada no navegador. Por favor, dê F5 (ou Cmd+R) na página do WhatsApp Web para reconectar.`);
+          } else {
+            alert(`Erro ao sincronizar: ${err}`);
+          }
         }
-      }
-    });
   }
 
   // 4.1 Diagnóstico passo a passo e isolado da conversa ativa com cópia automática para o clipboard
@@ -2456,20 +2546,13 @@
 
           logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${msgsCount} msgs de ${chatData.name} (${chatData.phone})`);
 
-          // Envia imediatamente cada chat para a API da Brokiva e aguarda confirmação do backend
-          await new Promise((resolve) => {
-            safeSendMessage({
-              action: 'SYNC_BATCH_CHATS',
-              data: { chats: [chatData] }
-            }, (res) => {
-              if (res && res.success) {
-                logToConsoleAndCloudWatch('INFO', 'CHAT_SAVED_OK', `✓ Chat ${chatData.name} salvo com sucesso no CRM`);
-              } else {
-                logToConsoleAndCloudWatch('ERROR', 'CHAT_SAVE_FAIL', `Falha ao salvar ${chatData.name}: ${res?.error || 'sem resposta'}`);
-              }
-              resolve(res);
-            });
-          });
+          // Envia imediatamente cada chat usando o despacho resiliente com fallback fetch
+          const res = await dispatchSyncBatchChats([chatData]);
+                    if (res && res.success) {
+                      logToConsoleAndCloudWatch("INFO", "CHAT_SAVED_OK", `✓ Chat ${chatData.name} salvo com sucesso no CRM`);
+                    } else {
+                      logToConsoleAndCloudWatch("WARN", "CHAT_SAVE_FAIL", `Falha ao salvar ${chatData.name}: ${res?.error || "sem resposta"}`);
+                    }
 
           updateSyncModalProgress({
             syncedCount: syncedChats.length,

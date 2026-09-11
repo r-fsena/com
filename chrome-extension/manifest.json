@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Brokiva — CRM Imobiliário & WhatsApp Sync",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "Extensão oficial Brokiva: Sincronização de histórico completo, gestão de leads e Copiloto de IA para corretores no WhatsApp Web.",
   "permissions": [
     "storage",
@@ -19,14 +19,25 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://web.whatsapp.com/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://crm.faithhubs.com/*", "http://localhost:3000/*"],
-      "js": ["crm-bridge.js"],
+      "matches": [
+        "https://crm.faithhubs.com/*",
+        "http://localhost:3000/*"
+      ],
+      "js": [
+        "crm-bridge.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -36,8 +47,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content.css"],
-      "matches": ["https://web.whatsapp.com/*"]
+      "resources": [
+        "content.css"
+      ],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ]
     }
   ]
 }

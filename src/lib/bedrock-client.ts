@@ -24,6 +24,7 @@ export interface AIResponseOption {
 
 export interface AICopilotAnalysis {
   summary: string;
+  conversationType?: 'REAL_ESTATE_LEAD' | 'PERSONAL_OR_OTHER' | 'OPERATIONAL_OR_VENDOR';
   extractedData: LeadExtractionResult;
   detectedObjections: string[];
   responseOptions: AIResponseOption[];
@@ -64,7 +65,7 @@ export class BedrockCopilotClient {
 
   /**
    * Motor Semântico Avançado de Processamento de Linguagem Natural Imobiliário
-   * Prioriza estritamente as mensagens enviadas pelo CLIENTE sobre as mensagens do corretor
+   * Prioriza estritamente as mensagens reais do chat, sem inventar dados não informados
    */
   private enhancedSemanticAnalysis(
     chatHistory: Array<{ sender: 'CLIENT' | 'BROKER'; text: string }>,
@@ -85,7 +86,66 @@ export class BedrockCopilotClient {
     const fullText = chatHistory.map(m => m.text).join(' ');
     const lowerText = fullText.toLowerCase();
 
-    // 1. Detecção de Intenção Comercial (Foco nas intenções do cliente)
+    // 0. Classificação Prévia da Natureza do Diálogo
+    // Detecta se a conversa tem termos e intenção imobiliária genuína
+    const realEstateKeywordsRegex = /\b(im[oó]vel|im[oó]veis|apartamento|apartamentos|apto|aptos|casa\b|casas\b|cobertura|terreno|terrenos|lote\b|lotes\b|condom[íi]nio|empreendimento|lan[çc]amento|planta\b|decorado|visita\s+ao\s+im[oó]vel|plant[ãa]o|corretor|corretora|imobili[áa]ria|financiamento\s+imobili[áa]rio|financiar\s+im[oó]vel|fgts|proposta\s+de\s+compra|permuta\s+de\s+im[oó]vel|aluguel|alugar|loca[çc][ãa]o|comprar\s+im[oó]vel|compra\s+de\s+im[oó]vel|escritura|habite-se)\b/i;
+
+    const hasRealEstateContext = realEstateKeywordsRegex.test(fullText);
+
+    // SE A CONVERSA FOR PURAMENTE PESSOAL OU OPERACIONAL (não imobiliária):
+    if (!hasRealEstateContext) {
+      const hasPaymentMentions = /(comprovante|pagamento|paguei|transfer[êe]ncia|pix|dep[oó]sito|conta\b|valor\b|banco\b|r\$)/i.test(fullText);
+      const hasRoutineMentions = /(p[ãa]o|chapa|almo[çc]o|jantar|cheg(ou|amos|ei)|amor|quer\b|vida\b|fam[íi]lia|filh)/i.test(fullText);
+
+      let factualSummary = 'Conversa de cunho pessoal ou informal, sem menção a transações imobiliárias.';
+      if (hasPaymentMentions && hasRoutineMentions) {
+        factualSummary = 'Conversa pessoal / cotidiana com combinações da rotina e confirmação de comprovantes / pagamentos.';
+      } else if (hasPaymentMentions) {
+        factualSummary = 'Conversa pessoal com envio e alinhamento de comprovantes / pagamentos bancários.';
+      } else if (hasRoutineMentions) {
+        factualSummary = 'Conversa de cunho pessoal / cotidiano sobre afazeres e rotina diária.';
+      }
+
+      const email = this.extractEmail(clientText, fullText);
+
+      return {
+        summary: factualSummary,
+        conversationType: 'PERSONAL_OR_OTHER',
+        extractedData: {
+          email,
+          monthlyIncome: undefined,
+          downPayment: undefined,
+          maxBudget: undefined,
+          preferredRegion: undefined,
+          propertyType: undefined,
+          urgencyLevel: 'BAIXA',
+          detectedObjections: [],
+        },
+        detectedObjections: [],
+        responseOptions: [
+          {
+            id: 'opt-personal-ack',
+            category: 'FINANCE',
+            badge: '💬 Resposta Rápida',
+            label: 'Confirmar Recebimento',
+            text: 'Perfeito, recebido por aqui! Obrigado.'
+          },
+          {
+            id: 'opt-personal-casual',
+            category: 'VISIT',
+            badge: '👋 Conversa Cotidiana',
+            label: 'Responder com Cordialidade',
+            text: 'Combinado, qualquer novidade te aviso por aqui!'
+          }
+        ],
+        sentiment: 'POSITIVE',
+        intent: 'DUVIDA_GERAL',
+        suggestedResponse: 'Perfeito, recebido por aqui! Obrigado.',
+        confidenceScore: 95,
+      };
+    }
+
+    // 1. Diálogo Imobiliário Genuíno (REAL_ESTATE_LEAD):
     let intent: AICopilotAnalysis['intent'] = 'DUVIDA_GERAL';
     const targetTextForIntent = clientText || lowerText;
     if (/(visita|sábado|domingo|horário|agendar|conhecer|ir no local|ver o decorado|plantão|presencial)/i.test(targetTextForIntent)) {
@@ -98,26 +158,26 @@ export class BedrockCopilotClient {
       intent = 'NEGOCIAR_VALOR';
     }
 
-    // 2. Extração de Renda Mensal (Cliente primeiro, depois contexto geral)
+    // 2. Extração Numérica de Renda Mensal (sem suposição)
     const monthlyIncome = this.extractMoneyMonthlyIncome(clientText) || this.extractMoneyMonthlyIncome(lowerText);
 
-    // 3. Extração de Entrada Financeira (Down Payment)
+    // 3. Extração Numérica de Entrada
     const downPayment = this.extractMoneyDownPayment(clientText) || this.extractMoneyDownPayment(lowerText);
 
-    // 4. Extração de Orçamento / Valor Máximo do Imóvel (Max Budget)
+    // 4. Extração Numérica de Orçamento Máximo
     const maxBudget = this.extractMoneyMaxBudget(clientText) || this.extractMoneyMaxBudget(lowerText);
 
-    // 5. Extração de Tipo de Imóvel com Algoritmo de Votação Ponderada
+    // 5. Extração de Tipo de Imóvel (apenas se expressamente mencionado)
     const propertyType = this.extractPropertyType(clientText, lowerText);
 
-    // 6. Extração de Regiões e Bairros
+    // 6. Extração de Regiões e Bairros (apenas se expressamente mencionado)
     const regions = this.extractRegions(clientText, fullText);
-    const preferredRegion = regions.length > 0 ? regions.join(', ') : 'Região Central / Metropolitana';
+    const preferredRegion = regions.length > 0 ? regions.join(', ') : undefined;
 
     // 7. Extração de E-mail do Cliente
     const email = this.extractEmail(clientText, fullText);
 
-    // 8. Detecção Específica de Objeções
+    // 8. Detecção Específica de Objeções Reais
     const detectedObjections: string[] = [];
     if (/(caro|preço alto|valor alto|muito dinheiro|fora do orçamento|desconto|abaixar o valor)/i.test(lowerText)) {
       detectedObjections.push('🏷️ Objeção de Preço / Relação Custo-Benefício');
@@ -138,10 +198,6 @@ export class BedrockCopilotClient {
       detectedObjections.push('📋 Dúvida sobre Custos Recorrentes de Condomínio e IPTU');
     }
 
-    if (detectedObjections.length === 0) {
-      detectedObjections.push('🔍 Lead em fase de triagem e mapeamento de perfil');
-    }
-
     // 9. Urgência e Sentimento
     let urgencyLevel: 'ALTA' | 'MEDIA' | 'BAIXA' = 'MEDIA';
     if (/(urgente|este mês|fechar rápido|comprar agora|já vendi|aprovado|à vista|a vista|sinal hoje)/i.test(targetTextForIntent) || intent === 'AGENDAR_VISITA') {
@@ -153,17 +209,18 @@ export class BedrockCopilotClient {
       sentiment = 'NEGATIVE';
     }
 
-    // 10. Criação das 3 Opções de Respostas Táticas de Vendas
+    // 10. Criação de Opções de Respostas Táticas
     const responseOptions: AIResponseOption[] = [];
+    const propDisplay = propertyType || 'imóvel';
+    const regionDisplay = preferredRegion ? ` em ${preferredRegion}` : '';
 
-    // Opção 1: Quebra de Objeção / Argumento Persuasivo
     if (detectedObjections.some(o => o.includes('Preço'))) {
       responseOptions.push({
         id: 'opt-objection-price',
         category: 'OBJECTION',
         badge: '🛡️ Quebra de Objeção',
         label: 'Contornar Objeção de Preço',
-        text: `Entendo perfeitamente sua avaliação sobre o valor. O grande diferencial deste projeto é o padrão de acabamento e a valorização acelerada na região. Além disso, temos flexibilidade de fluxo direto com a construtora para adequar as parcelas. O que acha de analisarmos uma proposta personalizada?`
+        text: `Entendo perfeitamente sua avaliação sobre o valor. O grande diferencial deste projeto é o padrão de acabamento e a valorização acelerada na região. O que acha de analisarmos uma proposta personalizada?`
       });
     } else if (detectedObjections.some(o => o.includes('Financiamento') || o.includes('Juros'))) {
       responseOptions.push({
@@ -171,68 +228,57 @@ export class BedrockCopilotClient {
         category: 'FINANCE',
         badge: '🏦 Quebra de Objeção',
         label: 'Contornar Financiamento & Juros',
-        text: `Excelente ponto! Temos correspondentes bancários credenciados que conseguem taxas bonificadas e parcelamento da entrada até a entrega das chaves. Quer que eu faça uma simulação comparativa sem compromisso para você ver as opções?`
-      });
-    } else if (detectedObjections.some(o => o.includes('Decisão') || o.includes('pensar'))) {
-      responseOptions.push({
-        id: 'opt-objection-decision',
-        category: 'OBJECTION',
-        badge: '👥 Quebra de Objeção',
-        label: 'Apoiar Decisão em Família',
-        text: `Com certeza, uma decisão como essa deve ser tomada com tranquilidade. O que acha de fazermos uma visita sem compromisso no decorado neste sábado? Assim vocês podem vivenciar juntos a luminosidade, espaço e acabamento real do imóvel.`
+        text: `Excelente ponto! Temos correspondentes bancários credenciados que conseguem taxas bonificadas. Quer que eu faça uma simulação comparativa sem compromisso?`
       });
     } else {
       responseOptions.push({
         id: 'opt-objection-general',
         category: 'OBJECTION',
         badge: '🎯 Qualificação Ativa',
-        label: 'Apresentar Oportunidade Exclusiva',
-        text: `Temos unidades estratégicas de ${propertyType} nessa configuração com excelente potencial de valorização em ${preferredRegion}. Gostaria de conhecer as condições especiais que temos disponíveis para esta semana?`
+        label: 'Apresentar Oportunidade',
+        text: `Temos opções estratégicas de ${propDisplay}${regionDisplay}. Gostaria de conhecer as unidades disponíveis nesta semana?`
       });
     }
 
-    // Opção 2: Convite Tático para Visita Presencial
     responseOptions.push({
       id: 'opt-visit',
       category: 'VISIT',
       badge: '📅 Agendamento',
-      label: 'Convidar para Visita no Decorado',
-      text: `Excelente! Podemos organizar uma visita exclusiva ao ${propertyType} decorado neste final de semana. Qual período fica melhor para você: sábado pela manhã ou à tarde?`
+      label: 'Convidar para Visita',
+      text: `Excelente! Podemos organizar uma visita exclusiva para conhecer o ${propDisplay}${regionDisplay}. Qual período fica melhor para você?`
     });
 
-    // Opção 3: Envio de Book Digital & Tabela de Unidades
     responseOptions.push({
       id: 'opt-material',
       category: 'MATERIAL',
       badge: '📄 Material & Book',
-      label: 'Enviar Book e Plantas em PDF',
-      text: `Já separei o book oficial em alta resolução com plantas humanizadas do ${propertyType}, memorial descritivo e tabela de valores atualizada. Deseja que eu envie o PDF completo aqui no WhatsApp?`
+      label: 'Enviar Plantas e Detalhes',
+      text: `Separei as informações detalhadas e plantas do ${propDisplay}. Deseja que eu envie o material completo aqui no WhatsApp?`
     });
 
     const suggestedResponse = responseOptions[0].text;
 
-    // 11. Resumo Sintético do Perfil 360º
-    const summaryParts: string[] = [
-      `Lead com interesse em ${propertyType} em ${preferredRegion}.`,
-    ];
-    if (email) {
-      summaryParts.push(`E-mail identificado: ${email}.`);
+    // 11. Resumo Sintético do Perfil 360º Fiel
+    const summaryParts: string[] = [];
+    if (propertyType && preferredRegion) {
+      summaryParts.push(`Lead com interesse em ${propertyType} em ${preferredRegion}.`);
+    } else if (propertyType) {
+      summaryParts.push(`Lead com interesse em ${propertyType}.`);
+    } else if (preferredRegion) {
+      summaryParts.push(`Lead buscando oportunidades imobiliárias em ${preferredRegion}.`);
+    } else {
+      summaryParts.push('Lead com interesse imobiliário em fase inicial de alinhamento de perfil.');
     }
-    if (monthlyIncome) {
-      summaryParts.push(`Renda informada: R$ ${monthlyIncome.toLocaleString('pt-BR')}/mês.`);
-    }
-    if (downPayment) {
-      summaryParts.push(`Entrada informada: R$ ${downPayment.toLocaleString('pt-BR')}.`);
-    }
-    if (maxBudget) {
-      summaryParts.push(`Orçamento máximo: R$ ${maxBudget.toLocaleString('pt-BR')}.`);
-    }
-    if (urgencyLevel === 'ALTA') {
-      summaryParts.push('Nível de urgência elevado.');
-    }
+
+    if (email) summaryParts.push(`E-mail identificado: ${email}.`);
+    if (monthlyIncome) summaryParts.push(`Renda informada: R$ ${monthlyIncome.toLocaleString('pt-BR')}/mês.`);
+    if (downPayment) summaryParts.push(`Entrada informada: R$ ${downPayment.toLocaleString('pt-BR')}.`);
+    if (maxBudget) summaryParts.push(`Orçamento máximo: R$ ${maxBudget.toLocaleString('pt-BR')}.`);
+    if (urgencyLevel === 'ALTA') summaryParts.push('Nível de urgência elevado.');
 
     return {
       summary: summaryParts.join(' '),
+      conversationType: 'REAL_ESTATE_LEAD',
       extractedData: {
         email,
         monthlyIncome,
@@ -254,9 +300,9 @@ export class BedrockCopilotClient {
 
   /**
    * Classificador de Tipo de Imóvel por Votação Ponderada
-   * Elimina falsos positivos (ex: "área de lazer" não classifica como Terreno)
+   * Retorna undefined se nenhum tipo de imóvel for mencionado
    */
-  private extractPropertyType(clientText: string, fullText: string): string {
+  private extractPropertyType(clientText: string, fullText: string): string | undefined {
     const scores = {
       Apartamento: 0,
       Cobertura: 0,
@@ -305,8 +351,8 @@ export class BedrockCopilotClient {
       }
     }
 
-    let maxType = 'Apartamento';
-    let maxScore = scores.Apartamento;
+    let maxType: string | undefined = undefined;
+    let maxScore = 0;
 
     for (const [type, score] of Object.entries(scores)) {
       if (score > maxScore) {
@@ -315,7 +361,7 @@ export class BedrockCopilotClient {
       }
     }
 
-    return maxType;
+    return maxScore > 0 ? maxType : undefined;
   }
 
   /**

@@ -3073,19 +3073,28 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const insight = aiInsights[conversationId];
     if (!insight) return;
 
-    const updates: Partial<Contact> = {
-      aiPriorityScore: 95,
-      temperature: 'HOT',
-    };
-    if (insight.extractedData.monthlyIncome) updates.monthlyIncome = insight.extractedData.monthlyIncome;
-    if (insight.extractedData.downPayment) updates.downPaymentAvailable = insight.extractedData.downPayment;
-    if (insight.extractedData.maxBudget) updates.maxPropertyValue = insight.extractedData.maxBudget;
-    if (insight.extractedData.propertyType) updates.preferredPropertyType = (insight.extractedData.propertyType as any);
-    if (insight.extractedData.preferredRegion) {
-      updates.targetRegions = insight.extractedData.preferredRegion.split(',').map((r: string) => r.trim());
+    const isPersonal = insight.conversationType === 'PERSONAL_OR_OTHER';
+    const updates: Partial<Contact> = {};
+
+    if (isPersonal) {
+      updates.isPersonal = true;
+    } else {
+      if (insight.extractedData.urgencyLevel === 'ALTA') {
+        updates.temperature = 'HOT';
+        updates.aiPriorityScore = 95;
+      }
+      if (insight.extractedData.monthlyIncome) updates.monthlyIncome = insight.extractedData.monthlyIncome;
+      if (insight.extractedData.downPayment) updates.downPaymentAvailable = insight.extractedData.downPayment;
+      if (insight.extractedData.maxBudget) updates.maxPropertyValue = insight.extractedData.maxBudget;
+      if (insight.extractedData.propertyType) updates.preferredPropertyType = (insight.extractedData.propertyType as any);
+      if (insight.extractedData.preferredRegion && !insight.extractedData.preferredRegion.includes('Central / Metropolitana')) {
+        updates.targetRegions = insight.extractedData.preferredRegion.split(',').map((r: string) => r.trim());
+      }
     }
 
-    updateContact(contactId, updates);
+    if (Object.keys(updates).length > 0) {
+      updateContact(contactId, updates);
+    }
 
     setAiInsights(prev => {
       const next: Record<string, AIInsight> = {

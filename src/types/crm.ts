@@ -299,6 +299,7 @@ export interface AIInsight {
   conversationId: string;
   contactId: string;
   summary: string;
+  conversationType?: 'REAL_ESTATE_LEAD' | 'PERSONAL_OR_OTHER' | 'OPERATIONAL_OR_VENDOR';
   extractedData: {
     monthlyIncome?: number;
     downPayment?: number;

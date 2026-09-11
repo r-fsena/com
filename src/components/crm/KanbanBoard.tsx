@@ -753,8 +753,8 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
             <p className="text-[10.5px] text-emerald-100 leading-relaxed whitespace-normal break-words italic">
               "{hoveredInsight?.summary || (
                 hoveredContact.monthlyIncome
-                  ? `Lead qualificado com renda de R$ ${(hoveredContact.monthlyIncome / 1000).toFixed(0)}k/mês e entrada de R$ ${(hoveredContact.downPaymentAvailable || 300000) / 1000}k para imóvel de alto padrão.`
-                  : 'Lead em acompanhamento ativo no WhatsApp com orçamento e perfil mapeados durante a conversa.'
+                  ? `Lead qualificado com renda informada de R$ ${(hoveredContact.monthlyIncome / 1000).toFixed(0)}k/mês${hoveredContact.downPaymentAvailable ? ` e entrada de R$ ${(hoveredContact.downPaymentAvailable / 1000).toFixed(0)}k` : ''}.`
+                  : 'Lead em acompanhamento ativo no WhatsApp.'
               )}"
             </p>
           </div>

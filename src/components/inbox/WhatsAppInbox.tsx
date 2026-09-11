@@ -486,13 +486,16 @@ export function WhatsAppInbox() {
   }, [activeConversation?.id, activeMessages.length]);
 
   // Jornada e Prontidão de Qualificação do Lead (MQL -> SQL)
+  // Sem pontuação fictícia de base: pontua estritamente dados reais coletados
   const hasPropertyInterest = Boolean(activeContact?.preferredPropertyType);
   const hasFinancialData = Boolean((activeContact?.maxPropertyValue && activeContact.maxPropertyValue > 0) || (activeContact?.downPaymentAvailable && activeContact.downPaymentAvailable > 0) || (activeContact?.monthlyIncome && activeContact.monthlyIncome > 0));
-  const hasEngagement = Boolean(activeContact?.temperature === 'HOT' || (activeContact?.aiPriorityScore && activeContact.aiPriorityScore >= 80));
+  const hasRegionInterest = Boolean((activeContact?.targetRegions || []).length > 0 && !activeContact?.targetRegions?.includes('Geral') && !activeContact?.targetRegions?.includes('Região Central / Metropolitana'));
+  const hasEngagement = Boolean(activeContact?.temperature === 'HOT');
 
-  let qualificationScore = 25; // Base por ter contato
+  let qualificationScore = 0;
   if (hasPropertyInterest) qualificationScore += 25;
   if (hasFinancialData) qualificationScore += 35;
+  if (hasRegionInterest) qualificationScore += 25;
   if (hasEngagement) qualificationScore += 15;
 
   const isLeadQualified = qualificationScore >= 75 || Boolean(activeDeal);
@@ -606,6 +609,7 @@ export function WhatsAppInbox() {
           updateAIInsight(activeConversation.id, {
             contactId: activeContact.id,
             summary: analysis.summary,
+            conversationType: analysis.conversationType,
             extractedData: analysis.extractedData,
             detectedObjections: analysis.detectedObjections,
             responseOptions: analysis.responseOptions,
@@ -615,33 +619,41 @@ export function WhatsAppInbox() {
             confidenceScore: analysis.confidenceScore || 96,
           });
 
-          // 2. Auto-preenchimento e atualização inteligente do Contato
+          // 2. Auto-preenchimento e atualização inteligente do Contato (SOMENTE se for lead imobiliário real)
+          const isRealEstate = analysis.conversationType === 'REAL_ESTATE_LEAD';
           const updates: any = {};
           if (analysis.extractedData?.email && (!activeContact.email || activeContact.email === '')) {
             updates.email = analysis.extractedData.email;
             setEditedEmail(analysis.extractedData.email);
           }
-          if (analysis.extractedData?.monthlyIncome && (!activeContact.monthlyIncome || activeContact.monthlyIncome === 0)) {
-            updates.monthlyIncome = analysis.extractedData.monthlyIncome;
-            setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
-          }
-          if (analysis.extractedData?.downPayment && (!activeContact.downPaymentAvailable || activeContact.downPaymentAvailable === 0)) {
-            updates.downPaymentAvailable = analysis.extractedData.downPayment;
-            setEditedDownPayment(String(analysis.extractedData.downPayment));
-          }
-          if (analysis.extractedData?.maxBudget && (!activeContact.maxPropertyValue || activeContact.maxPropertyValue === 0)) {
-            updates.maxPropertyValue = analysis.extractedData.maxBudget;
-            setEditedMaxBudget(String(analysis.extractedData.maxBudget));
-          }
-          if (analysis.extractedData?.propertyType && (!activeContact.preferredPropertyType || activeContact.preferredPropertyType === 'APARTMENT')) {
-            updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
-          }
-          if (analysis.extractedData?.preferredRegion && (!activeContact.targetRegions || activeContact.targetRegions.length === 0 || activeContact.targetRegions.includes('Geral'))) {
-            updates.targetRegions = [analysis.extractedData.preferredRegion];
-          }
-          if (analysis.extractedData?.urgencyLevel === 'ALTA' || analysis.sentiment === 'POSITIVE') {
-            updates.temperature = 'HOT';
-            updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 95);
+
+          if (isRealEstate) {
+            if (analysis.extractedData?.monthlyIncome && (!activeContact.monthlyIncome || activeContact.monthlyIncome === 0)) {
+              updates.monthlyIncome = analysis.extractedData.monthlyIncome;
+              setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
+            }
+            if (analysis.extractedData?.downPayment && (!activeContact.downPaymentAvailable || activeContact.downPaymentAvailable === 0)) {
+              updates.downPaymentAvailable = analysis.extractedData.downPayment;
+              setEditedDownPayment(String(analysis.extractedData.downPayment));
+            }
+            if (analysis.extractedData?.maxBudget && (!activeContact.maxPropertyValue || activeContact.maxPropertyValue === 0)) {
+              updates.maxPropertyValue = analysis.extractedData.maxBudget;
+              setEditedMaxBudget(String(analysis.extractedData.maxBudget));
+            }
+            if (analysis.extractedData?.propertyType && (!activeContact.preferredPropertyType || activeContact.preferredPropertyType === 'APARTMENT')) {
+              updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
+            }
+            if (analysis.extractedData?.preferredRegion && (!activeContact.targetRegions || activeContact.targetRegions.length === 0 || activeContact.targetRegions.includes('Geral') || activeContact.targetRegions.includes('Região Central / Metropolitana'))) {
+              updates.targetRegions = [analysis.extractedData.preferredRegion];
+            }
+            if (analysis.extractedData?.urgencyLevel === 'ALTA') {
+              updates.temperature = 'HOT';
+              updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 95);
+            }
+          } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
+            if (!activeContact.isPersonal) {
+              updates.isPersonal = true;
+            }
           }
 
           if (Object.keys(updates).length > 0) {
@@ -707,10 +719,8 @@ export function WhatsAppInbox() {
       }
 
       if (chatHistory.length === 0) {
-        chatHistory = [{
-          sender: 'CLIENT',
-          text: `Olá ${currentUser.name || 'Corretor'}, tenho interesse em conhecer os lançamentos imobiliários disponíveis.`,
-        }];
+        setIsAnalyzingAI(false);
+        return;
       }
 
       const res = await fetch('/api/v1/ai/copilot', {
@@ -740,6 +750,7 @@ export function WhatsAppInbox() {
         updateAIInsight(activeConversation.id, {
           contactId: activeContact.id,
           summary: analysis.summary,
+          conversationType: analysis.conversationType,
           extractedData: analysis.extractedData,
           detectedObjections: analysis.detectedObjections,
           responseOptions: analysis.responseOptions,
@@ -749,33 +760,40 @@ export function WhatsAppInbox() {
           confidenceScore: analysis.confidenceScore || 96,
         });
 
-        // 2. Atualiza campos do Perfil 360
+        // 2. Atualiza campos do Perfil 360 (Apenas se for lead imobiliário real)
+        const isRealEstate = analysis.conversationType === 'REAL_ESTATE_LEAD';
         const updates: any = {};
         if (analysis.extractedData?.email) {
           updates.email = analysis.extractedData.email;
           setEditedEmail(analysis.extractedData.email);
         }
-        if (analysis.extractedData?.monthlyIncome) {
-          updates.monthlyIncome = analysis.extractedData.monthlyIncome;
-          setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
-        }
-        if (analysis.extractedData?.downPayment) {
-          updates.downPaymentAvailable = analysis.extractedData.downPayment;
-          setEditedDownPayment(String(analysis.extractedData.downPayment));
-        }
-        if (analysis.extractedData?.maxBudget) {
-          updates.maxPropertyValue = analysis.extractedData.maxBudget;
-          setEditedMaxBudget(String(analysis.extractedData.maxBudget));
-        }
-        if (analysis.extractedData?.propertyType) {
-          updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
-        }
-        if (analysis.extractedData?.preferredRegion) {
-          updates.targetRegions = [analysis.extractedData.preferredRegion];
-        }
-        if (analysis.extractedData?.urgencyLevel === 'ALTA' || analysis.sentiment === 'POSITIVE') {
-          updates.temperature = 'HOT';
-          updates.aiPriorityScore = 95;
+        if (isRealEstate) {
+          if (analysis.extractedData?.monthlyIncome) {
+            updates.monthlyIncome = analysis.extractedData.monthlyIncome;
+            setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
+          }
+          if (analysis.extractedData?.downPayment) {
+            updates.downPaymentAvailable = analysis.extractedData.downPayment;
+            setEditedDownPayment(String(analysis.extractedData.downPayment));
+          }
+          if (analysis.extractedData?.maxBudget) {
+            updates.maxPropertyValue = analysis.extractedData.maxBudget;
+            setEditedMaxBudget(String(analysis.extractedData.maxBudget));
+          }
+          if (analysis.extractedData?.propertyType) {
+            updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
+          }
+          if (analysis.extractedData?.preferredRegion && !analysis.extractedData.preferredRegion.includes('Central / Metropolitana')) {
+            updates.targetRegions = [analysis.extractedData.preferredRegion];
+          }
+          if (analysis.extractedData?.urgencyLevel === 'ALTA') {
+            updates.temperature = 'HOT';
+            updates.aiPriorityScore = 95;
+          }
+        } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
+          if (!activeContact.isPersonal) {
+            updates.isPersonal = true;
+          }
         }
 
         if (Object.keys(updates).length > 0) {
@@ -2560,12 +2578,24 @@ export function WhatsAppInbox() {
 
               {/* Resumo da IA */}
               <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-2.5">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-900 mb-1">
-                  <Sparkles className="w-3 h-3 text-emerald-600" />
-                  <span>Resumo do Perfil (IA Copilot):</span>
+                <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold text-emerald-900 mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-emerald-600" />
+                    <span>Resumo do Perfil (IA Copilot):</span>
+                  </div>
+                  {activeInsight?.conversationType === 'PERSONAL_OR_OTHER' && (
+                    <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-medium">
+                      👤 Pessoal / Cotidiano
+                    </span>
+                  )}
+                  {activeInsight?.conversationType === 'REAL_ESTATE_LEAD' && (
+                    <span className="text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-medium">
+                      🏢 Lead Imobiliário
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] text-emerald-950 leading-relaxed italic">
-                  "{activeInsight?.summary || `A IA monitora a conversa e atualiza automaticamente a renda, entrada, orçamento e preferências imobiliárias.`}"
+                  "{activeInsight?.summary || 'A IA analisa o diálogo em tempo real para gerar o resumo do perfil e oportunidades comerciais.'}"
                 </p>
 
                 {/* Objeções Detectadas */}

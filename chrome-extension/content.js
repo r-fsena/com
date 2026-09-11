@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.18';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.19';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -1697,14 +1697,60 @@
     console.log(report);
     logToConsoleAndCloudWatch('INFO', 'DIAGNOSTIC_COMPLETED', `Diagnóstico concluído: ${msgs.length} msgs`);
 
-    try {
-      await navigator.clipboard.writeText(report);
-      alert(`✅ DIAGNÓSTICO CONCLUÍDO COM SUCESSO!\n\nLidas ${msgs.length} mensagens de ${chatData?.name}.\n\nO relatório detalhado foi COPIADO automaticamente para sua área de transferência!\n\nBasta dar Colar (Cmd + V) no chat para vermos os dados.`);
-    } catch (e) {
-      alert(`Diagnóstico concluído: ${msgs.length} mensagens lidas. Veja os detalhes no Console.`);
-    }
+    // Abre janela modal visual no WhatsApp com o relatório pronto e botão de cópia
+    showDiagnosticModal(report, msgs.length, chatData?.name || contactName);
 
     if (badge) badge.innerText = `✓ ${msgs.length} msgs`;
+  }
+
+  // Janela modal elegante sobreposta no WhatsApp Web exibindo o relatório do diagnóstico
+  function showDiagnosticModal(reportText, count, contactName) {
+    let modal = document.getElementById('brokiva-diag-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'brokiva-diag-modal';
+      modal.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.75); z-index:999999; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px); font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+      <div style="background:white; width:680px; max-width:92vw; max-height:88vh; border-radius:16px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden;">
+        <div style="background:#3742AC; color:white; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:16px; font-weight:800;">🔍 Relatório de Diagnóstico — ${contactName || 'Contato'}</div>
+            <div style="font-size:11px; opacity:0.85;">${count} mensagens identificadas no histórico</div>
+          </div>
+          <button id="brokiva-diag-close" style="background:none; border:none; color:white; font-size:24px; cursor:pointer; line-height:1;">✕</button>
+        </div>
+        <div style="padding:16px 20px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
+          <p style="font-size:12px; color:#475569; margin:0; font-weight:600;">
+            O texto abaixo foi gerado em tempo real da conversa ativa. Clique no botão verde abaixo para copiar:
+          </p>
+          <textarea id="brokiva-diag-text" readonly style="width:100%; height:330px; font-family:monospace; font-size:11px; padding:12px; border:1.5px solid #cbd5e1; border-radius:10px; background:#f8fafc; color:#0f172a; resize:none; outline:none; white-space:pre;"></textarea>
+        </div>
+        <div style="padding:12px 20px; background:#f1f5f9; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:11px; color:#64748b;">Dica: Você também pode selecionar o texto e dar Cmd+C</span>
+          <button id="brokiva-diag-copy" style="background:#16a34a; color:white; border:none; border-radius:8px; padding:10px 20px; font-weight:700; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:6px;">
+            📋 Copiar Relatório
+          </button>
+        </div>
+      </div>
+    `;
+
+    const textarea = modal.querySelector('#brokiva-diag-text');
+    textarea.value = reportText;
+    textarea.focus();
+    textarea.select();
+
+    modal.querySelector('#brokiva-diag-close').onclick = () => modal.remove();
+    modal.querySelector('#brokiva-diag-copy').onclick = () => {
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      try { navigator.clipboard.writeText(reportText); } catch (e) {}
+      const copyBtn = modal.querySelector('#brokiva-diag-copy');
+      copyBtn.innerText = '✓ Copiado com Sucesso!';
+      copyBtn.style.background = '#059669';
+    };
   }
 
   // Helper: Encontra o container real de rolagem da lista de conversas (#pane-side)

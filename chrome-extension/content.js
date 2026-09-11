@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.17';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.18';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -170,6 +170,9 @@
           <button id="sovereign-sync-current-btn" class="sovereign-btn-sync" style="background:#0f172a; margin-top:6px;">
             <span>📥 Salvar Histórico Desta Conversa</span>
           </button>
+          <button id="sovereign-diagnostic-btn" class="sovereign-btn-sync" style="background:#475569; margin-top:6px;">
+            <span>🔍 Diagnosticar Conversa (Passo a Passo)</span>
+          </button>
         </div>
 
         <!-- Card do Copiloto de IA -->
@@ -199,6 +202,7 @@
       // Conecta botões das ferramentas
       document.getElementById('sovereign-batch-sync-btn')?.addEventListener('click', () => executeBatchHistoryScan());
       document.getElementById('sovereign-sync-current-btn')?.addEventListener('click', () => syncCurrentActiveChat());
+      document.getElementById('sovereign-diagnostic-btn')?.addEventListener('click', () => runStepByStepDiagnostic());
       document.getElementById('sovereign-ai-generate-btn')?.addEventListener('click', () => triggerAiSuggestion());
 
       // Atualiza lead ativo se houver conversa aberta
@@ -1579,6 +1583,128 @@
         console.error('[Brokiva] Erro ao sincronizar conversa atual:', response?.error);
       }
     });
+  }
+
+  // 4.1 Diagnóstico passo a passo e isolado da conversa ativa com cópia automática para o clipboard
+  async function runStepByStepDiagnostic() {
+    const main = document.querySelector('#main');
+    if (!main) {
+      alert('Abra a conversa de Amabile Barbarotti antes de executar o diagnóstico.');
+      return;
+    }
+
+    const badge = document.getElementById('sovereign-sync-badge');
+    if (badge) badge.innerText = 'Diagnosticando...';
+    logToConsoleAndCloudWatch('INFO', 'DIAGNOSTIC_START', 'Iniciando diagnóstico isolado da conversa...');
+
+    // ETAPA 1: Identificação do Cabeçalho e Contato
+    let contactName = '';
+    const headerSpans = Array.from(main.querySelectorAll('header span[title], header div[data-testid="conversation-info-header"] span, header span[dir="auto"]'));
+    for (const s of headerSpans) {
+      const t = (s.getAttribute('title') || s.innerText || '').trim();
+      const lower = t.toLowerCase();
+      if (t && !lower.includes('online') && !lower.includes('visto por último') && !lower.includes('digitando') && !lower.includes('dados do')) {
+        contactName = t;
+        break;
+      }
+    }
+
+    let resolvedPhone = '';
+    let resolvedLid = '';
+    const headerText = main.querySelector('header')?.innerText || '';
+    const phoneMatch = headerText.match(/\+?55\s?\(?\d{2}\)?\s?\d{4,5}[-\s]?\d{4}/) || headerText.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
+    if (phoneMatch) resolvedPhone = phoneMatch[0].replace(/\D/g, '');
+
+    const dataIdEls = Array.from(main.querySelectorAll('[data-id]'));
+    for (const el of dataIdEls) {
+      const dId = el.getAttribute('data-id') || '';
+      if (!resolvedPhone && (dId.includes('@c.us') || dId.includes('@s.whatsapp.net'))) {
+        const m = dId.match(/_(\d{10,15})@(c\.us|s\.whatsapp\.net)/);
+        if (m) resolvedPhone = m[1];
+      }
+      if (!resolvedLid && dId.includes('@lid')) {
+        const lm = dId.match(/_(\d{8,18})@lid/);
+        if (lm) resolvedLid = lm[1] + '@lid';
+      }
+    }
+
+    // ETAPA 2: Rolagem e Detecção de Histórico Pregresso
+    const initialRows = main.querySelectorAll('div[role="row"], div.message-in, div.message-out').length;
+    let foundLoadMoreBtn = false;
+    const loadMoreBtn = Array.from(main.querySelectorAll('button, div[role="button"], span')).find(el => {
+      const txt = (el.innerText || '').toLowerCase();
+      return txt.includes('carregar mensagens') || txt.includes('conversas mais antigas') || txt.includes('clique aqui para carregar');
+    });
+    if (loadMoreBtn) {
+      foundLoadMoreBtn = true;
+      loadMoreBtn.click();
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    const accumulatedMap = await deepScrollChatHistory(15, (s, t) => {
+      if (badge) badge.innerText = `Lendo antigas (${s}/${t})...`;
+    });
+    const postScrollRows = main.querySelectorAll('div[role="row"], div.message-in, div.message-out').length;
+
+    // ETAPA 3: Extração Detalhada e Estatísticas
+    const chatData = extractActiveChatData(accumulatedMap);
+    if (chatData && !chatData.phone && resolvedPhone) {
+      chatData.phone = resolvedPhone;
+    }
+    const msgs = chatData?.messages || [];
+
+    let countVoce = 0;
+    let countCliente = 0;
+    let countAudio = 0;
+    let countDoc = 0;
+    let countImg = 0;
+    let countText = 0;
+
+    msgs.forEach(m => {
+      if (m.fromMe) countVoce++; else countCliente++;
+      if (m.messageType === 'AUDIO') countAudio++;
+      else if (m.messageType === 'DOCUMENT') countDoc++;
+      else if (m.messageType === 'IMAGE') countImg++;
+      else countText++;
+    });
+
+    const sampleList = msgs.slice(-12).map((m, idx) => {
+      const remetente = m.fromMe ? 'Você (Corretor)' : `${chatData?.name || 'Cliente'}`;
+      const preview = (m.content || '').length > 55 ? (m.content || '').slice(0, 55) + '...' : m.content;
+      const hora = m.timestamp ? m.timestamp.replace('T', ' ').slice(0, 16) : 'sem data';
+      return `  [${hora}] ${remetente} (${m.messageType}): "${preview}"`;
+    });
+
+    const report = [
+      '====================================================',
+      '🔍 RELATÓRIO DE DIAGNÓSTICO ISOLADO (BROKIVA)',
+      '====================================================',
+      `👤 Contato Aberto: ${chatData?.name || contactName || 'N/D'}`,
+      `📱 Telefone Detectado: ${chatData?.phone || resolvedPhone || 'Não identificado'}`,
+      `🆔 LID: ${chatData?.lid || resolvedLid || 'Nenhum'}`,
+      `📄 Botão "Carregar antigas": ${foundLoadMoreBtn ? 'SIM (detectado e acionado)' : 'NÃO presente no DOM'}`,
+      `📊 Balões no DOM: ${initialRows} antes do scroll | ${postScrollRows} após scroll (+${postScrollRows - initialRows})`,
+      `💬 Total de Mensagens Extraídas: ${msgs.length}`,
+      `   - Enviadas por Você: ${countVoce}`,
+      `   - Enviadas por Amabile: ${countCliente}`,
+      `   - Tipos: ${countText} Texto, ${countAudio} Áudio, ${countImg} Foto, ${countDoc} Documento`,
+      '----------------------------------------------------',
+      'ÚLTIMAS MENSAGENS MAPEADAS:',
+      ...sampleList,
+      '===================================================='
+    ].join('\n');
+
+    console.log(report);
+    logToConsoleAndCloudWatch('INFO', 'DIAGNOSTIC_COMPLETED', `Diagnóstico concluído: ${msgs.length} msgs`);
+
+    try {
+      await navigator.clipboard.writeText(report);
+      alert(`✅ DIAGNÓSTICO CONCLUÍDO COM SUCESSO!\n\nLidas ${msgs.length} mensagens de ${chatData?.name}.\n\nO relatório detalhado foi COPIADO automaticamente para sua área de transferência!\n\nBasta dar Colar (Cmd + V) no chat para vermos os dados.`);
+    } catch (e) {
+      alert(`Diagnóstico concluído: ${msgs.length} mensagens lidas. Veja os detalhes no Console.`);
+    }
+
+    if (badge) badge.innerText = `✓ ${msgs.length} msgs`;
   }
 
   // Helper: Encontra o container real de rolagem da lista de conversas (#pane-side)

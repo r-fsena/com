@@ -42,7 +42,9 @@ import {
   SlidersHorizontal,
   Bot,
   UserX,
-  UserCheck
+  UserCheck,
+  Download,
+  Puzzle
 } from 'lucide-react';
 import { UserRole, User, TenantFeatureFlags, TenantAIConfig, AIProvider, AITone, AIObjective } from '@/types/crm';
 
@@ -1443,6 +1445,35 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               <p className="text-xs text-emerald-100/80 leading-relaxed">
                 Todas as mensagens recebidas e enviadas pelos corretores passam por esta instância oficial da Z-API com fila SQS e criptografia.
               </p>
+            </div>
+
+            {/* Card de Download da Extensão Chrome */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 text-[#3742AC] flex items-center justify-center font-bold shrink-0 border border-indigo-100">
+                  <Puzzle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">Extensão Brokiva para Google Chrome</h3>
+                    <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                      v1.0.31 Oficial
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 max-w-xl leading-relaxed">
+                    Sincronize conversas e históricos de mensagens direto do WhatsApp Web para o CRM e utilize o Copiloto de IA em tempo real.
+                  </p>
+                </div>
+              </div>
+
+              <a
+                href="/api/v1/downloads/extension"
+                download="brokiva-chrome-extension-v1.0.31.zip"
+                className="inline-flex items-center justify-center gap-2 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] px-4 py-2.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Baixar Extensão (.ZIP)</span>
+              </a>
             </div>
 
             {/* Card da Instância com Ações */}

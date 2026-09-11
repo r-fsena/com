@@ -21,7 +21,10 @@ import {
   Link2,
   Radio,
   LogOut,
-  BatteryCharging
+  BatteryCharging,
+  Download,
+  Puzzle,
+  HelpCircle
 } from 'lucide-react';
 
 export function WhatsAppConnectionView() {
@@ -90,6 +93,10 @@ export function WhatsAppConnectionView() {
   const [isResetting, setIsResetting] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
+
+  // Guia de Instalação da Extensão Chrome
+  const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+  const [copiedExtUrl, setCopiedExtUrl] = useState(false);
 
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
@@ -431,6 +438,55 @@ export function WhatsAppConnectionView() {
       {/* Conteúdo com Grid Responsivo */}
       <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
         
+        {/* Banner de Download da Extensão Oficial Brokiva Chrome */}
+        <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950 to-[#2A338F] rounded-3xl p-6 sm:p-7 text-white shadow-lg border border-indigo-500/20 animate-in fade-in">
+          <div className="absolute -right-8 -bottom-8 w-60 h-60 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="w-13 h-13 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-amber-300 shrink-0 shadow-inner">
+                <Puzzle className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 px-2.5 py-0.5 rounded-full">
+                    Extensão Google Chrome Oficial
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    v1.0.31 Final
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-extrabold text-white">
+                  Sincronização Direta do WhatsApp Web com a Extensão Brokiva
+                </h2>
+                <p className="text-xs text-indigo-100/80 max-w-2xl leading-relaxed">
+                  Baixe e utilize a extensão oficial no Chrome para sincronizar conversas e históricos de mensagem (com fotos e áudios) diretamente do WhatsApp Web para o CRM com 1 clique, além de utilizar o Copiloto de IA em tempo real.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full md:w-auto">
+              <a
+                href="/api/v1/downloads/extension"
+                download="brokiva-chrome-extension-v1.0.31.zip"
+                className="inline-flex items-center justify-center gap-2 text-xs font-extrabold text-slate-950 bg-white hover:bg-slate-100 px-5 py-3 rounded-2xl shadow-md transition active:scale-95 cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-[#3742AC]" />
+                <span>Baixar Extensão (.ZIP)</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setShowInstallGuideModal(true)}
+                className="inline-flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-3 rounded-2xl transition cursor-pointer"
+              >
+                <HelpCircle className="w-4 h-4 text-indigo-200" />
+                <span>Como Instalar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Grid Superior: Card de Conexão + QR Code / Status do Aparelho */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
@@ -838,6 +894,113 @@ export function WhatsAppConnectionView() {
                 className="w-full py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Guia de Instalação da Extensão Chrome */}
+      {showInstallGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-[#3742AC] flex items-center justify-center font-bold">
+                  <Puzzle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Como Instalar no Google Chrome</h3>
+                  <span className="text-[10px] text-slate-400">Guia passo a passo para carregar a extensão oficial</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallGuideModal(false)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold p-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600">
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
+                  1
+                </span>
+                <div>
+                  <strong className="text-slate-900 block mb-0.5">Baixe e extraia o arquivo ZIP</strong>
+                  <span>Clique em "Baixar Extensão (.ZIP)" e extraia o arquivo em uma pasta fixa no seu computador.</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
+                  2
+                </span>
+                <div className="w-full">
+                  <strong className="text-slate-900 block mb-0.5">Acesse a aba de extensões no Chrome</strong>
+                  <span>Copie e cole este endereço em uma nova aba do Chrome:</span>
+                  <div className="mt-1.5 flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-2 font-mono text-[11px] text-indigo-900">
+                    <span className="flex-1">chrome://extensions</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('chrome://extensions');
+                        setCopiedExtUrl(true);
+                        setTimeout(() => setCopiedExtUrl(false), 2000);
+                      }}
+                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold cursor-pointer"
+                    >
+                      {copiedExtUrl ? 'Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
+                  3
+                </span>
+                <div>
+                  <strong className="text-slate-900 block mb-0.5">Ative o "Modo do desenvolvedor"</strong>
+                  <span>No canto superior direito da página de Extensões, ative a chave seletora <strong>Modo do desenvolvedor</strong>.</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
+                  4
+                </span>
+                <div>
+                  <strong className="text-slate-900 block mb-0.5">Carregue a pasta descompactada</strong>
+                  <span>Clique no botão <strong>Carregar sem compactação</strong> (no canto superior esquerdo) e selecione a pasta extraída da extensão.</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Pronto para usar!</strong> Acesse o WhatsApp Web (<code>web.whatsapp.com</code>) e utilize a barra Brokiva para sincronizar todo o histórico de mensagens e leads.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <a
+                href="/api/v1/downloads/extension"
+                download="brokiva-chrome-extension-v1.0.31.zip"
+                className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] rounded-xl shadow-xs transition text-center flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Baixar Extensão (.ZIP)</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setShowInstallGuideModal(false)}
+                className="py-2.5 px-4 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Fechar
               </button>
             </div>
           </div>

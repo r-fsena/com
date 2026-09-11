@@ -2045,7 +2045,7 @@ const PT_MONTH_NAMES = {
       await new Promise(r => setTimeout(r, 800));
     }
 
-    const accumulatedMap = await deepScrollChatHistory(15, (s, t) => {
+    const accumulatedMap = await deepScrollChatHistory(2, (s, t) => {
       if (badge) badge.innerText = `Lendo antigas (${s}/${t})...`;
     });
     const postScrollRows = main.querySelectorAll('div[role="row"], div.message-in, div.message-out').length;

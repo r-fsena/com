@@ -81,7 +81,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [aiConfigState, setAiConfigState] = useState<TenantAIConfig>({
     provider: currentTenant.aiConfig?.provider || 'PLATFORM_DEFAULT',
     apiKey: currentTenant.aiConfig?.apiKey || '',
-    model: currentTenant.aiConfig?.model || 'gpt-4o-mini',
+    model: currentTenant.aiConfig?.model || 'gemini-1.5-flash',
     tone: currentTenant.aiConfig?.tone || 'CONSULTATIVE',
     objective: currentTenant.aiConfig?.objective || 'EQUILIBRADO',
     customInstructions: currentTenant.aiConfig?.customInstructions || '',
@@ -2005,25 +2005,25 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                   onClick={() => setAiConfigState(prev => ({
                     ...prev,
                     provider: 'PLATFORM_DEFAULT',
-                    model: 'default-semantic',
+                    model: 'gemini-1.5-flash',
                   }))}
                   className={`p-4 rounded-2xl border transition cursor-pointer relative ${
                     aiConfigState.provider === 'PLATFORM_DEFAULT'
-                      ? 'border-purple-500 bg-purple-50/40 ring-2 ring-purple-500/20'
+                      ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                      CRM
+                    <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      ⚡
                     </span>
-                    <span className="text-[9px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded-md">
-                      Sem Chave
+                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
+                      Padrão Oficial
                     </span>
                   </div>
-                  <h4 className="text-xs font-bold text-slate-900">Nativo da Plataforma</h4>
+                  <h4 className="text-xs font-bold text-slate-900">Google Gemini (Nativo da Plataforma)</h4>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Motor de inferência local sem custos adicionais. Pronto para uso imediato.
+                    Motor <strong>Gemini 1.5 Flash</strong> integrado com contexto de 1 Milhão de tokens e sem custos de infraestrutura para sua imobiliária.
                   </p>
                 </div>
               </div>

@@ -286,8 +286,11 @@ export function SaaSApiSettings() {
                     onChange={(e) => setAwsBedrockModel(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200/90 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 cursor-pointer focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   >
+                    <option value="gemini-1.5-flash">
+                      ⚡ Google Gemini 1.5 Flash (Oficial • Custo Mínimo & Contexto de 1M)
+                    </option>
                     <option value="anthropic.claude-3-5-sonnet-20241022-v2:0">
-                      ⚡ Anthropic Claude 3.5 Sonnet (Recomendado / Mais Rápido & Preciso)
+                      🎩 Anthropic Claude 3.5 Sonnet (Alta Precisão Comercial)
                     </option>
                     <option value="openai.gpt-4o">
                       🧠 OpenAI GPT-4o
@@ -300,7 +303,7 @@ export function SaaSApiSettings() {
 
                 <div>
                   <label className="text-slate-700 font-bold block mb-1">
-                    Região AWS Bedrock
+                    Região AWS Bedrock / Fallback
                   </label>
                   <input
                     type="text"
@@ -312,30 +315,37 @@ export function SaaSApiSettings() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">
-                    Chave OpenAI (Backup / Opcional)
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="sk-..."
-                    value={openAiApiKey}
-                    onChange={(e) => setOpenAiApiKey(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200/90 rounded-xl px-3.5 py-2.5 font-mono text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-700 font-bold block mb-1">
-                    Chave Google Gemini (Backup / Opcional)
+                <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200/70">
+                  <label className="text-emerald-900 font-extrabold block mb-1 flex items-center justify-between">
+                    <span>Chave Google Gemini (Motor Principal da Plataforma)</span>
+                    <span className="text-[9px] bg-emerald-200/80 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Oficial</span>
                   </label>
                   <input
                     type="password"
                     placeholder="AIzaSy..."
                     value={googleGeminiApiKey}
                     onChange={(e) => setGoogleGeminiApiKey(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200/90 rounded-xl px-3.5 py-2.5 font-mono text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
+                    className="w-full bg-white border border-emerald-300 rounded-xl px-3.5 py-2 font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
+                  <p className="text-[10px] text-emerald-700 mt-1">
+                    Utilizado para análise e resumo de conversas de WhatsApp de todos os corretores.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70">
+                  <label className="text-slate-700 font-bold block mb-1">
+                    Chave OpenAI (Backup Secundário)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="sk-..."
+                    value={openAiApiKey}
+                    onChange={(e) => setOpenAiApiKey(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 font-mono text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Utilizado como contingência caso a cota do Gemini seja atingida.
+                  </p>
                 </div>
               </div>
             </div>

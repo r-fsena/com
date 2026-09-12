@@ -15,9 +15,17 @@ export class UniversalCopilotService {
     const apiKey = (config.apiKey || '').trim();
 
     if (provider === 'PLATFORM_DEFAULT') {
-      const defaultKey = process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY;
+      const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+      if (platformGeminiKey) {
+        return { 
+          success: true, 
+          message: 'Motor Google Gemini 1.5 Flash ativo e operacional como inteligência central do CRM (Custo Mínimo & Contexto de 1M tokens).',
+          model: 'gemini-1.5-flash'
+        };
+      }
+      const defaultKey = process.env.OPENAI_API_KEY;
       if (defaultKey) {
-        return { success: true, message: 'Copiloto da Plataforma ativo e operacional com inteligência generativa.' };
+        return { success: true, message: 'Copiloto da Plataforma ativo e operacional com OpenAI.', model: 'gpt-4o-mini' };
       }
       return { success: true, message: 'Motor de inferência nativo de alto desempenho pronto para uso.' };
     }
@@ -27,6 +35,24 @@ export class UniversalCopilotService {
     }
 
     try {
+      if (provider === 'GEMINI') {
+        const model = config.model || 'gemini-1.5-flash';
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Ping' }] }],
+          }),
+        });
+
+        if (res.ok) {
+          return { success: true, message: `Conexão estabelecida com sucesso via Google Gemini (${model})!`, model };
+        } else {
+          const err = await res.json().catch(() => ({}));
+          return { success: false, message: err?.error?.message || `Erro na API do Google Gemini (Status ${res.status}). Verifique a chave.` };
+        }
+      }
+
       if (provider === 'OPENAI') {
         const model = config.model || 'gpt-4o-mini';
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -74,24 +100,6 @@ export class UniversalCopilotService {
         }
       }
 
-      if (provider === 'GEMINI') {
-        const model = config.model || 'gemini-1.5-flash';
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Ping' }] }],
-          }),
-        });
-
-        if (res.ok) {
-          return { success: true, message: `Conexão estabelecida com sucesso via Google Gemini (${model})!`, model };
-        } else {
-          const err = await res.json().catch(() => ({}));
-          return { success: false, message: err?.error?.message || `Erro na API do Google Gemini (Status ${res.status}). Verifique a chave.` };
-        }
-      }
-
       return { success: false, message: 'Provedor desconhecido selecionado.' };
     } catch (err: any) {
       return { success: false, message: `Falha de rede ao conectar com ${provider}: ${err.message}` };
@@ -100,7 +108,7 @@ export class UniversalCopilotService {
 
   /**
    * Executa a análise de IA gerando resumo, 4 pilares do lead e 3 opções de resposta tática de vendas
-   * Aplica janela deslizante de custo mínimo (últimas 12 mensagens) e prompts estruturados.
+   * Prioriza Google Gemini 1.5 Flash com janela expandida para análise aprofundada de histórico.
    */
   static async analyzeConversation(params: {
     chatHistory: CopilotChatHistoryItem[];
@@ -110,13 +118,39 @@ export class UniversalCopilotService {
   }): Promise<AICopilotAnalysis> {
     const { chatHistory, brokerName = 'Corretor', contactContext, aiConfig } = params;
 
-    // Janela Deslizante de Otimização de Custos e Contexto Completo (até 25 mensagens mais recentes)
-    const recentHistory = chatHistory.slice(-25);
-
     const provider = aiConfig?.provider || 'PLATFORM_DEFAULT';
     const apiKey = (aiConfig?.apiKey || '').trim();
+    const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 
-    // Se o usuário configurou OpenAI com sua própria chave
+    // 1. PRIORIDADE MÁXIMA: Google Gemini 1.5 Flash (Nativo da Plataforma ou Chave BYOK)
+    if (provider === 'GEMINI' || provider === 'PLATFORM_DEFAULT') {
+      const activeGeminiKey = apiKey || platformGeminiKey;
+      if (activeGeminiKey) {
+        try {
+          // Gemini possui 1 milhão de tokens de contexto: analisamos até 70 mensagens com custo irrisório
+          const geminiHistory = chatHistory.slice(-70);
+          const result = await this.executeGemini({
+            history: geminiHistory,
+            brokerName,
+            contactContext,
+            aiConfig: {
+              ...(aiConfig || {}),
+              provider: 'GEMINI',
+              model: aiConfig?.model || 'gemini-1.5-flash',
+            } as TenantAIConfig,
+            apiKey: activeGeminiKey,
+          });
+          if (result) return result;
+        } catch (err) {
+          console.error('[Copilot] Erro no motor Google Gemini, acionando fallback secundário:', err);
+        }
+      }
+    }
+
+    // Janela deslizante para modelos de menor contexto (até 25 mensagens mais recentes)
+    const recentHistory = chatHistory.slice(-25);
+
+    // 2. Se o usuário configurou OpenAI BYOK
     if (provider === 'OPENAI' && apiKey) {
       try {
         const result = await this.executeOpenAI({
@@ -132,7 +166,7 @@ export class UniversalCopilotService {
       }
     }
 
-    // Se o usuário configurou Anthropic Claude com sua própria chave
+    // 3. Se o usuário configurou Anthropic Claude BYOK
     if (provider === 'ANTHROPIC' && apiKey) {
       try {
         const result = await this.executeAnthropic({
@@ -148,23 +182,7 @@ export class UniversalCopilotService {
       }
     }
 
-    // Se o usuário configurou Google Gemini com sua própria chave
-    if (provider === 'GEMINI' && apiKey) {
-      try {
-        const result = await this.executeGemini({
-          history: recentHistory,
-          brokerName,
-          contactContext,
-          aiConfig: aiConfig!,
-          apiKey,
-        });
-        if (result) return result;
-      } catch (err) {
-        console.error('[Copilot] Erro na chamada Gemini BYOK, ativando fallback:', err);
-      }
-    }
-
-    // Fallback para OpenAI padrão da plataforma (se configurada nas variáveis de ambiente globais)
+    // 4. Fallback para OpenAI padrão da plataforma (se configurada)
     const platformOpenAIKey = process.env.OPENAI_API_KEY;
     if (platformOpenAIKey) {
       try {
@@ -187,7 +205,7 @@ export class UniversalCopilotService {
       }
     }
 
-    // Fallback de alta precisão sem custos (Motor Semântico Local)
+    // 5. Fallback de alta precisão sem custos de API (Motor Semântico Local)
     const fallbackEngine = new BedrockCopilotClient();
     return fallbackEngine.analyzeConversation(chatHistory, brokerName, contactContext);
   }
@@ -374,7 +392,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
   }
 
   /**
-   * Chamada Google Gemini (Gemini 1.5 Flash)
+   * Chamada Google Gemini (Gemini 1.5 Flash com Contexto Amplo & JSON Nativo)
    */
   private static async executeGemini(params: {
     history: CopilotChatHistoryItem[];
@@ -390,7 +408,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
       .map(m => `${m.sender === 'BROKER' ? params.brokerName : 'Cliente'}: ${m.text}`)
       .join('\n');
 
-    const prompt = `${systemPrompt}\n\nHISTÓRICO DA CONVERSA NO WHATSAPP:\n${chatText}\n\nRetorne agora o JSON estruturado:`;
+    const prompt = `${systemPrompt}\n\nHISTÓRICO DA CONVERSA NO WHATSAPP (${params.history.length} mensagens):\n${chatText}\n\nRetorne agora estritamente o objeto JSON estruturado solicitado:`;
 
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`, {
       method: 'POST',
@@ -400,23 +418,63 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
         generationConfig: {
           responseMimeType: 'application/json',
           temperature: params.aiConfig.temperature ?? 0.3,
-          maxOutputTokens: params.aiConfig.maxTokens ?? 750,
+          maxOutputTokens: Math.max(params.aiConfig.maxTokens ?? 1500, 1200),
         }
       }),
     });
 
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`Gemini error (${res.status}): ${err}`);
+      throw new Error(`Gemini API error (${res.status}): ${err}`);
     }
 
     const data = await res.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) return null;
 
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    // Limpa delimitadores markdown caso o modelo os tenha incluído
+    let cleanText = rawText.trim();
+    if (cleanText.startsWith('```json')) {
+      cleanText = cleanText.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+    } else if (cleanText.startsWith('```')) {
+      cleanText = cleanText.replace(/^```\s*/, '').replace(/```\s*$/, '');
+    }
+
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
-    return JSON.parse(jsonMatch[0]) as AICopilotAnalysis;
+    const parsed = JSON.parse(jsonMatch[0]) as AICopilotAnalysis;
+    
+    // Normalização defensiva para garantir que arrays e campos essenciais estejam presentes
+    return {
+      summary: parsed.summary || 'Resumo do contato não identificado.',
+      conversationType: parsed.conversationType || 'REAL_ESTATE_LEAD',
+      extractedData: {
+        email: parsed.extractedData?.email || undefined,
+        monthlyIncome: typeof parsed.extractedData?.monthlyIncome === 'number' ? parsed.extractedData.monthlyIncome : undefined,
+        downPayment: typeof parsed.extractedData?.downPayment === 'number' ? parsed.extractedData.downPayment : undefined,
+        maxBudget: typeof parsed.extractedData?.maxBudget === 'number' ? parsed.extractedData.maxBudget : undefined,
+        preferredRegion: parsed.extractedData?.preferredRegion || undefined,
+        propertyType: parsed.extractedData?.propertyType || undefined,
+        urgencyLevel: parsed.extractedData?.urgencyLevel || 'MEDIA',
+        detectedObjections: Array.isArray(parsed.extractedData?.detectedObjections) ? parsed.extractedData.detectedObjections : [],
+      },
+      detectedObjections: Array.isArray(parsed.detectedObjections) ? parsed.detectedObjections : [],
+      responseOptions: Array.isArray(parsed.responseOptions) && parsed.responseOptions.length > 0 
+        ? parsed.responseOptions 
+        : [
+            {
+              id: 'opt-gemini-1',
+              category: 'VISIT',
+              badge: '✨ Sugestão Gemini',
+              label: 'Avançar atendimento',
+              text: parsed.suggestedResponse || 'Olá! Como posso te ajudar com o imóvel?',
+            }
+          ],
+      sentiment: parsed.sentiment || 'NEUTRAL',
+      intent: parsed.intent || 'DUVIDA_GERAL',
+      suggestedResponse: parsed.suggestedResponse || (parsed.responseOptions?.[0]?.text ?? ''),
+      confidenceScore: parsed.confidenceScore || 96,
+    };
   }
 }

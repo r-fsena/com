@@ -389,9 +389,10 @@ export function CopilotManager() {
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
                   >
-                    <option value="anthropic.claude-3-5-sonnet">⚡ Anthropic Claude 3.5 Sonnet (Recomendado • Alta Precisão Comercial)</option>
+                    <option value="gemini-1.5-flash">⚡ Google Gemini 1.5 Flash (Padrão Oficial • 1M Contexto & Custo Mínimo)</option>
+                    <option value="anthropic.claude-3-5-sonnet">🎩 Anthropic Claude 3.5 Sonnet (Alta Precisão Comercial)</option>
                     <option value="openai.gpt-4o">🧠 OpenAI GPT-4o (Multimodal & Rápido)</option>
-                    <option value="google.gemini-1-5-pro">💎 Google Gemini 1.5 Pro (Contexto Longo)</option>
+                    <option value="google.gemini-1-5-pro">💎 Google Gemini 1.5 Pro (Raciocínio Profundo)</option>
                   </select>
                 </div>
 

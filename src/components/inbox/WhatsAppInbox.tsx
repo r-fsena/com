@@ -297,11 +297,35 @@ export function WhatsAppInbox() {
     const byId = contacts.find(c => c.id === activeConversation.contactId);
     if (byId) return byId;
 
-    // 2. Match por telefone equivalente na conversa (com ou sem 9º dígito e com máscaras)
-    const convDigits = activeConversation.id.replace(/\D/g, '') || activeConversation.contactId.replace(/\D/g, '');
-    if (convDigits) {
+    // 2. Match direto por id da conversa
+    const byConvId = contacts.find(c => c.id === activeConversation.id);
+    if (byConvId) return byConvId;
+
+    // 3. Match por ID normalizado sem prefixos conv-zapi- ou contact-zapi-
+    const rawConvId = activeConversation.id || '';
+    const rawContactId = activeConversation.contactId || '';
+    const cleanConvId = rawConvId.replace(/^(contact|conv)-zapi-/, '');
+    const cleanContactId = rawContactId.replace(/^(contact|conv)-zapi-/, '');
+
+    const byCleanId = contacts.find(c => {
+      const cClean = c.id.replace(/^(contact|conv)-zapi-/, '');
+      return (cleanContactId && cClean === cleanContactId) || (cleanConvId && cClean === cleanConvId);
+    });
+    if (byCleanId) return byCleanId;
+
+    // 4. Match por LID (WhatsApp Linked Identity)
+    const isLid = isLidIdentifier(rawConvId) || isLidIdentifier(rawContactId);
+    if (isLid) {
+      const lidDigits = cleanLid(rawConvId) || cleanLid(rawContactId);
+      const byLid = contacts.find(c => c.lid && (cleanLid(c.lid) === lidDigits || c.lid === rawConvId || c.lid === rawContactId));
+      if (byLid) return byLid;
+    }
+
+    // 5. Match por telefone equivalente na conversa (com ou sem 9º dígito e com máscaras)
+    const convDigits = rawConvId.replace(/\D/g, '') || rawContactId.replace(/\D/g, '');
+    if (convDigits && !isLid && convDigits.length >= 8) {
       const byPhone = contacts.find(c => {
-        return arePhonesEquivalent(c.phone, convDigits);
+        return arePhonesEquivalent(c.phone, convDigits) || (c.phone && c.phone.replace(/\D/g, '').endsWith(convDigits.slice(-8)));
       });
       if (byPhone) return byPhone;
 
@@ -313,11 +337,12 @@ export function WhatsAppInbox() {
       }
     }
 
-    // 3. Fallback inteligente: constrói perfil sintetizado do lead da conversa para NUNCA exibir contatos aleatórios
+    // 6. Fallback inteligente: constrói perfil sintetizado do lead da conversa com timestamps estáveis
     const fallbackName = (activeConversation as any).name || (convDigits ? `Contato ${convDigits.slice(-4)}` : 'Lead WhatsApp');
-    const fullPhone = convDigits ? `+${convDigits.startsWith('55') ? convDigits : `55${convDigits}`}` : '';
+    const fullPhone = convDigits ? (convDigits.startsWith('55') ? `+${convDigits}` : `+55${convDigits}`) : '';
+    const stableTimestamp = activeConversation.lastMessageAt || '2026-01-01T00:00:00.000Z';
     const fallbackContact: Contact = {
-      id: activeConversation.contactId || `contact-zapi-${convDigits || 'lead'}`,
+      id: activeConversation.contactId || (convDigits ? `contact-zapi-${convDigits}` : `contact-zapi-${activeConversation.id}`),
       tenantId: activeConversation.tenantId || currentTenant.id,
       name: fallbackName,
       phone: fullPhone,
@@ -331,8 +356,8 @@ export function WhatsAppInbox() {
       consentGiven: true,
       hasOptedOut: false,
       isPersonal: activeConversation.isPersonal ?? false,
-      createdAt: activeConversation.lastMessageAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: stableTimestamp,
+      updatedAt: stableTimestamp,
     };
     return fallbackContact;
   }, [contacts, activeConversation, currentTenant.id]);
@@ -497,8 +522,15 @@ export function WhatsAppInbox() {
   // Sem pontuação fictícia de base: contatos pessoais ou sem dados reais ficam estritamente em 0%
   const isLeadPersonal = Boolean(activeContact?.isPersonal || activeConversation?.isPersonal);
 
-  const hasPropertyInterest = !isLeadPersonal && Boolean(activeContact?.preferredPropertyType);
-  const hasFinancialData = !isLeadPersonal && Boolean((activeContact?.maxPropertyValue && activeContact.maxPropertyValue > 0) || (activeContact?.downPaymentAvailable && activeContact.downPaymentAvailable > 0) || (activeContact?.monthlyIncome && activeContact.monthlyIncome > 0));
+  const hasPropertyInterest = !isLeadPersonal && Boolean(activeContact?.preferredPropertyType || editedPropertyType);
+  const hasFinancialData = !isLeadPersonal && Boolean(
+    (activeContact?.maxPropertyValue && activeContact.maxPropertyValue > 0) || 
+    (activeContact?.downPaymentAvailable && activeContact.downPaymentAvailable > 0) || 
+    (activeContact?.monthlyIncome && activeContact.monthlyIncome > 0) ||
+    (parseBRLInputToNumber(editedMonthlyIncome) > 0) ||
+    (parseBRLInputToNumber(editedDownPayment) > 0) ||
+    (parseBRLInputToNumber(editedMaxBudget) > 0)
+  );
   const hasRegionInterest = !isLeadPersonal && Boolean((activeContact?.targetRegions || []).length > 0 && !activeContact?.targetRegions?.includes('Geral') && !activeContact?.targetRegions?.includes('Região Central / Metropolitana'));
   const hasEngagement = !isLeadPersonal && Boolean(activeContact?.temperature === 'HOT');
 
@@ -519,9 +551,14 @@ export function WhatsAppInbox() {
     }
   }, [isLeadPersonal, activeContact?.id]);
 
-  // Sincronização automática em tempo real dos campos de qualificação com o contato ativo
+  // Sincronização dos campos de qualificação com o contato ativo
+  // Carrega os dados APENAS ao alternar entre conversas ou na primeira carga do contato,
+  // impedindo que digitações, blurs ou re-renderizações locais apaguem os dados inseridos.
+  const lastLoadedContactIdRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
-    if (activeContact) {
+    if (activeContact && activeContact.id !== lastLoadedContactIdRef.current) {
+      lastLoadedContactIdRef.current = activeContact.id;
       setEditedMonthlyIncome(activeContact.monthlyIncome ? maskCurrencyInput(activeContact.monthlyIncome) : '');
       setEditedDownPayment(activeContact.downPaymentAvailable ? maskCurrencyInput(activeContact.downPaymentAvailable) : '');
       setEditedMaxBudget(activeContact.maxPropertyValue ? maskCurrencyInput(activeContact.maxPropertyValue) : '');
@@ -532,7 +569,7 @@ export function WhatsAppInbox() {
       setEditedName(activeContact.name || '');
       setEditedEmail(activeContact.email || '');
     }
-  }, [activeContact?.id, activeContact?.updatedAt]);
+  }, [activeContact?.id]);
 
   // Salva todos os dados de qualificação de uma vez de forma persistente
   const handleSaveQualification = () => {
@@ -2758,14 +2795,35 @@ export function WhatsAppInbox() {
                       hasPropertyInterest ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
                     }`}>
                       <span>{hasPropertyInterest ? '✓' : '○'}</span>
-                      <span className="truncate">🏢 {activeContact.preferredPropertyType ? (activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa' : 'Apartamento') : 'Imóvel (Não inf.)'}</span>
+                      <span className="truncate">
+                        🏢 {(() => {
+                          const p = activeContact.preferredPropertyType || editedPropertyType;
+                          if (!p) return 'Imóvel (Não inf.)';
+                          if (p === 'PENTHOUSE') return 'Cobertura';
+                          if (p === 'HOUSE') return 'Casa em Condomínio';
+                          if (p === 'STUDIO') return 'Studio / Loft';
+                          if (p === 'LAND') return 'Terreno';
+                          if (p === 'COMMERCIAL') return 'Comercial';
+                          return 'Apartamento';
+                        })()}
+                      </span>
                     </div>
 
                     <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
                       hasFinancialData ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold' : 'bg-slate-50 border-slate-200 text-slate-500'
                     }`}>
                       <span>{hasFinancialData ? '✓' : '○'}</span>
-                      <span className="truncate">💰 {activeContact.maxPropertyValue ? `R$ ${(activeContact.maxPropertyValue / 1000).toFixed(0)}k` : (activeContact.downPaymentAvailable ? `Entrada ${(activeContact.downPaymentAvailable/1000).toFixed(0)}k` : 'Orçamento')}</span>
+                      <span className="truncate">
+                        💰 {(() => {
+                          const budget = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget);
+                          const down = activeContact.downPaymentAvailable || parseBRLInputToNumber(editedDownPayment);
+                          const income = activeContact.monthlyIncome || parseBRLInputToNumber(editedMonthlyIncome);
+                          if (budget > 0) return formatCompactBRL(budget);
+                          if (down > 0) return `Entrada ${formatCompactBRL(down)}`;
+                          if (income > 0) return `Renda ${formatCompactBRL(income)}`;
+                          return 'Orçamento';
+                        })()}
+                      </span>
                     </div>
 
                     <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${
@@ -2828,8 +2886,9 @@ export function WhatsAppInbox() {
                   type="button"
                   onClick={() => {
                     if (!activeContact) return;
-                    const val = activeContact.maxPropertyValue || (editedMaxBudget ? Number(editedMaxBudget) : 1200000);
-                    const propTypeName = activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa em Condomínio' : activeContact.preferredPropertyType === 'STUDIO' ? 'Studio' : activeContact.preferredPropertyType === 'LAND' ? 'Terreno' : 'Apartamento';
+                    const val = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget) || 1200000;
+                    const currentProp = activeContact.preferredPropertyType || editedPropertyType;
+                    const propTypeName = currentProp === 'PENTHOUSE' ? 'Cobertura' : currentProp === 'HOUSE' ? 'Casa em Condomínio' : currentProp === 'STUDIO' ? 'Studio' : currentProp === 'LAND' ? 'Terreno' : currentProp === 'COMMERCIAL' ? 'Comercial' : 'Apartamento';
                     createDeal({
                       title: `${activeContact.name} - ${propTypeName}`,
                       contactId: activeContact.id,
@@ -3676,8 +3735,9 @@ export function WhatsAppInbox() {
                     type="button"
                     onClick={() => {
                       if (!activeContact) return;
-                      const val = activeContact.maxPropertyValue || (editedMaxBudget ? Number(editedMaxBudget) : 1200000);
-                      const propTypeName = activeContact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : activeContact.preferredPropertyType === 'HOUSE' ? 'Casa em Condomínio' : activeContact.preferredPropertyType === 'STUDIO' ? 'Studio' : activeContact.preferredPropertyType === 'LAND' ? 'Terreno' : 'Apartamento';
+                      const val = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget) || 1200000;
+                      const currentProp = activeContact.preferredPropertyType || editedPropertyType;
+                      const propTypeName = currentProp === 'PENTHOUSE' ? 'Cobertura' : currentProp === 'HOUSE' ? 'Casa em Condomínio' : currentProp === 'STUDIO' ? 'Studio' : currentProp === 'LAND' ? 'Terreno' : currentProp === 'COMMERCIAL' ? 'Comercial' : 'Apartamento';
                       createDeal({
                         title: `${activeContact.name} - ${propTypeName}`,
                         contactId: activeContact.id,

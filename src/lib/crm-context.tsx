@@ -2323,17 +2323,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const updateContact = (id: string, updates: Partial<Contact>) => {
     if (!id && !updates.phone) return;
 
+    const rawTargetId = (id || '').replace(/^(contact|conv)-zapi-/, '');
     const targetDigits = (id || '').replace(/\D/g, '') || (updates.phone ? updates.phone.replace(/\D/g, '') : '');
     const targetPKey = normalizePhoneKey(updates.phone || (targetDigits ? (targetDigits.startsWith('55') ? `+${targetDigits}` : `+55${targetDigits}`) : ''));
 
     let matchedCanonicalId = id;
 
     setContacts(prev => {
-      // 1. Encontra contato existente por: id exato, chave canônica de telefone, dígitos equivalentes ou LID
+      // 1. Encontra contato existente por: id exato, id limpo, chave canônica de telefone, dígitos equivalentes ou LID
       const existingIdx = prev.findIndex(c => {
         if (c.id === id) return true;
+        if (rawTargetId && c.id.replace(/^(contact|conv)-zapi-/, '') === rawTargetId) return true;
         if (targetPKey && normalizePhoneKey(c.phone) === targetPKey) return true;
         if (targetDigits && targetDigits.length >= 8 && arePhonesEquivalent(c.phone, targetDigits)) return true;
+        if (targetDigits && targetDigits.length >= 8 && c.phone && c.phone.replace(/\D/g, '').endsWith(targetDigits.slice(-8))) return true;
         if (c.lid && (c.lid === id || (targetDigits && c.lid.includes(targetDigits)))) return true;
         return false;
       });
@@ -2417,12 +2420,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       return updatedList;
     });
 
-    // Reconcilia também deals e conversas se o contactId foi identificado ou alterado
-    if (matchedCanonicalId && matchedCanonicalId !== id) {
+    // Reconcilia também deals e conversas garantindo alinhamento do contactId
+    if (matchedCanonicalId) {
       setDeals(prevDeals => {
         let changed = false;
         const updatedDeals = prevDeals.map(d => {
-          if (d.contactId === id) {
+          const isMatch = d.contactId === id ||
+                          (rawTargetId && d.contactId.replace(/^(contact|conv)-zapi-/, '') === rawTargetId) ||
+                          (targetDigits && targetDigits.length >= 8 && d.contactId.includes(targetDigits));
+          if (isMatch && d.contactId !== matchedCanonicalId) {
             changed = true;
             return { ...d, contactId: matchedCanonicalId };
           }
@@ -2438,7 +2444,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       setConversations(prevConvs => {
         let changed = false;
         const updatedConvs = prevConvs.map(cv => {
-          if (cv.contactId === id) {
+          const isMatch = cv.contactId === id ||
+                          cv.id === id ||
+                          (rawTargetId && (cv.contactId.replace(/^(contact|conv)-zapi-/, '') === rawTargetId || cv.id.replace(/^(contact|conv)-zapi-/, '') === rawTargetId)) ||
+                          (targetDigits && targetDigits.length >= 8 && (cv.id.includes(targetDigits) || cv.contactId.includes(targetDigits)));
+          if (isMatch && cv.contactId !== matchedCanonicalId) {
             changed = true;
             return { ...cv, contactId: matchedCanonicalId };
           }

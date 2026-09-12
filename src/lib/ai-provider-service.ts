@@ -19,8 +19,8 @@ export class UniversalCopilotService {
       if (platformGeminiKey) {
         return { 
           success: true, 
-          message: 'Motor Google Gemini 1.5 Flash ativo e operacional como inteligência central do CRM (Custo Mínimo & Contexto de 1M tokens).',
-          model: 'gemini-1.5-flash'
+          message: 'Motor Google Gemini Flash ativo e operacional como inteligência central do CRM (Custo Mínimo & Contexto de 1M tokens).',
+          model: 'gemini-flash-latest'
         };
       }
       const defaultKey = process.env.OPENAI_API_KEY;
@@ -36,21 +36,25 @@ export class UniversalCopilotService {
 
     try {
       if (provider === 'GEMINI') {
-        const model = config.model || 'gemini-1.5-flash';
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Ping' }] }],
-          }),
-        });
+        const candidateModels = ['gemini-flash-latest', 'gemini-3.6-flash', config.model || 'gemini-flash-latest'];
+        let lastErr = '';
+        for (const candidate of candidateModels) {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: 'Ping' }] }],
+            }),
+          });
 
-        if (res.ok) {
-          return { success: true, message: `Conexão estabelecida com sucesso via Google Gemini (${model})!`, model };
-        } else {
+          if (res.ok) {
+            return { success: true, message: `Conexão estabelecida com sucesso via Google Gemini (${candidate})!`, model: candidate };
+          }
           const err = await res.json().catch(() => ({}));
-          return { success: false, message: err?.error?.message || `Erro na API do Google Gemini (Status ${res.status}). Verifique a chave.` };
+          lastErr = err?.error?.message || `Erro na API do Google Gemini (Status ${res.status}). Verifique a chave.`;
+          if (res.status !== 404) break;
         }
+        return { success: false, message: lastErr };
       }
 
       if (provider === 'OPENAI') {
@@ -122,7 +126,7 @@ export class UniversalCopilotService {
     const apiKey = (aiConfig?.apiKey || '').trim();
     const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 
-    // 1. PRIORIDADE MÁXIMA: Google Gemini 1.5 Flash (Nativo da Plataforma ou Chave BYOK)
+    // 1. PRIORIDADE MÁXIMA: Google Gemini (Nativo da Plataforma ou Chave Master)
     if (provider === 'GEMINI' || provider === 'PLATFORM_DEFAULT') {
       const activeGeminiKey = apiKey || platformGeminiKey;
       if (activeGeminiKey) {
@@ -136,7 +140,7 @@ export class UniversalCopilotService {
             aiConfig: {
               ...(aiConfig || {}),
               provider: 'GEMINI',
-              model: aiConfig?.model || 'gemini-1.5-flash',
+              model: aiConfig?.model || 'gemini-flash-latest',
             } as TenantAIConfig,
             apiKey: activeGeminiKey,
           });
@@ -401,7 +405,10 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     aiConfig: TenantAIConfig;
     apiKey: string;
   }): Promise<AICopilotAnalysis | null> {
-    const model = params.aiConfig.model || 'gemini-1.5-flash';
+    const candidateModels = ['gemini-flash-latest', 'gemini-3.6-flash'];
+    if (params.aiConfig.model && !params.aiConfig.model.includes('1.5') && !candidateModels.includes(params.aiConfig.model)) {
+      candidateModels.unshift(params.aiConfig.model);
+    }
     const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext);
 
     const chatText = params.history
@@ -410,25 +417,42 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
 
     const prompt = `${systemPrompt}\n\nHISTÓRICO DA CONVERSA NO WHATSAPP (${params.history.length} mensagens):\n${chatText}\n\nRetorne agora estritamente o objeto JSON estruturado solicitado:`;
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: params.aiConfig.temperature ?? 0.3,
-          maxOutputTokens: Math.max(params.aiConfig.maxTokens ?? 1500, 1200),
-        }
-      }),
-    });
+    let data: any = null;
+    let lastError: Error | null = null;
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Gemini API error (${res.status}): ${err}`);
+    for (const model of candidateModels) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: params.aiConfig.temperature ?? 0.3,
+              maxOutputTokens: Math.max(params.aiConfig.maxTokens ?? 4096, 3000),
+            }
+          }),
+        });
+
+        if (res.ok) {
+          data = await res.json();
+          break;
+        } else if (res.status === 404) {
+          continue;
+        } else {
+          const err = await res.text();
+          throw new Error(`Gemini API error (${res.status}): ${err}`);
+        }
+      } catch (e: any) {
+        lastError = e;
+      }
     }
 
-    const data = await res.json();
+    if (!data) {
+      if (lastError) throw lastError;
+      return null;
+    }
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) return null;
 
@@ -443,7 +467,16 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
-    const parsed = JSON.parse(jsonMatch[0]) as AICopilotAnalysis;
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (err) {
+      // Sanitização de trailing commas e caracteres de controle
+      const sanitized = jsonMatch[0]
+        .replace(/,\s*([\]}])/g, '$1')
+        .replace(/[\x00-\x1F\x7F]/g, ' ');
+      parsed = JSON.parse(sanitized);
+    }
     
     // Normalização defensiva para garantir que arrays e campos essenciais estejam presentes
     return {

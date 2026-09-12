@@ -352,6 +352,7 @@ export const MOCK_SAAS_API_CONFIG: SaaSApiConfig = {
   asaasWebhookUrl: 'https://crm.faithhubs.com/api/v1/asaas/webhook',
   awsBedrockModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
   awsBedrockRegion: 'us-east-1',
-  openAiApiKey: 'sk-proj-master-faithhubs-ai-hub',
-  googleGeminiApiKey: 'AIzaSyMasterFaithHubsGeminiKey'
+  openAiApiKey: '',
+  googleGeminiApiKey: ''
 };
+

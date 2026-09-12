@@ -2721,7 +2721,7 @@ export function WhatsAppInbox() {
                     </span>
                   )}
                 </div>
-                <p className={`text-[11px] leading-relaxed italic ${isLeadPersonal ? 'text-slate-700' : 'text-emerald-950'}`}>
+                <p className={`text-[11px] leading-relaxed italic whitespace-pre-line ${isLeadPersonal ? 'text-slate-700' : 'text-emerald-950'}`}>
                   "{activeInsight?.summary || 'A IA analisa o diálogo em tempo real para gerar o resumo do perfil e oportunidades comerciais.'}"
                 </p>
 

@@ -558,7 +558,7 @@ export function CopilotManager() {
                         <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                         <span>Resumo Executivo do Lead:</span>
                       </div>
-                      <p className="leading-relaxed text-slate-800">{simulationAnalysis.summary}</p>
+                      <p className="leading-relaxed text-slate-800 whitespace-pre-line">{simulationAnalysis.summary}</p>
                       
                       {simulationAnalysis.extractedData && (
                         <div className="flex flex-wrap gap-2 pt-2 border-t border-blue-100 text-[11px]">
@@ -584,7 +584,7 @@ export function CopilotManager() {
                           )}
                           {simulationAnalysis.extractedData.urgencyLevel && (
                             <span className="bg-white/90 border border-blue-200 px-2 py-0.5 rounded-md text-slate-700">
-                              ⚡ Urgência: <strong>{simulationAnalysis.extractedData.urgencyLevel}</strong>
+                              ⚡ Urgência: <strong>{simulationAnalysis.extractedData.urgencyLevel === 'NAO_IDENTIFICADA' ? 'Não identificada' : simulationAnalysis.extractedData.urgencyLevel}</strong>
                             </span>
                           )}
                         </div>

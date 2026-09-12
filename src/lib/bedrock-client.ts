@@ -10,7 +10,7 @@ export interface LeadExtractionResult {
   maxBudget?: number;
   preferredRegion?: string;
   propertyType?: string;
-  urgencyLevel?: 'ALTA' | 'MEDIA' | 'BAIXA';
+  urgencyLevel?: 'ALTA' | 'MEDIA' | 'BAIXA' | 'NAO_IDENTIFICADA';
   detectedObjections: string[];
 }
 

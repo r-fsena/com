@@ -256,22 +256,33 @@ DIRETRIZES DE FIDELIDADE E ANCORAGEM DE CONTEXTO (MANDATÓRIAS):
    - Em "responseOptions": forneça respostas naturais condizentes com o tema real (ex: confirmação cordial de recebimento, agradecimento ou resposta casual), NUNCA convidando para plantão de vendas, decorado ou book imobiliário.
 
 3. SE A CONVERSA FOR IMOBILIÁRIA ("REAL_ESTATE_LEAD"):
+   - FORMATO E CONTEÚDO OBRIGATÓRIO DO RESUMO EXECUTIVO ("summary"):
+     O resumo executivo deve ser analítico, direto e enriquecido com os detalhes expressamente citados pelo cliente.
+     Estrutura obrigatória em 2 partes:
+     Linha 1: O que o cliente está buscando com exatidão (ex: tipo de imóvel, oportunidades de lançamentos, número de dormitórios/quartos citados, localização e características principais).
+     Linha 2: "Região: [Bairro/Cidade ou 'Não informada'], Urgência: [Alta | Média | Baixa | 'Não identificada']"
+     Exemplo esperado:
+     "Lead buscando oportunidades em Palhoça, com dois dormitórios\n\nRegião: Palhoça, Urgência: Não identificada"
    - Extraia SOMENTE informações expressamente mencionadas ou confirmadas pelo cliente. Se não falou de orçamento, retorne null. Se não falou de bairro, retorne null.
+   - Em "extractedData":
+     - "propertyType": capture com fidelidade incluindo o número de dormitórios caso citado (ex: "Apartamento 2 dormitórios", "Lançamento 2 dormitórios", "Casa em condomínio").
+     - "preferredRegion": bairro ou cidade citados (ex: "Palhoça, SC" ou "Palhoça").
+     - "urgencyLevel": "ALTA" (prazo imediato ou urgência expressa), "MEDIA" (médio prazo), "BAIXA" (longo prazo) ou "NAO_IDENTIFICADA" (se o cliente não expressou prazo).
    - Tom de voz adotado: ${selectedTone}
    - Objetivo comercial principal: ${selectedObjective}${customInstructions}
    - AS OPÇÕES DE RESPOSTA DEVEM REFLETIR ESTREITAMENTE O TOM DE VOZ E AS REGRAS COMERCIAIS ACIMA.
 
 RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formatação markdown extra, apenas JSON puro):
 {
-  "summary": "Resumo executivo factual de 1 a 2 linhas do momento real da conversa.",
+  "summary": "Lead buscando [oportunidade/imóvel] em [Cidade/Bairro], com [X dormitórios/especificações]\\n\\nRegião: [Bairro/Cidade ou Não informada], Urgência: [Alta | Média | Baixa | Não identificada]",
   "conversationType": "REAL_ESTATE_LEAD" | "PERSONAL_OR_OTHER" | "OPERATIONAL_OR_VENDOR",
   "extractedData": {
     "monthlyIncome": number ou null,
     "downPayment": number ou null,
     "maxBudget": number ou null,
     "preferredRegion": "string com o bairro/cidade desejado ou null",
-    "propertyType": "ex: Apartamento 3 quartos, Cobertura, Casa em condomínio ou null",
-    "urgencyLevel": "ALTA" | "MEDIA" | "BAIXA",
+    "propertyType": "ex: Lançamento 2 dormitórios, Apartamento 3 quartos ou null",
+    "urgencyLevel": "ALTA" | "MEDIA" | "BAIXA" | "NAO_IDENTIFICADA",
     "detectedObjections": ["lista de objeções reais identificadas nas mensagens do cliente"]
   },
   "detectedObjections": ["lista resumida das objeções reais"],
@@ -494,7 +505,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
         maxBudget: typeof parsed.extractedData?.maxBudget === 'number' ? parsed.extractedData.maxBudget : undefined,
         preferredRegion: parsed.extractedData?.preferredRegion || undefined,
         propertyType: parsed.extractedData?.propertyType || undefined,
-        urgencyLevel: parsed.extractedData?.urgencyLevel || 'MEDIA',
+        urgencyLevel: parsed.extractedData?.urgencyLevel || 'NAO_IDENTIFICADA',
         detectedObjections: Array.isArray(parsed.extractedData?.detectedObjections) ? parsed.extractedData.detectedObjections : [],
       },
       detectedObjections: Array.isArray(parsed.detectedObjections) ? parsed.detectedObjections : [],

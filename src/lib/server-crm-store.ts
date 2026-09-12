@@ -550,9 +550,23 @@ export const serverCRMStore = {
     // Normaliza mensagens garantindo que enviadas e recebidas compartilhem a mesma conversa canônica
     const mergedMessages = partial.messages ? this.mergeMessages(current.messages, partial.messages, mergedContacts) : current.messages;
 
+    // Reconcilia deals garantindo que o contactId aponte para o contato canônico unificado
+    const rawDeals = partial.deals || current.deals;
+    const cleanDeals = rawDeals.map(d => {
+      if (!d || !d.contactId) return d;
+      const matched = mergedContacts.find(c => 
+        c.id === d.contactId || 
+        (d.contactId && c.phone && arePhonesEquivalent(c.phone, d.contactId.replace(/\D/g, '')))
+      );
+      if (matched && matched.id !== d.contactId) {
+        return { ...d, contactId: matched.id };
+      }
+      return d;
+    });
+
     const next: ServerCRMState = {
       contacts: mergedContacts,
-      deals: partial.deals || current.deals,
+      deals: cleanDeals,
       conversations: cleanConvs,
       messages: mergedMessages,
       aiInsights: partial.aiInsights ? { ...current.aiInsights, ...partial.aiInsights } : current.aiInsights,
@@ -622,12 +636,12 @@ export const serverCRMStore = {
           downPaymentAvailable: c.downPaymentAvailable !== undefined ? c.downPaymentAvailable : existing.downPaymentAvailable,
           maxPropertyValue: c.maxPropertyValue !== undefined ? c.maxPropertyValue : existing.maxPropertyValue,
           targetBedrooms: c.targetBedrooms !== undefined ? c.targetBedrooms : existing.targetBedrooms,
-          preferredPropertyType: c.preferredPropertyType || existing.preferredPropertyType,
-          purchasePurpose: c.purchasePurpose || existing.purchasePurpose,
-          purchaseTimeline: c.purchaseTimeline || existing.purchaseTimeline,
+          preferredPropertyType: c.preferredPropertyType !== undefined ? c.preferredPropertyType : existing.preferredPropertyType,
+          purchasePurpose: c.purchasePurpose !== undefined ? c.purchasePurpose : existing.purchasePurpose,
+          purchaseTimeline: c.purchaseTimeline !== undefined ? c.purchaseTimeline : existing.purchaseTimeline,
           householdIncome: c.householdIncome !== undefined ? c.householdIncome : existing.householdIncome,
           estimatedFinancing: c.estimatedFinancing !== undefined ? c.estimatedFinancing : existing.estimatedFinancing,
-          email: c.email || existing.email,
+          email: c.email !== undefined ? c.email : existing.email,
           tags: Array.from(new Set([...(existing.tags || []), ...(c.tags || [])])),
           whatsappLabels: Array.from(new Set([...(existing.whatsappLabels || []), ...(c.whatsappLabels || [])])),
           firstSyncedAt: existing.firstSyncedAt || c.firstSyncedAt || new Date().toISOString(),
@@ -644,6 +658,8 @@ export const serverCRMStore = {
         if (finalLid) lidMap.set(cleanLid(finalLid), merged);
         if (normName) nameMap.set(normName, merged);
         idMap.set(merged.id, merged);
+        if (existing.id) idMap.set(existing.id, merged);
+        if (c.id) idMap.set(c.id, merged);
 
         const idx = result.findIndex(x => x.id === existing.id || x.id === merged.id);
         if (idx >= 0) result[idx] = merged;

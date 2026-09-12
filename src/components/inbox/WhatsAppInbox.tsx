@@ -549,6 +549,8 @@ export function WhatsAppInbox() {
       preferredPropertyType: (editedPropertyType || undefined) as PropertyType | undefined,
       purchasePurpose: (editedPurchasePurpose || undefined) as any,
       purchaseTimeline: (editedPurchaseTimeline || undefined) as any,
+      phone: activeContact.phone,
+      name: activeContact.name,
     };
     updateContact(activeContact.id, updates);
     setQualificationSaveSuccess(true);
@@ -3171,7 +3173,7 @@ export function WhatsAppInbox() {
                       onChange={(e) => setEditedMonthlyIncome(maskCurrencyInput(e.target.value))}
                       onBlur={() => {
                         const val = parseBRLInputToNumber(editedMonthlyIncome);
-                        updateContact(activeContact.id, { monthlyIncome: val || undefined });
+                        updateContact(activeContact.id, { monthlyIncome: val || undefined, phone: activeContact.phone, name: activeContact.name });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -3202,7 +3204,7 @@ export function WhatsAppInbox() {
                       onChange={(e) => setEditedDownPayment(maskCurrencyInput(e.target.value))}
                       onBlur={() => {
                         const val = parseBRLInputToNumber(editedDownPayment);
-                        updateContact(activeContact.id, { downPaymentAvailable: val || undefined });
+                        updateContact(activeContact.id, { downPaymentAvailable: val || undefined, phone: activeContact.phone, name: activeContact.name });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -3233,7 +3235,7 @@ export function WhatsAppInbox() {
                       onChange={(e) => setEditedMaxBudget(maskCurrencyInput(e.target.value))}
                       onBlur={() => {
                         const val = parseBRLInputToNumber(editedMaxBudget);
-                        updateContact(activeContact.id, { maxPropertyValue: val || undefined });
+                        updateContact(activeContact.id, { maxPropertyValue: val || undefined, phone: activeContact.phone, name: activeContact.name });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -3264,7 +3266,7 @@ export function WhatsAppInbox() {
                     value={editedPropertyType}
                     onChange={(e) => {
                       setEditedPropertyType(e.target.value);
-                      updateContact(activeContact.id, { preferredPropertyType: (e.target.value || undefined) as PropertyType | undefined });
+                      updateContact(activeContact.id, { preferredPropertyType: (e.target.value || undefined) as PropertyType | undefined, phone: activeContact.phone, name: activeContact.name });
                     }}
                     className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
                   >
@@ -3284,7 +3286,7 @@ export function WhatsAppInbox() {
                     value={editedBedrooms}
                     onChange={(e) => {
                       setEditedBedrooms(e.target.value);
-                      updateContact(activeContact.id, { targetBedrooms: e.target.value ? Number(e.target.value) : undefined });
+                      updateContact(activeContact.id, { targetBedrooms: e.target.value ? Number(e.target.value) : undefined, phone: activeContact.phone, name: activeContact.name });
                     }}
                     className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
                   >
@@ -3305,7 +3307,7 @@ export function WhatsAppInbox() {
                     value={editedPurchasePurpose}
                     onChange={(e) => {
                       setEditedPurchasePurpose(e.target.value);
-                      updateContact(activeContact.id, { purchasePurpose: (e.target.value || undefined) as any });
+                      updateContact(activeContact.id, { purchasePurpose: (e.target.value || undefined) as any, phone: activeContact.phone, name: activeContact.name });
                     }}
                     className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
                   >
@@ -3321,7 +3323,7 @@ export function WhatsAppInbox() {
                     value={editedPurchaseTimeline}
                     onChange={(e) => {
                       setEditedPurchaseTimeline(e.target.value);
-                      updateContact(activeContact.id, { purchaseTimeline: (e.target.value || undefined) as any });
+                      updateContact(activeContact.id, { purchaseTimeline: (e.target.value || undefined) as any, phone: activeContact.phone, name: activeContact.name });
                     }}
                     className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
                   >

@@ -327,14 +327,20 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         phone: chosenPhone,
         lid: chosenLid,
         name: cleanName,
-        monthlyIncome: existing.monthlyIncome || contact.monthlyIncome,
-        downPaymentAvailable: existing.downPaymentAvailable || contact.downPaymentAvailable,
-        maxPropertyValue: existing.maxPropertyValue || contact.maxPropertyValue,
-        preferredPropertyType: existing.preferredPropertyType || contact.preferredPropertyType,
+        monthlyIncome: contact.monthlyIncome !== undefined ? contact.monthlyIncome : existing.monthlyIncome,
+        downPaymentAvailable: contact.downPaymentAvailable !== undefined ? contact.downPaymentAvailable : existing.downPaymentAvailable,
+        maxPropertyValue: contact.maxPropertyValue !== undefined ? contact.maxPropertyValue : existing.maxPropertyValue,
+        targetBedrooms: contact.targetBedrooms !== undefined ? contact.targetBedrooms : existing.targetBedrooms,
+        preferredPropertyType: contact.preferredPropertyType !== undefined ? contact.preferredPropertyType : existing.preferredPropertyType,
+        purchasePurpose: contact.purchasePurpose !== undefined ? contact.purchasePurpose : existing.purchasePurpose,
+        purchaseTimeline: contact.purchaseTimeline !== undefined ? contact.purchaseTimeline : existing.purchaseTimeline,
+        householdIncome: contact.householdIncome !== undefined ? contact.householdIncome : existing.householdIncome,
+        estimatedFinancing: contact.estimatedFinancing !== undefined ? contact.estimatedFinancing : existing.estimatedFinancing,
         targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(contact.targetRegions || [])])),
         tags: Array.from(new Set([...(existing.tags || []), ...(contact.tags || [])])),
-        email: existing.email || contact.email,
-        assignedUserId: existing.assignedUserId || contact.assignedUserId,
+        email: contact.email !== undefined ? contact.email : existing.email,
+        assignedUserId: contact.assignedUserId !== undefined ? contact.assignedUserId : existing.assignedUserId,
+        updatedAt: contact.updatedAt || existing.updatedAt || new Date().toISOString(),
       };
 
       if (typeof window !== 'undefined' && chosenLid && chosenPhone && !isLidIdentifier(chosenPhone)) {
@@ -350,6 +356,8 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       if (chosenLid) lidMap.set(chosenLid, merged);
       if (normName) nameMap.set(normName, merged);
       idMap.set(merged.id, merged);
+      if (existing.id) idMap.set(existing.id, merged);
+      if (contact.id) idMap.set(contact.id, merged);
 
       const idx = result.findIndex(c => c.id === existing.id || c.id === contact.id || c.id === merged.id);
       if (idx >= 0) result[idx] = merged;
@@ -2218,12 +2226,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const updated = [...prev];
         updated[existingIndex] = resultContact;
         const deduped = deduplicateContactList(updated);
+        const resolved = deduped.find(c => (pKey && normalizePhoneKey(c.phone) === pKey) || (data.id && c.id === data.id) || c.id === existing.id);
+        if (resolved) resultContact = resolved;
 
         try {
           localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped));
           fetch('/api/v1/crm/state', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-tenant-id': currentTenant.id,
+              'x-user-id': currentUser.id,
+              'x-user-email': currentUser.email,
+            },
             body: JSON.stringify({ contacts: deduped }),
           }).catch(() => {});
         } catch {}
@@ -2252,11 +2268,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       };
 
       const updated = deduplicateContactList([resultContact, ...prev]);
+      const resolved = updated.find(c => (pKey && normalizePhoneKey(c.phone) === pKey) || (resultContact.id && c.id === resultContact.id));
+      if (resolved) resultContact = resolved;
+
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({ contacts: updated }),
         }).catch(() => {});
       } catch {}
@@ -2296,18 +2321,136 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateContact = (id: string, updates: Partial<Contact>) => {
+    if (!id && !updates.phone) return;
+
+    const targetDigits = (id || '').replace(/\D/g, '') || (updates.phone ? updates.phone.replace(/\D/g, '') : '');
+    const targetPKey = normalizePhoneKey(updates.phone || (targetDigits ? (targetDigits.startsWith('55') ? `+${targetDigits}` : `+55${targetDigits}`) : ''));
+
+    let matchedCanonicalId = id;
+
     setContacts(prev => {
-      const updated = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c);
+      // 1. Encontra contato existente por: id exato, chave canônica de telefone, dígitos equivalentes ou LID
+      const existingIdx = prev.findIndex(c => {
+        if (c.id === id) return true;
+        if (targetPKey && normalizePhoneKey(c.phone) === targetPKey) return true;
+        if (targetDigits && targetDigits.length >= 8 && arePhonesEquivalent(c.phone, targetDigits)) return true;
+        if (c.lid && (c.lid === id || (targetDigits && c.lid.includes(targetDigits)))) return true;
+        return false;
+      });
+
+      let updatedList: Contact[];
+
+      if (existingIdx >= 0) {
+        const existing = prev[existingIdx];
+        matchedCanonicalId = existing.id;
+        const mergedContact: Contact = {
+          ...existing,
+          ...updates,
+          id: existing.id,
+          monthlyIncome: updates.monthlyIncome !== undefined ? updates.monthlyIncome : existing.monthlyIncome,
+          downPaymentAvailable: updates.downPaymentAvailable !== undefined ? updates.downPaymentAvailable : existing.downPaymentAvailable,
+          maxPropertyValue: updates.maxPropertyValue !== undefined ? updates.maxPropertyValue : existing.maxPropertyValue,
+          targetBedrooms: updates.targetBedrooms !== undefined ? updates.targetBedrooms : existing.targetBedrooms,
+          preferredPropertyType: updates.preferredPropertyType !== undefined ? updates.preferredPropertyType : existing.preferredPropertyType,
+          purchasePurpose: updates.purchasePurpose !== undefined ? updates.purchasePurpose : existing.purchasePurpose,
+          purchaseTimeline: updates.purchaseTimeline !== undefined ? updates.purchaseTimeline : existing.purchaseTimeline,
+          householdIncome: updates.householdIncome !== undefined ? updates.householdIncome : existing.householdIncome,
+          estimatedFinancing: updates.estimatedFinancing !== undefined ? updates.estimatedFinancing : existing.estimatedFinancing,
+          name: updates.name ? updates.name : existing.name,
+          phone: updates.phone ? updates.phone : existing.phone,
+          email: updates.email !== undefined ? updates.email : existing.email,
+          tags: updates.tags || existing.tags,
+          targetRegions: updates.targetRegions || existing.targetRegions,
+          updatedAt: new Date().toISOString(),
+        };
+
+        const copy = [...prev];
+        copy[existingIdx] = mergedContact;
+        updatedList = deduplicateContactList(copy);
+      } else {
+        // UPSERT: Se o contato não existia no array (ex: fallback sintetizado do WhatsApp), cria sem perder nenhum dado
+        const fullPhone = updates.phone || (targetDigits ? (targetDigits.startsWith('55') ? `+${targetDigits}` : `+55${targetDigits}`) : '+5511900000000');
+        const fallbackName = updates.name || (targetDigits ? `Contato ${targetDigits.slice(-4)}` : 'Lead Qualificado');
+        const newContact: Contact = {
+          id: id.startsWith('contact-') ? id : `contact-zapi-${targetDigits || Date.now()}`,
+          tenantId: currentTenant.id,
+          name: fallbackName,
+          phone: fullPhone,
+          avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(fallbackName)}&background=059669&color=fff`,
+          source: updates.source || 'WHATSAPP',
+          temperature: updates.temperature || 'WARM',
+          aiPriorityScore: updates.aiPriorityScore || 75,
+          tags: updates.tags || ['Lead Qualificado'],
+          targetRegions: updates.targetRegions || [],
+          notesCount: 0,
+          consentGiven: true,
+          hasOptedOut: false,
+          isPersonal: updates.isPersonal ?? false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...updates,
+        };
+        matchedCanonicalId = newContact.id;
+        updatedList = deduplicateContactList([newContact, ...prev]);
+      }
+
+      // Persistência local imediata
       try {
-        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
+        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updatedList));
+      } catch {}
+
+      // Persistência imediata no servidor
+      try {
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contacts: updated }),
-        }).catch(() => {});
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify({ contacts: updatedList }),
+        }).catch(err => console.warn('[CRM] Aviso ao persistir contatos:', err));
       } catch {}
-      return updated;
+
+      return updatedList;
     });
+
+    // Reconcilia também deals e conversas se o contactId foi identificado ou alterado
+    if (matchedCanonicalId && matchedCanonicalId !== id) {
+      setDeals(prevDeals => {
+        let changed = false;
+        const updatedDeals = prevDeals.map(d => {
+          if (d.contactId === id) {
+            changed = true;
+            return { ...d, contactId: matchedCanonicalId };
+          }
+          return d;
+        });
+        if (changed) {
+          try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updatedDeals)); } catch {}
+          return updatedDeals;
+        }
+        return prevDeals;
+      });
+
+      setConversations(prevConvs => {
+        let changed = false;
+        const updatedConvs = prevConvs.map(cv => {
+          if (cv.contactId === id) {
+            changed = true;
+            return { ...cv, contactId: matchedCanonicalId };
+          }
+          return cv;
+        });
+        if (changed) {
+          try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updatedConvs)); } catch {}
+          return updatedConvs;
+        }
+        return prevConvs;
+      });
+    }
   };
 
   const deleteContact = (id: string) => {
@@ -2597,7 +2740,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({ deals: updated }),
         }).catch(() => {});
       } catch {}
@@ -2606,11 +2755,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const createDeal = (data: Partial<Deal>): Deal => {
-    const contactId = data.contactId || contacts[0]?.id || 'contact-01';
+    let contactId = data.contactId || contacts[0]?.id || 'contact-01';
+    const matchedContact = contacts.find(c => 
+      c.id === contactId || 
+      (contactId && c.phone && arePhonesEquivalent(c.phone, contactId.replace(/\D/g, '')))
+    );
+    if (matchedContact) {
+      contactId = matchedContact.id;
+    }
+
     const newDeal: Deal = {
       id: `deal-${Date.now()}`,
       tenantId: currentTenant.id,
-      contactId: contactId,
       pipelineId: effectiveCurrentPipeline.id,
       stageId: data.stageId || effectiveCurrentPipeline.stages[0]?.id || 'stage-1',
       assignedUserId: data.assignedUserId || currentUser.id,
@@ -2622,6 +2778,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ...data,
+      contactId,
     };
     setDeals(prev => {
       const filtered = prev.filter(d => d.id !== newDeal.id);
@@ -2630,7 +2787,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({ deals: updated }),
         }).catch(() => {});
       } catch {}
@@ -2646,7 +2809,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({ deals: updated }),
         }).catch(() => {});
       } catch {}

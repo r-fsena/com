@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useCRM } from '@/lib/crm-context';
+import { arePhonesEquivalent } from '@/lib/whatsapp-filter';
 import { 
   Building2, 
   DollarSign, 
@@ -97,17 +98,43 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
+  // Resolução inteligente e resiliente do contato vinculado ao deal
+  const getDealContact = useCallback((deal: Deal | null | undefined): Contact | undefined => {
+    if (!deal) return undefined;
+    if (deal.contactId) {
+      const byId = contacts.find(c => c.id === deal.contactId);
+      if (byId) return byId;
+
+      const digits = deal.contactId.replace(/\D/g, '');
+      if (digits && digits.length >= 8) {
+        const byPhone = contacts.find(c => arePhonesEquivalent(c.phone, digits));
+        if (byPhone) return byPhone;
+      }
+    }
+
+    // Match por nome do cliente no título do deal (ex: "Apartamento 2D em Palhoça - Dra. Mariana")
+    if (deal.title && deal.title.includes(' - ')) {
+      const namePart = deal.title.split(' - ').pop()?.trim().toLowerCase();
+      if (namePart && namePart.length >= 3) {
+        const byName = contacts.find(c => c.name && c.name.toLowerCase().trim() === namePart);
+        if (byName) return byName;
+      }
+    }
+
+    return undefined;
+  }, [contacts]);
+
   // Quantidade de negócios em inatividade / esfriando (exclui contatos pessoais)
   const staleDealsCount = deals.filter(d => {
     if (d.status !== 'OPEN') return false;
-    const c = contacts.find(contact => contact.id === d.contactId);
+    const c = getDealContact(d);
     if (c?.isPersonal) return false;
     return getDealUrgencyAnalysis(d).urgencyLevel !== 'HEALTHY';
   }).length;
 
   // Filtragem de deals (apenas leads comerciais, contatos pessoais nunca entram no funil)
   const filteredDeals = deals.filter(deal => {
-    const contact = contacts.find(c => c.id === deal.contactId);
+    const contact = getDealContact(deal);
     if (contact?.isPersonal) return false;
     
     // Filtro por Oportunidades Paradas / Esfriando
@@ -212,7 +239,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     setShowLossReasonInput(deal.status === 'LOST');
     setHoveredDealId(null);
 
-    const linkedContact = contacts.find(c => c.id === deal.contactId);
+    const linkedContact = getDealContact(deal);
     setEditMonthlyIncome(linkedContact?.monthlyIncome ? maskCurrencyInput(linkedContact.monthlyIncome) : '');
     setEditDownPayment(linkedContact?.downPaymentAvailable ? maskCurrencyInput(linkedContact.downPaymentAvailable) : '');
     setEditBedrooms(linkedContact?.targetBedrooms !== undefined && linkedContact?.targetBedrooms !== null ? String(linkedContact.targetBedrooms) : '');
@@ -228,6 +255,9 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     const cleanDown = parseBRLInputToNumber(editDownPayment);
     const stage = currentPipeline.stages.find(s => s.id === editStageId);
 
+    const targetContact = getDealContact(selectedDealForModal);
+    const targetContactId = targetContact?.id || selectedDealForModal.contactId;
+
     updateDeal(selectedDealForModal.id, {
       title: editTitle.trim() || selectedDealForModal.title,
       expectedValue: numValue,
@@ -236,15 +266,18 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
       manualProbability: Number(editProbability) || 50,
       status: (stage?.isWon ? 'WON' : showLossReasonInput ? 'LOST' : 'OPEN') as any,
       lossReason: showLossReasonInput ? editLossReason : undefined,
+      contactId: targetContactId,
     });
 
-    if (selectedDealForModal.contactId) {
-      updateContact(selectedDealForModal.contactId, {
+    if (targetContactId) {
+      updateContact(targetContactId, {
         monthlyIncome: cleanMonthly > 0 ? cleanMonthly : undefined,
         downPaymentAvailable: cleanDown > 0 ? cleanDown : undefined,
         maxPropertyValue: numValue,
         targetBedrooms: editBedrooms && !isNaN(Number(editBedrooms)) ? Number(editBedrooms) : undefined,
         preferredPropertyType: (editPropertyType || undefined) as PropertyType | undefined,
+        phone: targetContact?.phone,
+        name: targetContact?.name,
       });
     }
 
@@ -355,7 +388,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
 
   // Helper para dados do hover
   const hoveredDeal = deals.find(d => d.id === hoveredDealId);
-  const hoveredContact = hoveredDeal ? contacts.find(c => c.id === hoveredDeal.contactId) : null;
+  const hoveredContact = getDealContact(hoveredDeal);
   const hoveredBroker = hoveredDeal ? users.find(u => u.id === hoveredDeal.assignedUserId) : null;
   const hoveredConv = hoveredContact ? conversations.find(c => c.contactId === hoveredContact.id) : null;
   const hoveredInsight = hoveredConv ? aiInsights[hoveredConv.id] : null;
@@ -538,7 +571,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   </div>
                 ) : (
                   stageDeals.map((deal) => {
-                    const contact = contacts.find(c => c.id === deal.contactId);
+                    const contact = getDealContact(deal);
                     const broker = users.find(u => u.id === deal.assignedUserId);
                     const urgency = getDealUrgencyAnalysis(deal);
 

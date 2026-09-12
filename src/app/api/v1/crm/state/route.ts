@@ -44,6 +44,19 @@ export async function POST(req: NextRequest) {
     }
     const updatedState = serverCRMStore.updateState(payload);
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
+
+    // Se houver DATABASE_URL (PostgreSQL), persiste os contatos qualificados em segundo plano
+    if (process.env.DATABASE_URL && Array.isArray(payload.contacts) && payload.contacts.length > 0) {
+      import('@/lib/db/contacts-service').then(({ ContactsDBService }) => {
+        const tenantId = req.headers.get('x-tenant-id') || 'tenant-vanguard-01';
+        payload.contacts.forEach((c: any) => {
+          if (c.phone) {
+            ContactsDBService.upsertContact(tenantId, c).catch(() => {});
+          }
+        });
+      }).catch(() => {});
+    }
+
     return NextResponse.json({
       success: true,
       deletedKeys,

@@ -288,3 +288,36 @@ export function formatCanonicalPhone(phone: string | undefined | null): string {
 
   return `+${digits}`;
 }
+
+/**
+ * Detecta se uma mensagem do WhatsApp é apenas uma confirmação monossilábica / ruído de cortesia
+ * (ex: "ok", "👍", "blz", "obrigado", "perfeito", "combinado", "valeu").
+ * Permite evitar disparos redundantes e caros de IA em conversas que já estão qualificadas.
+ */
+export function isTrivialAcknowledgment(text: string | undefined | null): boolean {
+  if (!text) return true;
+  const raw = text.trim();
+  if (!raw) return true;
+
+  const clean = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[^\w\s]/gi, '') // remove pontuações e símbolos
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Mensagens ultracurtas puramente de emojis ou símbolos (👍, 🙏, 🤝, 👌, etc)
+  if (clean.length === 0 && raw.length <= 8) {
+    return true;
+  }
+
+  const trivialTokens = new Set([
+    'ok', 'okk', 'okey', 'blz', 'beleza', 'obrigado', 'obrigada', 'brigado', 'brigada',
+    'valeu', 'vlw', 'combinado', 'perfeito', 'ta bom', 'ta bem', 'tudo bem', 'show',
+    'joia', 'certo', 'entendido', 'otimo', 'sim', 'nao', 'tks', 'thanks', 'show de bola',
+    'ate mais', 'ate logo', 'bom dia', 'boa tarde', 'boa noite', 'combinadissimo', 'pode ser'
+  ]);
+
+  return trivialTokens.has(clean);
+}

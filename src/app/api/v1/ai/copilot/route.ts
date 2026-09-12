@@ -22,6 +22,10 @@ const AnalyzeConversationSchema = z.object({
     preferredPropertyType: z.string().optional(),
     targetRegions: z.array(z.string()).optional(),
   }).optional(),
+  priorContext: z.object({
+    priorSummary: z.string().optional(),
+    priorExtractedData: z.any().optional(),
+  }).optional(),
   aiConfig: z.object({
     provider: z.enum(['OPENAI', 'ANTHROPIC', 'GEMINI', 'PLATFORM_DEFAULT']),
     apiKey: z.string().optional(),
@@ -63,7 +67,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { chatHistory, brokerName, contactContext, aiConfig } = validated.data;
+    const { chatHistory, brokerName, contactContext, aiConfig, priorContext } = validated.data;
 
     // Busca configurações da Persona do Corretor (Prompt Comportamental, Tom de Voz, Regras Comerciais)
     const allUsers = serverCRMStore.getUsers();
@@ -115,6 +119,7 @@ export async function POST(request: NextRequest) {
       brokerName: matchedUser?.name || brokerName,
       contactContext,
       aiConfig: effectiveAiConfig,
+      priorContext,
     });
 
     return NextResponse.json({

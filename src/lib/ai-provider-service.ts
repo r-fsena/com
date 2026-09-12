@@ -6,6 +6,11 @@ export interface CopilotChatHistoryItem {
   text: string;
 }
 
+export interface CopilotPriorContext {
+  priorSummary?: string;
+  priorExtractedData?: any;
+}
+
 export class UniversalCopilotService {
   /**
    * Testa a conectividade com o provedor e valida a API Key fornecida pelo Tenant
@@ -74,14 +79,13 @@ export class UniversalCopilotService {
 
         if (res.ok) {
           return { success: true, message: `Conexão estabelecida com sucesso via OpenAI (${model})!`, model };
-        } else {
-          const err = await res.json().catch(() => ({}));
-          return { success: false, message: err?.error?.message || `Erro de autenticação na OpenAI (Status ${res.status}). Verifique a chave.` };
         }
+        const err = await res.json().catch(() => ({}));
+        return { success: false, message: err?.error?.message || `Erro na API OpenAI (Status ${res.status}). Verifique a chave.` };
       }
 
       if (provider === 'ANTHROPIC') {
-        const model = config.model || 'claude-3-5-haiku-20241022';
+        const model = config.model || 'claude-3-5-sonnet-20241022';
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -97,46 +101,48 @@ export class UniversalCopilotService {
         });
 
         if (res.ok) {
-          return { success: true, message: `Conexão estabelecida com sucesso via Anthropic (${model})!`, model };
-        } else {
-          const err = await res.json().catch(() => ({}));
-          return { success: false, message: err?.error?.message || `Erro de autenticação na Anthropic (Status ${res.status}). Verifique a chave.` };
+          return { success: true, message: `Conexão estabelecida com sucesso via Anthropic Claude (${model})!`, model };
         }
+        const err = await res.json().catch(() => ({}));
+        return { success: false, message: err?.error?.message || `Erro na API Anthropic (Status ${res.status}). Verifique a chave.` };
       }
 
-      return { success: false, message: 'Provedor desconhecido selecionado.' };
+      return { success: false, message: 'Provedor desconhecido.' };
     } catch (err: any) {
-      return { success: false, message: `Falha de rede ao conectar com ${provider}: ${err.message}` };
+      return { success: false, message: `Falha de conexão com a API: ${err.message}` };
     }
   }
 
   /**
    * Executa a análise de IA gerando resumo, 4 pilares do lead e 3 opções de resposta tática de vendas
-   * Prioriza Google Gemini 1.5 Flash com janela expandida para análise aprofundada de histórico.
+   * Utiliza janela deslizante inteligente (15-20 mensagens) + memória cumulativa prévia para consumo mínimo de tokens.
    */
   static async analyzeConversation(params: {
     chatHistory: CopilotChatHistoryItem[];
     brokerName?: string;
     contactContext?: any;
     aiConfig?: TenantAIConfig;
+    priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis> {
-    const { chatHistory, brokerName = 'Corretor', contactContext, aiConfig } = params;
+    const { chatHistory, brokerName = 'Corretor', contactContext, aiConfig, priorContext } = params;
 
     const provider = aiConfig?.provider || 'PLATFORM_DEFAULT';
     const apiKey = (aiConfig?.apiKey || '').trim();
     const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+
+    // Janela deslizante inteligente: últimas 18 mensagens (foco no diálogo ativo atual)
+    const activeWindowHistory = chatHistory.slice(-18);
 
     // 1. PRIORIDADE MÁXIMA: Google Gemini (Nativo da Plataforma ou Chave Master)
     if (provider === 'GEMINI' || provider === 'PLATFORM_DEFAULT') {
       const activeGeminiKey = apiKey || platformGeminiKey;
       if (activeGeminiKey) {
         try {
-          // Gemini possui 1 milhão de tokens de contexto: analisamos até 70 mensagens com custo irrisório
-          const geminiHistory = chatHistory.slice(-70);
           const result = await this.executeGemini({
-            history: geminiHistory,
+            history: activeWindowHistory,
             brokerName,
             contactContext,
+            priorContext,
             aiConfig: {
               ...(aiConfig || {}),
               provider: 'GEMINI',
@@ -151,16 +157,14 @@ export class UniversalCopilotService {
       }
     }
 
-    // Janela deslizante para modelos de menor contexto (até 25 mensagens mais recentes)
-    const recentHistory = chatHistory.slice(-25);
-
     // 2. Se o usuário configurou OpenAI BYOK
     if (provider === 'OPENAI' && apiKey) {
       try {
         const result = await this.executeOpenAI({
-          history: recentHistory,
+          history: activeWindowHistory,
           brokerName,
           contactContext,
+          priorContext,
           aiConfig: aiConfig!,
           apiKey,
         });
@@ -174,9 +178,10 @@ export class UniversalCopilotService {
     if (provider === 'ANTHROPIC' && apiKey) {
       try {
         const result = await this.executeAnthropic({
-          history: recentHistory,
+          history: activeWindowHistory,
           brokerName,
           contactContext,
+          priorContext,
           aiConfig: aiConfig!,
           apiKey,
         });
@@ -191,9 +196,10 @@ export class UniversalCopilotService {
     if (platformOpenAIKey) {
       try {
         const result = await this.executeOpenAI({
-          history: recentHistory,
+          history: activeWindowHistory,
           brokerName,
           contactContext,
+          priorContext,
           aiConfig: {
             provider: 'OPENAI',
             tone: aiConfig?.tone || 'CONSULTATIVE',
@@ -215,9 +221,14 @@ export class UniversalCopilotService {
   }
 
   /**
-   * Construtor de Prompt do Sistema com Tom de Voz e Foco Comercial
+   * Construtor de Prompt do Sistema com Tom de Voz, Foco Comercial e Memória Cumulativa
    */
-  private static buildSystemPrompt(brokerName: string, aiConfig?: TenantAIConfig, contactContext?: any): string {
+  private static buildSystemPrompt(
+    brokerName: string, 
+    aiConfig?: TenantAIConfig, 
+    contactContext?: any,
+    priorContext?: CopilotPriorContext
+  ): string {
     const toneMap: Record<string, string> = {
       CONSULTATIVE: 'Consultivo, empático, especialista de confiança que faz perguntas inteligentes e conduz com segurança.',
       CLOSER: 'Focado em fechamento rápido, proativo, persuasivo e direcionado para marcar visitas ou simulações.',
@@ -240,8 +251,18 @@ export class UniversalCopilotService {
       ? `\n\nREGRAS COMERCIAIS & DIRETRIZES DA PERSONA DO CORRETOR (MANDATÓRIAS - INCORPORE AO ESTILO):\n${aiConfig.customInstructions}` 
       : '';
 
+    const priorMemoryBlock = priorContext?.priorSummary 
+      ? `\n\nÂNCORA DE MEMÓRIA CUMULATIVA CONSOLIDADA (HISTÓRICO PRÉVIO):\n- Resumo consolidado anterior: ${priorContext.priorSummary}${
+          priorContext.priorExtractedData?.propertyType ? `\n- Imóvel prévio identificado: ${priorContext.priorExtractedData.propertyType}` : ''
+        }${
+          priorContext.priorExtractedData?.preferredRegion ? `\n- Região prévia de interesse: ${priorContext.priorExtractedData.preferredRegion}` : ''
+        }${
+          priorContext.priorExtractedData?.maxBudget ? `\n- Orçamento prévio mencionado: R$ ${priorContext.priorExtractedData.maxBudget}` : ''
+        }\nIMPORTANTE: Use essa âncora de memória para não perder dados das mensagens mais antigas, e atualize com base nas mensagens recentes a seguir.`
+      : '';
+
     return `Você é o Copiloto de IA Especialista em Vendas Imobiliárias e Análise Conversacional, atuando em conjunto com o corretor(a) ${brokerName}.
-Sua missão é analisar com total fidelidade as mensagens de WhatsApp do contato, identificar a verdadeira natureza da conversa e sugerir respostas humanas, altamente persuasivas e personalizadas.
+Sua missão é analisar com total fidelidade as mensagens de WhatsApp do contato, identificar a verdadeira natureza da conversa e sugerir respostas humanas, altamente persuasivas e personalizadas.${priorMemoryBlock}${customInstructions}
 
 DIRETRIZES DE FIDELIDADE E ANCORAGEM DE CONTEXTO (MANDATÓRIAS):
 1. CLASSIFICAÇÃO DA CONVERSA ("conversationType"):
@@ -318,9 +339,10 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     contactContext: any;
     aiConfig: TenantAIConfig;
     apiKey: string;
+    priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis | null> {
     const model = params.aiConfig.model || 'gpt-4o-mini';
-    const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext);
+    const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext, params.priorContext);
 
     const formattedMessages = [
       { role: 'system', content: systemPrompt },
@@ -367,9 +389,10 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     contactContext: any;
     aiConfig: TenantAIConfig;
     apiKey: string;
+    priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis | null> {
     const model = params.aiConfig.model || 'claude-3-5-haiku-20241022';
-    const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext);
+    const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext, params.priorContext);
 
     const messages = [
       ...params.history.map(m => ({
@@ -420,12 +443,13 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     contactContext: any;
     aiConfig: TenantAIConfig;
     apiKey: string;
+    priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis | null> {
     const candidateModels = ['gemini-flash-latest', 'gemini-3.6-flash'];
     if (params.aiConfig.model && !params.aiConfig.model.includes('1.5') && !candidateModels.includes(params.aiConfig.model)) {
       candidateModels.unshift(params.aiConfig.model);
     }
-    const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext);
+    const systemPrompt = this.buildSystemPrompt(params.brokerName, params.aiConfig, params.contactContext, params.priorContext);
 
     const chatText = params.history
       .map(m => `${m.sender === 'BROKER' ? params.brokerName : 'Cliente'}: ${m.text}`)

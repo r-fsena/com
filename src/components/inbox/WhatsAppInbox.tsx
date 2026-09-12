@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent, canonicalPhoneKey } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent, canonicalPhoneKey, isTrivialAcknowledgment } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -567,19 +567,46 @@ export function WhatsAppInbox() {
     }
   }, [activeConversation?.id, activeContact?.phone]);
 
-  // Opção 1: Auto-Análise e Auto-Save Contínuo por IA
+  // Opção 1: Auto-Análise e Auto-Save Contínuo por IA (Com 5 Camadas de Resguardo de Mercado)
   React.useEffect(() => {
     if (!activeConversation || !activeContact) return;
 
+    if (currentTenant?.aiConfig && currentTenant.aiConfig.enabled === false) {
+      setIsAnalyzingAI(false);
+      return;
+    }
+
+    const substantiveMessages = activeMessages.filter(m => !m.isInternalNote && m.content && m.content.trim().length > 0);
+    if (substantiveMessages.length === 0 && !activeConversation.lastMessagePreview) return;
+
+    const lastMsg = substantiveMessages[substantiveMessages.length - 1];
+    const existingInsight = aiInsights[activeConversation.id];
+
+    // CAMADA 5: Deduplicação & Fingerprint Cache (Zero Tokens se a conversa não mudou)
+    if (existingInsight?.lastAnalyzedMessageId && lastMsg && existingInsight.lastAnalyzedMessageId === lastMsg.id) {
+      return;
+    }
+
+    // CAMADA 3: Actor Gating (Se o corretor foi o último a enviar mensagem e já temos qualificação, a IA descansa)
+    if (lastMsg && lastMsg.senderType === 'USER' && existingInsight) {
+      return;
+    }
+
+    // CAMADA 1: Heurística Local Anti-Ruído (Mensagens monossilábicas/emojis em chats já qualificados não acionam IA)
+    if (existingInsight && lastMsg && isTrivialAcknowledgment(lastMsg.content)) {
+      return;
+    }
+
+    // CAMADA 2: Debounce de Rajada (8 segundos para aguardar término de pensamentos picados do cliente)
     const timer = setTimeout(async () => {
       try {
         setIsAnalyzingAI(true);
-        let chatHistory = activeMessages
-          .filter(m => !m.isInternalNote && m.content)
-          .map(m => ({
-            sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
-            text: m.content,
-          }));
+
+        // CAMADA 4: Janela Deslizante de 15 mensagens recentes
+        let chatHistory = substantiveMessages.slice(-15).map(m => ({
+          sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
+          text: m.content,
+        }));
 
         if (chatHistory.length === 0 && activeConversation.lastMessagePreview) {
           chatHistory = [{
@@ -588,12 +615,10 @@ export function WhatsAppInbox() {
           }];
         }
 
-        if (currentTenant?.aiConfig && currentTenant.aiConfig.enabled === false) {
+        if (chatHistory.length === 0) {
           setIsAnalyzingAI(false);
           return;
         }
-
-        if (chatHistory.length === 0) return;
 
         const brokerPersonaParts: string[] = [];
         if (currentUser.aiPersonaPrompt) {
@@ -621,6 +646,10 @@ export function WhatsAppInbox() {
               preferredPropertyType: activeContact.preferredPropertyType,
               targetRegions: activeContact.targetRegions,
             },
+            priorContext: existingInsight ? {
+              priorSummary: existingInsight.summary,
+              priorExtractedData: existingInsight.extractedData,
+            } : undefined,
             aiConfig: {
               provider: 'PLATFORM_DEFAULT',
               model: 'gemini-flash-latest',
@@ -636,7 +665,7 @@ export function WhatsAppInbox() {
         if (resData.data) {
           const analysis = resData.data;
 
-          // 1. Atualiza Card do Copiloto no CRM Context
+          // 1. Atualiza Card do Copiloto no CRM Context registrando o lastAnalyzedMessageId
           updateAIInsight(activeConversation.id, {
             contactId: activeContact.id,
             summary: analysis.summary,
@@ -648,6 +677,7 @@ export function WhatsAppInbox() {
             intent: analysis.intent,
             suggestedResponse: analysis.suggestedResponse,
             confidenceScore: analysis.confidenceScore || 96,
+            lastAnalyzedMessageId: lastMsg?.id,
           });
 
           // 2. Auto-preenchimento e atualização inteligente do Contato (SOMENTE se for lead imobiliário real)
@@ -718,14 +748,16 @@ export function WhatsAppInbox() {
         setShowLeadDrawer(true);
       }
 
-      let chatHistory = activeMessages
-        .filter(m => !m.isInternalNote && m.content)
-        .map(m => ({
-          sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
-          text: m.content,
-        }));
+      const substantiveMessages = activeMessages.filter(m => !m.isInternalNote && m.content && m.content.trim().length > 0);
+      const lastMsg = substantiveMessages[substantiveMessages.length - 1];
+      const existingInsight = aiInsights[activeConversation.id];
 
-      // 1. Busca mensagens históricas adicionais diretamente na Z-API
+      let chatHistory = substantiveMessages.slice(-15).map(m => ({
+        sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
+        text: m.content,
+      }));
+
+      // 1. Busca mensagens históricas adicionais diretamente na Z-API se necessário
       try {
         const histRes = await fetch('/api/v1/zapi/sync-chat-history', {
           method: 'POST',
@@ -740,11 +772,12 @@ export function WhatsAppInbox() {
         if (histData.messages && histData.messages.length > 0) {
           const zapiMsgs = histData.messages
             .filter((m: any) => !m.isInternalNote && m.content)
+            .slice(-15)
             .map((m: any) => ({
               sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
               text: m.content,
             }));
-          if (zapiMsgs.length > chatHistory.length) {
+          if (zapiMsgs.length > 0) {
             chatHistory = zapiMsgs;
           }
         }
@@ -790,6 +823,10 @@ export function WhatsAppInbox() {
             preferredPropertyType: activeContact.preferredPropertyType,
             targetRegions: activeContact.targetRegions,
           },
+          priorContext: existingInsight ? {
+            priorSummary: existingInsight.summary,
+            priorExtractedData: existingInsight.extractedData,
+          } : undefined,
           aiConfig: {
             provider: 'PLATFORM_DEFAULT',
             model: 'gemini-flash-latest',
@@ -805,7 +842,7 @@ export function WhatsAppInbox() {
       if (resData.data) {
         const analysis = resData.data;
 
-        // 1. Atualiza Card do Copiloto no CRM Context
+        // 1. Atualiza Card do Copiloto no CRM Context registrando o lastAnalyzedMessageId
         updateAIInsight(activeConversation.id, {
           contactId: activeContact.id,
           summary: analysis.summary,
@@ -817,6 +854,7 @@ export function WhatsAppInbox() {
           intent: analysis.intent,
           suggestedResponse: analysis.suggestedResponse,
           confidenceScore: analysis.confidenceScore || 96,
+          lastAnalyzedMessageId: lastMsg?.id,
         });
 
         // 2. Atualiza campos do Perfil 360 (Apenas se for lead imobiliário real)

@@ -306,7 +306,7 @@ export interface AIInsight {
     maxBudget?: number;
     preferredRegion?: string;
     propertyType?: string;
-    urgencyLevel?: 'ALTA' | 'MEDIA' | 'BAIXA';
+    urgencyLevel?: 'ALTA' | 'MEDIA' | 'BAIXA' | 'NAO_IDENTIFICADA';
     detectedObjections?: string[];
   };
   detectedObjections?: string[];
@@ -316,6 +316,7 @@ export interface AIInsight {
   suggestedResponse: string;
   confidenceScore: number;
   userFeedback?: 'ACCEPTED' | 'EDITED' | 'REJECTED';
+  lastAnalyzedMessageId?: string;
   createdAt: string;
 }
 

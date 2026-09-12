@@ -360,14 +360,23 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
 
                     {/* Qualificação Financeira */}
                     <td className="py-3 px-4 font-mono">
-                      {contact.downPaymentAvailable || contact.maxPropertyValue ? (
+                      {contact.monthlyIncome || contact.downPaymentAvailable || contact.maxPropertyValue ? (
                         <div>
-                          <span className="block font-bold text-slate-800">
-                            Orç: R$ {(contact.maxPropertyValue || 0).toLocaleString('pt-BR')}
-                          </span>
-                          <span className="text-[10px] text-slate-500">
-                            Entrada: R$ {(contact.downPaymentAvailable || 0).toLocaleString('pt-BR')}
-                          </span>
+                          {contact.maxPropertyValue ? (
+                            <span className="block font-bold text-slate-800">
+                              Orç: R$ {(contact.maxPropertyValue || 0).toLocaleString('pt-BR')}
+                            </span>
+                          ) : null}
+                          {contact.downPaymentAvailable ? (
+                            <span className="text-[10px] text-slate-500 block">
+                              Entrada: R$ {(contact.downPaymentAvailable || 0).toLocaleString('pt-BR')}
+                            </span>
+                          ) : null}
+                          {contact.monthlyIncome ? (
+                            <span className="text-[10px] text-emerald-700 font-bold block">
+                              Renda: R$ {contact.monthlyIncome.toLocaleString('pt-BR')}/mês
+                            </span>
+                          ) : null}
                         </div>
                       ) : (
                         <span className="text-slate-400 text-[11px]">Não qualificado</span>
@@ -376,9 +385,10 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
 
                     {/* Interesse */}
                     <td className="py-3 px-4">
-                      {contact.preferredPropertyType ? (
+                      {contact.preferredPropertyType || contact.targetBedrooms ? (
                         <p className="font-semibold text-slate-800">
-                          {contact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : contact.preferredPropertyType === 'HOUSE' ? 'Casa' : contact.preferredPropertyType === 'STUDIO' ? 'Studio' : contact.preferredPropertyType === 'LAND' ? 'Terreno' : contact.preferredPropertyType === 'COMMERCIAL' ? 'Comercial' : 'Apartamento'}
+                          {contact.preferredPropertyType === 'PENTHOUSE' ? 'Cobertura' : contact.preferredPropertyType === 'HOUSE' ? 'Casa' : contact.preferredPropertyType === 'STUDIO' ? 'Studio' : contact.preferredPropertyType === 'LAND' ? 'Terreno' : contact.preferredPropertyType === 'COMMERCIAL' ? 'Comercial' : contact.preferredPropertyType === 'APARTMENT' ? 'Apartamento' : 'Imóvel'}
+                          {contact.targetBedrooms ? ` • ${contact.targetBedrooms} dorms` : ''}
                         </p>
                       ) : (
                         <p className="text-slate-400 text-xs italic">Não informado</p>

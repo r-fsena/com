@@ -216,6 +216,11 @@ export function WhatsAppInbox() {
   const [editedMonthlyIncome, setEditedMonthlyIncome] = useState<string>('');
   const [editedDownPayment, setEditedDownPayment] = useState<string>('');
   const [editedMaxBudget, setEditedMaxBudget] = useState<string>('');
+  const [editedBedrooms, setEditedBedrooms] = useState<string>('');
+  const [editedPropertyType, setEditedPropertyType] = useState<string>('');
+  const [editedPurchasePurpose, setEditedPurchasePurpose] = useState<string>('');
+  const [editedPurchaseTimeline, setEditedPurchaseTimeline] = useState<string>('');
+  const [qualificationSaveSuccess, setQualificationSaveSuccess] = useState<boolean>(false);
 
   // Auto-ajuste de altura da caixa de texto conforme digitação e quebras de linha
   useEffect(() => {
@@ -512,6 +517,38 @@ export function WhatsAppInbox() {
       setShowLeadDrawer(false);
     }
   }, [isLeadPersonal, activeContact?.id]);
+
+  // Sincronização automática em tempo real dos campos de qualificação com o contato ativo
+  React.useEffect(() => {
+    if (activeContact) {
+      setEditedMonthlyIncome(activeContact.monthlyIncome ? String(activeContact.monthlyIncome) : '');
+      setEditedDownPayment(activeContact.downPaymentAvailable ? String(activeContact.downPaymentAvailable) : '');
+      setEditedMaxBudget(activeContact.maxPropertyValue ? String(activeContact.maxPropertyValue) : '');
+      setEditedBedrooms(activeContact.targetBedrooms !== undefined && activeContact.targetBedrooms !== null ? String(activeContact.targetBedrooms) : '');
+      setEditedPropertyType(activeContact.preferredPropertyType || '');
+      setEditedPurchasePurpose(activeContact.purchasePurpose || '');
+      setEditedPurchaseTimeline(activeContact.purchaseTimeline || '');
+      setEditedName(activeContact.name || '');
+      setEditedEmail(activeContact.email || '');
+    }
+  }, [activeContact?.id, activeContact?.updatedAt]);
+
+  // Salva todos os dados de qualificação de uma vez de forma persistente
+  const handleSaveQualification = () => {
+    if (!activeContact) return;
+    const updates: Partial<Contact> = {
+      monthlyIncome: editedMonthlyIncome && !isNaN(Number(editedMonthlyIncome)) ? Number(editedMonthlyIncome) : undefined,
+      downPaymentAvailable: editedDownPayment && !isNaN(Number(editedDownPayment)) ? Number(editedDownPayment) : undefined,
+      maxPropertyValue: editedMaxBudget && !isNaN(Number(editedMaxBudget)) ? Number(editedMaxBudget) : undefined,
+      targetBedrooms: editedBedrooms && !isNaN(Number(editedBedrooms)) ? Number(editedBedrooms) : undefined,
+      preferredPropertyType: (editedPropertyType || undefined) as PropertyType | undefined,
+      purchasePurpose: (editedPurchasePurpose || undefined) as any,
+      purchaseTimeline: (editedPurchaseTimeline || undefined) as any,
+    };
+    updateContact(activeContact.id, updates);
+    setQualificationSaveSuccess(true);
+    setTimeout(() => setQualificationSaveSuccess(false), 3500);
+  };
 
   // Handlers do Módulo de Imóveis Apresentados
   const handleSavePresentedProperty = () => {
@@ -3081,13 +3118,34 @@ export function WhatsAppInbox() {
             {/* ---------------------------------------------------- */}
             {/* 3. QUALIFICAÇÃO DO LEAD (FINANCEIRA & PERFIL)         */}
             {/* ---------------------------------------------------- */}
-            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+            <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-3.5 space-y-3 shadow-xs">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Qualificação do Lead</span>
                 </h4>
-                <span className="text-[10px] text-slate-400 font-medium">Edição Rápida</span>
+                <button
+                  type="button"
+                  onClick={handleSaveQualification}
+                  className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg transition shadow-2xs cursor-pointer ${
+                    qualificationSaveSuccess
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300'
+                  }`}
+                  title="Salvar alterações de qualificação"
+                >
+                  {qualificationSaveSuccess ? (
+                    <>
+                      <Check className="w-3 h-3 text-white" />
+                      <span>Salvo!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3 h-3 text-emerald-600" />
+                      <span>Salvar</span>
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Grid Renda, Entrada e Orçamento */}
@@ -3105,16 +3163,17 @@ export function WhatsAppInbox() {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const val = Number(editedMonthlyIncome) || 0;
-                        updateContact(activeContact.id, { monthlyIncome: val });
+                        handleSaveQualification();
                       }
                     }}
                     className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
                   />
-                  {Number(editedMonthlyIncome) > 0 && (
+                  {Number(editedMonthlyIncome) > 0 ? (
                     <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
                       R$ {Number(editedMonthlyIncome).toLocaleString('pt-BR')}
                     </span>
+                  ) : (
+                    <span className="text-[8px] text-slate-400 block mt-0.5">Não informada</span>
                   )}
                 </div>
 
@@ -3131,16 +3190,17 @@ export function WhatsAppInbox() {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const val = Number(editedDownPayment) || 0;
-                        updateContact(activeContact.id, { downPaymentAvailable: val });
+                        handleSaveQualification();
                       }
                     }}
                     className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
                   />
-                  {Number(editedDownPayment) > 0 && (
+                  {Number(editedDownPayment) > 0 ? (
                     <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
                       R$ {Number(editedDownPayment).toLocaleString('pt-BR')}
                     </span>
+                  ) : (
+                    <span className="text-[8px] text-slate-400 block mt-0.5">Não informada</span>
                   )}
                 </div>
 
@@ -3157,39 +3217,100 @@ export function WhatsAppInbox() {
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const val = Number(editedMaxBudget) || 0;
-                        updateContact(activeContact.id, { maxPropertyValue: val });
+                        handleSaveQualification();
                       }
                     }}
                     className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
                   />
-                  {Number(editedMaxBudget) > 0 && (
+                  {Number(editedMaxBudget) > 0 ? (
                     <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
                       R$ {Number(editedMaxBudget).toLocaleString('pt-BR')}
                     </span>
+                  ) : (
+                    <span className="text-[8px] text-slate-400 block mt-0.5">Não informado</span>
                   )}
                 </div>
               </div>
 
-              {/* Tipo de Imóvel */}
-              <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
-                <label className="text-[10px] font-bold text-slate-500 block mb-1 flex items-center gap-1">
-                  <Building className="w-3 h-3 text-slate-400" />
-                  <span>Tipo de Imóvel de Interesse</span>
-                </label>
-                <select
-                  value={activeContact.preferredPropertyType || ''}
-                  onChange={(e) => updateContact(activeContact.id, { preferredPropertyType: (e.target.value || undefined) as PropertyType | undefined })}
-                  className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-                >
-                  <option value="">Não informado (Opcional)</option>
-                  <option value="APARTMENT">Apartamento</option>
-                  <option value="PENTHOUSE">Cobertura / Penthouse</option>
-                  <option value="HOUSE">Casa em Condomínio Fechado</option>
-                  <option value="STUDIO">Studio / Loft Compacto</option>
-                  <option value="LAND">Terreno / Lote Residencial</option>
-                  <option value="COMMERCIAL">Sala Comercial / Corporativa</option>
-                </select>
+              {/* Grid Preferências do Imóvel: Tipo e Dormitórios */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5 flex items-center gap-1">
+                    <Building className="w-2.5 h-2.5 text-slate-400" />
+                    <span>Tipo de Imóvel</span>
+                  </label>
+                  <select
+                    value={editedPropertyType}
+                    onChange={(e) => {
+                      setEditedPropertyType(e.target.value);
+                      updateContact(activeContact.id, { preferredPropertyType: (e.target.value || undefined) as PropertyType | undefined });
+                    }}
+                    className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                  >
+                    <option value="">Não informado</option>
+                    <option value="APARTMENT">Apartamento</option>
+                    <option value="PENTHOUSE">Cobertura</option>
+                    <option value="HOUSE">Casa em Condomínio</option>
+                    <option value="STUDIO">Studio / Loft</option>
+                    <option value="LAND">Terreno / Lote</option>
+                    <option value="COMMERCIAL">Comercial</option>
+                  </select>
+                </div>
+
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Dormitórios</label>
+                  <select
+                    value={editedBedrooms}
+                    onChange={(e) => {
+                      setEditedBedrooms(e.target.value);
+                      updateContact(activeContact.id, { targetBedrooms: e.target.value ? Number(e.target.value) : undefined });
+                    }}
+                    className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                  >
+                    <option value="">Não especificado</option>
+                    <option value="1">1 Dormitório</option>
+                    <option value="2">2 Dormitórios</option>
+                    <option value="3">3 Dormitórios</option>
+                    <option value="4">4+ Dormitórios</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Grid Finalidade e Prazo */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Finalidade</label>
+                  <select
+                    value={editedPurchasePurpose}
+                    onChange={(e) => {
+                      setEditedPurchasePurpose(e.target.value);
+                      updateContact(activeContact.id, { purchasePurpose: (e.target.value || undefined) as any });
+                    }}
+                    className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                  >
+                    <option value="">Não especificada</option>
+                    <option value="LIVING">Moradia Própria</option>
+                    <option value="INVESTMENT">Investimento / Renda</option>
+                  </select>
+                </div>
+
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Prazo de Decisão</label>
+                  <select
+                    value={editedPurchaseTimeline}
+                    onChange={(e) => {
+                      setEditedPurchaseTimeline(e.target.value);
+                      updateContact(activeContact.id, { purchaseTimeline: (e.target.value || undefined) as any });
+                    }}
+                    className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                  >
+                    <option value="">Não informado</option>
+                    <option value="IMMEDIATE">Imediato (até 30 dias)</option>
+                    <option value="1_TO_3_MONTHS">1 a 3 meses</option>
+                    <option value="3_TO_6_MONTHS">3 a 6 meses</option>
+                    <option value="INVESTOR_OPPORTUNITY">Investidor / Oportunidade</option>
+                  </select>
+                </div>
               </div>
 
               {/* Regiões de Interesse */}
@@ -3207,17 +3328,21 @@ export function WhatsAppInbox() {
                           const updated = (activeContact.targetRegions || []).filter(r => r !== reg);
                           updateContact(activeContact.id, { targetRegions: updated });
                         }}
-                        className="text-slate-400 hover:text-rose-500"
+                        className="text-slate-400 hover:text-rose-500 cursor-pointer"
+                        title="Remover região"
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
                     </span>
                   ))}
+                  {(!activeContact.targetRegions || activeContact.targetRegions.length === 0) && (
+                    <span className="text-[10px] text-slate-400 italic">Nenhum bairro registrado</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <input
                     type="text"
-                    placeholder="Adicionar bairro (ex: Centro)..."
+                    placeholder="Adicionar bairro (ex: Palhoça, Centro)..."
                     value={newRegionInput}
                     onChange={(e) => setNewRegionInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -3239,12 +3364,35 @@ export function WhatsAppInbox() {
                         setNewRegionInput('');
                       }
                     }}
-                    className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95"
+                    className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition active:scale-95 cursor-pointer"
                   >
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
               </div>
+
+              {/* Botão de Ação Primária: Salvar Dados de Qualificação */}
+              <button
+                type="button"
+                onClick={handleSaveQualification}
+                className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer ${
+                  qualificationSaveSuccess
+                    ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-emerald-600/30'
+                    : 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white shadow-emerald-700/20'
+                }`}
+              >
+                {qualificationSaveSuccess ? (
+                  <>
+                    <Check className="w-4 h-4 text-white animate-pulse" />
+                    <span>✓ Dados de Qualificação Salvos com Sucesso!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 text-white" />
+                    <span>Salvar Dados de Qualificação</span>
+                  </>
+                )}
+              </button>
             </div>
 
             {/* ---------------------------------------------------- */}

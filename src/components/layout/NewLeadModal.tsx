@@ -19,7 +19,10 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
   const [temperature, setTemperature] = useState<LeadTemperature>('WARM');
   const [source, setSource] = useState('WHATSAPP');
   const [propertyType, setPropertyType] = useState<PropertyType>('APARTMENT');
+  const [targetBedrooms, setTargetBedrooms] = useState('2');
+  const [purchasePurpose, setPurchasePurpose] = useState<'LIVING' | 'INVESTMENT'>('LIVING');
   const [region, setRegion] = useState('Jardins');
+  const [monthlyIncome, setMonthlyIncome] = useState('');
   const [downPayment, setDownPayment] = useState('500000');
   const [maxBudget, setMaxBudget] = useState('1800000');
   const [assignedUserId, setAssignedUserId] = useState(currentUser.id);
@@ -31,7 +34,7 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
     e.preventDefault();
     if (!name.trim() || !phone.trim()) return;
 
-    // 1. Cria o contato
+    // 1. Cria o contato com qualificação completa
     const contact = addContact({
       name: name.trim(),
       phone: phone.trim(),
@@ -39,7 +42,10 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
       temperature,
       source: source as any,
       preferredPropertyType: propertyType,
+      targetBedrooms: targetBedrooms ? Number(targetBedrooms) : undefined,
+      purchasePurpose,
       targetRegions: [region],
+      monthlyIncome: monthlyIncome ? Number(monthlyIncome) : undefined,
       downPaymentAvailable: Number(downPayment) || 0,
       maxPropertyValue: Number(maxBudget) || 0,
       assignedUserId,
@@ -50,7 +56,7 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
     createDeal({
       contactId: contact.id,
       assignedUserId,
-      title: `${propertyType === 'PENTHOUSE' ? 'Cobertura' : 'Apartamento'} em ${region} - ${name}`,
+      title: `${propertyType === 'PENTHOUSE' ? 'Cobertura' : propertyType === 'HOUSE' ? 'Casa' : 'Apartamento'} ${targetBedrooms ? `${targetBedrooms}D ` : ''}em ${region} - ${name}`,
       expectedValue: Number(maxBudget) || 1200000,
       stageId: currentPipeline.stages[0].id,
       manualProbability: 60,
@@ -173,7 +179,7 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
               Interesse Imobiliário & Capacidade Financeira
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
                   Tipo de Imóvel
@@ -187,7 +193,39 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
                   <option value="PENTHOUSE">Cobertura</option>
                   <option value="HOUSE">Casa em Condomínio</option>
                   <option value="STUDIO">Studio / Compacto</option>
+                  <option value="LAND">Terreno / Lote</option>
                   <option value="COMMERCIAL">Comercial</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Dormitórios
+                </label>
+                <select
+                  value={targetBedrooms}
+                  onChange={(e) => setTargetBedrooms(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
+                >
+                  <option value="">Não especificado</option>
+                  <option value="1">1 Dormitório</option>
+                  <option value="2">2 Dormitórios</option>
+                  <option value="3">3 Dormitórios</option>
+                  <option value="4">4+ Dormitórios</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Finalidade
+                </label>
+                <select
+                  value={purchasePurpose}
+                  onChange={(e) => setPurchasePurpose(e.target.value as any)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
+                >
+                  <option value="LIVING">Moradia Própria</option>
+                  <option value="INVESTMENT">Investimento / Renda</option>
                 </select>
               </div>
 
@@ -199,8 +237,50 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
                   type="text"
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
-                  placeholder="Ex: Pinheiros, Moema"
+                  placeholder="Ex: Pinheiros, Palhoça"
                   className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
+                >
+                </input>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Renda Mensal (R$)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ex: 15000"
+                  value={monthlyIncome}
+                  onChange={(e) => setMonthlyIncome(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Entrada Disponível (R$)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ex: 100000"
+                  value={downPayment}
+                  onChange={(e) => setDownPayment(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Orçamento Máximo (R$)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ex: 800000"
+                  value={maxBudget}
+                  onChange={(e) => setMaxBudget(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
                 />
               </div>
 
@@ -219,32 +299,6 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
                     </option>
                   ))}
                 </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Entrada Disponível (R$)
-                </label>
-                <input
-                  type="number"
-                  value={downPayment}
-                  onChange={(e) => setDownPayment(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Orçamento Máximo do Imóvel (R$)
-                </label>
-                <input
-                  type="number"
-                  value={maxBudget}
-                  onChange={(e) => setMaxBudget(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
-                />
               </div>
             </div>
 

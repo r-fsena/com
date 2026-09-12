@@ -38,7 +38,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Deal, Contact, PipelineStage } from '@/types/crm';
+import { Deal, Contact, PipelineStage, PropertyType } from '@/types/crm';
 
 interface KanbanBoardProps {
   onOpenLeadModal: () => void;
@@ -52,6 +52,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     moveDealStage, 
     updateDeal,
     deleteDeal,
+    updateContact,
     updatePipelineStages,
     contacts, 
     users, 
@@ -84,6 +85,12 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [editProbability, setEditProbability] = useState('');
   const [editLossReason, setEditLossReason] = useState('');
   const [showLossReasonInput, setShowLossReasonInput] = useState(false);
+
+  // Estados de Qualificação do Lead Vinculado no Modal
+  const [editMonthlyIncome, setEditMonthlyIncome] = useState('');
+  const [editDownPayment, setEditDownPayment] = useState('');
+  const [editBedrooms, setEditBedrooms] = useState('');
+  const [editPropertyType, setEditPropertyType] = useState<PropertyType | ''>('');
 
   // Drag and Drop
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
@@ -203,6 +210,12 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     setEditLossReason(deal.lossReason || '');
     setShowLossReasonInput(deal.status === 'LOST');
     setHoveredDealId(null);
+
+    const linkedContact = contacts.find(c => c.id === deal.contactId);
+    setEditMonthlyIncome(linkedContact?.monthlyIncome ? String(linkedContact.monthlyIncome) : '');
+    setEditDownPayment(linkedContact?.downPaymentAvailable ? String(linkedContact.downPaymentAvailable) : '');
+    setEditBedrooms(linkedContact?.targetBedrooms !== undefined && linkedContact?.targetBedrooms !== null ? String(linkedContact.targetBedrooms) : '');
+    setEditPropertyType(linkedContact?.preferredPropertyType || '');
   };
 
   const handleSaveDealDetails = (e: React.FormEvent) => {
@@ -221,6 +234,16 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
       status: (stage?.isWon ? 'WON' : showLossReasonInput ? 'LOST' : 'OPEN') as any,
       lossReason: showLossReasonInput ? editLossReason : undefined,
     });
+
+    if (selectedDealForModal.contactId) {
+      updateContact(selectedDealForModal.contactId, {
+        monthlyIncome: editMonthlyIncome && !isNaN(Number(editMonthlyIncome)) ? Number(editMonthlyIncome) : undefined,
+        downPaymentAvailable: editDownPayment && !isNaN(Number(editDownPayment)) ? Number(editDownPayment) : undefined,
+        maxPropertyValue: numValue,
+        targetBedrooms: editBedrooms && !isNaN(Number(editBedrooms)) ? Number(editBedrooms) : undefined,
+        preferredPropertyType: (editPropertyType || undefined) as PropertyType | undefined,
+      });
+    }
 
     if (stage?.isWon) {
       triggerConfetti();
@@ -916,6 +939,82 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   />
                 </div>
               </div>
+
+              {/* Qualificação do Lead & Capacidade Financeira */}
+              {(() => {
+                const linkedContact = contacts.find(c => c.id === selectedDealForModal.contactId);
+                return (
+                  <div className="pt-2 border-t border-slate-200 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Qualificação do Lead ({linkedContact?.name || 'Cliente'})</span>
+                      </span>
+                      {linkedContact?.temperature && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {linkedContact.temperature === 'HOT' ? '🔥 Quente' : linkedContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Renda Mensal (R$)</label>
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={editMonthlyIncome}
+                          onChange={(e) => setEditMonthlyIncome(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 font-mono focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Entrada (R$)</label>
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={editDownPayment}
+                          onChange={(e) => setEditDownPayment(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 font-mono focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Tipo de Imóvel</label>
+                        <select
+                          value={editPropertyType}
+                          onChange={(e) => setEditPropertyType(e.target.value as any)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="">Não informado</option>
+                          <option value="APARTMENT">Apartamento</option>
+                          <option value="PENTHOUSE">Cobertura</option>
+                          <option value="HOUSE">Casa em Condomínio</option>
+                          <option value="STUDIO">Studio / Loft</option>
+                          <option value="LAND">Terreno / Lote</option>
+                          <option value="COMMERCIAL">Comercial</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Dormitórios</label>
+                        <select
+                          value={editBedrooms}
+                          onChange={(e) => setEditBedrooms(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="">Não especificado</option>
+                          <option value="1">1 Dormitório</option>
+                          <option value="2">2 Dormitórios</option>
+                          <option value="3">3 Dormitórios</option>
+                          <option value="4">4+ Dormitórios</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Ações de Desfecho Comercial (Ganho / Perdido) */}
               <div className="pt-2 border-t border-slate-200">

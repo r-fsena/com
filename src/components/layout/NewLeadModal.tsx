@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { UserPlus, X, DollarSign, MapPin, Tag, Building } from 'lucide-react';
 import { LeadTemperature, PropertyType } from '@/types/crm';
+import { maskCurrencyInput, parseBRLInputToNumber, formatBRL } from '@/lib/currency-utils';
 
 interface NewLeadModalProps {
   isOpen: boolean;
@@ -23,8 +24,8 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
   const [purchasePurpose, setPurchasePurpose] = useState<'LIVING' | 'INVESTMENT'>('LIVING');
   const [region, setRegion] = useState('Jardins');
   const [monthlyIncome, setMonthlyIncome] = useState('');
-  const [downPayment, setDownPayment] = useState('500000');
-  const [maxBudget, setMaxBudget] = useState('1800000');
+  const [downPayment, setDownPayment] = useState('500.000');
+  const [maxBudget, setMaxBudget] = useState('1.800.000');
   const [assignedUserId, setAssignedUserId] = useState(currentUser.id);
   const [tags, setTags] = useState('Novo Cadastro, Alto Padrão');
 
@@ -33,6 +34,10 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim()) return;
+
+    const cleanMonthly = parseBRLInputToNumber(monthlyIncome);
+    const cleanDown = parseBRLInputToNumber(downPayment);
+    const cleanMax = parseBRLInputToNumber(maxBudget);
 
     // 1. Cria o contato com qualificação completa
     const contact = addContact({
@@ -45,9 +50,9 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
       targetBedrooms: targetBedrooms ? Number(targetBedrooms) : undefined,
       purchasePurpose,
       targetRegions: [region],
-      monthlyIncome: monthlyIncome ? Number(monthlyIncome) : undefined,
-      downPaymentAvailable: Number(downPayment) || 0,
-      maxPropertyValue: Number(maxBudget) || 0,
+      monthlyIncome: cleanMonthly > 0 ? cleanMonthly : undefined,
+      downPaymentAvailable: cleanDown,
+      maxPropertyValue: cleanMax,
       assignedUserId,
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
     });
@@ -57,7 +62,7 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
       contactId: contact.id,
       assignedUserId,
       title: `${propertyType === 'PENTHOUSE' ? 'Cobertura' : propertyType === 'HOUSE' ? 'Casa' : 'Apartamento'} ${targetBedrooms ? `${targetBedrooms}D ` : ''}em ${region} - ${name}`,
-      expectedValue: Number(maxBudget) || 1200000,
+      expectedValue: cleanMax || 1200000,
       stageId: currentPipeline.stages[0].id,
       manualProbability: 60,
     });
@@ -247,41 +252,53 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Renda Mensal (R$)
+                  Renda Mensal
                 </label>
-                <input
-                  type="number"
-                  placeholder="Ex: 15000"
-                  value={monthlyIncome}
-                  onChange={(e) => setMonthlyIncome(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
-                />
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
+                  <span className="text-xs font-bold text-slate-400 font-mono mr-1 select-none">R$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="15.000"
+                    value={monthlyIncome}
+                    onChange={(e) => setMonthlyIncome(maskCurrencyInput(e.target.value))}
+                    className="w-full text-xs bg-transparent font-mono font-semibold focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Entrada Disponível (R$)
+                  Entrada Disponível
                 </label>
-                <input
-                  type="number"
-                  placeholder="Ex: 100000"
-                  value={downPayment}
-                  onChange={(e) => setDownPayment(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
-                />
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
+                  <span className="text-xs font-bold text-slate-400 font-mono mr-1 select-none">R$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="100.000"
+                    value={downPayment}
+                    onChange={(e) => setDownPayment(maskCurrencyInput(e.target.value))}
+                    className="w-full text-xs bg-transparent font-mono font-semibold focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Orçamento Máximo (R$)
+                  Orçamento Máximo
                 </label>
-                <input
-                  type="number"
-                  placeholder="Ex: 800000"
-                  value={maxBudget}
-                  onChange={(e) => setMaxBudget(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono focus:outline-none"
-                />
+                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
+                  <span className="text-xs font-bold text-slate-400 font-mono mr-1 select-none">R$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="800.000"
+                    value={maxBudget}
+                    onChange={(e) => setMaxBudget(maskCurrencyInput(e.target.value))}
+                    className="w-full text-xs bg-transparent font-mono font-semibold focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>

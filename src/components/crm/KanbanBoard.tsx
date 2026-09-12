@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Deal, Contact, PipelineStage, PropertyType } from '@/types/crm';
+import { formatBRL, formatCompactBRL, maskCurrencyInput, parseBRLInputToNumber } from '@/lib/currency-utils';
 
 interface KanbanBoardProps {
   onOpenLeadModal: () => void;
@@ -203,7 +204,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const handleOpenDealModal = (deal: Deal) => {
     setSelectedDealForModal(deal);
     setEditTitle(deal.title);
-    setEditValue(String(deal.expectedValue));
+    setEditValue(maskCurrencyInput(deal.expectedValue));
     setEditStageId(deal.stageId);
     setEditBrokerId(deal.assignedUserId);
     setEditProbability(String(deal.manualProbability || 50));
@@ -212,8 +213,8 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     setHoveredDealId(null);
 
     const linkedContact = contacts.find(c => c.id === deal.contactId);
-    setEditMonthlyIncome(linkedContact?.monthlyIncome ? String(linkedContact.monthlyIncome) : '');
-    setEditDownPayment(linkedContact?.downPaymentAvailable ? String(linkedContact.downPaymentAvailable) : '');
+    setEditMonthlyIncome(linkedContact?.monthlyIncome ? maskCurrencyInput(linkedContact.monthlyIncome) : '');
+    setEditDownPayment(linkedContact?.downPaymentAvailable ? maskCurrencyInput(linkedContact.downPaymentAvailable) : '');
     setEditBedrooms(linkedContact?.targetBedrooms !== undefined && linkedContact?.targetBedrooms !== null ? String(linkedContact.targetBedrooms) : '');
     setEditPropertyType(linkedContact?.preferredPropertyType || '');
   };
@@ -222,7 +223,9 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     e.preventDefault();
     if (!selectedDealForModal) return;
 
-    const numValue = Number(editValue.replace(/\D/g, '')) || selectedDealForModal.expectedValue;
+    const numValue = parseBRLInputToNumber(editValue) || selectedDealForModal.expectedValue;
+    const cleanMonthly = parseBRLInputToNumber(editMonthlyIncome);
+    const cleanDown = parseBRLInputToNumber(editDownPayment);
     const stage = currentPipeline.stages.find(s => s.id === editStageId);
 
     updateDeal(selectedDealForModal.id, {
@@ -237,8 +240,8 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
 
     if (selectedDealForModal.contactId) {
       updateContact(selectedDealForModal.contactId, {
-        monthlyIncome: editMonthlyIncome && !isNaN(Number(editMonthlyIncome)) ? Number(editMonthlyIncome) : undefined,
-        downPaymentAvailable: editDownPayment && !isNaN(Number(editDownPayment)) ? Number(editDownPayment) : undefined,
+        monthlyIncome: cleanMonthly > 0 ? cleanMonthly : undefined,
+        downPaymentAvailable: cleanDown > 0 ? cleanDown : undefined,
         maxPropertyValue: numValue,
         targetBedrooms: editBedrooms && !isNaN(Number(editBedrooms)) ? Number(editBedrooms) : undefined,
         preferredPropertyType: (editPropertyType || undefined) as PropertyType | undefined,
@@ -884,14 +887,18 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
               {/* Valor e Etapa */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Valor Estimado (R$)</label>
-                  <input
-                    type="number"
-                    required
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-mono focus:outline-none focus:border-emerald-500"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Valor Estimado do Imóvel</label>
+                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
+                    <span className="text-xs font-bold text-slate-400 font-mono mr-1 select-none">R$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      value={editValue}
+                      onChange={(e) => setEditValue(maskCurrencyInput(e.target.value))}
+                      className="w-full bg-transparent text-slate-800 font-mono font-bold focus:outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -959,25 +966,33 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       <div>
-                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Renda Mensal (R$)</label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={editMonthlyIncome}
-                          onChange={(e) => setEditMonthlyIncome(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 font-mono focus:outline-none focus:border-emerald-500"
-                        />
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Renda Mensal</label>
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-emerald-500">
+                          <span className="text-xs font-bold text-slate-400 font-mono mr-0.5 select-none">R$</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="0"
+                            value={editMonthlyIncome}
+                            onChange={(e) => setEditMonthlyIncome(maskCurrencyInput(e.target.value))}
+                            className="w-full bg-transparent text-slate-800 font-mono text-xs focus:outline-none"
+                          />
+                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Entrada (R$)</label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={editDownPayment}
-                          onChange={(e) => setEditDownPayment(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 font-mono focus:outline-none focus:border-emerald-500"
-                        />
+                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Entrada</label>
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-emerald-500">
+                          <span className="text-xs font-bold text-slate-400 font-mono mr-0.5 select-none">R$</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="0"
+                            value={editDownPayment}
+                            onChange={(e) => setEditDownPayment(maskCurrencyInput(e.target.value))}
+                            className="w-full bg-transparent text-slate-800 font-mono text-xs focus:outline-none"
+                          />
+                        </div>
                       </div>
 
                       <div>

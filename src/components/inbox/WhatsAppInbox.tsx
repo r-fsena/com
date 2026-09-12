@@ -63,6 +63,7 @@ import {
   UserMinus
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
+import { formatBRL, formatCompactBRL, maskCurrencyInput, parseBRLInputToNumber } from '@/lib/currency-utils';
 import { PropertyType, PresentedProperty, Message, Contact } from '@/types/crm';
 import { ImportLeadsModal } from '@/components/contacts/ImportLeadsModal';
 import { BatchAIQualificationModal } from '@/components/crm/BatchAIQualificationModal';
@@ -521,9 +522,9 @@ export function WhatsAppInbox() {
   // Sincronização automática em tempo real dos campos de qualificação com o contato ativo
   React.useEffect(() => {
     if (activeContact) {
-      setEditedMonthlyIncome(activeContact.monthlyIncome ? String(activeContact.monthlyIncome) : '');
-      setEditedDownPayment(activeContact.downPaymentAvailable ? String(activeContact.downPaymentAvailable) : '');
-      setEditedMaxBudget(activeContact.maxPropertyValue ? String(activeContact.maxPropertyValue) : '');
+      setEditedMonthlyIncome(activeContact.monthlyIncome ? maskCurrencyInput(activeContact.monthlyIncome) : '');
+      setEditedDownPayment(activeContact.downPaymentAvailable ? maskCurrencyInput(activeContact.downPaymentAvailable) : '');
+      setEditedMaxBudget(activeContact.maxPropertyValue ? maskCurrencyInput(activeContact.maxPropertyValue) : '');
       setEditedBedrooms(activeContact.targetBedrooms !== undefined && activeContact.targetBedrooms !== null ? String(activeContact.targetBedrooms) : '');
       setEditedPropertyType(activeContact.preferredPropertyType || '');
       setEditedPurchasePurpose(activeContact.purchasePurpose || '');
@@ -536,10 +537,14 @@ export function WhatsAppInbox() {
   // Salva todos os dados de qualificação de uma vez de forma persistente
   const handleSaveQualification = () => {
     if (!activeContact) return;
+    const cleanMonthly = parseBRLInputToNumber(editedMonthlyIncome);
+    const cleanDown = parseBRLInputToNumber(editedDownPayment);
+    const cleanMaxBudget = parseBRLInputToNumber(editedMaxBudget);
+
     const updates: Partial<Contact> = {
-      monthlyIncome: editedMonthlyIncome && !isNaN(Number(editedMonthlyIncome)) ? Number(editedMonthlyIncome) : undefined,
-      downPaymentAvailable: editedDownPayment && !isNaN(Number(editedDownPayment)) ? Number(editedDownPayment) : undefined,
-      maxPropertyValue: editedMaxBudget && !isNaN(Number(editedMaxBudget)) ? Number(editedMaxBudget) : undefined,
+      monthlyIncome: cleanMonthly > 0 ? cleanMonthly : undefined,
+      downPaymentAvailable: cleanDown > 0 ? cleanDown : undefined,
+      maxPropertyValue: cleanMaxBudget > 0 ? cleanMaxBudget : undefined,
       targetBedrooms: editedBedrooms && !isNaN(Number(editedBedrooms)) ? Number(editedBedrooms) : undefined,
       preferredPropertyType: (editedPropertyType || undefined) as PropertyType | undefined,
       purchasePurpose: (editedPurchasePurpose || undefined) as any,
@@ -557,7 +562,7 @@ export function WhatsAppInbox() {
       name: propName.trim(),
       unit: propUnit.trim() || undefined,
       address: propAddress.trim() || undefined,
-      price: propPrice ? Number(propPrice) : undefined,
+      price: propPrice ? parseBRLInputToNumber(propPrice) : undefined,
       propertyType: propType,
       status: propStatus,
       notes: propNotes.trim() || undefined,
@@ -2934,14 +2939,18 @@ export function WhatsAppInbox() {
                       </div>
 
                       <div>
-                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Valor (R$)</label>
-                        <input
-                          type="number"
-                          placeholder="Ex: 1450000"
-                          value={propPrice}
-                          onChange={(e) => setPropPrice(e.target.value)}
-                          className="w-full text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                        />
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Valor do Imóvel</label>
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus-within:bg-white focus-within:ring-1 focus-within:ring-emerald-500">
+                          <span className="text-xs font-bold text-slate-400 font-mono mr-1 select-none">R$</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="1.450.000"
+                            value={propPrice}
+                            onChange={(e) => setPropPrice(maskCurrencyInput(e.target.value))}
+                            className="w-full text-xs font-mono font-bold bg-transparent focus:outline-none"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -3148,83 +3157,95 @@ export function WhatsAppInbox() {
                 </button>
               </div>
 
-              {/* Grid Renda, Entrada e Orçamento */}
+              {/* Grid Renda, Entrada e Orçamento com Formatação Monetária */}
               <div className="grid grid-cols-3 gap-1.5">
-                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
-                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Renda (R$)</label>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={editedMonthlyIncome}
-                    onChange={(e) => setEditedMonthlyIncome(e.target.value)}
-                    onBlur={() => {
-                      const val = Number(editedMonthlyIncome) || 0;
-                      updateContact(activeContact.id, { monthlyIncome: val });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSaveQualification();
-                      }
-                    }}
-                    className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
-                  />
-                  {Number(editedMonthlyIncome) > 0 ? (
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Renda Mensal</label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] font-bold text-slate-400 font-mono select-none">R$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={editedMonthlyIncome}
+                      onChange={(e) => setEditedMonthlyIncome(maskCurrencyInput(e.target.value))}
+                      onBlur={() => {
+                        const val = parseBRLInputToNumber(editedMonthlyIncome);
+                        updateContact(activeContact.id, { monthlyIncome: val || undefined });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveQualification();
+                        }
+                      }}
+                      className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                  {parseBRLInputToNumber(editedMonthlyIncome) > 0 ? (
                     <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
-                      R$ {Number(editedMonthlyIncome).toLocaleString('pt-BR')}
+                      ✓ {formatBRL(parseBRLInputToNumber(editedMonthlyIncome))}/mês
                     </span>
                   ) : (
                     <span className="text-[8px] text-slate-400 block mt-0.5">Não informada</span>
                   )}
                 </div>
 
-                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
-                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Entrada (R$)</label>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={editedDownPayment}
-                    onChange={(e) => setEditedDownPayment(e.target.value)}
-                    onBlur={() => {
-                      const val = Number(editedDownPayment) || 0;
-                      updateContact(activeContact.id, { downPaymentAvailable: val });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSaveQualification();
-                      }
-                    }}
-                    className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
-                  />
-                  {Number(editedDownPayment) > 0 ? (
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Entrada Disponível</label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] font-bold text-slate-400 font-mono select-none">R$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={editedDownPayment}
+                      onChange={(e) => setEditedDownPayment(maskCurrencyInput(e.target.value))}
+                      onBlur={() => {
+                        const val = parseBRLInputToNumber(editedDownPayment);
+                        updateContact(activeContact.id, { downPaymentAvailable: val || undefined });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveQualification();
+                        }
+                      }}
+                      className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                  {parseBRLInputToNumber(editedDownPayment) > 0 ? (
                     <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
-                      R$ {Number(editedDownPayment).toLocaleString('pt-BR')}
+                      ✓ {formatBRL(parseBRLInputToNumber(editedDownPayment))}
                     </span>
                   ) : (
                     <span className="text-[8px] text-slate-400 block mt-0.5">Não informada</span>
                   )}
                 </div>
 
-                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 transition">
-                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Orçamento Max</label>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={editedMaxBudget}
-                    onChange={(e) => setEditedMaxBudget(e.target.value)}
-                    onBlur={() => {
-                      const val = Number(editedMaxBudget) || 0;
-                      updateContact(activeContact.id, { maxPropertyValue: val });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSaveQualification();
-                      }
-                    }}
-                    className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
-                  />
-                  {Number(editedMaxBudget) > 0 ? (
+                <div className="bg-white p-2 rounded-xl border border-slate-200/80 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 transition">
+                  <label className="text-[9px] font-bold text-slate-500 block mb-0.5">Orçamento Máximo</label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] font-bold text-slate-400 font-mono select-none">R$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={editedMaxBudget}
+                      onChange={(e) => setEditedMaxBudget(maskCurrencyInput(e.target.value))}
+                      onBlur={() => {
+                        const val = parseBRLInputToNumber(editedMaxBudget);
+                        updateContact(activeContact.id, { maxPropertyValue: val || undefined });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveQualification();
+                        }
+                      }}
+                      className="w-full text-xs font-bold font-mono text-slate-900 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                  {parseBRLInputToNumber(editedMaxBudget) > 0 ? (
                     <span className="text-[8px] text-emerald-600 font-semibold block mt-0.5 truncate">
-                      R$ {Number(editedMaxBudget).toLocaleString('pt-BR')}
+                      ✓ {formatBRL(parseBRLInputToNumber(editedMaxBudget))}
                     </span>
                   ) : (
                     <span className="text-[8px] text-slate-400 block mt-0.5">Não informado</span>

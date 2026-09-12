@@ -77,53 +77,27 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [resetDataSuccess, setResetDataSuccess] = useState(false);
   const [showConfirmResetDataModal, setShowConfirmResetDataModal] = useState(false);
 
-  // Estados de IA (Copiloto Multiprovedor BYOK)
+  // Estados de IA (Copiloto Oficial Nativo com Google Gemini 1.5 Flash fornecido pelo CRM)
   const [aiConfigState, setAiConfigState] = useState<TenantAIConfig>({
-    provider: currentTenant.aiConfig?.provider || 'PLATFORM_DEFAULT',
-    apiKey: currentTenant.aiConfig?.apiKey || '',
-    model: currentTenant.aiConfig?.model || 'gemini-1.5-flash',
+    provider: 'PLATFORM_DEFAULT',
+    apiKey: '',
+    model: 'gemini-1.5-flash',
     tone: currentTenant.aiConfig?.tone || 'CONSULTATIVE',
     objective: currentTenant.aiConfig?.objective || 'EQUILIBRADO',
     customInstructions: currentTenant.aiConfig?.customInstructions || '',
     enabled: currentTenant.aiConfig?.enabled ?? true,
   });
-  const [showAiApiKey, setShowAiApiKey] = useState(false);
-  const [isTestingAiKey, setIsTestingAiKey] = useState(false);
-  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [saveAiSuccess, setSaveAiSuccess] = useState(false);
-
-  const handleTestAiConnection = async () => {
-    setIsTestingAiKey(true);
-    setAiTestResult(null);
-    try {
-      const res = await fetch('/api/v1/ai/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: aiConfigState.provider,
-          apiKey: aiConfigState.apiKey,
-          model: aiConfigState.model,
-        }),
-      });
-      const data = await res.json();
-      setAiTestResult({
-        success: data.success,
-        message: data.message || data.error || 'Teste de conexão concluído.',
-      });
-    } catch (err: any) {
-      setAiTestResult({
-        success: false,
-        message: `Falha ao conectar com o provedor: ${err.message}`,
-      });
-    } finally {
-      setIsTestingAiKey(false);
-    }
-  };
 
   const handleSaveAiConfig = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     updateTenant({
-      aiConfig: aiConfigState,
+      aiConfig: {
+        ...aiConfigState,
+        provider: 'PLATFORM_DEFAULT',
+        model: 'gemini-1.5-flash',
+        apiKey: '',
+      },
     });
     setSaveAiSuccess(true);
     setTimeout(() => setSaveAiSuccess(false), 3000);
@@ -1869,7 +1843,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
-                  Conecte a inteligência artificial favorita da sua imobiliária com chave própria (BYOK). Reduza custos para zero e personalize o tom de voz e os argumentos de vendas do seu time de corretores.
+                  O CRM entrega nativamente o motor de inteligência artificial de alta velocidade <strong>Google Gemini 1.5 Flash</strong> (com contexto de 1 Milhão de tokens). Ajuste abaixo as diretrizes comerciais, tom de voz e estratégias de vendas da sua equipe de corretores.
                 </p>
               </div>
 
@@ -1885,7 +1859,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition active:scale-95 flex items-center gap-2 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Salvar Configurações de IA</span>
+                  <span>Salvar Diretrizes de IA</span>
                 </button>
               </div>
             </div>
@@ -1913,230 +1887,58 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               </button>
             </div>
 
-            {/* Seleção do Provedor de IA */}
+            {/* Provedor de IA Nativo (Google Gemini 1.5 Flash) - Fixo & Entregue pelo CRM */}
             <div className="space-y-3">
               <label className="text-xs font-bold text-slate-900 block">
-                1. Escolha o Provedor de Inteligência Artificial:
+                1. Motor de Inteligência Artificial Integrado:
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* Opção OpenAI */}
-                <div
-                  onClick={() => setAiConfigState(prev => ({
-                    ...prev,
-                    provider: 'OPENAI',
-                    model: prev.provider === 'OPENAI' ? prev.model : 'gpt-4o-mini',
-                  }))}
-                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
-                    aiConfigState.provider === 'OPENAI'
-                      ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                      OA
-                    </span>
-                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
-                      Mais Popular
-                    </span>
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-900">OpenAI (ChatGPT)</h4>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Modelos <strong>GPT-4o Mini</strong> e <strong>GPT-4o</strong>. Ultra rápido e com fração de centavo por conversa.
-                  </p>
-                </div>
 
-                {/* Opção Anthropic Claude */}
-                <div
-                  onClick={() => setAiConfigState(prev => ({
-                    ...prev,
-                    provider: 'ANTHROPIC',
-                    model: prev.provider === 'ANTHROPIC' ? prev.model : 'claude-3-5-haiku-20241022',
-                  }))}
-                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
-                    aiConfigState.provider === 'ANTHROPIC'
-                      ? 'border-amber-500 bg-amber-50/40 ring-2 ring-amber-500/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                      CL
-                    </span>
-                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md">
-                      Alta Persuasão
-                    </span>
-                  </div>
-                  <h4 className="text-xs font-bold text-slate-900">Anthropic (Claude)</h4>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Modelos <strong>Claude 3.5 Haiku</strong> e <strong>Sonnet</strong>. Excelente sofisticação em redação comercial.
-                  </p>
-                </div>
-
-                {/* Opção Google Gemini */}
-                <div
-                  onClick={() => setAiConfigState(prev => ({
-                    ...prev,
-                    provider: 'GEMINI',
-                    model: prev.provider === 'GEMINI' ? prev.model : 'gemini-1.5-flash',
-                  }))}
-                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
-                    aiConfigState.provider === 'GEMINI'
-                      ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-slate-50 border border-blue-200/90 shadow-2xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-500/20">
                       GE
-                    </span>
-                    <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-md">
-                      Econômico
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900">
+                          Google Gemini 1.5 Flash
+                        </h4>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                          Fornecimento Padrão Entregue pelo CRM
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Motor de inferência nativo de altíssima velocidade e janela estendida de <strong>1 Milhão de tokens de contexto</strong> para ler e qualificar todo o histórico de conversas do WhatsApp.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Incluso & Operacional
                     </span>
                   </div>
-                  <h4 className="text-xs font-bold text-slate-900">Google Gemini</h4>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Modelos <strong>Gemini 1.5 Flash</strong> e <strong>Pro</strong>. Custo quase zero e tier gratuito generoso.
-                  </p>
                 </div>
 
-                {/* Opção Nativa da Plataforma */}
-                <div
-                  onClick={() => setAiConfigState(prev => ({
-                    ...prev,
-                    provider: 'PLATFORM_DEFAULT',
-                    model: 'gemini-1.5-flash',
-                  }))}
-                  className={`p-4 rounded-2xl border transition cursor-pointer relative ${
-                    aiConfigState.provider === 'PLATFORM_DEFAULT'
-                      ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                      ⚡
-                    </span>
-                    <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
-                      Padrão Oficial
-                    </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3 border-t border-blue-100/90 text-xs text-slate-600">
+                  <div className="flex items-center gap-2 bg-white/70 px-3 py-2 rounded-xl border border-blue-100">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Incluso na plataforma (sem BYOK)</span>
                   </div>
-                  <h4 className="text-xs font-bold text-slate-900">Google Gemini (Nativo da Plataforma)</h4>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Motor <strong>Gemini 1.5 Flash</strong> integrado com contexto de 1 Milhão de tokens e sem custos de infraestrutura para sua imobiliária.
-                  </p>
+                  <div className="flex items-center gap-2 bg-white/70 px-3 py-2 rounded-xl border border-blue-100">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Sem custos extras de tokens</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/70 px-3 py-2 rounded-xl border border-blue-100">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Análise integral e 4 pilares do lead</span>
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Credenciais e Modelo (quando não for Nativo) */}
-            {aiConfigState.provider !== 'PLATFORM_DEFAULT' && (
-              <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Key className="w-4 h-4 text-indigo-600" />
-                  <h4 className="text-xs font-bold text-slate-900">Chave de Acesso & Modelo ({aiConfigState.provider})</h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Campo de API Key */}
-                  <div className="md:col-span-2 space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      Chave de API (API Key do Provedor):
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showAiApiKey ? 'text' : 'password'}
-                        value={aiConfigState.apiKey || ''}
-                        onChange={(e) => setAiConfigState(prev => ({ ...prev, apiKey: e.target.value }))}
-                        placeholder={
-                          aiConfigState.provider === 'OPENAI'
-                            ? 'sk-proj-...'
-                            : aiConfigState.provider === 'ANTHROPIC'
-                            ? 'sk-ant-api03-...'
-                            : 'AIzaSy...'
-                        }
-                        className="w-full bg-white text-xs rounded-xl pl-3 pr-24 py-2.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
-                      />
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setShowAiApiKey(!showAiApiKey)}
-                          className="p-1.5 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                          title={showAiApiKey ? 'Ocultar' : 'Exibir'}
-                        >
-                          {showAiApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isTestingAiKey || !aiConfigState.apiKey}
-                          onClick={handleTestAiConnection}
-                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-indigo-200/80 transition cursor-pointer disabled:opacity-50 flex items-center gap-1"
-                        >
-                          {isTestingAiKey ? (
-                            <>
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              <span>Testando...</span>
-                            </>
-                          ) : (
-                            <span>Testar</span>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-slate-400">
-                      Sua chave é armazenada de forma isolada para este espaço ({currentTenant.name}) e nunca é compartilhada com outras imobiliárias.
-                    </p>
-                  </div>
-
-                  {/* Seletor de Modelo */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      Modelo Específico:
-                    </label>
-                    <select
-                      value={aiConfigState.model || ''}
-                      onChange={(e) => setAiConfigState(prev => ({ ...prev, model: e.target.value }))}
-                      className="w-full bg-white text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      {aiConfigState.provider === 'OPENAI' && (
-                        <>
-                          <option value="gpt-4o-mini">gpt-4o-mini (Recomendado / Mais Rápido & Econômico)</option>
-                          <option value="gpt-4o">gpt-4o (Máxima Capacidade de Raciocínio)</option>
-                        </>
-                      )}
-                      {aiConfigState.provider === 'ANTHROPIC' && (
-                        <>
-                          <option value="claude-3-5-haiku-20241022">claude-3-5-haiku (Recomendado / Ágil)</option>
-                          <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet (Topo de Linha)</option>
-                        </>
-                      )}
-                      {aiConfigState.provider === 'GEMINI' && (
-                        <>
-                          <option value="gemini-1.5-flash">gemini-1.5-flash (Recomendado / Custo Mínimo)</option>
-                          <option value="gemini-1.5-pro">gemini-1.5-pro (Raciocínio Profundo)</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Feedback do Teste de Conexão */}
-                {aiTestResult && (
-                  <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
-                    aiTestResult.success
-                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      : 'bg-rose-50 text-rose-800 border border-rose-200'
-                  }`}>
-                    {aiTestResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    )}
-                    <span>{aiTestResult.message}</span>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Persona & Estratégia Comercial da Imobiliária */}
             <div className="space-y-4 pt-2 border-t border-slate-100">

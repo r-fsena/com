@@ -23,7 +23,8 @@ import {
   X, 
   Building2, 
   Copy,
-  ChevronRight
+  ChevronRight,
+  Lock
 } from 'lucide-react';
 import { AIPersonaTone } from '@/types/crm';
 
@@ -32,7 +33,7 @@ const PROMPT_TEMPLATES = [
     id: 'luxury',
     title: '👑 Alto Padrão / Luxo (Consultivo)',
     tone: 'CONSULTATIVE' as AIPersonaTone,
-    model: 'anthropic.claude-3-5-sonnet',
+    model: 'gemini-1.5-flash',
     prompt: 'Você é o copiloto comercial de um corretor de imóveis especialista no mercado de Alto Padrão e Luxo. Adote um tom estritamente executivo, polido, consultivo e focado em valorização patrimonial, discrição, ROI e liquidez. Destaque localização nobre, privacidade e acabamentos nobres. Conduza o cliente com perguntas abertas para reuniões estratégicas ou visitas exclusivas.',
     directives: [
       'Sempre propor uma reunião estratégica presencial ou café executivo',
@@ -44,7 +45,7 @@ const PROMPT_TEMPLATES = [
     id: 'plant',
     title: '🚀 Lançamentos na Planta (Fechador)',
     tone: 'PERSUASIVE' as AIPersonaTone,
-    model: 'anthropic.claude-3-5-sonnet',
+    model: 'gemini-1.5-flash',
     prompt: 'Você é o copiloto de um corretor focado em lançamentos e imóveis na planta. Seja ágil, persuasivo e crie senso de oportunidade comercial com base na tabela de abertura de vendas, potencial de valorização durante a obra e fluxo facilitado de pagamento direto com a construtora. Sempre busque levar o cliente ao plantão de vendas para conhecer o decorado.',
     directives: [
       'Priorizar agendamento de visita ao apartamento decorado',
@@ -56,7 +57,7 @@ const PROMPT_TEMPLATES = [
     id: 'first_home',
     title: '🏡 Primeiro Imóvel / Famílias (Acolhedor)',
     tone: 'FRIENDLY' as AIPersonaTone,
-    model: 'anthropic.claude-3-5-sonnet',
+    model: 'gemini-1.5-flash',
     prompt: 'Você é o copiloto de um corretor especialista em famílias e compradores do primeiro imóvel. Adote um tom acolhedor, empático, seguro e didático. Simplifique termos de financiamento bancário, explique como funciona o uso do FGTS e composição de renda, e destaque segurança, áreas de lazer para crianças e qualidade de vida no condomínio.',
     directives: [
       'Oferecer simulação gratuita de financiamento pelo WhatsApp',
@@ -68,7 +69,7 @@ const PROMPT_TEMPLATES = [
     id: 'investor',
     title: '📈 Investidor & Renda de Locação (Técnico)',
     tone: 'TECHNICAL' as AIPersonaTone,
-    model: 'anthropic.claude-3-5-sonnet',
+    model: 'gemini-1.5-flash',
     prompt: 'Você é o copiloto de um corretor especialista em investidores imobiliários (fundos, studios e imóveis para locação Airbnb ou tradicional). Use linguagem técnica, focada em taxa de cap rate, yield anual, taxa de vacância estimada da região, custo por metro quadrado e liquidez de revenda. Apresente números claros e objetivos.',
     directives: [
       'Apresentar estimativa de rentabilidade mensal e anual (Yield)',
@@ -93,7 +94,7 @@ export function CopilotManager() {
   // Estados locais da persona
   const [promptText, setPromptText] = useState<string>(selectedUser.aiPersonaPrompt || PROMPT_TEMPLATES[0].prompt);
   const [tone, setTone] = useState<AIPersonaTone>(selectedUser.aiTone || 'CONSULTATIVE');
-  const [model, setModel] = useState<string>(selectedUser.aiModel || 'anthropic.claude-3-5-sonnet');
+  const [model, setModel] = useState<string>('gemini-1.5-flash');
   const [directives, setDirectives] = useState<string[]>(selectedUser.aiDirectives || PROMPT_TEMPLATES[0].directives);
   const [newDirectiveInput, setNewDirectiveInput] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -109,7 +110,7 @@ export function CopilotManager() {
     if (u) {
       setPromptText(u.aiPersonaPrompt || PROMPT_TEMPLATES[0].prompt);
       setTone(u.aiTone || 'CONSULTATIVE');
-      setModel(u.aiModel || 'anthropic.claude-3-5-sonnet');
+      setModel('gemini-1.5-flash');
       setDirectives(u.aiDirectives || PROMPT_TEMPLATES[0].directives);
     }
   }, [selectedUserId, users]);
@@ -117,7 +118,7 @@ export function CopilotManager() {
   const handleApplyTemplate = (template: typeof PROMPT_TEMPLATES[0]) => {
     setPromptText(template.prompt);
     setTone(template.tone);
-    setModel(template.model);
+    setModel('gemini-1.5-flash');
     setDirectives(template.directives);
   };
 
@@ -137,7 +138,7 @@ export function CopilotManager() {
       aiPersonaPrompt: promptText,
       aiTone: tone,
       aiDirectives: directives,
-      aiModel: model,
+      aiModel: 'gemini-1.5-flash',
     });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
@@ -264,7 +265,7 @@ export function CopilotManager() {
             }`}
           >
             <Sliders className="w-4 h-4" />
-            <span>Modelos LLM & Conexão de API</span>
+            <span>Infraestrutura de IA (Nativa)</span>
           </button>
         )}
       </div>
@@ -382,18 +383,27 @@ export function CopilotManager() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Modelo de Linguagem (LLM):
+                    Motor de Inteligência Artificial:
                   </label>
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                  >
-                    <option value="gemini-1.5-flash">⚡ Google Gemini 1.5 Flash (Padrão Oficial • 1M Contexto & Custo Mínimo)</option>
-                    <option value="anthropic.claude-3-5-sonnet">🎩 Anthropic Claude 3.5 Sonnet (Alta Precisão Comercial)</option>
-                    <option value="openai.gpt-4o">🧠 OpenAI GPT-4o (Multimodal & Rápido)</option>
-                    <option value="google.gemini-1-5-pro">💎 Google Gemini 1.5 Pro (Raciocínio Profundo)</option>
-                  </select>
+                  <div className="flex items-center justify-between p-2.5 bg-blue-50/70 border border-blue-200/90 rounded-xl">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px] shadow-2xs">
+                        GE
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>Google Gemini 1.5 Flash</span>
+                          <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-md">
+                            Padrão CRM
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500">1M Contexto • Fornecimento Padrão Entregue pelo CRM</p>
+                      </div>
+                    </div>
+                    <span title="Motor oficial gerenciado pelo CRM">
+                      <Lock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    </span>
+                  </div>
                 </div>
 
                 <div>
@@ -548,50 +558,73 @@ export function CopilotManager() {
         )}
 
         {/* ==================================================== */}
-        {/* ABA 3: CONFIGURAÇÕES GLOBAIS DE MODELO LLM          */}
+        {/* ABA 3: INFRAESTRUTURA DE IA NATIVA                   */}
         {/* ==================================================== */}
         {activeTab === 'GLOBAL_SETTINGS' && (
           <div className="space-y-6">
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Key className="w-4 h-4 text-emerald-600" />
-                  <span>Provedores de IA & Chaves de API</span>
+                  <Bot className="w-4 h-4 text-emerald-600" />
+                  <span>Infraestrutura de Inteligência Artificial do CRM</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Conecte suas credenciais do Amazon Bedrock, OpenAI ou Anthropic para inferência em produção.
+                  O provedor de IA é entregue e gerenciado de forma nativa pela plataforma, com disponibilidade 24/7 para todos os corretores.
                 </p>
               </div>
 
               <div className="space-y-4">
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center font-bold text-sm">
-                      AWS
+                <div className="p-5 bg-gradient-to-r from-blue-50/60 to-indigo-50/50 border border-blue-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-base shadow-sm">
+                      GE
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900">Amazon Bedrock (Claude 3.5 Sonnet)</h4>
-                      <p className="text-[10px] text-slate-500">Região us-east-1 • Segurança Empresarial LGPD / HIPAA</p>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900">Google Gemini 1.5 Flash</h4>
+                        <span className="text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full">
+                          Motor Padrão Oficial do CRM
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Janela ultra-ampla de 1.000.000 de tokens de contexto • Leitura sem cortes do histórico do WhatsApp
+                      </p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                  <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 self-start sm:self-center shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     CONECTADO & ATIVO
                   </span>
                 </div>
 
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between opacity-80">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
-                      OAI
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600 pt-2">
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Gestão Centralizada</span>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">OpenAI API (GPT-4o)</h4>
-                      <p className="text-[10px] text-slate-500">Chave de fallback secundária para alta disponibilidade</p>
-                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Provedor e infraestrutura geridos pela plataforma CRM sem necessidade de configurar chaves de API individuais.
+                    </p>
                   </div>
-                  <button className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-white border border-slate-200 px-3 py-1.5 rounded-lg transition cursor-pointer">
-                    Configurar Chave
-                  </button>
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Ultra Baixa Latência</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Respostas comerciais inteligentes e síntese de negociações em menos de 1 segundo.
+                    </p>
+                  </div>
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>4 Pilares do Lead</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Extração e qualificação automática de Orçamento, Urgência, Perfil Familiar e Objeções.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

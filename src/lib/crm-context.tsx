@@ -2694,9 +2694,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     };
 
+    const rawTargetId = (contactId || '').replace(/^(contact|conv)-zapi-/, '');
+    const targetDigits = (contactId || '').replace(/\D/g, '');
+
     setContacts(prev => {
       const updated = prev.map(c => {
-        if (c.id === contactId) {
+        const isMatch = c.id === contactId ||
+                        (rawTargetId && c.id.replace(/^(contact|conv)-zapi-/, '') === rawTargetId) ||
+                        (targetDigits && targetDigits.length >= 8 && arePhonesEquivalent(c.phone, targetDigits));
+        if (isMatch) {
           const list = c.brokerNotes || [];
           return {
             ...c,
@@ -2712,7 +2718,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({ contacts: updated }),
         }).catch(() => {});
       } catch {}
@@ -2721,9 +2733,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeBrokerNote = (contactId: string, noteId: string) => {
+    const rawTargetId = (contactId || '').replace(/^(contact|conv)-zapi-/, '');
+    const targetDigits = (contactId || '').replace(/\D/g, '');
+
     setContacts(prev => {
       const updated = prev.map(c => {
-        if (c.id === contactId && c.brokerNotes) {
+        const isMatch = c.id === contactId ||
+                        (rawTargetId && c.id.replace(/^(contact|conv)-zapi-/, '') === rawTargetId) ||
+                        (targetDigits && targetDigits.length >= 8 && arePhonesEquivalent(c.phone, targetDigits));
+        if (isMatch && c.brokerNotes) {
           const filtered = c.brokerNotes.filter(n => n.id !== noteId);
           return {
             ...c,
@@ -2739,7 +2757,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
         fetch('/api/v1/crm/state', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
           body: JSON.stringify({ contacts: updated }),
         }).catch(() => {});
       } catch {}

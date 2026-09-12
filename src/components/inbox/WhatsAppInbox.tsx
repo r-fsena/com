@@ -233,6 +233,7 @@ export function WhatsAppInbox() {
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
   const [newRegionInput, setNewRegionInput] = useState('');
   const [brokerNote, setBrokerNote] = useState('');
+  const [showAllNotes, setShowAllNotes] = useState(false);
   const [selectedAIResponseIdx, setSelectedAIResponseIdx] = useState<number>(0);
   const [isCopilotExpanded, setIsCopilotExpanded] = useState<boolean>(false);
   const [isCopilotDismissed, setIsCopilotDismissed] = useState<boolean>(false);
@@ -565,6 +566,9 @@ export function WhatsAppInbox() {
     const personalToggledToLead = lastIsPersonalRef.current === true && activeContact.isPersonal === false;
 
     if (contactIdChanged || personalToggledToLead) {
+      if (contactIdChanged) {
+        setShowAllNotes(false);
+      }
       lastLoadedContactIdRef.current = activeContact.id;
       lastIsPersonalRef.current = activeContact.isPersonal;
 
@@ -3633,49 +3637,74 @@ export function WhatsAppInbox() {
                     <p className="text-[10px] text-slate-400">Comentários registrados ficarão salvos aqui com data e hora.</p>
                   </div>
                 ) : (
-                  activeContact.brokerNotes.map((note) => {
-                    const categoryMeta = {
-                      CALL: { icon: '📞', label: 'Ligação Telefônica', color: 'bg-blue-50 text-blue-800 border-blue-200' },
-                      VISIT: { icon: '🤝', label: 'Reunião / Visita', color: 'bg-amber-50 text-amber-800 border-amber-200' },
-                      FINANCIAL: { icon: '💰', label: 'Financeiro / Proposta', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
-                      OBJECTION: { icon: '⚠️', label: 'Objeção / Dúvida', color: 'bg-rose-50 text-rose-800 border-rose-200' },
-                      PROPOSAL: { icon: '📄', label: 'Proposta Comercial', color: 'bg-purple-50 text-purple-800 border-purple-200' },
-                      GENERAL: { icon: '📝', label: 'Anotação Geral', color: 'bg-slate-50 text-slate-700 border-slate-200' },
-                    }[note.category || 'GENERAL'] || { icon: '📝', label: 'Anotação', color: 'bg-slate-50 text-slate-700 border-slate-200' };
+                  <>
+                    {(showAllNotes 
+                      ? activeContact.brokerNotes 
+                      : activeContact.brokerNotes.slice(0, 3)
+                    ).map((note) => {
+                      const categoryMeta = {
+                        CALL: { icon: '📞', label: 'Ligação Telefônica', color: 'bg-blue-50 text-blue-800 border-blue-200' },
+                        VISIT: { icon: '🤝', label: 'Reunião / Visita', color: 'bg-amber-50 text-amber-800 border-amber-200' },
+                        FINANCIAL: { icon: '💰', label: 'Financeiro / Proposta', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+                        OBJECTION: { icon: '⚠️', label: 'Objeção / Dúvida', color: 'bg-rose-50 text-rose-800 border-rose-200' },
+                        PROPOSAL: { icon: '📄', label: 'Proposta Comercial', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+                        GENERAL: { icon: '📝', label: 'Anotação Geral', color: 'bg-slate-50 text-slate-700 border-slate-200' },
+                      }[note.category || 'GENERAL'] || { icon: '📝', label: 'Anotação', color: 'bg-slate-50 text-slate-700 border-slate-200' };
 
-                    return (
-                      <div key={note.id} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs space-y-1.5 relative group">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${categoryMeta.color}`}>
-                              {categoryMeta.icon} {categoryMeta.label}
-                            </span>
-                            <span className="text-[10px] font-semibold text-slate-700">
-                              {note.authorName}
-                            </span>
+                      return (
+                        <div key={note.id} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs space-y-1.5 relative group">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${categoryMeta.color}`}>
+                                {categoryMeta.icon} {categoryMeta.label}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-700">
+                                {note.authorName}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {safeFormatDate(note.createdAt, "dd/MM 'às' HH:mm")}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeBrokerNote(activeContact.id, note.id)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                                title="Remover anotação"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {safeFormatDate(note.createdAt, "dd/MM 'às' HH:mm")}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeBrokerNote(activeContact.id, note.id)}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 transition cursor-pointer"
-                              title="Remover anotação"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
+                          <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                            {note.content}
+                          </p>
                         </div>
+                      );
+                    })}
 
-                        <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-                          {note.content}
-                        </p>
-                      </div>
-                    );
-                  })
+                    {activeContact.brokerNotes.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllNotes(prev => !prev)}
+                        className="w-full py-1.5 px-3 bg-white hover:bg-slate-100 border border-slate-200 text-[#3742AC] text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        {showAllNotes ? (
+                          <>
+                            <ChevronUp className="w-3.5 h-3.5" />
+                            <span>Ver menos (mostrar apenas as 3 últimas)</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                            <span>Ver mais ({activeContact.brokerNotes.length - 3} anteriores)</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

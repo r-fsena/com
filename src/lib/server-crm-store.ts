@@ -648,6 +648,12 @@ export const serverCRMStore = {
           lastSyncedAt: c.lastSyncedAt || new Date().toISOString(),
           targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(c.targetRegions || [])])),
           presentedProperties: c.presentedProperties || existing.presentedProperties,
+          brokerNotes: Array.from(
+            new Map(
+              [...(c.brokerNotes || []), ...(existing.brokerNotes || [])].map(n => [n.id, n])
+            ).values()
+          ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+          notesCount: Math.max(c.notesCount || 0, existing.notesCount || 0, (c.brokerNotes || []).length, (existing.brokerNotes || []).length),
           assignedUserId: c.assignedUserId || existing.assignedUserId,
           isPersonal: c.isPersonal !== undefined ? c.isPersonal : (existing.isPersonal ?? false),
           updatedAt: new Date().toISOString(),

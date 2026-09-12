@@ -47,14 +47,18 @@ export async function POST(req: NextRequest) {
 
     // Se houver DATABASE_URL (PostgreSQL), persiste os contatos qualificados em segundo plano
     if (process.env.DATABASE_URL && Array.isArray(payload.contacts) && payload.contacts.length > 0) {
-      import('@/lib/db/contacts-service').then(({ ContactsDBService }) => {
-        const tenantId = req.headers.get('x-tenant-id') || 'tenant-vanguard-01';
-        payload.contacts.forEach((c: any) => {
-          if (c.phone) {
-            ContactsDBService.upsertContact(tenantId, c).catch(() => {});
+      import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
+        const fallbackTenant = req.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti';
+        for (const c of payload.contacts) {
+          if (c && (c.phone || c.id)) {
+            try {
+              await ContactsDBService.upsertContact(c.tenantId || fallbackTenant, c);
+            } catch (dbErr) {
+              console.warn('[ContactsDBService] Aviso ao persistir contato no banco:', dbErr);
+            }
           }
-        });
-      }).catch(() => {});
+        }
+      }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
     }
 
     return NextResponse.json({

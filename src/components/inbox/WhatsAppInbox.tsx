@@ -552,13 +552,22 @@ export function WhatsAppInbox() {
   }, [isLeadPersonal, activeContact?.id]);
 
   // Sincronização dos campos de qualificação com o contato ativo
-  // Carrega os dados APENAS ao alternar entre conversas ou na primeira carga do contato,
-  // impedindo que digitações, blurs ou re-renderizações locais apaguem os dados inseridos.
+  // Carrega os dados:
+  // 1. Ao alternar entre conversas (activeContact.id muda)
+  // 2. Quando o lead é reativado/convertido de pessoal para comercial (isPersonal muda para false)
   const lastLoadedContactIdRef = React.useRef<string | null>(null);
+  const lastIsPersonalRef = React.useRef<boolean | undefined>(undefined);
 
   React.useEffect(() => {
-    if (activeContact && activeContact.id !== lastLoadedContactIdRef.current) {
+    if (!activeContact) return;
+
+    const contactIdChanged = activeContact.id !== lastLoadedContactIdRef.current;
+    const personalToggledToLead = lastIsPersonalRef.current === true && activeContact.isPersonal === false;
+
+    if (contactIdChanged || personalToggledToLead) {
       lastLoadedContactIdRef.current = activeContact.id;
+      lastIsPersonalRef.current = activeContact.isPersonal;
+
       setEditedMonthlyIncome(activeContact.monthlyIncome ? maskCurrencyInput(activeContact.monthlyIncome) : '');
       setEditedDownPayment(activeContact.downPaymentAvailable ? maskCurrencyInput(activeContact.downPaymentAvailable) : '');
       setEditedMaxBudget(activeContact.maxPropertyValue ? maskCurrencyInput(activeContact.maxPropertyValue) : '');
@@ -568,8 +577,10 @@ export function WhatsAppInbox() {
       setEditedPurchaseTimeline(activeContact.purchaseTimeline || '');
       setEditedName(activeContact.name || '');
       setEditedEmail(activeContact.email || '');
+    } else {
+      lastIsPersonalRef.current = activeContact.isPersonal;
     }
-  }, [activeContact?.id]);
+  }, [activeContact?.id, activeContact?.isPersonal]);
 
   // Salva todos os dados de qualificação de uma vez de forma persistente
   const handleSaveQualification = () => {
@@ -794,16 +805,11 @@ export function WhatsAppInbox() {
             }
           } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
             updates.isPersonal = true;
-            updates.preferredPropertyType = null;
-            updates.monthlyIncome = null;
-            updates.downPaymentAvailable = null;
-            updates.maxPropertyValue = null;
-            updates.targetRegions = [];
-            updates.temperature = 'COLD';
-            updates.aiPriorityScore = 0;
-            setEditedMonthlyIncome('');
-            setEditedDownPayment('');
-            setEditedMaxBudget('');
+            // Preserva integralmente qualquer dado de renda, entrada, orçamento ou imóvel preenchido pelo usuário
+            if (!activeContact.monthlyIncome && !activeContact.preferredPropertyType) {
+              updates.temperature = 'COLD';
+              updates.aiPriorityScore = 0;
+            }
           }
 
           if (Object.keys(updates).length > 0) {
@@ -970,17 +976,11 @@ export function WhatsAppInbox() {
           }
         } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
           updates.isPersonal = true;
-          updates.preferredPropertyType = null;
-          updates.monthlyIncome = null;
-          updates.downPaymentAvailable = null;
-          updates.maxPropertyValue = null;
-          updates.targetRegions = [];
-          updates.temperature = 'COLD';
-          updates.aiPriorityScore = 0;
-          setEditedMonthlyIncome('');
-          setEditedDownPayment('');
-          setEditedMaxBudget('');
-          setShowLeadDrawer(false);
+          // Preserva integralmente qualquer dado de renda, entrada, orçamento ou imóvel preenchido pelo usuário
+          if (!activeContact.monthlyIncome && !activeContact.preferredPropertyType) {
+            updates.temperature = 'COLD';
+            updates.aiPriorityScore = 0;
+          }
         }
 
         if (Object.keys(updates).length > 0) {

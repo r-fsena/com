@@ -2475,22 +2475,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const toggleContactPersonal = (contactId: string) => {
     let nextPersonalState = false;
+    let updatedContactsList: Contact[] = [];
+    let updatedConvsList: Conversation[] = [];
 
     setContacts(prev => {
       const updated = prev.map(c => {
-        if (c.id === contactId) {
+        if (c.id === contactId || (c.phone && contactId.replace(/\D/g, '').length >= 8 && arePhonesEquivalent(c.phone, contactId.replace(/\D/g, '')))) {
           nextPersonalState = !c.isPersonal;
           return {
             ...c,
             isPersonal: nextPersonalState,
-            ...(nextPersonalState ? {
-              preferredPropertyType: undefined,
-              monthlyIncome: undefined,
-              downPaymentAvailable: undefined,
-              maxPropertyValue: undefined,
-              targetRegions: [],
-              temperature: 'COLD' as const,
-              aiPriorityScore: 0,
+            // PRESERVA TODOS OS DADOS DE QUALIFICAÇÃO: renda, entrada, orçamento, tipo de imóvel e regiões nunca são perdidos
+            ...(!nextPersonalState ? {
+              temperature: (c.temperature && c.temperature !== 'COLD') ? c.temperature : 'WARM',
+              aiPriorityScore: (c.aiPriorityScore && c.aiPriorityScore > 0) ? c.aiPriorityScore : 75,
             } : {}),
             updatedAt: new Date().toISOString(),
           };
@@ -2498,20 +2496,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return c;
       });
 
+      updatedContactsList = updated;
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contacts: updated }),
-        }).catch(() => {});
       } catch {}
       return updated;
     });
 
     setConversations(prev => {
+      const targetDigits = contactId.replace(/\D/g, '');
       const updated = prev.map(conv => {
-        if (conv.contactId === contactId) {
+        const isMatch = conv.contactId === contactId || 
+                        conv.id === contactId || 
+                        (targetDigits && targetDigits.length >= 8 && (conv.id.includes(targetDigits) || conv.contactId.includes(targetDigits)));
+        if (isMatch) {
           return {
             ...conv,
             isPersonal: nextPersonalState,
@@ -2520,11 +2518,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return conv;
       });
 
+      updatedConvsList = updated;
       try {
         localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated));
       } catch {}
       return updated;
     });
+
+    // Persistência unificada imediata no servidor (banco de dados + store do servidor)
+    try {
+      fetch('/api/v1/crm/state', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        },
+        body: JSON.stringify({ 
+          contacts: updatedContactsList, 
+          conversations: updatedConvsList 
+        }),
+      }).catch(err => console.warn('[CRM] Aviso ao sincronizar toggle de contato pessoal:', err));
+    } catch {}
   };
 
   const addPresentedProperty = (contactId: string, propertyData: Omit<PresentedProperty, 'id' | 'presentedAt'>) => {

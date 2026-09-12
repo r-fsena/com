@@ -595,6 +595,17 @@ export function WhatsAppInbox() {
 
         if (chatHistory.length === 0) return;
 
+        const brokerPersonaParts: string[] = [];
+        if (currentUser.aiPersonaPrompt) {
+          brokerPersonaParts.push(`INSTRUÇÃO COMPORTAMENTAL:\n${currentUser.aiPersonaPrompt}`);
+        }
+        if (currentUser.aiDirectives && currentUser.aiDirectives.length > 0) {
+          brokerPersonaParts.push(`REGRAS COMERCIAIS & DIRETRIZES DE FECHAMENTO:\n${currentUser.aiDirectives.map(d => `- ${d}`).join('\n')}`);
+        }
+        if (currentTenant?.aiConfig?.customInstructions) {
+          brokerPersonaParts.push(`DIRETRIZES GERAIS DA IMOBILIÁRIA:\n${currentTenant.aiConfig.customInstructions}`);
+        }
+
         const res = await fetch('/api/v1/ai/copilot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -610,7 +621,14 @@ export function WhatsAppInbox() {
               preferredPropertyType: activeContact.preferredPropertyType,
               targetRegions: activeContact.targetRegions,
             },
-            aiConfig: currentTenant?.aiConfig,
+            aiConfig: {
+              provider: 'PLATFORM_DEFAULT',
+              model: 'gemini-flash-latest',
+              tone: currentUser.aiTone || currentTenant?.aiConfig?.tone || 'CONSULTATIVE',
+              objective: currentTenant?.aiConfig?.objective || 'EQUILIBRADO',
+              customInstructions: brokerPersonaParts.length > 0 ? brokerPersonaParts.join('\n\n') : undefined,
+              enabled: true,
+            },
           }),
         });
 
@@ -746,6 +764,17 @@ export function WhatsAppInbox() {
         return;
       }
 
+      const brokerPersonaParts: string[] = [];
+      if (currentUser.aiPersonaPrompt) {
+        brokerPersonaParts.push(`INSTRUÇÃO COMPORTAMENTAL:\n${currentUser.aiPersonaPrompt}`);
+      }
+      if (currentUser.aiDirectives && currentUser.aiDirectives.length > 0) {
+        brokerPersonaParts.push(`REGRAS COMERCIAIS & DIRETRIZES DE FECHAMENTO:\n${currentUser.aiDirectives.map(d => `- ${d}`).join('\n')}`);
+      }
+      if (currentTenant?.aiConfig?.customInstructions) {
+        brokerPersonaParts.push(`DIRETRIZES GERAIS DA IMOBILIÁRIA:\n${currentTenant.aiConfig.customInstructions}`);
+      }
+
       const res = await fetch('/api/v1/ai/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -761,7 +790,14 @@ export function WhatsAppInbox() {
             preferredPropertyType: activeContact.preferredPropertyType,
             targetRegions: activeContact.targetRegions,
           },
-          aiConfig: currentTenant?.aiConfig,
+          aiConfig: {
+            provider: 'PLATFORM_DEFAULT',
+            model: 'gemini-flash-latest',
+            tone: currentUser.aiTone || currentTenant?.aiConfig?.tone || 'CONSULTATIVE',
+            objective: currentTenant?.aiConfig?.objective || 'EQUILIBRADO',
+            customInstructions: brokerPersonaParts.length > 0 ? brokerPersonaParts.join('\n\n') : undefined,
+            enabled: true,
+          },
         }),
       });
 

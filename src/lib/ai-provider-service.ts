@@ -218,26 +218,30 @@ export class UniversalCopilotService {
    * Construtor de Prompt do Sistema com Tom de Voz e Foco Comercial
    */
   private static buildSystemPrompt(brokerName: string, aiConfig?: TenantAIConfig, contactContext?: any): string {
-    const toneMap = {
-      CONSULTATIVE: 'Consultivo, empático, especialista de confiança que faz perguntas inteligentes.',
-      CLOSER: 'Focado em fechamento, proativo, persuasivo e direcionado para agendar visitas ou simulações.',
-      ELEGANT: 'Sofisticado, exclusivo, formal com foco em alto padrão e discrição.',
-      FRIENDLY: 'Acolhedor, caloroso, descontraído e próximo (sem perder o profissionalismo).',
+    const toneMap: Record<string, string> = {
+      CONSULTATIVE: 'Consultivo, empático, especialista de confiança que faz perguntas inteligentes e conduz com segurança.',
+      CLOSER: 'Focado em fechamento rápido, proativo, persuasivo e direcionado para marcar visitas ou simulações.',
+      PERSUASIVE: 'Persuasivo, ágil, focado em criar senso de oportunidade, valorização e agendamento de visita.',
+      ELEGANT: 'Sofisticado, exclusivo, executivo e formal com foco em alto padrão, liquidez e discrição.',
+      FRIENDLY: 'Acolhedor, caloroso, descontraído, didático e empático (perfeito para famílias e primeiro imóvel).',
+      TECHNICAL: 'Técnico, analítico e objetivo, focado em métricas de investimento, Cap Rate, ROI e liquidez.',
     };
 
-    const objectiveMap = {
+    const objectiveMap: Record<string, string> = {
       AGENDAR_VISITA: 'Prioridade máxima: Convidar e garantir a presença do cliente em uma visita presencial ao decorado ou plantão.',
       SIMULAR_FINANCIAMENTO: 'Prioridade máxima: Obter dados de entrada e renda para rodar uma simulação bancária com as melhores taxas.',
       QUALIFICAR: 'Prioridade máxima: Mapear os 4 pilares (Orçamento, Região, Tipo de Imóvel e Prazo de Compra).',
-      EQUILIBRADO: 'Equilibrar acolhimento, resposta clara à dúvida do cliente e avanço para o próximo passo no funil.',
+      EQUILIBRADO: 'Equilibrar acolhimento, resposta clara à dúvida do cliente e avanço para o próximo passo no funil de vendas.',
     };
 
-    const selectedTone = toneMap[aiConfig?.tone || 'CONSULTATIVE'];
-    const selectedObjective = objectiveMap[aiConfig?.objective || 'EQUILIBRADO'];
-    const customInstructions = aiConfig?.customInstructions ? `\nDIRETRIZES DA IMOBILIÁRIA:\n${aiConfig.customInstructions}` : '';
+    const selectedTone = toneMap[aiConfig?.tone || 'CONSULTATIVE'] || toneMap.CONSULTATIVE;
+    const selectedObjective = objectiveMap[aiConfig?.objective || 'EQUILIBRADO'] || objectiveMap.EQUILIBRADO;
+    const customInstructions = aiConfig?.customInstructions 
+      ? `\n\nREGRAS COMERCIAIS & DIRETRIZES DA PERSONA DO CORRETOR (MANDATÓRIAS - INCORPORE AO ESTILO):\n${aiConfig.customInstructions}` 
+      : '';
 
     return `Você é o Copiloto de IA Especialista em Vendas Imobiliárias e Análise Conversacional, atuando em conjunto com o corretor(a) ${brokerName}.
-Sua missão é analisar com total fidelidade as mensagens de WhatsApp do contato, identificar a verdadeira natureza da conversa e sugerir respostas humanas e pertinentes.
+Sua missão é analisar com total fidelidade as mensagens de WhatsApp do contato, identificar a verdadeira natureza da conversa e sugerir respostas humanas, altamente persuasivas e personalizadas.
 
 DIRETRIZES DE FIDELIDADE E ANCORAGEM DE CONTEXTO (MANDATÓRIAS):
 1. CLASSIFICAÇÃO DA CONVERSA ("conversationType"):
@@ -253,8 +257,9 @@ DIRETRIZES DE FIDELIDADE E ANCORAGEM DE CONTEXTO (MANDATÓRIAS):
 
 3. SE A CONVERSA FOR IMOBILIÁRIA ("REAL_ESTATE_LEAD"):
    - Extraia SOMENTE informações expressamente mencionadas ou confirmadas pelo cliente. Se não falou de orçamento, retorne null. Se não falou de bairro, retorne null.
-   - Tom de voz: ${selectedTone}
-   - Objetivo comercial: ${selectedObjective}${customInstructions}
+   - Tom de voz adotado: ${selectedTone}
+   - Objetivo comercial principal: ${selectedObjective}${customInstructions}
+   - AS OPÇÕES DE RESPOSTA DEVEM REFLETIR ESTREITAMENTE O TOM DE VOZ E AS REGRAS COMERCIAIS ACIMA.
 
 RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formatação markdown extra, apenas JSON puro):
 {

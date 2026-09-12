@@ -58,7 +58,7 @@ export interface TenantFeatureFlags {
 }
 
 export type AIProvider = 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'PLATFORM_DEFAULT';
-export type AITone = 'CONSULTATIVE' | 'CLOSER' | 'ELEGANT' | 'FRIENDLY';
+export type AITone = 'CONSULTATIVE' | 'CLOSER' | 'PERSUASIVE' | 'ELEGANT' | 'FRIENDLY' | 'TECHNICAL';
 export type AIObjective = 'AGENDAR_VISITA' | 'SIMULAR_FINANCIAMENTO' | 'QUALIFICAR' | 'EQUILIBRADO';
 
 export interface TenantAIConfig {

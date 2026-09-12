@@ -24,7 +24,9 @@ import {
   Building2, 
   Copy,
   ChevronRight,
-  Lock
+  Lock,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { AIPersonaTone } from '@/types/crm';
 
@@ -100,9 +102,11 @@ export function CopilotManager() {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Estados do Simulador
-  const [simulatedLeadMsg, setSimulatedLeadMsg] = useState('Olá! Vi o anúncio do Edifício Lumina Batel de R$ 1.450.000. Achei o valor um pouco puxado para o meu orçamento, mas gostei muito da localização.');
+  const [simulatedLeadMsg, setSimulatedLeadMsg] = useState('Olá! Gostaria de saber mais sobre opções de lançamentos de 2 quartos com boa localização.');
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulatedResponses, setSimulatedResponses] = useState<any[] | null>(null);
+  const [simulationAnalysis, setSimulationAnalysis] = useState<any | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
   // Sincroniza ao trocar de usuário
   React.useEffect(() => {
@@ -144,54 +148,52 @@ export function CopilotManager() {
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
-  const handleRunSimulation = () => {
+  const handleRunSimulation = async () => {
+    if (!simulatedLeadMsg.trim()) return;
     setIsSimulating(true);
-    setTimeout(() => {
-      let responses: any[] = [];
-      if (tone === 'CONSULTATIVE') {
-        responses = [
-          {
-            badge: '🤝 Alinhamento Executivo',
-            text: `Olá! Compreendo perfeitamente sua avaliação. O Lumina Batel se destaca pelo padrão construtivo e liquidez no metro quadrado do Batel. Seria um prazer conversarmos com mais calma em um café ou reunião exclusiva para eu lhe apresentar o memorial descritivo e as condições personalizadas de fluxo. Como está sua disponibilidade neste sábado às 10h?`
+    setSimulationError(null);
+    setSimulatedResponses(null);
+    setSimulationAnalysis(null);
+
+    try {
+      const res = await fetch('/api/v1/ai/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatHistory: [
+            { sender: 'CLIENT', text: simulatedLeadMsg.trim() }
+          ],
+          brokerName: selectedUser.name || currentUser.name || 'Corretor',
+          contactContext: {
+            name: 'Lead Simulado',
           },
-          {
-            badge: '📐 Estudo de Mercado',
-            text: `Olá! Realmente o investimento reflete o acabamento premium e as 3 suítes com vagas exclusivas. Temos também estudos de valorização da região que justificam a segurança desse aporte. Gostaria que eu lhe enviasse a lâmina técnica comparativa de valores por metro quadrado do Batel?`
+          aiConfig: {
+            provider: 'PLATFORM_DEFAULT',
+            model: 'gemini-flash-latest',
+            tone: tone,
+            objective: currentTenant?.aiConfig?.objective || 'EQUILIBRADO',
+            customInstructions: `${promptText}\n\nDIRETRIZES ESPECÍFICAS DA PERSONA:\n${directives.map(d => `- ${d}`).join('\n')}`,
+            enabled: true,
           }
-        ];
-      } else if (tone === 'PERSUASIVE') {
-        responses = [
-          {
-            badge: '⚡ Oportunidade na Planta',
-            text: `Olá! Entendo sua colocação. Esse valor de R$ 1.45M é da tabela de lançamento de abertura, e conseguimos montar um fluxo direto com a construtora com entrada reduzida durante a obra. As unidades nessa prumada estão com alta procura! Que tal darmos um pulo no plantão para ver o decorado hoje ou amanhã?`
-          },
-          {
-            badge: '🔥 Condição Exclusiva',
-            text: `Olá! Temos uma margem de negociação aberta para propostas à vista ou com fluxo acelerado nessa semana. Vale muito a pena conhecer o decorado antes de fecharem a tabela do mês. Posso reservar seu horário amanhã às 16h?`
-          }
-        ];
-      } else if (tone === 'FRIENDLY') {
-        responses = [
-          {
-            badge: '🏡 Acolhedor & FGTS',
-            text: `Olá! Tudo bem? Fico feliz pelo seu contato! O Lumina é realmente maravilhoso e super seguro para a família. Sobre o valor, nós conseguimos simular opções com o banco para encaixar a parcela com tranquilidade no seu orçamento, inclusive utilizando FGTS na entrada. Posso fazer uma simulação sem compromisso para você ver como fica?`
-          },
-          {
-            badge: '👪 Qualidade de Vida',
-            text: `Oi! Entendo perfeitamente sua preocupação com o orçamento. O legal desse condomínio é que o condomínio já tem toda estrutura de lazer para as crianças, o que gera muita economia no dia a dia. Se quiser, te mando fotos dos ambientes para você ver com a família!`
-          }
-        ];
-      } else {
-        responses = [
-          {
-            badge: '📈 Estudo de Cap Rate',
-            text: `Olá. O Lumina Batel opera com Cap Rate projetado de 6.8% a.a. em locação corporativa e valor de m² 12% abaixo da média entregue na região. Podemos analisar o fluxo de rentabilidade frente à renda fixa. Quando podemos revisar a planilha financeira?`
-          }
-        ];
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok || resData.error) {
+        throw new Error(resData.message || resData.error || 'Erro na inferência da IA');
       }
-      setSimulatedResponses(responses);
+
+      if (resData.data) {
+        const analysis = resData.data;
+        setSimulationAnalysis(analysis);
+        setSimulatedResponses(analysis.responseOptions || []);
+      }
+    } catch (err: any) {
+      console.error('[Copilot Simulator Error]', err);
+      setSimulationError(err.message || 'Falha ao conectar com o motor de IA Google Gemini.');
+    } finally {
       setIsSimulating(false);
-    }, 600);
+    }
   };
 
   return (
@@ -527,29 +529,93 @@ export function CopilotManager() {
                 <span>{isSimulating ? 'Processando com a Persona...' : 'Testar Respostas da IA'}</span>
               </button>
 
-              {/* Respostas Geradas */}
-              {simulatedResponses && (
-                <div className="space-y-3 pt-3 border-t border-slate-100 animate-fadeIn">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900">
-                      Sugestões Geradas para a Persona ({tone}):
+              {/* Feedback de Erro se houver */}
+              {simulationError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{simulationError}</span>
+                </div>
+              )}
+
+              {/* Respostas Geradas em Tempo Real pelo Gemini */}
+              {simulationAnalysis && (
+                <div className="space-y-4 pt-3 border-t border-slate-100 animate-fadeIn">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Análise em Tempo Real pelo Google Gemini (Tom: {tone}):</span>
                     </span>
-                    <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-mono">
-                      Modelo: {model}
+                    <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                      Google Gemini 1.5 Flash (Nativo)
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {simulatedResponses.map((res, i) => (
-                      <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                        <span className="inline-block text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md">
-                          {res.badge}
-                        </span>
-                        <p className="text-xs text-slate-700 leading-relaxed italic">
-                          "{res.text}"
-                        </p>
+                  {/* Resumo & Dados Extraídos */}
+                  {simulationAnalysis.summary && (
+                    <div className="p-3.5 bg-blue-50/50 border border-blue-200/80 rounded-xl text-xs text-slate-700 space-y-2">
+                      <div className="font-bold text-blue-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Resumo Executivo do Lead:</span>
                       </div>
-                    ))}
+                      <p className="leading-relaxed text-slate-800">{simulationAnalysis.summary}</p>
+                      
+                      {simulationAnalysis.extractedData && (
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-blue-100 text-[11px]">
+                          {simulationAnalysis.extractedData.preferredRegion && (
+                            <span className="bg-white/90 border border-blue-200 px-2 py-0.5 rounded-md text-slate-700">
+                              📍 Região: <strong>{simulationAnalysis.extractedData.preferredRegion}</strong>
+                            </span>
+                          )}
+                          {simulationAnalysis.extractedData.propertyType && (
+                            <span className="bg-white/90 border border-blue-200 px-2 py-0.5 rounded-md text-slate-700">
+                              🏠 Imóvel: <strong>{simulationAnalysis.extractedData.propertyType}</strong>
+                            </span>
+                          )}
+                          {simulationAnalysis.extractedData.maxBudget && (
+                            <span className="bg-white/90 border border-blue-200 px-2 py-0.5 rounded-md text-slate-700">
+                              💰 Orçamento: <strong>R$ {Number(simulationAnalysis.extractedData.maxBudget).toLocaleString('pt-BR')}</strong>
+                            </span>
+                          )}
+                          {simulationAnalysis.extractedData.downPayment && (
+                            <span className="bg-white/90 border border-blue-200 px-2 py-0.5 rounded-md text-slate-700">
+                              💵 Entrada: <strong>R$ {Number(simulationAnalysis.extractedData.downPayment).toLocaleString('pt-BR')}</strong>
+                            </span>
+                          )}
+                          {simulationAnalysis.extractedData.urgencyLevel && (
+                            <span className="bg-white/90 border border-blue-200 px-2 py-0.5 rounded-md text-slate-700">
+                              ⚡ Urgência: <strong>{simulationAnalysis.extractedData.urgencyLevel}</strong>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Opções de Resposta Geradas */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold text-slate-800">
+                      Sugestões de Resposta Prontas para o WhatsApp:
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {simulatedResponses && simulatedResponses.map((res: any, i: number) => (
+                        <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 hover:border-emerald-300 transition">
+                          <div className="flex items-center justify-between">
+                            <span className="inline-block text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md">
+                              {res.badge || res.label || 'Sugestão Tática'}
+                            </span>
+                            {res.category && (
+                              <span className="text-[9px] text-slate-400 uppercase font-mono">
+                                {res.category}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-800 leading-relaxed italic">
+                            "{res.text}"
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

@@ -57,6 +57,9 @@ export class ContactsDBService {
             downPaymentAvailable: data.downPaymentAvailable !== undefined ? String(data.downPaymentAvailable) : existing.downPaymentAvailable,
             maxPropertyValue: data.maxPropertyValue !== undefined ? String(data.maxPropertyValue) : existing.maxPropertyValue,
             preferredPropertyType: (data.preferredPropertyType as any) || existing.preferredPropertyType,
+            purchasePurpose: (data.purchasePurpose as any) || existing.purchasePurpose,
+            purchaseTimeline: data.purchaseTimeline || existing.purchaseTimeline,
+            targetBedrooms: data.targetBedrooms !== undefined ? data.targetBedrooms : existing.targetBedrooms,
             targetRegions: data.targetRegions || existing.targetRegions,
             temperature: (data.temperature as any) || existing.temperature,
             aiPriorityScore: Math.max(data.aiPriorityScore || 70, existing.aiPriorityScore || 70),
@@ -83,6 +86,9 @@ export class ContactsDBService {
           downPaymentAvailable: data.downPaymentAvailable !== undefined ? String(data.downPaymentAvailable) : undefined,
           maxPropertyValue: data.maxPropertyValue !== undefined ? String(data.maxPropertyValue) : undefined,
           preferredPropertyType: (data.preferredPropertyType as any) || undefined,
+          purchasePurpose: (data.purchasePurpose as any) || 'LIVING',
+          purchaseTimeline: data.purchaseTimeline || '1_TO_3_MONTHS',
+          targetBedrooms: data.targetBedrooms !== undefined ? data.targetBedrooms : undefined,
           targetRegions: data.targetRegions || [],
           temperature: (data.temperature as any) || 'COLD',
           aiPriorityScore: data.aiPriorityScore !== undefined ? data.aiPriorityScore : 0,
@@ -108,6 +114,9 @@ export class ContactsDBService {
     maxBudget?: number;
     preferredPropertyType?: string;
     targetRegions?: string[];
+    targetBedrooms?: number;
+    purchasePurpose?: string;
+    purchaseTimeline?: string;
     email?: string;
   }) {
     const raw = this.cleanPhone(phone);
@@ -121,6 +130,9 @@ export class ContactsDBService {
         downPaymentAvailable: qualification.downPayment !== undefined ? String(qualification.downPayment) : existing.downPaymentAvailable,
         maxPropertyValue: qualification.maxBudget !== undefined ? String(qualification.maxBudget) : existing.maxPropertyValue,
         preferredPropertyType: (qualification.preferredPropertyType as any) || existing.preferredPropertyType,
+        purchasePurpose: (qualification.purchasePurpose as any) || existing.purchasePurpose,
+        purchaseTimeline: qualification.purchaseTimeline || existing.purchaseTimeline,
+        targetBedrooms: qualification.targetBedrooms !== undefined ? qualification.targetBedrooms : existing.targetBedrooms,
         targetRegions: qualification.targetRegions || existing.targetRegions,
         email: qualification.email || existing.email,
         updatedAt: new Date(),

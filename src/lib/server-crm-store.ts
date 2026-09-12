@@ -618,10 +618,15 @@ export const serverCRMStore = {
           name: (existing.name && !existing.name.startsWith('+') && !existing.name.startsWith('WhatsApp') && existing.name !== 'Lead WhatsApp' && existing.name !== 'Cliente')
             ? existing.name
             : (c.name || existing.name),
-          monthlyIncome: c.monthlyIncome || existing.monthlyIncome,
-          downPaymentAvailable: c.downPaymentAvailable || existing.downPaymentAvailable,
-          maxPropertyValue: c.maxPropertyValue || existing.maxPropertyValue,
+          monthlyIncome: c.monthlyIncome !== undefined ? c.monthlyIncome : existing.monthlyIncome,
+          downPaymentAvailable: c.downPaymentAvailable !== undefined ? c.downPaymentAvailable : existing.downPaymentAvailable,
+          maxPropertyValue: c.maxPropertyValue !== undefined ? c.maxPropertyValue : existing.maxPropertyValue,
+          targetBedrooms: c.targetBedrooms !== undefined ? c.targetBedrooms : existing.targetBedrooms,
           preferredPropertyType: c.preferredPropertyType || existing.preferredPropertyType,
+          purchasePurpose: c.purchasePurpose || existing.purchasePurpose,
+          purchaseTimeline: c.purchaseTimeline || existing.purchaseTimeline,
+          householdIncome: c.householdIncome !== undefined ? c.householdIncome : existing.householdIncome,
+          estimatedFinancing: c.estimatedFinancing !== undefined ? c.estimatedFinancing : existing.estimatedFinancing,
           email: c.email || existing.email,
           tags: Array.from(new Set([...(existing.tags || []), ...(c.tags || [])])),
           whatsappLabels: Array.from(new Set([...(existing.whatsappLabels || []), ...(c.whatsappLabels || [])])),

@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.37';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.38';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -1057,17 +1057,22 @@ ${isDeveloperMode ? `
   }
 
   // Utilitário para converter divisores de data do WhatsApp Web em português para objeto Date real
+  // Utilitário para converter divisores de data do WhatsApp Web em português para objeto Date real
   function parsePortugueseWhatsAppDate(text, fallbackYear = new Date().getFullYear()) {
     if (!text || typeof text !== 'string') return null;
     const clean = text.trim().toUpperCase();
+    if (!clean || clean.length > 40) return null;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
 
     if (clean === 'HOJE' || clean === 'TODAY') {
-      const d = new Date();
+      const d = new Date(now);
       d.setHours(12, 0, 0, 0);
       return d;
     }
     if (clean === 'ONTEM' || clean === 'YESTERDAY') {
-      const d = new Date();
+      const d = new Date(now);
       d.setDate(d.getDate() - 1);
       d.setHours(12, 0, 0, 0);
       return d;
@@ -1080,7 +1085,7 @@ ${isDeveloperMode ? `
     };
     for (const [wName, wDay] of Object.entries(weekdays)) {
       if (clean === wName || clean.startsWith(wName)) {
-        const d = new Date();
+        const d = new Date(now);
         const currentDay = d.getDay();
         let diff = currentDay - wDay;
         if (diff <= 0) diff += 7;
@@ -1095,24 +1100,27 @@ ${isDeveloperMode ? `
       'MAIO': 4, 'JUNHO': 5, 'JULHO': 6, 'AGOSTO': 7,
       'SETEMBRO': 8, 'OUTUBRO': 9, 'NOVEMBRO': 10, 'DEZEMBRO': 11
     };
-    const mMatch = clean.match(/(\d{1,2})\s+DE\s+([A-ZÇ]+)(?:\s+DE\s+(\d{2,4}))?/);
+    const mMatch = clean.match(/^(\d{1,2})\s+DE\s+([A-ZÇ]+)(?:\s+DE\s+(\d{2,4}))?$/);
     if (mMatch) {
       const day = Number(mMatch[1]);
       const monthName = mMatch[2];
       let year = mMatch[3] ? Number(mMatch[3]) : fallbackYear;
       if (year < 100) year += 2000;
+      if (year > currentYear) year = currentYear;
       if (months[monthName] !== undefined) {
         const dt = new Date(year, months[monthName], day, 12, 0, 0);
         if (!isNaN(dt.getTime())) return dt;
       }
     }
 
-    const numMatch = clean.match(/(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/);
+    // Exige que a linha seja estritamente uma data numérica (evita casar com menções no meio de propostas comerciais)
+    const numMatch = clean.match(/^(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?$/);
     if (numMatch) {
       const day = Number(numMatch[1]);
       const month = Number(numMatch[2]) - 1;
       let year = numMatch[3] ? Number(numMatch[3]) : fallbackYear;
       if (year < 100) year += 2000;
+      if (year > currentYear) year = currentYear;
       const dt = new Date(year, month, day, 12, 0, 0);
       if (!isNaN(dt.getTime())) return dt;
     }
@@ -1120,7 +1128,7 @@ ${isDeveloperMode ? `
     return null;
   }
 
-const PT_MONTH_NAMES = {
+  const PT_MONTH_NAMES = {
     'JAN': 0, 'JANEIRO': 0, 'FEV': 1, 'FEVEREIRO': 1, 'MAR': 2, 'MARÇO': 2, 'MARCO': 2,
     'ABR': 3, 'ABRIL': 3, 'MAI': 4, 'MAIO': 4, 'JUN': 5, 'JUNHO': 5,
     'JUL': 6, 'JULHO': 6, 'AGO': 7, 'AGOSTO': 7, 'SET': 8, 'SETEMBRO': 8,
@@ -1137,11 +1145,15 @@ const PT_MONTH_NAMES = {
 
     const currentYear = new Date().getFullYear();
 
-    // 1. Formatos relativos comuns no WhatsApp Web: [13:42, ontem], [13:42, Ontem], [13:42, hoje], [13:42, Hoje]
-    const relMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(ontem|yesterday|hoje|today)/i);
+    // 1. Formatos relativos comuns no WhatsApp Web: [13:42, ontem], [13:42, Ontem], [13:42, hoje], [13:42, Hoje] ou [Ontem, 13:42]
+    const relMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(ontem|yesterday|hoje|today)/i) ||
+                     rawTime.match(/^(ontem|yesterday|hoje|today)[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
     if (relMatch) {
-      let h = Number(relMatch[1]), m = Number(relMatch[2]), s = relMatch[3] ? Number(relMatch[3]) : 0;
-      const word = relMatch[4].toLowerCase();
+      const isWordFirst = isNaN(Number(relMatch[1]));
+      const word = (isWordFirst ? relMatch[1] : relMatch[4]).toLowerCase();
+      let h = isWordFirst ? Number(relMatch[2]) : Number(relMatch[1]);
+      let m = isWordFirst ? Number(relMatch[3]) : Number(relMatch[2]);
+      let s = 0;
       const dt = new Date();
       if (word === 'ontem' || word === 'yesterday') {
         dt.setDate(dt.getDate() - 1);
@@ -1150,18 +1162,34 @@ const PT_MONTH_NAMES = {
       return dt;
     }
 
-    // 2. Formato BR com data e ano: 18:36, 31/08/2026 ou 18:36:00, 31/08/26
+    // 2. Formato BR com DATA PRIMEIRO: [13/01/2024, 18:36] ou [13/01/24, 18:36] ou [13/01, 18:36]
+    const brDateFirst = rawTime.match(/^(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (brDateFirst) {
+      const d = Number(brDateFirst[1]);
+      const mo = Number(brDateFirst[2]) - 1;
+      let y = brDateFirst[3] ? Number(brDateFirst[3]) : currentYear;
+      if (y < 100) y += 2000;
+      if (y > currentYear) y = currentYear;
+      const h = Number(brDateFirst[4]);
+      const m = Number(brDateFirst[5]);
+      const s = brDateFirst[6] ? Number(brDateFirst[6]) : 0;
+      const dt = new Date(y, mo, d, h, m, s);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+
+    // 3. Formato BR com HORA PRIMEIRO e data completa: [18:36, 31/08/2026] ou [18:36:00, 31/08/26]
     const brFull = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
     if (brFull) {
       let h = Number(brFull[1]), m = Number(brFull[2]), s = brFull[3] ? Number(brFull[3]) : 0;
       const d = Number(brFull[4]), mo = Number(brFull[5]) - 1;
       let y = Number(brFull[6]);
       if (y < 100) y += 2000;
+      if (y > currentYear) y = currentYear;
       const dt = new Date(y, mo, d, h, m, s);
       if (!isNaN(dt.getTime())) return dt;
     }
 
-    // 3. Formato BR SEM ano (muito frequente no WhatsApp Web): 18:36, 31/08 ou 18:36, 31/8
+    // 4. Formato BR com HORA PRIMEIRO SEM ano: [18:36, 31/08] ou [18:36, 31/8]
     const brNoYear = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})$/);
     if (brNoYear) {
       let h = Number(brNoYear[1]), m = Number(brNoYear[2]), s = brNoYear[3] ? Number(brNoYear[3]) : 0;
@@ -1175,7 +1203,7 @@ const PT_MONTH_NAMES = {
       }
     }
 
-    // 4. Formato com nome de mês em português: 18:36, 31 de ago. de 2026 ou 18:36, 31 de agosto
+    // 5. Formato com nome de mês em português: [18:36, 31 de ago. de 2026] ou [18:36, 31 de agosto]
     const ptMonthMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\s+DE\s+([A-ZÇ]+)\.?(?:\s+DE\s+(\d{2,4}))?/i);
     if (ptMonthMatch) {
       let h = Number(ptMonthMatch[1]), m = Number(ptMonthMatch[2]), s = ptMonthMatch[3] ? Number(ptMonthMatch[3]) : 0;
@@ -1183,6 +1211,7 @@ const PT_MONTH_NAMES = {
       const mStr = ptMonthMatch[5].toUpperCase();
       let y = ptMonthMatch[6] ? Number(ptMonthMatch[6]) : currentYear;
       if (y < 100) y += 2000;
+      if (y > currentYear) y = currentYear;
       const mo = PT_MONTH_NAMES[mStr] !== undefined ? PT_MONTH_NAMES[mStr] : 0;
       const dt = new Date(y, mo, d, h, m, s);
       if (!isNaN(dt.getTime())) {
@@ -1193,7 +1222,7 @@ const PT_MONTH_NAMES = {
       }
     }
 
-    // 5. Formato US: 6:36 PM, 08/31/2026 ou 6:36 PM, 8/31
+    // 6. Formato US: 6:36 PM, 08/31/2026 ou 6:36 PM, 8/31
     const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/i);
     if (usMatch) {
       let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
@@ -1203,11 +1232,12 @@ const PT_MONTH_NAMES = {
       const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
       let y = usMatch[7] ? Number(usMatch[7]) : currentYear;
       if (y < 100) y += 2000;
+      if (y > currentYear) y = currentYear;
       const dt = new Date(y, mo, d, h, m, s);
       if (!isNaN(dt.getTime())) return dt;
     }
 
-    // 6. Se tiver apenas o horário: [13:42] ou [13:42:00]
+    // 7. Se tiver apenas o horário: [13:42] ou [13:42:00]
     const timeOnlyMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
     if (timeOnlyMatch) {
       let h = Number(timeOnlyMatch[1]), m = Number(timeOnlyMatch[2]), s = timeOnlyMatch[3] ? Number(timeOnlyMatch[3]) : 0;
@@ -1221,9 +1251,6 @@ const PT_MONTH_NAMES = {
       dt.setHours(h, m, s, 0);
       return dt;
     }
-
-    const dt = new Date(rawTime);
-    if (!isNaN(dt.getTime())) return dt;
 
     return null;
   }
@@ -1239,45 +1266,64 @@ const PT_MONTH_NAMES = {
     return null;
   }
 
-
-  // Resolve a data exata de um balão inspecionando vizinhos anteriores e posteriores no DOM
+  // Resolve a data exata de um balão inspecionando EXCLUSIVAMENTE divisores de sistema legítimos no DOM
   function getContextualDateForContainer(container, currentWalkingDateIso) {
     const parentRow = container.closest?.('div[role="row"]') || container;
 
-    // 1. Procura para trás (mensagens anteriores no mesmo bloco de chat)
+    // Helper: verifica se um nó é um divisor legítimo de data do sistema (e não um balão de conversa de cliente)
+    function isGenuinSystemDateDivider(el) {
+      if (!el) return false;
+      const isSystem = Boolean(
+        el.getAttribute?.('data-testid')?.includes('system') ||
+        el.classList?.contains('system-message') ||
+        (!el.classList?.contains('message-in') && !el.classList?.contains('message-out') && !el.querySelector('.message-in, .message-out') && !el.hasAttribute?.('data-id'))
+      );
+      return isSystem;
+    }
+
+    // 1. Procura para trás por divisores de data do sistema ou data-pre-plain-text válidos
     let curr = parentRow.previousElementSibling;
     let stepsBack = 0;
     while (curr && stepsBack < 40) {
-      const text = (curr.innerText || '').trim();
-      if (text && text.length < 50) {
-        const parsed = parsePortugueseWhatsAppDate(text);
-        if (parsed) return parsed;
-      }
       const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
       if (preNode) {
         const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
         const dt = extractDateFromPrePlain(rawPre);
         if (dt) return dt;
       }
+
+      // Só lê innerText se for comprovadamente um divisor do sistema (nunca balões de mensagem!)
+      if (isGenuinSystemDateDivider(curr)) {
+        const text = (curr.innerText || '').trim();
+        if (text && text.length < 35) {
+          const parsed = parsePortugueseWhatsAppDate(text);
+          if (parsed) return parsed;
+        }
+      }
+
       curr = curr.previousElementSibling;
       stepsBack++;
     }
 
-    // 2. Procura para a frente (mensagens posteriores no mesmo bloco de chat)
+    // 2. Procura para a frente por divisores de data do sistema ou data-pre-plain-text
     curr = parentRow.nextElementSibling;
     let stepsForward = 0;
     while (curr && stepsForward < 40) {
-      const text = (curr.innerText || '').trim();
-      if (text && text.length < 50) {
-        const parsed = parsePortugueseWhatsAppDate(text);
-        if (parsed) return parsed;
-      }
       const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
       if (preNode) {
         const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
         const dt = extractDateFromPrePlain(rawPre);
         if (dt) return dt;
       }
+
+      if (isGenuinSystemDateDivider(curr)) {
+        const text = (curr.innerText || '').trim();
+        if (text && text.length < 35) {
+          const parsed = parsePortugueseWhatsAppDate(text);
+          if (parsed) return parsed;
+        }
+      }
+
       curr = curr.nextElementSibling;
       stepsForward++;
     }
@@ -1291,7 +1337,7 @@ const PT_MONTH_NAMES = {
       }
     }
 
-    // Se tudo falhar, retorna ontem caso não haja outra referência, para nunca forçar para hoje à tarde
+    // Fallback seguro
     const def = new Date();
     def.setHours(12, 0, 0, 0);
     return def;
@@ -1686,27 +1732,32 @@ const PT_MONTH_NAMES = {
       }
 
       if (!msgTime) {
-        // Tenta extrair hora explícita do balão (meta, time, aria-label ou innerText)
-        const timeCandidates = [
-          container.querySelector('[data-testid="msg-meta"]')?.innerText,
-          container.querySelector('[data-testid*="time"]')?.innerText,
-          container.querySelector('span[dir="auto"]')?.innerText,
-          container.querySelector('div._amjz')?.innerText,
-          container.getAttribute?.('aria-label'),
-          parentRow.getAttribute?.('aria-label'),
-          container.innerText
-        ];
-
+        // Extrai hora explícita EXCLUSIVAMENTE do rodapé de metadados do balão (msg-meta / _amjz)
+        // JAMAIS lê container.innerText nem span de conteúdo, evitando que menções a horas no texto corrompam o envio
+        const metaEl = container.querySelector('[data-testid="msg-meta"], div._amjz, [data-testid*="time"], span[data-testid*="msg-time"]');
         let foundHour = null;
         let foundMin = null;
-        for (const cand of timeCandidates) {
-          if (!cand) continue;
-          const cleanCand = cand.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ');
+
+        if (metaEl) {
+          const cleanCand = (metaEl.innerText || '').replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ');
           const m = cleanCand.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
           if (m) {
             foundHour = Number(m[1]);
             foundMin = Number(m[2]);
-            break;
+          }
+        }
+
+        // Se ainda não achou no metaEl, busca nós folha minúsculos que contenham puramente horário no rodapé
+        if (foundHour === null) {
+          const leafSpans = Array.from(container.querySelectorAll('span, div')).filter(el => el.children.length === 0);
+          for (const sp of leafSpans) {
+            const txt = (sp.innerText || '').trim();
+            const m = txt.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+            if (m) {
+              foundHour = Number(m[1]);
+              foundMin = Number(m[2]);
+              break;
+            }
           }
         }
 
@@ -1721,9 +1772,6 @@ const PT_MONTH_NAMES = {
           }
           msgTime = d.toISOString();
         } else if (lastSeenValidTimeMs > 0) {
-          // SE NÃO TEM HORA EXPLÍCITA (ex: foto/mídia sem legenda):
-          // No DOM do WhatsApp, a ordem física é estritamente cronológica.
-          // Logo, a mídia foi enviada logo após a mensagem anterior!
           msgTime = new Date(lastSeenValidTimeMs + 1000).toISOString();
         } else {
           msgTime = contextualDate.toISOString();
@@ -2654,6 +2702,22 @@ const PT_MONTH_NAMES = {
         const rowPreview = (secEl?.getAttribute('title') || secEl?.innerText || '').trim();
         const hasOutgoingCheck = Boolean(rowContainer.querySelector('span[data-icon*="status-"], span[data-testid*="status-"], [data-icon="status-dblcheck"], [data-icon="status-check"], [data-icon="status-time"]') || /^(você|voce|you)\s*:/i.test(rowPreview));
 
+        // Extrai data/horário canônico visível no card da conversa na lista lateral (#pane-side)
+        let rowDateText = '';
+        const dateCandidates = Array.from(rowContainer.querySelectorAll('div._ak8i, span[dir="auto"], div[data-testid="cell-frame-title"] + div, div[data-testid="cell-frame-secondary"] span'));
+        for (const el of dateCandidates) {
+          const t = (el.innerText || '').trim();
+          if (
+            /^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(t) ||
+            /^(ontem|yesterday|hoje|today)$/i.test(t) ||
+            /^\d{1,2}[\/\.-]\d{1,2}(?:[\/\.-]\d{2,4})?$/.test(t) ||
+            /^(segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|domingo)/i.test(t)
+          ) {
+            rowDateText = t;
+            break;
+          }
+        }
+
         const rowLabels = extractLabelsFromRowElement(rowContainer);
 
         rows.push({
@@ -2664,6 +2728,7 @@ const PT_MONTH_NAMES = {
           rowImg: rowImg || null,
           rowAvatarSrc: rowAvatarSrc || '',
           rowPreview,
+          rowDateText,
           isOutgoing: hasOutgoingCheck,
           labels: rowLabels,
         });
@@ -3060,13 +3125,34 @@ const PT_MONTH_NAMES = {
             const cleanSnippet = nextRow.rowPreview.replace(/^(você|voce|you)\s*:\s*/i, '').trim();
             if (cleanSnippet && !isWhatsAppSystemMessage(cleanSnippet)) {
               chatData.lastMessagePreview = cleanSnippet;
+              let rowTimeIso = new Date().toISOString();
+              if (nextRow?.rowDateText) {
+                const parsedDate = parsePortugueseWhatsAppDate(nextRow.rowDateText);
+                if (parsedDate) rowTimeIso = parsedDate.toISOString();
+              }
+              chatData.lastMessageAt = rowTimeIso;
               chatData.messages = [{
                 id: `wpp-row-${chatData.phone}-${Date.now()}`,
                 content: cleanSnippet,
                 fromMe: Boolean(nextRow.isOutgoing),
-                timestamp: new Date().toISOString(),
+                timestamp: rowTimeIso,
                 messageType: 'TEXT',
               }];
+            }
+          }
+
+          // Se a lista lateral (#pane-side) indicar expressamente uma data anterior (ex: 2024 ou dias atrás)
+          // e o lastMessageAt tiver caído em fallback de hoje, ancora na data oficial da lista lateral
+          if (nextRow?.rowDateText) {
+            const parsedRowDate = parsePortugueseWhatsAppDate(nextRow.rowDateText);
+            if (parsedRowDate && parsedRowDate.getTime() < (Date.now() - 86400000)) {
+              const currentLastTime = new Date(chatData.lastMessageAt || 0).getTime();
+              if (currentLastTime > (parsedRowDate.getTime() + 86400000)) {
+                chatData.lastMessageAt = parsedRowDate.toISOString();
+                if (chatData.messages && chatData.messages.length > 0) {
+                  chatData.messages[chatData.messages.length - 1].timestamp = parsedRowDate.toISOString();
+                }
+              }
             }
           }
 

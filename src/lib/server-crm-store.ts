@@ -3,6 +3,7 @@ import path from 'path';
 import { Contact, Deal, Conversation, Message, AIInsight, User, QuickReplyTemplate } from '@/types/crm';
 import { MOCK_USERS } from '@/lib/mock-data';
 import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export interface ServerCRMState {
   contacts: Contact[];
@@ -802,8 +803,8 @@ export const serverCRMStore = {
       const existing = map.get(canonicalConvId);
       if (existing) {
         // Preserva a mensagem mais recente entre as duas
-        const timeA = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
-        const timeB = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+        const timeA = parseWhatsAppTimestamp(existing.lastMessageAt);
+        const timeB = parseWhatsAppTimestamp(conv.lastMessageAt);
         const useNewer = timeB > timeA;
 
         map.set(canonicalConvId, {
@@ -826,8 +827,8 @@ export const serverCRMStore = {
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-      const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
+      const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
       return timeB - timeA;
     });
   },

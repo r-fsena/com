@@ -276,14 +276,29 @@ export function WhatsAppInbox() {
   const [historyPage, setHistoryPage] = useState(1);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  // Conversas ordenadas estritamente pela mensagem mais recente (Top 1 = Hoje/Agora)
+  // Obtém o timestamp efetivo mais recente da conversa (analisando lastMessageAt e mensagens locais)
+  const getConversationEffectiveTime = React.useCallback((conv: any): number => {
+    let t = parseWhatsAppTimestamp(conv?.lastMessageAt);
+    if (!t || t <= 0) {
+      const convMsgs = messages.filter(m => m.conversationId === conv.id);
+      if (convMsgs.length > 0) {
+        const lastMsg = convMsgs[convMsgs.length - 1];
+        t = parseWhatsAppTimestamp(lastMsg?.timestamp);
+      }
+    }
+    return t || 0;
+  }, [messages]);
+
+  // Conversas ordenadas estritamente pela mensagem mais recente sempre no topo (Top 1 = Hoje/Agora)
   const sortedConversations = React.useMemo(() => {
     return [...conversations].sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
-      return parseWhatsAppTimestamp(b.lastMessageAt) - parseWhatsAppTimestamp(a.lastMessageAt);
+      const timeA = getConversationEffectiveTime(a);
+      const timeB = getConversationEffectiveTime(b);
+      return timeB - timeA;
     });
-  }, [conversations]);
+  }, [conversations, getConversationEffectiveTime]);
 
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = React.useMemo(() => {
@@ -1138,9 +1153,9 @@ export function WhatsAppInbox() {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
 
-    // Prioridade 2: Mensagem mais recente
-    const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
-    const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
+    // Prioridade 2: Mensagem mais recente sempre no topo
+    const timeA = getConversationEffectiveTime(a);
+    const timeB = getConversationEffectiveTime(b);
     return timeB - timeA;
   });
 

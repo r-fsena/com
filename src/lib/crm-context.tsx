@@ -1869,8 +1869,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       const existing = map.get(canonicalConvId);
       if (existing) {
-        const timeA = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
-        const timeB = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+        const timeA = parseWhatsAppTimestamp(existing.lastMessageAt);
+        const timeB = parseWhatsAppTimestamp(conv.lastMessageAt);
         const useNewer = timeB > timeA;
 
         map.set(canonicalConvId, {
@@ -1893,8 +1893,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-      const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
+      const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
       return timeB - timeA;
     });
   };
@@ -4622,8 +4622,8 @@ const pollWebhookMessages = async () => {
               }
             });
             const updated = Array.from(mapById.values()).sort((a, b) => {
-              const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-              const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+              const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
+              const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
               return timeB - timeA;
             });
             try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}

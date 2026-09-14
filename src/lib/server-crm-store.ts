@@ -148,6 +148,7 @@ export function loadStateFromDisk(): boolean {
             messages: parsed.state.messages || [],
             aiInsights: parsed.state.aiInsights || {},
             users: mergeUserLists(MOCK_USERS, rawUsers),
+            quickReplies: parsed.state.quickReplies || [],
           };
 
           if (parsed.lidPhoneMap) {
@@ -180,6 +181,7 @@ if (!global.__SERVER_CRM_STATE__) {
     messages: INITIAL_MESSAGES,
     aiInsights: INITIAL_INSIGHTS,
     users: mergeUserLists(MOCK_USERS, []),
+    quickReplies: [],
   };
 }
 
@@ -392,7 +394,7 @@ export const serverCRMStore = {
   },
 
   getState(): ServerCRMState {
-    if (!global.__SERVER_CRM_STATE__ || (global.__SERVER_CRM_STATE__.conversations.length === 0 && global.__SERVER_CRM_STATE__.contacts.length === 0)) {
+    if (!global.__SERVER_CRM_STATE__) {
       loadStateFromDisk();
     }
     if (!global.__SERVER_CRM_STATE__) {
@@ -402,7 +404,11 @@ export const serverCRMStore = {
         conversations: [],
         messages: INITIAL_MESSAGES,
         aiInsights: INITIAL_INSIGHTS,
+        quickReplies: [],
       };
+    }
+    if (!global.__SERVER_CRM_STATE__.quickReplies) {
+      global.__SERVER_CRM_STATE__.quickReplies = [];
     }
     // Remove conversas e contatos deletados
     if (global.__GLOBAL_DELETED_CHAT_KEYS__ && global.__GLOBAL_DELETED_CHAT_KEYS__.size > 0) {

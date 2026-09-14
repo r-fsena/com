@@ -1108,7 +1108,11 @@ ${isDeveloperMode ? `
       if (year < 100) year += 2000;
       if (year > currentYear) year = currentYear;
       if (months[monthName] !== undefined) {
-        const dt = new Date(year, months[monthName], day, 12, 0, 0);
+        let dt = new Date(year, months[monthName], day, 12, 0, 0);
+        if (!mMatch[3] && dt.getTime() > now.getTime() + 60000) {
+          year = currentYear - 1;
+          dt = new Date(year, months[monthName], day, 12, 0, 0);
+        }
         if (!isNaN(dt.getTime())) return dt;
       }
     }
@@ -1121,7 +1125,11 @@ ${isDeveloperMode ? `
       let year = numMatch[3] ? Number(numMatch[3]) : fallbackYear;
       if (year < 100) year += 2000;
       if (year > currentYear) year = currentYear;
-      const dt = new Date(year, month, day, 12, 0, 0);
+      let dt = new Date(year, month, day, 12, 0, 0);
+      if (!numMatch[3] && dt.getTime() > now.getTime() + 60000) {
+        year = currentYear - 1;
+        dt = new Date(year, month, day, 12, 0, 0);
+      }
       if (!isNaN(dt.getTime())) return dt;
     }
 
@@ -1173,7 +1181,11 @@ ${isDeveloperMode ? `
       const h = Number(brDateFirst[4]);
       const m = Number(brDateFirst[5]);
       const s = brDateFirst[6] ? Number(brDateFirst[6]) : 0;
-      const dt = new Date(y, mo, d, h, m, s);
+      let dt = new Date(y, mo, d, h, m, s);
+      if (!brDateFirst[3] && dt.getTime() > Date.now() + 60000) {
+        y = currentYear - 1;
+        dt = new Date(y, mo, d, h, m, s);
+      }
       if (!isNaN(dt.getTime())) return dt;
     }
 
@@ -2704,17 +2716,32 @@ ${isDeveloperMode ? `
 
         // Extrai data/horário canônico visível no card da conversa na lista lateral (#pane-side)
         let rowDateText = '';
-        const dateCandidates = Array.from(rowContainer.querySelectorAll('div._ak8i, span[dir="auto"], div[data-testid="cell-frame-title"] + div, div[data-testid="cell-frame-secondary"] span'));
-        for (const el of dateCandidates) {
-          const t = (el.innerText || '').trim();
-          if (
-            /^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(t) ||
-            /^(ontem|yesterday|hoje|today)$/i.test(t) ||
-            /^\d{1,2}[\/\.-]\d{1,2}(?:[\/\.-]\d{2,4})?$/.test(t) ||
-            /^(segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|domingo)/i.test(t)
-          ) {
-            rowDateText = t;
+
+        // 1. Procura primeiro se há atributo title ou aria-label com data completa DD/MM/AAAA no card da conversa
+        const titleNodes = Array.from(rowContainer.querySelectorAll('[title*="/"], [aria-label*="/"], div._ak8i, span[title]'));
+        for (const el of titleNodes) {
+          const rawAttr = el.getAttribute('title') || el.getAttribute('aria-label') || '';
+          const match = rawAttr.match(/\b(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\b/);
+          if (match) {
+            rowDateText = match[1];
             break;
+          }
+        }
+
+        // 2. Se não achou data completa com ano no title, varre os textos visíveis
+        if (!rowDateText) {
+          const dateCandidates = Array.from(rowContainer.querySelectorAll('div._ak8i, span[dir="auto"], div[data-testid="cell-frame-title"] + div, div[data-testid="cell-frame-secondary"] span'));
+          for (const el of dateCandidates) {
+            const t = (el.innerText || '').trim();
+            if (
+              /^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(t) ||
+              /^(ontem|yesterday|hoje|today)$/i.test(t) ||
+              /^\d{1,2}[\/\.-]\d{1,2}(?:[\/\.-]\d{2,4})?$/.test(t) ||
+              /^(segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|domingo)/i.test(t)
+            ) {
+              rowDateText = t;
+              break;
+            }
           }
         }
 

@@ -1684,7 +1684,10 @@ export function WhatsAppInbox() {
                         )}
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                        <span className="text-[10px] text-slate-400 font-sans group-hover:hidden">
+                        <span 
+                          className="text-[10px] text-slate-400 font-sans group-hover:hidden"
+                          title={conv.lastMessageAt ? safeFormatDate(conv.lastMessageAt, 'dd/MM/yyyy às HH:mm') : ''}
+                        >
                           {formatWhatsAppDate(conv.lastMessageAt)}
                         </span>
                         <span
@@ -2272,7 +2275,9 @@ export function WhatsAppInbox() {
                       <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
 
                       <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500">
-                        <span>{safeFormatDate(msg.timestamp, 'HH:mm')}</span>
+                        <span title={msg.timestamp ? safeFormatDate(msg.timestamp, 'dd/MM/yyyy às HH:mm') : ''}>
+                          {safeFormatDate(msg.timestamp, 'HH:mm')}
+                        </span>
                         {isMe && (
                           <span>
                             {msg.status === 'READ' ? (

@@ -33,6 +33,11 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
       if (dt.getFullYear() > currentYear) {
         dt.setFullYear(currentYear);
       }
+      // Se a data deste ano ainda está no futuro em relação a agora (ex: novembro gravado erroneamente em 2026),
+      // corrige para o ano anterior (novembro de 2025)
+      if (dt.getTime() > now.getTime() + 86400000) {
+        dt.setFullYear(dt.getFullYear() - 1);
+      }
       return dt.getTime();
     }
   }
@@ -68,7 +73,13 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
     const minutes = dateFirstMatch[5] ? Number(dateFirstMatch[5]) : 0;
     const seconds = dateFirstMatch[6] ? Number(dateFirstMatch[6]) : 0;
 
-    const dt = new Date(year, month, day, hours, minutes, seconds);
+    let dt = new Date(year, month, day, hours, minutes, seconds);
+    // Se não tinha ano explícito e a data resultante está no futuro (ex: 15/11 quando hoje é setembro),
+    // pertence obrigatoriamente ao ano anterior (ex: novembro do ano passado)
+    if (!dateFirstMatch[3] && dt.getTime() > now.getTime() + 60000) {
+      year = currentYear - 1;
+      dt = new Date(year, month, day, hours, minutes, seconds);
+    }
     if (!isNaN(dt.getTime())) return dt.getTime();
   }
 
@@ -84,7 +95,11 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
     if (year < 100) year += 2000;
     if (year > currentYear) year = currentYear; // Trava anos futuros como 2029
 
-    const dt = new Date(year, month, day, hours, minutes, seconds);
+    let dt = new Date(year, month, day, hours, minutes, seconds);
+    if (!timeFirstMatch[6] && dt.getTime() > now.getTime() + 60000) {
+      year = currentYear - 1;
+      dt = new Date(year, month, day, hours, minutes, seconds);
+    }
     if (!isNaN(dt.getTime())) return dt.getTime();
   }
 
@@ -107,7 +122,11 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
     const hours = ptExtMatch[4] ? Number(ptExtMatch[4]) : 12;
     const minutes = ptExtMatch[5] ? Number(ptExtMatch[5]) : 0;
 
-    const dt = new Date(year, month, day, hours, minutes, 0);
+    let dt = new Date(year, month, day, hours, minutes, 0);
+    if (!ptExtMatch[3] && dt.getTime() > now.getTime() + 60000) {
+      year = currentYear - 1;
+      dt = new Date(year, month, day, hours, minutes, 0);
+    }
     if (!isNaN(dt.getTime())) return dt.getTime();
   }
 
@@ -126,9 +145,8 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
  * Formatação inteligente de data estilo WhatsApp para a lista de conversas do Inbox:
  * - Se a mensagem foi hoje: "14:32"
  * - Se foi ontem: "Ontem"
- * - Se foi nos últimos 6 dias: dia da semana ("Seg", "Ter", etc.)
- * - Se foi anterior neste ano: "25/08"
- * - Se for de anos anteriores: "25/08/2024" (4 dígitos para eliminar qualquer ambiguidade de ano)
+ * - Qualquer outra data: Exibe sempre DD/MM/AAAA com 4 dígitos (ex: "15/11/2025", "25/08/2026")
+ *   garantindo que o ano nunca fique oculto ou ambíguo.
  */
 export function formatWhatsAppDate(dateStr: any): string {
   if (!dateStr) return '';
@@ -158,18 +176,7 @@ export function formatWhatsAppDate(dateStr: any): string {
       return 'Ontem';
     }
 
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays >= 2 && diffDays <= 6) {
-      const weekday = format(date, 'EEE', { locale: ptBR }).replace('.', '');
-      return weekday.charAt(0).toUpperCase() + weekday.slice(1);
-    }
-
-    // Mesmo ano: dd/MM (ex: 25/08)
-    if (date.getFullYear() === now.getFullYear()) {
-      return format(date, 'dd/MM', { locale: ptBR });
-    }
-
-    // Anos anteriores: dd/MM/yyyy (4 dígitos para total clareza e nunca abreviar para 2 dígitos ambíguos)
+    // Retorna DD/MM/AAAA com 4 dígitos completos
     return format(date, 'dd/MM/yyyy', { locale: ptBR });
   } catch {
     return '';

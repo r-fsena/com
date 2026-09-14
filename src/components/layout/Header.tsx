@@ -307,8 +307,8 @@ export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenA
                     <Bot className="w-3.5 h-3.5" />
                   </div>
                   <div className="text-left flex-1">
-                    <p className="font-bold">IA Copiloto</p>
-                    <p className="text-[10px] text-slate-400">Sugestões e automação de atendimento</p>
+                    <p className="font-bold">Brok.ia</p>
+                    <p className="text-[10px] text-slate-400">Sugestões e inteligência comercial</p>
                   </div>
                 </button>
 

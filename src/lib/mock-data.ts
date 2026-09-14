@@ -101,7 +101,7 @@ export const MOCK_USERS: User[] = [
     isActive: true,
     status: 'ACTIVE',
     passwordSet: true,
-    aiPersonaPrompt: 'Você é o copiloto comercial de Rafael Sena, Diretor Executivo. Adote tom executivo, consultivo e focado em valorização patrimonial, ROI e discrição. Sempre enfatize liquidez e localização nobre.',
+    aiPersonaPrompt: 'Você é a Brok.ia comercial de Rafael Sena, Diretor Executivo. Adote tom executivo, consultivo e focado em valorização patrimonial, ROI e discrição. Sempre enfatize liquidez e localização nobre.',
     aiTone: 'CONSULTATIVE',
     aiDirectives: [
       'Sempre convidar para uma reunião estratégica de alinhamento ou café executivo',
@@ -121,7 +121,7 @@ export const MOCK_USERS: User[] = [
     isActive: true,
     status: 'ACTIVE',
     passwordSet: true,
-    aiPersonaPrompt: 'Você é a copiloto comercial de Amábile Barbarotti Imóveis. Conduza atendimentos com sofisticação, simpatia, clareza e foco consultivo para agendamento de visitas aos imóveis de alto padrão.',
+    aiPersonaPrompt: 'Você é a Brok.ia comercial de Amábile Barbarotti Imóveis. Conduza atendimentos com sofisticação, simpatia, clareza e foco consultivo para agendamento de visitas aos imóveis de alto padrão.',
     aiTone: 'CONSULTATIVE',
     aiDirectives: [
       'Sempre convidar cordialmente para uma visita presencial ou café de alinhamento',
@@ -254,7 +254,7 @@ export const MOCK_SAAS_PLANS: SaaSPlan[] = [
       'Até 5 Corretores',
       '1 Linha WhatsApp Z-API Integrada',
       'Inbox Central & Funil Kanban',
-      'IA Copiloto com sugestões básicas',
+      'Brok.ia com sugestões básicas',
       'Propostas com Aceite Digital',
       'Suporte via Ticket'
     ],
@@ -273,7 +273,7 @@ export const MOCK_SAAS_PLANS: SaaSPlan[] = [
     features: [
       'Até 15 Corretores',
       '3 Linhas WhatsApp (Central + Corretores)',
-      'IA Copiloto com Personas Individuais',
+      'Brok.ia com Personas Individuais',
       'Split de Comissões & Gateway Asaas',
       'Campanhas em Lote & Automações',
       'Suporte Prioritário via WhatsApp'
@@ -293,7 +293,7 @@ export const MOCK_SAAS_PLANS: SaaSPlan[] = [
     features: [
       'Até 50 Corretores (Multi-equipes)',
       '10 Linhas WhatsApp Z-API',
-      'IA Copilot Treinada com Empreendimentos',
+      'Brok.ia Treinada com Empreendimentos',
       'Integração Completa Gateway Asaas',
       'Painel de SLAs Críticos em Tempo Real',
       'Gerente de Contas Exclusivo 24/7'

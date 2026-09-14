@@ -33,7 +33,7 @@ export function SaaSPlansManager() {
   const [maxBrokers, setMaxBrokers] = useState<number>(15);
   const [maxInstances, setMaxInstances] = useState<number>(3);
   const [aiCopilotEnabled, setAiCopilotEnabled] = useState(true);
-  const [featuresText, setFeaturesText] = useState('Até 15 Corretores\n3 Linhas WhatsApp\nIA Copilot\nGateway Asaas');
+  const [featuresText, setFeaturesText] = useState('Até 15 Corretores\n3 Linhas WhatsApp\nBrok.ia\nGateway Asaas');
   const [isPopular, setIsPopular] = useState(false);
 
   const openNewPlanModal = () => {
@@ -45,7 +45,7 @@ export function SaaSPlansManager() {
     setMaxBrokers(15);
     setMaxInstances(3);
     setAiCopilotEnabled(true);
-    setFeaturesText('Até 15 Corretores\n3 Linhas WhatsApp\nIA Copiloto\nGateway Asaas Integrado');
+    setFeaturesText('Até 15 Corretores\n3 Linhas WhatsApp\nBrok.ia\nGateway Asaas Integrado');
     setIsPopular(false);
     setIsModalOpen(true);
   };
@@ -179,7 +179,7 @@ export function SaaSPlansManager() {
                 </div>
                 <div className="flex items-center gap-2 text-slate-700 font-semibold">
                   <Bot className="w-4 h-4 text-blue-600" />
-                  <span>{plan.aiCopilotEnabled ? 'IA Copilot Inclusa' : 'Sem IA'}</span>
+                  <span>{plan.aiCopilotEnabled ? 'Brok.ia Inclusa' : 'Sem IA'}</span>
                 </div>
               </div>
 
@@ -340,7 +340,7 @@ export function SaaSPlansManager() {
                     onChange={(e) => setAiCopilotEnabled(e.target.checked)}
                     className="rounded text-[#3742AC] focus:ring-[#3742AC] w-4 h-4"
                   />
-                  <span className="font-semibold text-slate-800">Habilitar IA Copiloto neste plano</span>
+                  <span className="font-semibold text-slate-800">Habilitar Brok.ia neste plano</span>
                 </label>
 
                 <label className="flex items-center gap-2 cursor-pointer select-none">

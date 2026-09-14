@@ -1007,7 +1007,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       mustChangePassword: userData.mustChangePassword ?? false,
       invitedAt: nowIso,
       lastInviteSentAt: nowIso,
-      aiPersonaPrompt: userData.aiPersonaPrompt || `Você é o copiloto comercial de ${brokerName}, especialista imobiliário na ${currentTenant.name}. Adote tom consultivo, polido e empático. Tire dúvidas sobre o imóvel com clareza, esclareça condições de pagamento e conduza o cliente para agendamento de visita presencial ou reunião com o corretor.`,
+      aiPersonaPrompt: userData.aiPersonaPrompt || `Você é a Brok.ia comercial de ${brokerName}, especialista imobiliário na ${currentTenant.name}. Adote tom consultivo, polido e empático. Tire dúvidas sobre o imóvel com clareza, esclareça condições de pagamento e conduza o cliente para agendamento de visita presencial ou reunião com o corretor.`,
       aiTone: userData.aiTone || 'CONSULTATIVE',
       aiDirectives: userData.aiDirectives || [
         'Sempre propor um café executivo ou agendamento de visita ao imóvel',

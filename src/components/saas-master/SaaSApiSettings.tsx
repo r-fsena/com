@@ -75,7 +75,7 @@ export function SaaSApiSettings() {
             <h2 className="text-lg font-extrabold text-slate-900">Configurações de APIs & Infraestrutura Global</h2>
           </div>
           <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-            Centralize as chaves mestras para gateways WhatsApp (Z-API), pagamentos (Asaas) e orquestração de LLMs para o Copiloto.
+            Centralize as chaves mestras para gateways WhatsApp (Z-API), pagamentos (Asaas) e orquestração de LLMs para a Brok.ia.
           </p>
         </div>
 
@@ -266,7 +266,7 @@ export function SaaSApiSettings() {
                   <span>Modelos de Inteligência Artificial & Provedores LLM</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Orquestração de modelos de linguagem para o Copiloto Imobiliário
+                  Orquestração de modelos de linguagem para a Brok.ia Imobiliária
                 </p>
               </div>
 

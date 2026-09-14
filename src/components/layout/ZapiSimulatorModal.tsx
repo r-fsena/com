@@ -96,7 +96,7 @@ export function ZapiSimulatorModal({ isOpen, onClose }: ZapiSimulatorModalProps)
                 </span>
               </div>
               <p className="text-xs text-emerald-100/80">
-                Dispare mensagens recebidas pelo WhatsApp para testar a criação de lead e IA Copiloto
+                Dispare mensagens recebidas pelo WhatsApp para testar a criação de lead e a Brok.ia
               </p>
             </div>
           </div>

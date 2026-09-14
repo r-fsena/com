@@ -36,7 +36,7 @@ const PROMPT_TEMPLATES = [
     title: '👑 Alto Padrão / Luxo (Consultivo)',
     tone: 'CONSULTATIVE' as AIPersonaTone,
     model: 'gemini-1.5-flash',
-    prompt: 'Você é o copiloto comercial de um corretor de imóveis especialista no mercado de Alto Padrão e Luxo. Adote um tom estritamente executivo, polido, consultivo e focado em valorização patrimonial, discrição, ROI e liquidez. Destaque localização nobre, privacidade e acabamentos nobres. Conduza o cliente com perguntas abertas para reuniões estratégicas ou visitas exclusivas.',
+    prompt: 'Você é a Brok.ia comercial de um corretor de imóveis especialista no mercado de Alto Padrão e Luxo. Adote um tom estritamente executivo, polido, consultivo e focado em valorização patrimonial, discrição, ROI e liquidez. Destaque localização nobre, privacidade e acabamentos nobres. Conduza o cliente com perguntas abertas para reuniões estratégicas ou visitas exclusivas.',
     directives: [
       'Sempre propor uma reunião estratégica presencial ou café executivo',
       'Destacar o potencial de valorização do metro quadrado e liquidez',
@@ -48,7 +48,7 @@ const PROMPT_TEMPLATES = [
     title: '🚀 Lançamentos na Planta (Fechador)',
     tone: 'PERSUASIVE' as AIPersonaTone,
     model: 'gemini-1.5-flash',
-    prompt: 'Você é o copiloto de um corretor focado em lançamentos e imóveis na planta. Seja ágil, persuasivo e crie senso de oportunidade comercial com base na tabela de abertura de vendas, potencial de valorização durante a obra e fluxo facilitado de pagamento direto com a construtora. Sempre busque levar o cliente ao plantão de vendas para conhecer o decorado.',
+    prompt: 'Você é a Brok.ia de um corretor focado em lançamentos e imóveis na planta. Seja ágil, persuasivo e crie senso de oportunidade comercial com base na tabela de abertura de vendas, potencial de valorização durante a obra e fluxo facilitado de pagamento direto com a construtora. Sempre busque levar o cliente ao plantão de vendas para conhecer o decorado.',
     directives: [
       'Priorizar agendamento de visita ao apartamento decorado',
       'Explicar a flexibilidade do fluxo de pagamento durante a obra',
@@ -60,7 +60,7 @@ const PROMPT_TEMPLATES = [
     title: '🏡 Primeiro Imóvel / Famílias (Acolhedor)',
     tone: 'FRIENDLY' as AIPersonaTone,
     model: 'gemini-1.5-flash',
-    prompt: 'Você é o copiloto de um corretor especialista em famílias e compradores do primeiro imóvel. Adote um tom acolhedor, empático, seguro e didático. Simplifique termos de financiamento bancário, explique como funciona o uso do FGTS e composição de renda, e destaque segurança, áreas de lazer para crianças e qualidade de vida no condomínio.',
+    prompt: 'Você é a Brok.ia de um corretor especialista em famílias e compradores do primeiro imóvel. Adote um tom acolhedor, empático, seguro e didático. Simplifique termos de financiamento bancário, explique como funciona o uso do FGTS e composição de renda, e destaque segurança, áreas de lazer para crianças e qualidade de vida no condomínio.',
     directives: [
       'Oferecer simulação gratuita de financiamento pelo WhatsApp',
       'Explicar o uso do saldo do FGTS para abater na entrada',
@@ -72,7 +72,7 @@ const PROMPT_TEMPLATES = [
     title: '📈 Investidor & Renda de Locação (Técnico)',
     tone: 'TECHNICAL' as AIPersonaTone,
     model: 'gemini-1.5-flash',
-    prompt: 'Você é o copiloto de um corretor especialista em investidores imobiliários (fundos, studios e imóveis para locação Airbnb ou tradicional). Use linguagem técnica, focada em taxa de cap rate, yield anual, taxa de vacância estimada da região, custo por metro quadrado e liquidez de revenda. Apresente números claros e objetivos.',
+    prompt: 'Você é a Brok.ia de um corretor especialista em investidores imobiliários (fundos, studios e imóveis para locação Airbnb ou tradicional). Use linguagem técnica, focada em taxa de cap rate, yield anual, taxa de vacância estimada da região, custo por metro quadrado e liquidez de revenda. Apresente números claros e objetivos.',
     directives: [
       'Apresentar estimativa de rentabilidade mensal e anual (Yield)',
       'Comparar rentabilidade imobiliária com aplicações financeiras de renda fixa',
@@ -205,7 +205,7 @@ export function CopilotManager() {
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-900/20">
               <Bot className="w-4 h-4" />
             </div>
-            <h1 className="text-base font-bold text-slate-900">IA Copiloto • Inteligência Comercial & Personas</h1>
+            <h1 className="text-base font-bold text-slate-900">Brok.ia • Inteligência Comercial & Personas</h1>
             <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-emerald-600" />
               <span>Conectado • AWS Bedrock & Claude 3.5 Sonnet</span>
@@ -214,7 +214,7 @@ export function CopilotManager() {
           <p className="text-xs text-slate-500 mt-0.5">
             {isManagerOrAdmin 
               ? 'Configure o estilo de atendimento, tom de voz e prompts personalizados para cada corretor da equipe'
-              : 'Personalize o estilo de atendimento, tom de voz e instruções do seu Copiloto de IA exclusivo'}
+              : 'Personalize o estilo de atendimento, tom de voz e instruções da sua Brok.ia exclusiva'}
           </p>
         </div>
 
@@ -242,7 +242,7 @@ export function CopilotManager() {
           }`}
         >
           <UserIcon className="w-4 h-4" />
-          <span>{isManagerOrAdmin ? 'Personas da Equipe' : 'Meu Copiloto de IA'}</span>
+          <span>{isManagerOrAdmin ? 'Personas da Equipe' : 'Minha Brok.ia'}</span>
         </button>
 
         <button
@@ -324,7 +324,7 @@ export function CopilotManager() {
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-white">{currentUser.name}</h3>
                       <span className="text-[10px] font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full">
-                        Seu Copiloto Pessoal Exclusivo
+                        Sua Brok.ia Pessoal Exclusiva
                       </span>
                     </div>
                     <p className="text-xs text-emerald-100/70 mt-0.5">
@@ -500,10 +500,10 @@ export function CopilotManager() {
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Zap className="w-4 h-4 text-amber-500" />
-                  <span>Simulador de Respostas do Copiloto</span>
+                  <span>Simulador de Respostas da Brok.ia</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Teste em tempo real como o copiloto responde a uma mensagem de lead usando a persona do corretor <strong>{selectedUser.name}</strong>.
+                  Teste em tempo real como a Brok.ia responde a uma mensagem de lead usando a persona do corretor <strong>{selectedUser.name}</strong>.
                 </p>
               </div>
 

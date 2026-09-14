@@ -30,7 +30,7 @@ export class UniversalCopilotService {
       }
       const defaultKey = process.env.OPENAI_API_KEY;
       if (defaultKey) {
-        return { success: true, message: 'Copiloto da Plataforma ativo e operacional com OpenAI.', model: 'gpt-4o-mini' };
+        return { success: true, message: 'Brok.ia da Plataforma ativa e operacional com OpenAI.', model: 'gpt-4o-mini' };
       }
       return { success: true, message: 'Motor de inferência nativo de alto desempenho pronto para uso.' };
     }
@@ -261,7 +261,7 @@ export class UniversalCopilotService {
         }\nIMPORTANTE: Use essa âncora de memória para não perder dados das mensagens mais antigas, e atualize com base nas mensagens recentes a seguir.`
       : '';
 
-    return `Você é o Copiloto de IA Especialista em Vendas Imobiliárias e Análise Conversacional, atuando em conjunto com o corretor(a) ${brokerName}.
+    return `Você é a Brok.ia, Inteligência Artificial Especialista em Vendas Imobiliárias e Análise Conversacional, atuando em conjunto com o corretor(a) ${brokerName}.
 Sua missão é analisar com total fidelidade as mensagens de WhatsApp do contato, identificar a verdadeira natureza da conversa e sugerir respostas humanas, altamente persuasivas e personalizadas.${priorMemoryBlock}${customInstructions}
 
 DIRETRIZES DE FIDELIDADE E ANCORAGEM DE CONTEXTO (MANDATÓRIAS):

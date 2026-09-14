@@ -1,6 +1,6 @@
 # Brokiva — Extensão Chrome para WhatsApp Web
 
-A **Extensão Brokiva** transforma o WhatsApp Web oficial (`web.whatsapp.com`) em um terminal comercial de alta performance com **Sincronização de Histórico Completo**, **Perfil 360º do Lead** e **Copiloto de Inteligência Artificial** com inserção de respostas persuasivas em 1 clique.
+A **Extensão Brokiva** transforma o WhatsApp Web oficial (`web.whatsapp.com`) em um terminal comercial de alta performance com **Sincronização de Histórico Completo**, **Perfil 360º do Lead** e **Brok.ia (Inteligência Artificial)** com inserção de respostas persuasivas em 1 clique.
 
 > **Brokiva — Relacionamentos que viram negócios.**
 
@@ -30,9 +30,9 @@ A **Extensão Brokiva** transforma o WhatsApp Web oficial (`web.whatsapp.com`) e
 3. **⚡ Sincronizar Histórico Completo:**
    * Clique no botão **"⚡ Sincronizar Histórico Completo"**.
    * A extensão fará a leitura paginada de todas as suas conversas ativas e enviará todo o histórico de mensagens direto para o seu CRM (`crm.faithhubs.com`).
-4. **✨ Copiloto de IA em 1 Clique:**
+4. **✨ Brok.ia em 1 Clique:**
    * Ao abrir a conversa com qualquer cliente, clique em **"✨ Sugerir Respostas Inteligentes"**.
-   * O Copiloto analisa a conversa e gera 3 opções de mensagens persuasivas.
+   * A Brok.ia analisa a conversa e gera 3 opções de mensagens persuasivas.
    * Clique na resposta escolhida e ela será **inserida automaticamente no campo de digitação do WhatsApp**! Basta apertar Enter para enviar.
 5. **📥 Salvar Histórico Individual:**
    * Ao conversar com um lead novo, você pode clicar em **"Salvar Histórico Desta Conversa"** a qualquer momento para forçar a atualização imediata no CRM.

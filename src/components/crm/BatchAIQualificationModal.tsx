@@ -206,7 +206,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                 <span>Qualificação em Massa com IA</span>
                 <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
-                  Copilot Pro
+                  Brok.ia Pro
                 </span>
               </h3>
               <p className="text-[11px] text-slate-500">
@@ -231,7 +231,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
             <>
               {/* Card de Apresentação das Funcionalidades */}
               <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2.5">
-                <span className="text-xs font-bold text-slate-800 block">O que a IA fará automaticamente:</span>
+                <span className="text-xs font-bold text-slate-800 block">O que a Brok.ia fará automaticamente:</span>
                 <div className="space-y-2 text-xs text-slate-600">
                   <div className="flex items-start gap-2">
                     <UserMinus className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
@@ -351,7 +351,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
                   Qualificação em Massa Concluída!
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Todas as conversas selecionadas foram analisadas pelo motor semântico Copilot.
+                  Todas as conversas selecionadas foram analisadas pelo motor semântico Brok.ia.
                 </p>
               </div>
 

@@ -238,9 +238,9 @@ ${isDeveloperMode ? `
 ` : ""}
         </div>
 
-        <!-- Card do Copiloto de IA -->
+        <!-- Card da Brok.ia -->
         <div class="sovereign-ai-card">
-          <div class="sovereign-ai-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:3px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Copiloto Brokiva IA</div>
+          <div class="sovereign-ai-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:3px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Brok.ia</div>
           <p style="font-size:11px; color:#cbd5e1; margin-bottom:10px;">
             Analisa o momento do cliente e gera respostas persuasivas com 1 clique.
           </p>
@@ -281,7 +281,7 @@ ${isDeveloperMode ? `
           <div class="sovereign-login-badge">✦ Conexão Segura Brokiva</div>
           <div class="sovereign-login-title">Identifique-se no CRM</div>
           <div class="sovereign-login-desc">
-            Conecte sua conta de corretor para sincronizar leads e ativar o Copiloto de IA sem interrupções.
+            Conecte sua conta de corretor para sincronizar leads e ativar a Brok.ia sem interrupções.
           </div>
 
           <div id="sovereign-sidebar-error" class="sovereign-login-error"></div>
@@ -2916,11 +2916,11 @@ const PT_MONTH_NAMES = {
     logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura profunda finalizada: ${syncedChats.length} chats e ${totalMessagesSynced} mensagens sincronizadas`);
   }
 
-  // 6. Copiloto de IA: Sugere e insere resposta com 1 clique no WhatsApp Web
+  // 6. Brok.ia: Sugere e insere resposta com 1 clique no WhatsApp Web
   function triggerAiSuggestion() {
     const chatData = extractActiveChatData();
     if (!chatData || chatData.messages.length === 0) {
-      alert('Abra uma conversa com histórico para o Copiloto analisar.');
+      alert('Abra uma conversa com histórico para a Brok.ia analisar.');
       return;
     }
 

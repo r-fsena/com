@@ -497,7 +497,7 @@ export function WhatsAppConnectionView() {
                   Sincronização Direta do WhatsApp Web com a Extensão Brokiva
                 </h2>
                 <p className="text-xs text-indigo-100/80 max-w-2xl leading-relaxed">
-                  Baixe e utilize a extensão oficial no Chrome para sincronizar conversas e históricos de mensagem (com fotos e áudios) diretamente do WhatsApp Web para o CRM com 1 clique, além de utilizar o Copiloto de IA em tempo real.
+                  Baixe e utilize a extensão oficial no Chrome para sincronizar conversas e históricos de mensagem (com fotos e áudios) diretamente do WhatsApp Web para o CRM com 1 clique, além de utilizar a Brok.ia em tempo real.
                 </p>
               </div>
             </div>

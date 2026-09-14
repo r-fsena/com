@@ -214,7 +214,7 @@ async function handleGetAiSuggestion(data) {
   });
 
   if (!response.ok) {
-    throw new Error(`Falha no Copiloto IA: HTTP ${response.status}`);
+    throw new Error(`Falha na Brok.ia: HTTP ${response.status}`);
   }
 
   return await response.json();

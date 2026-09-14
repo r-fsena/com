@@ -206,7 +206,7 @@ export function LoginScreen() {
           </div>
 
           <h2 className="text-3xl font-extrabold text-white leading-tight tracking-tight">
-            Gestão Comercial, WhatsApp Z-API e IA Copiloto com Segregação Total.
+            Gestão Comercial, WhatsApp Z-API e Brok.ia com Segregação Total.
           </h2>
 
           <p className="text-sm text-slate-400 leading-relaxed">

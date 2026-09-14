@@ -220,7 +220,7 @@ export function SaaSDashboard({ onNavigateToTab }: SaaSDashboardProps) {
                 <Bot className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-slate-900">IA Copiloto & LLMs</h4>
+                <h4 className="text-xs font-bold text-slate-900">Brok.ia & LLMs</h4>
                 <p className="text-[11px] text-slate-400">AWS Bedrock & OpenAI / Claude</p>
               </div>
             </div>

@@ -737,7 +737,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {[
-                      { key: 'aiCopilot', label: 'IA Copiloto & Sugestões', desc: 'Respostas inteligentes e transcrição' },
+                      { key: 'aiCopilot', label: 'Brok.ia & Sugestões', desc: 'Respostas inteligentes e transcrição' },
                       { key: 'whatsappAutoSync', label: 'WhatsApp Auto-Sync', desc: 'Sincronização contínua de contatos' },
                       { key: 'whatsappMultiBroker', label: 'Linhas WhatsApp por Corretor', desc: 'Múltiplas instâncias Z-API' },
                       { key: 'campaigns', label: 'Campanhas em Lote', desc: 'Disparos e réguas de aquecimento' },

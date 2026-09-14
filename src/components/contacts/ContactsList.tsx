@@ -504,7 +504,7 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
       <BatchAIQualificationModal
         isOpen={isBatchQualifyModalOpen}
         onClose={() => setIsBatchQualifyModalOpen(false)}
-        onComplete={() => showToast('✨ Base de contatos qualificada com sucesso pelo Copilot!')}
+        onComplete={() => showToast('✨ Base de contatos qualificada com sucesso pela Brok.ia!')}
       />
     </div>
   );

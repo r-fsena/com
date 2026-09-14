@@ -2218,10 +2218,10 @@ export function WhatsAppInbox() {
                         setIsCopilotExpanded(false);
                       }}
                       className="bg-slate-900/90 hover:bg-slate-900 text-emerald-300 text-[11px] font-bold px-3 py-1 rounded-full shadow-md border border-emerald-500/30 flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-xs"
-                      title="Exibir sugestões táticas do IA Copiloto"
+                      title="Exibir sugestões táticas da Brok.ia"
                     >
                       <Sparkles className="w-3 h-3 text-emerald-400 animate-pulse" />
-                      <span>IA Copiloto ({activeInsight.responseOptions?.length || 1} sugestões)</span>
+                      <span>Brok.ia ({activeInsight.responseOptions?.length || 1} sugestões)</span>
                       <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
                     </button>
                   </div>
@@ -2231,7 +2231,7 @@ export function WhatsAppInbox() {
                     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0">
                       <div className="flex items-center gap-1 flex-shrink-0 text-emerald-400 text-xs font-bold mr-1">
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span className="hidden md:inline">Copiloto:</span>
+                        <span className="hidden md:inline">Brok.ia:</span>
                       </div>
 
                       {/* Chips Táticos Rápidos */}
@@ -2282,7 +2282,7 @@ export function WhatsAppInbox() {
                         type="button"
                         onClick={() => setIsCopilotDismissed(true)}
                         className="p-1 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-lg transition cursor-pointer"
-                        title="Minimizar barra do copiloto"
+                        title="Minimizar barra da Brok.ia"
                       >
                         <Minimize2 className="w-3.5 h-3.5" />
                       </button>
@@ -2298,7 +2298,7 @@ export function WhatsAppInbox() {
                           <Bot className="w-4 h-4" />
                         </div>
                         <span className="font-bold text-emerald-300 text-xs">
-                          IA Copiloto de Vendas
+                          Brok.ia • Inteligência Comercial
                         </span>
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono">
                           Confiança: {activeInsight.confidenceScore || 96}%
@@ -3022,7 +3022,7 @@ export function WhatsAppInbox() {
                 <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold mb-1">
                   <div className={`flex items-center gap-1.5 ${isLeadPersonal ? 'text-slate-800' : 'text-emerald-900'}`}>
                     <Sparkles className={`w-3 h-3 ${isLeadPersonal ? 'text-slate-600' : 'text-emerald-600'}`} />
-                    <span>Resumo do Contexto (IA Copilot):</span>
+                    <span>Resumo do Contexto (Brok.ia):</span>
                   </div>
                   {activeInsight?.conversationType === 'PERSONAL_OR_OTHER' && (
                     <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-medium">

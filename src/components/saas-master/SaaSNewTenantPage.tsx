@@ -179,7 +179,7 @@ export function SaaSNewTenantPage({ onSuccess }: SaaSNewTenantPageProps) {
                       </p>
                       <p className="flex items-center gap-1.5 font-semibold text-slate-800">
                         <Bot className="w-3.5 h-3.5 text-blue-600" />
-                        <span>IA Copiloto Inclusa</span>
+                        <span>Brok.ia Inclusa</span>
                       </p>
                     </div>
                   </div>

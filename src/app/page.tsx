@@ -207,8 +207,9 @@ export default function CRMApp() {
 
             {/* View Switcher */}
             <main className="flex-1 flex overflow-hidden relative min-w-0">
-              <ErrorBoundary>
-                {currentTab === 'inbox' && <WhatsAppInbox />}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'inbox' ? 'flex' : 'hidden'}`}>
+                  <WhatsAppInbox />
+                </div>
                 {currentTab === 'whatsapp-import' && (
                   <WhatsAppImportView onGoToInbox={() => setCurrentTab('inbox')} />
                 )}
@@ -241,7 +242,6 @@ export default function CRMApp() {
                 {currentTab === 'settings' && (
                   <SettingsManager onOpenQrCodeModal={() => setCurrentTab('whatsapp-connection')} />
                 )}
-              </ErrorBoundary>
             </main>
           </div>
         </div>

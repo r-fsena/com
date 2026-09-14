@@ -275,30 +275,28 @@ export function WhatsAppInbox() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(60);
 
-  // Obtém o timestamp efetivo mais recente da conversa (analisando lastMessageAt e mensagens locais)
-  const getConversationEffectiveTime = React.useCallback((conv: any): number => {
-    let t = parseWhatsAppTimestamp(conv?.lastMessageAt);
-    if (!t || t <= 0) {
-      const convMsgs = messages.filter(m => m.conversationId === conv.id);
-      if (convMsgs.length > 0) {
-        const lastMsg = convMsgs[convMsgs.length - 1];
-        t = parseWhatsAppTimestamp(lastMsg?.timestamp);
-      }
-    }
-    return t || 0;
-  }, [messages]);
+  // Mapa pré-indexado O(1) de timestamps das conversas para ordenação ultra-rápida sem congelamentos
+  const convLatestTimeMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    conversations.forEach(c => {
+      const t = parseWhatsAppTimestamp(c.lastMessageAt);
+      map.set(c.id, t || 0);
+    });
+    return map;
+  }, [conversations]);
 
   // Conversas ordenadas estritamente pela mensagem mais recente sempre no topo (Top 1 = Hoje/Agora)
   const sortedConversations = React.useMemo(() => {
     return [...conversations].sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
-      const timeA = getConversationEffectiveTime(a);
-      const timeB = getConversationEffectiveTime(b);
+      const timeA = convLatestTimeMap.get(a.id) || 0;
+      const timeB = convLatestTimeMap.get(b.id) || 0;
       return timeB - timeA;
     });
-  }, [conversations, getConversationEffectiveTime]);
+  }, [conversations, convLatestTimeMap]);
 
   // Active Conversation & Contact (com resolução resiliente por ID e Telefone)
   const activeConversation = React.useMemo(() => {
@@ -466,21 +464,37 @@ export function WhatsAppInbox() {
       return [syntheticMsg];
     }
 
-    // Deduplica mensagens idênticas enviadas pelo mesmo lado no mesmo intervalo (evita duplicatas de eco de webhook / sync)
+    // Deduplica mensagens idênticas enviadas pelo mesmo lado no mesmo intervalo (evita duplicatas de eco de webhook / sync) - O(N) com Map indexado
     const deduped: Message[] = [];
+    const contentKeyMap = new Map<string, number[]>();
+
     for (const msg of matched) {
       const msgContent = (msg.content || '').trim();
       const msgTime = new Date(msg.timestamp || 0).getTime();
+      const key = `${msg.senderType}__${msgContent}`;
       
-      const existingIdx = deduped.findIndex(existing => {
-        if (existing.senderType !== msg.senderType) return false;
-        if ((existing.content || '').trim() !== msgContent) return false;
-        const exTime = new Date(existing.timestamp || 0).getTime();
-        return Math.abs(exTime - msgTime) < 60000;
-      });
+      const candidateIndices = contentKeyMap.get(key);
+      let existingIdx = -1;
+
+      if (candidateIndices) {
+        for (const idx of candidateIndices) {
+          const existing = deduped[idx];
+          const exTime = new Date(existing.timestamp || 0).getTime();
+          if (Math.abs(exTime - msgTime) < 60000) {
+            existingIdx = idx;
+            break;
+          }
+        }
+      }
 
       if (existingIdx === -1) {
+        const newIdx = deduped.length;
         deduped.push(msg);
+        if (!candidateIndices) {
+          contentKeyMap.set(key, [newIdx]);
+        } else {
+          candidateIndices.push(newIdx);
+        }
       } else {
         // Se já existe e a mensagem existente é genérica ("Corretor"), substitui pela que tem o nome real do corretor
         if (deduped[existingIdx].senderName === 'Corretor' && msg.senderName && msg.senderName !== 'Corretor') {
@@ -491,6 +505,17 @@ export function WhatsAppInbox() {
 
     return deduped;
   }, [messages, activeConversation, activeContact]);
+
+  // Reseta a paginação de mensagens visíveis ao trocar de conversa para renderização instantânea (0ms freeze)
+  React.useEffect(() => {
+    setVisibleMessageCount(60);
+  }, [activeConversation?.id]);
+
+  // Janela visível de mensagens (Windowing): evita layout thrashing e congelamento de render com centenas de balões
+  const renderedMessages = React.useMemo(() => {
+    if (activeMessages.length <= visibleMessageCount) return activeMessages;
+    return activeMessages.slice(activeMessages.length - visibleMessageCount);
+  }, [activeMessages, visibleMessageCount]);
 
   const activeInsight = React.useMemo(() => {
     if (activeConversation && aiInsights[activeConversation.id]) return aiInsights[activeConversation.id];
@@ -1053,123 +1078,140 @@ export function WhatsAppInbox() {
     ]));
   }, [dynamicContactTags]);
 
-  // Filtered Conversations
-  const filteredConversations = conversations.filter(c => {
-    // Oculta conversas arquivadas
-    if (c.isArchived) return false;
+  // Filtered Conversations (Ultra-otimizado com React.useMemo e mapa O(1) de timestamps)
+  const filteredConversations = React.useMemo(() => {
+    return conversations.filter(c => {
+      // Oculta conversas arquivadas
+      if (c.isArchived) return false;
 
-    // Oculta conversas excluídas
-    if (deletedChatKeys && (deletedChatKeys.has(c.id) || deletedChatKeys.has(c.contactId))) {
-      return false;
-    }
-    const cDigitsOnly = (c.id + (c.contactId || '')).replace(/\D/g, '');
-    if (cDigitsOnly && deletedChatKeys && deletedChatKeys.has(cDigitsOnly)) {
-      return false;
-    }
+      // Oculta conversas excluídas
+      if (deletedChatKeys && (deletedChatKeys.has(c.id) || deletedChatKeys.has(c.contactId))) {
+        return false;
+      }
+      const cDigitsOnly = (c.id + (c.contactId || '')).replace(/\D/g, '');
+      if (cDigitsOnly && deletedChatKeys && deletedChatKeys.has(cDigitsOnly)) {
+        return false;
+      }
 
-    // Identifica contato associado antes dos filtros
-    const contact = contacts.find(cnt => cnt.id === c.contactId) || contacts.find(cnt => {
-      const cDigits = (cnt.phone || '').replace(/\D/g, '');
-      const convDigits = (c.id || c.contactId || '').replace(/\D/g, '');
-      return cDigits && convDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits) || arePhonesEquivalent(cDigits, convDigits));
+      // Identifica contato associado antes dos filtros
+      const contact = contacts.find(cnt => cnt.id === c.contactId) || contacts.find(cnt => {
+        const cDigits = (cnt.phone || '').replace(/\D/g, '');
+        const convDigits = (c.id || c.contactId || '').replace(/\D/g, '');
+        return cDigits && convDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits) || arePhonesEquivalent(cDigits, convDigits));
+      });
+
+      // Oculta conversas estritamente vazias sem contato, sem mensagens e sem preview (lazy check para não iterar todas as mensagens)
+      if (!contact && !c.lastMessagePreview && (!c.unreadCount || c.unreadCount === 0)) {
+        const convDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
+        const hasAnyMessage = messages.some(m => {
+          if (m.isInternalNote || !m.content || isWhatsAppSystemMessage(m.content)) return false;
+          if (m.conversationId === c.id) return true;
+          if (c.contactId && (m.conversationId === c.contactId || m.conversationId === `conv-${c.contactId}`)) return true;
+          const mDigits = m.conversationId.replace(/\D/g, '');
+          if (convDigits && mDigits && arePhonesEquivalent(convDigits, mDigits)) return true;
+          return false;
+        });
+        if (!hasAnyMessage) return false;
+      }
+
+      // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
+      const convInstance = instances.find(i => i.id === c.instanceId || i.zapiInstanceId === c.instanceId);
+      const isDirectLine = Boolean(convInstance && convInstance.type === 'BROKER_DIRECT');
+      const isCentralLine = !isDirectLine; // Toda conversa padrão ou sem instância direta pertence à Central
+
+      if (instanceFilter === 'CENTRAL' && !isCentralLine) {
+        return false;
+      }
+
+      if (instanceFilter === 'DIRECT' && !isDirectLine) {
+        return false;
+      }
+
+      // Filtra canais do WhatsApp (newsletters), grupos, transmissões e contatos inválidos
+      if (!isRealWhatsAppConversation({
+        id: c.id,
+        phone: contact?.phone || c.contactId,
+        name: contact?.name,
+        lastMessageTime: c.lastMessageAt,
+        isGroup: (c as any).isGroup,
+        isNewsletter: (c as any).isNewsletter,
+        isChannel: (c as any).isChannel,
+      })) {
+        return false;
+      }
+
+      const matchesSearch = !searchFilter.trim() || 
+        (contact?.name.toLowerCase().includes(searchFilter.toLowerCase())) ||
+        (contact?.phone.includes(searchFilter)) ||
+        (c.lastMessagePreview.toLowerCase().includes(searchFilter.toLowerCase()));
+
+      if (!matchesSearch) return false;
+
+      if (selectedTagFilter) {
+        const hasTag = (contact?.tags || []).some(t => t.toLowerCase() === selectedTagFilter.toLowerCase());
+        if (!hasTag) return false;
+      }
+
+      const isContactPersonal = Boolean(contact?.isPersonal || c.isPersonal);
+
+      if (filterTab === 'PERSONAL') return isContactPersonal;
+      if (filterTab === 'UNASSIGNED') return !c.assignedUserId && !isContactPersonal;
+      if (filterTab === 'MINE') return c.assignedUserId === currentUser.id && !isContactPersonal;
+      if (filterTab === 'PENDING_TEAM') return c.status === 'PENDING_TEAM' && !isContactPersonal;
+      if (filterTab === 'SLA_BREACHED') return c.slaBreached && !isContactPersonal;
+      if (filterTab === 'EMERGENCY') {
+        if (isContactPersonal) return false;
+        const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
+        return urgency && urgency.urgencyLevel !== 'HEALTHY';
+      }
+      return true;
+    }).sort((a, b) => {
+      // Se estiver no filtro emergencial, ordena pela maior urgência primeiro
+      if (filterTab === 'EMERGENCY') {
+        const urgencyA = getContactUrgencyAnalysis(a.contactId, undefined, a.id)?.urgencyScore || 0;
+        const urgencyB = getContactUrgencyAnalysis(b.contactId, undefined, b.id)?.urgencyScore || 0;
+        if (urgencyA !== urgencyB) return urgencyB - urgencyA;
+      }
+
+      // Prioridade 1: Conversas Fixadas no Topo
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+
+      // Prioridade 2: Mensagem mais recente sempre no topo
+      const timeA = convLatestTimeMap.get(a.id) || 0;
+      const timeB = convLatestTimeMap.get(b.id) || 0;
+      return timeB - timeA;
     });
+  }, [
+    conversations,
+    deletedChatKeys,
+    contacts,
+    messages,
+    instances,
+    instanceFilter,
+    searchFilter,
+    selectedTagFilter,
+    filterTab,
+    currentUser.id,
+    getContactUrgencyAnalysis,
+    convLatestTimeMap
+  ]);
 
-    // Filtra mensagens da conversa com tolerância a formatos de ID
-    const convDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
-    const convMsgs = messages.filter(m => {
-      if (m.isInternalNote || !m.content || isWhatsAppSystemMessage(m.content)) return false;
-      if (m.conversationId === c.id) return true;
-      if (c.contactId && (m.conversationId === c.contactId || m.conversationId === `conv-${c.contactId}`)) return true;
-      const mDigits = m.conversationId.replace(/\D/g, '');
-      if (convDigits && mDigits && arePhonesEquivalent(convDigits, mDigits)) return true;
-      if (contact?.phone && arePhonesEquivalent(contact.phone, m.conversationId)) return true;
-      return false;
-    });
-
-    // Oculta conversas estritamente vazias sem contato, sem mensagens e sem preview
-    const isCompletelyEmpty = !contact && convMsgs.length === 0 && !c.lastMessagePreview && (!c.unreadCount || c.unreadCount === 0);
-    if (isCompletelyEmpty) return false;
-
-    // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
-    const convInstance = instances.find(i => i.id === c.instanceId || i.zapiInstanceId === c.instanceId);
-    const isDirectLine = Boolean(convInstance && convInstance.type === 'BROKER_DIRECT');
-    const isCentralLine = !isDirectLine; // Toda conversa padrão ou sem instância direta pertence à Central
-
-    if (instanceFilter === 'CENTRAL' && !isCentralLine) {
-      return false;
-    }
-
-    if (instanceFilter === 'DIRECT' && !isDirectLine) {
-      return false;
-    }
-
-    // Filtra canais do WhatsApp (newsletters), grupos, transmissões e contatos inválidos
-    if (!isRealWhatsAppConversation({
-      id: c.id,
-      phone: contact?.phone || c.contactId,
-      name: contact?.name,
-      lastMessageTime: c.lastMessageAt,
-      isGroup: (c as any).isGroup,
-      isNewsletter: (c as any).isNewsletter,
-      isChannel: (c as any).isChannel,
-    })) {
-      return false;
-    }
-
-    const matchesSearch = !searchFilter.trim() || 
-      (contact?.name.toLowerCase().includes(searchFilter.toLowerCase())) ||
-      (contact?.phone.includes(searchFilter)) ||
-      (c.lastMessagePreview.toLowerCase().includes(searchFilter.toLowerCase()));
-
-    if (!matchesSearch) return false;
-
-    if (selectedTagFilter) {
-      const hasTag = (contact?.tags || []).some(t => t.toLowerCase() === selectedTagFilter.toLowerCase());
-      if (!hasTag) return false;
-    }
-
-    const isContactPersonal = Boolean(contact?.isPersonal || c.isPersonal);
-
-    if (filterTab === 'PERSONAL') return isContactPersonal;
-    if (filterTab === 'UNASSIGNED') return !c.assignedUserId && !isContactPersonal;
-    if (filterTab === 'MINE') return c.assignedUserId === currentUser.id && !isContactPersonal;
-    if (filterTab === 'PENDING_TEAM') return c.status === 'PENDING_TEAM' && !isContactPersonal;
-    if (filterTab === 'SLA_BREACHED') return c.slaBreached && !isContactPersonal;
-    if (filterTab === 'EMERGENCY') {
-      if (isContactPersonal) return false;
+  const emergencyConversationsCount = React.useMemo(() => {
+    return conversations.filter(c => {
+      const contact = contacts.find(cnt => cnt.id === c.contactId);
+      if (contact?.isPersonal || c.isPersonal) return false;
       const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
       return urgency && urgency.urgencyLevel !== 'HEALTHY';
-    }
-    return true;
-  }).sort((a, b) => {
-    // Se estiver no filtro emergencial, ordena pela maior urgência primeiro
-    if (filterTab === 'EMERGENCY') {
-      const urgencyA = getContactUrgencyAnalysis(a.contactId, undefined, a.id)?.urgencyScore || 0;
-      const urgencyB = getContactUrgencyAnalysis(b.contactId, undefined, b.id)?.urgencyScore || 0;
-      if (urgencyA !== urgencyB) return urgencyB - urgencyA;
-    }
+    }).length;
+  }, [conversations, contacts, getContactUrgencyAnalysis]);
 
-    // Prioridade 1: Conversas Fixadas no Topo
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
-
-    // Prioridade 2: Mensagem mais recente sempre no topo
-    const timeA = getConversationEffectiveTime(a);
-    const timeB = getConversationEffectiveTime(b);
-    return timeB - timeA;
-  });
-
-  const emergencyConversationsCount = conversations.filter(c => {
-    const contact = contacts.find(cnt => cnt.id === c.contactId);
-    if (contact?.isPersonal || c.isPersonal) return false;
-    const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
-    return urgency && urgency.urgencyLevel !== 'HEALTHY';
-  }).length;
-
-  const personalConversationsCount = conversations.filter(c => {
-    const contact = contacts.find(cnt => cnt.id === c.contactId);
-    return Boolean(contact?.isPersonal || c.isPersonal);
-  }).length;
+  const personalConversationsCount = React.useMemo(() => {
+    return conversations.filter(c => {
+      const contact = contacts.find(cnt => cnt.id === c.contactId);
+      return Boolean(contact?.isPersonal || c.isPersonal);
+    }).length;
+  }, [conversations, contacts]);
 
   const handleSend = (e?: React.FormEvent | React.KeyboardEvent) => {
     e?.preventDefault();
@@ -2063,7 +2105,20 @@ export function WhatsAppInbox() {
                 </div>
               )}
 
-              {activeMessages.map((msg) => {
+              {/* Botão de Paginação de Mensagens Visíveis (Windowing de Alta Performance) */}
+              {activeMessages.length > visibleMessageCount && (
+                <div className="flex justify-center my-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleMessageCount(prev => prev + 60)}
+                    className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/80 text-emerald-800 text-xs font-semibold px-4 py-1.5 rounded-full shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>📜 Exibir mensagens anteriores (+60 mensagens | {activeMessages.length - visibleMessageCount} restantes no chat)</span>
+                  </button>
+                </div>
+              )}
+
+              {renderedMessages.map((msg) => {
                 const isMe = msg.senderType === 'USER';
                 const isNote = msg.isInternalNote;
 

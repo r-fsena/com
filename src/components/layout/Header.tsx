@@ -19,7 +19,8 @@ import {
   Settings,
   LogOut,
   ChevronDown,
-  Target
+  Target,
+  Zap
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -30,9 +31,10 @@ interface HeaderProps {
   onSelectContact?: (contactId: string) => void;
   onToggleMobileSidebar?: () => void;
   onNavigateTab?: (tab: string) => void;
+  onOpenMessageTemplates?: () => void;
 }
 
-export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar, onNavigateTab }: HeaderProps) {
+export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenAuthModal, onSelectContact, onToggleMobileSidebar, onNavigateTab, onOpenMessageTemplates }: HeaderProps) {
   const { alerts, dismissAlert, contacts, currentUser, setActiveConversationId, conversations, currentTenant, activeSyncJob, dismissSyncJob, logout } = useCRM();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAlertsPopover, setShowAlertsPopover] = useState(false);
@@ -324,6 +326,23 @@ export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenA
                   <div className="text-left flex-1">
                     <p className="font-bold">Configurações</p>
                     <p className="text-[10px] text-slate-400">Workspace, equipe e instâncias Z-API</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfileDropdown(false);
+                    onOpenMessageTemplates?.();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 transition cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className="font-bold">Modelos de Mensagens</p>
+                    <p className="text-[10px] text-slate-400">Respostas rápidas, atalhos e fotos</p>
                   </div>
                 </button>
 

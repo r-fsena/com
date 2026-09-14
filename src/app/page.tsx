@@ -22,6 +22,7 @@ import { SaaSAdminHub } from '@/components/saas-master/SaaSAdminHub';
 import { ZapiSimulatorModal } from '@/components/layout/ZapiSimulatorModal';
 import { NewLeadModal } from '@/components/layout/NewLeadModal';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { MessageTemplatesModal } from '@/components/templates/MessageTemplatesModal';
 import { LoginScreen } from '@/components/auth/LoginScreen';
 import { GoalsManager } from '@/components/goals/GoalsManager';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -101,6 +102,7 @@ export default function CRMApp() {
   const [isZapiSimulatorOpen, setIsZapiSimulatorOpen] = useState(false);
   const [isNewLeadOpen, setIsNewLeadOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isMessageTemplatesOpen, setIsMessageTemplatesOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Garante que SuperAdmin sempre tenha acesso ao SaaS Master e que usuários comuns fiquem no CRM
@@ -197,6 +199,7 @@ export default function CRMApp() {
               onOpenNewLead={() => setIsNewLeadOpen(true)}
               onOpenZapiSimulator={() => setIsZapiSimulatorOpen(true)}
               onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenMessageTemplates={() => setIsMessageTemplatesOpen(true)}
               onSelectContact={handleOpenChatForContact}
               onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
               onNavigateTab={(tab) => setCurrentTab(tab)}
@@ -257,6 +260,11 @@ export default function CRMApp() {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
+      />
+
+      <MessageTemplatesModal
+        isOpen={isMessageTemplatesOpen}
+        onClose={() => setIsMessageTemplatesOpen(false)}
       />
     </div>
     </ErrorBoundary>

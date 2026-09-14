@@ -433,7 +433,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
       {/* MODAL SOVEREIGN: Edição do Ambiente pelo Admin Master */}
       {isEditModalOpen && editingTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-8 animate-scaleUp">
+          <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto flex flex-col animate-scaleUp">
             
             {/* Header do Modal */}
             <div className="bg-slate-900 p-6 text-white flex items-center justify-between">
@@ -509,7 +509,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
             </div>
 
             {/* Corpo do Formulário */}
-            <form onSubmit={handleSaveTenant} className="p-6 space-y-5 text-xs">
+            <form onSubmit={handleSaveTenant} className="p-6 space-y-5 text-xs flex-1 overflow-y-auto">
               
               {/* ABA 1: DADOS CADASTRAIS */}
               {activeEditTab === 'info' && (
@@ -730,49 +730,94 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
 
               {/* ABA 3: MÓDULOS & FEATURE FLAGS */}
               {activeEditTab === 'modules' && (
-                <div className="space-y-3 animate-fadeIn">
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Ligue ou desligue módulos específicos para customizar a entrega deste cliente:
-                  </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {[
-                      { key: 'aiCopilot', label: 'Brok.ia & Sugestões', desc: 'Respostas inteligentes e transcrição' },
-                      { key: 'whatsappAutoSync', label: 'WhatsApp Auto-Sync', desc: 'Sincronização contínua de contatos' },
-                      { key: 'whatsappMultiBroker', label: 'Linhas WhatsApp por Corretor', desc: 'Múltiplas instâncias Z-API' },
-                      { key: 'campaigns', label: 'Campanhas em Lote', desc: 'Disparos e réguas de aquecimento' },
-                      { key: 'proposals', label: 'Propostas Comerciais', desc: 'Aceite digital e PDF de proposta' },
-                      { key: 'kanbanDeals', label: 'Funil Visual Kanban', desc: 'Gestão de etapas de negociação' },
-                      { key: 'financialQualification', label: 'Qualificação Financeira 360º', desc: 'Renda, FGTS e entrada' },
-                      { key: 'asaasBilling', label: 'Cobrança Asaas', desc: 'Faturas e cobranças automáticas' },
-                    ].map(module => {
-                      const isEnabled = Boolean(formFeatureFlags[module.key as keyof TenantFeatureFlags]);
-                      return (
-                        <div
-                          key={module.key}
-                          onClick={() => toggleFeatureFlag(module.key as keyof TenantFeatureFlags)}
-                          className={`p-3 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition select-none ${
-                            isEnabled
-                              ? 'bg-indigo-50/50 border-[#3742AC]/40'
-                              : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/60'
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <p className="font-extrabold text-slate-900 text-xs">{module.label}</p>
-                            <p className="text-[10px] text-slate-400 truncate">{module.desc}</p>
-                          </div>
-
-                          <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
-                            isEnabled ? 'bg-[#3742AC]' : 'bg-slate-300'
-                          }`}>
-                            <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
-                              isEnabled ? 'translate-x-4' : 'translate-x-0'
-                            }`} />
-                          </div>
-                        </div>
-                      );
-                    })}
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3.5 flex items-center justify-between text-xs text-indigo-950">
+                    <div>
+                      <span className="font-extrabold flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-[#3742AC]" />
+                        <span>Controle Exclusivo de Módulos (Master Portal)</span>
+                      </span>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Ative ou desative módulos individuais para este ambiente. As alterações surtem efeito imediato.
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-black bg-[#3742AC] text-white px-2.5 py-1 rounded-full shrink-0">
+                      ADMIN MASTER
+                    </span>
                   </div>
+
+                  {/* Categorias de Módulos */}
+                  {[
+                    {
+                      category: '🤖 Inteligência Artificial (Brok.ia)',
+                      items: [
+                        { key: 'aiCopilot', label: 'Brok.ia & Sugestões', desc: 'Respostas persuasivas com 1 clique e transcrição' },
+                        { key: 'aiAutoScoring', label: 'Brok.ia Preditiva (Score)', desc: 'Classificação automática de prioridade do lead' },
+                        { key: 'aiRequireHumanApproval', label: 'Aprovação Humana Obrigatória', desc: 'Exige revisão do corretor antes de disparar' },
+                      ]
+                    },
+                    {
+                      category: '📲 WhatsApp & Mensageria Omnichannel',
+                      items: [
+                        { key: 'whatsappAutoSync', label: 'WhatsApp Auto-Sync', desc: 'Sincronização contínua de contatos e histórico' },
+                        { key: 'whatsappVoiceTranscription', label: 'Transcrição de Áudios', desc: 'Transcrição automática de áudios com IA' },
+                        { key: 'whatsappLabelsSync', label: 'Sincronização de Etiquetas', desc: 'Captura de tags do WhatsApp Business' },
+                        { key: 'whatsappMultiBroker', label: 'Linhas WhatsApp por Corretor', desc: 'Múltiplas instâncias Z-API dedicadas' },
+                        { key: 'campaigns', label: 'Campanhas em Lote', desc: 'Disparos e réguas de aquecimento' },
+                        { key: 'automations', label: 'Automações & Regras', desc: 'Gatilhos de atendimento e distribuição' },
+                      ]
+                    },
+                    {
+                      category: '💼 Vendas & Funil Imobiliário',
+                      items: [
+                        { key: 'kanbanDeals', label: 'Funil Visual Kanban', desc: 'Gestão visual de etapas de negociação' },
+                        { key: 'financialQualification', label: 'Qualificação Financeira 360º', desc: 'Renda, FGTS, entrada e simulações' },
+                        { key: 'presentedProperties', label: 'Registro de Imóveis', desc: 'Histórico de unidades enviadas e visitas' },
+                        { key: 'proposals', label: 'Propostas Comerciais', desc: 'Emissão com link de aceite digital' },
+                        { key: 'leadImportExport', label: 'Importação / Exportação CSV', desc: 'Carga em lote e exportação de contatos' },
+                      ]
+                    },
+                    {
+                      category: '💳 Cobrança & Compliance',
+                      items: [
+                        { key: 'asaasBilling', label: 'Cobrança Asaas', desc: 'Faturas, boletos e PIX automatizados' },
+                        { key: 'lgpdCompliance', label: 'Compliance LGPD', desc: 'Gestão de consentimento e opt-out' },
+                      ]
+                    }
+                  ].map((cat, cIdx) => (
+                    <div key={cIdx} className="space-y-2.5">
+                      <h4 className="text-xs font-extrabold text-slate-800">{cat.category}</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {cat.items.map(module => {
+                          const isEnabled = Boolean(formFeatureFlags[module.key as keyof TenantFeatureFlags]);
+                          return (
+                            <div
+                              key={module.key}
+                              onClick={() => toggleFeatureFlag(module.key as keyof TenantFeatureFlags)}
+                              className={`p-3 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition select-none ${
+                                isEnabled
+                                  ? 'bg-indigo-50/50 border-[#3742AC]/40'
+                                  : 'bg-slate-50 border-slate-200/80 hover:bg-slate-100/60'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className="font-extrabold text-slate-900 text-xs">{module.label}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{module.desc}</p>
+                              </div>
+
+                              <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
+                                isEnabled ? 'bg-[#3742AC]' : 'bg-slate-300'
+                              }`}>
+                                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
+                                  isEnabled ? 'translate-x-4' : 'translate-x-0'
+                                }`} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 

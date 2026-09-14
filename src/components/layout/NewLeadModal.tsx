@@ -5,6 +5,7 @@ import { useCRM } from '@/lib/crm-context';
 import { UserPlus, X, DollarSign, MapPin, Tag, Building } from 'lucide-react';
 import { LeadTemperature, PropertyType } from '@/types/crm';
 import { maskCurrencyInput, parseBRLInputToNumber, formatBRL } from '@/lib/currency-utils';
+import { formatCanonicalPhone } from '@/lib/whatsapp-filter';
 
 interface NewLeadModalProps {
   isOpen: boolean;
@@ -38,11 +39,12 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
     const cleanMonthly = parseBRLInputToNumber(monthlyIncome);
     const cleanDown = parseBRLInputToNumber(downPayment);
     const cleanMax = parseBRLInputToNumber(maxBudget);
+    const canonicalPhone = formatCanonicalPhone(phone) || phone.trim();
 
     // 1. Cria o contato com qualificação completa
     const contact = addContact({
       name: name.trim(),
-      phone: phone.trim(),
+      phone: canonicalPhone,
       email: email.trim() || undefined,
       temperature,
       source: source as any,

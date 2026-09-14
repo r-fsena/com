@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { GoalsEngineModal } from './GoalsEngineModal';
 import { ContactUrgencyAnalysis } from '@/types/crm';
-import { isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, formatCanonicalPhone } from '@/lib/whatsapp-filter';
 
 interface SalesDashboardProps {
   onOpenChat?: (contactId: string) => void;
@@ -151,7 +151,10 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
       return (
         deal.title.toLowerCase().includes(term) ||
         contact?.name.toLowerCase().includes(term) ||
-        contact?.phone.includes(term)
+        (contact?.phone && (
+          contact.phone.toLowerCase().includes(term) ||
+          formatCanonicalPhone(contact.phone).toLowerCase().includes(term)
+        ))
       );
     });
   }, [commercialDeals, contacts, tableSearch]);
@@ -607,8 +610,8 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
                                 <span className="font-semibold text-slate-800 block truncate max-w-[130px]">
                                   {contact?.name || 'Lead WhatsApp'}
                                 </span>
-                                <span className="text-[10px] text-slate-400 font-mono">
-                                  {contact?.phone}
+                                <span className="text-[10px] text-slate-500 font-mono font-medium">
+                                  {formatCanonicalPhone(contact?.phone)}
                                 </span>
                               </div>
                             </div>

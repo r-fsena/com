@@ -28,6 +28,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ImportLeadsModal } from './ImportLeadsModal';
 import { BatchAIQualificationModal } from '@/components/crm/BatchAIQualificationModal';
+import { formatCanonicalPhone, isLidIdentifier } from '@/lib/whatsapp-filter';
 
 interface ContactsListProps {
   onOpenNewLead: () => void;
@@ -40,6 +41,7 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
   const [contactTypeFilter, setContactTypeFilter] = useState<'LEADS' | 'PERSONAL' | 'ALL'>('LEADS');
   const [temperatureFilter, setTemperatureFilter] = useState('ALL');
   const [sourceFilter, setSourceFilter] = useState('ALL');
+  const [labelFilter, setLabelFilter] = useState('ALL');
   const [inactivityFilter, setInactivityFilter] = useState<'ALL' | 'UNANSWERED' | 'OVER_48H' | 'OVER_7D'>('ALL');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isBatchQualifyModalOpen, setIsBatchQualifyModalOpen] = useState(false);
@@ -62,20 +64,49 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
   const totalLeadsCount = contacts.filter(c => !c.isPersonal).length;
   const totalPersonalCount = contacts.filter(c => !!c.isPersonal).length;
 
+  // Agrega dinamicamente todas as etiquetas do WhatsApp Business e Tags presentes nos contatos
+  const availableLabels = React.useMemo(() => {
+    const set = new Set<string>();
+    contacts.forEach(c => {
+      (c.whatsappLabels || []).forEach(l => { if (l && l.trim()) set.add(l.trim()); });
+      (c.tags || []).forEach(t => {
+        if (t && t.trim() && t !== 'WhatsApp Web Sincronizado' && !t.startsWith('Funil:')) {
+          set.add(t.trim());
+        }
+      });
+    });
+    return Array.from(set).sort();
+  }, [contacts]);
+
   const filtered = contacts.filter(c => {
     // Filtro por tipo (Comercial vs Pessoal)
     if (contactTypeFilter === 'LEADS' && c.isPersonal) return false;
     if (contactTypeFilter === 'PERSONAL' && !c.isPersonal) return false;
 
-    const matchesSearch = !search.trim() || 
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone.includes(search) ||
-      (c.email && c.email.toLowerCase().includes(search.toLowerCase())) ||
-      c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()));
+    const qClean = search.toLowerCase().trim();
+    const qDigits = search.replace(/\D/g, '');
+    const cPhoneDigits = (c.phone || '').replace(/\D/g, '');
+    const cFormattedPhone = formatCanonicalPhone(c.phone).toLowerCase();
+
+    const matchesSearch = !qClean || 
+      c.name.toLowerCase().includes(qClean) ||
+      c.phone.toLowerCase().includes(qClean) ||
+      cFormattedPhone.includes(qClean) ||
+      (qDigits.length >= 4 && cPhoneDigits.includes(qDigits)) ||
+      (c.lid && c.lid.toLowerCase().includes(qClean)) ||
+      (c.email && c.email.toLowerCase().includes(qClean)) ||
+      (c.tags && c.tags.some(t => t.toLowerCase().includes(qClean))) ||
+      (c.whatsappLabels && c.whatsappLabels.some(l => l.toLowerCase().includes(qClean)));
 
     if (!matchesSearch) return false;
     if (temperatureFilter !== 'ALL' && c.temperature !== temperatureFilter) return false;
     if (sourceFilter !== 'ALL' && c.source !== sourceFilter) return false;
+
+    if (labelFilter !== 'ALL') {
+      const hasLabel = (c.whatsappLabels && c.whatsappLabels.includes(labelFilter)) ||
+                       (c.tags && c.tags.includes(labelFilter));
+      if (!hasLabel) return false;
+    }
 
     if (inactivityFilter !== 'ALL') {
       const urgency = getContactUrgencyAnalysis(c.id);
@@ -92,7 +123,7 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
     const headers = ['Nome', 'Telefone', 'Email', 'Temperatura', 'Origem', 'Entrada (R$)', 'Orcamento Max (R$)', 'Regioes', 'Tags', 'LGPD Opt-in'];
     const rows = filtered.map(c => [
       `"${c.name}"`,
-      `"${c.phone}"`,
+      `"${formatCanonicalPhone(c.phone) || c.phone}"`,
       `"${c.email || ''}"`,
       `"${c.temperature}"`,
       `"${c.source}"`,
@@ -249,6 +280,24 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
           <option value="GOOGLE">Google Ads</option>
         </select>
 
+        {/* WhatsApp Business Labels Filter */}
+        {availableLabels.length > 0 && (
+          <select
+            value={labelFilter}
+            onChange={(e) => setLabelFilter(e.target.value)}
+            className={`text-xs border rounded-xl px-3 py-2 focus:outline-none cursor-pointer transition ${
+              labelFilter !== 'ALL'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}
+          >
+            <option value="ALL">🏷️ Todas as Etiquetas ({availableLabels.length})</option>
+            {availableLabels.map(lbl => (
+              <option key={lbl} value={lbl}>🏷️ {lbl}</option>
+            ))}
+          </select>
+        )}
+
         {/* Inactivity / SLA Filter */}
         <select
           value={inactivityFilter}
@@ -316,7 +365,20 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500 font-mono mt-0.5">{contact.phone}</p>
+
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-[11px] text-slate-500 font-mono font-medium">
+                              {formatCanonicalPhone(contact.phone)}
+                            </p>
+                            {contact.lid && (
+                              <span 
+                                className="text-[8.5px] font-mono font-semibold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200" 
+                                title={`WhatsApp LID: ${contact.lid}`}
+                              >
+                                LID
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -400,15 +462,25 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
 
                     {/* Origem e Tags */}
                     <td className="py-3 px-4">
-                      <span className="inline-block text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md mb-1">
-                        {contact.source}
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {contact.tags.slice(0, 2).map((t, idx) => (
-                          <span key={idx} className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded font-medium">
-                            #{t}
-                          </span>
-                        ))}
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="inline-block text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {contact.source}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 max-w-[200px]">
+                        {Array.from(new Set([...(contact.whatsappLabels || []), ...(contact.tags || [])]))
+                          .filter(t => t && t !== 'WhatsApp Web Sincronizado' && !t.startsWith('Funil:'))
+                          .slice(0, 3)
+                          .map((t, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-0.5 text-[9.5px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70 px-1.5 py-0.5 rounded-md"
+                              title={`Etiqueta: ${t}`}
+                            >
+                              <span>🏷️</span>
+                              <span className="truncate max-w-[100px]">{t}</span>
+                            </span>
+                          ))}
                       </div>
                     </td>
 

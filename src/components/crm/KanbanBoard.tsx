@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { arePhonesEquivalent, formatCanonicalPhone, isLidIdentifier, cleanLid, canonicalPhoneKey } from '@/lib/whatsapp-filter';
 import { 
   Building2, 
   DollarSign, 
@@ -102,17 +102,37 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const getDealContact = useCallback((deal: Deal | null | undefined): Contact | undefined => {
     if (!deal) return undefined;
     if (deal.contactId) {
+      // 1. Match direto por ID
       const byId = contacts.find(c => c.id === deal.contactId);
       if (byId) return byId;
 
+      // 2. Match por ID limpo sem prefixos
+      const cleanDealContactId = deal.contactId.replace(/^(contact|conv)-zapi-/, '');
+      const byCleanId = contacts.find(c => c.id.replace(/^(contact|conv)-zapi-/, '') === cleanDealContactId);
+      if (byCleanId) return byCleanId;
+
+      // 3. Match por LID
+      if (isLidIdentifier(deal.contactId)) {
+        const lidDigits = cleanLid(deal.contactId);
+        const byLid = contacts.find(c => c.lid && (cleanLid(c.lid) === lidDigits || c.lid === deal.contactId));
+        if (byLid) return byLid;
+      }
+
+      // 4. Match por telefone equivalente e chave canônica
       const digits = deal.contactId.replace(/\D/g, '');
       if (digits && digits.length >= 8) {
-        const byPhone = contacts.find(c => arePhonesEquivalent(c.phone, digits));
+        const byPhone = contacts.find(c => arePhonesEquivalent(c.phone, digits) || (c.phone && c.phone.replace(/\D/g, '').endsWith(digits.slice(-8))));
         if (byPhone) return byPhone;
+
+        const pKey = canonicalPhoneKey(digits);
+        if (pKey) {
+          const byKey = contacts.find(c => c.phone && canonicalPhoneKey(c.phone) === pKey);
+          if (byKey) return byKey;
+        }
       }
     }
 
-    // Match por nome do cliente no título do deal (ex: "Apartamento 2D em Palhoça - Dra. Mariana")
+    // 5. Match por nome do cliente no título do deal (ex: "Apartamento 2D em Palhoça - Dra. Mariana")
     if (deal.title && deal.title.includes(' - ')) {
       const namePart = deal.title.split(' - ').pop()?.trim().toLowerCase();
       if (namePart && namePart.length >= 3) {
@@ -149,13 +169,21 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     // Filtro por Temperatura
     if (selectedTemperature !== 'ALL' && contact?.temperature !== selectedTemperature) return false;
 
-    // Busca textual
+    // Busca textual inteligente (título, nome, telefone canônico, dígitos e etiquetas)
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
+      const qDigits = searchQuery.replace(/\D/g, '');
       const matchTitle = deal.title.toLowerCase().includes(q);
       const matchClient = contact?.name?.toLowerCase().includes(q) || false;
-      const matchPhone = contact?.phone?.includes(q) || false;
-      if (!matchTitle && !matchClient && !matchPhone) return false;
+      const matchPhone = contact?.phone && (
+        contact.phone.toLowerCase().includes(q) ||
+        formatCanonicalPhone(contact.phone).toLowerCase().includes(q) ||
+        (qDigits.length >= 4 && contact.phone.replace(/\D/g, '').includes(qDigits))
+      );
+      const matchTags = (contact?.tags || []).some(t => t.toLowerCase().includes(q)) ||
+                        (contact?.whatsappLabels || []).some(l => l.toLowerCase().includes(q));
+
+      if (!matchTitle && !matchClient && !matchPhone && !matchTags) return false;
     }
 
     return true;
@@ -658,10 +686,47 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                         </h4>
 
                         {/* Informações do Cliente */}
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2">
-                          <span className="truncate font-medium text-slate-700">{contact?.name || 'Cliente'}</span>
-                          <span className="font-mono text-[10px] text-slate-400">{contact?.phone}</span>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
+                          <div className="flex items-center gap-1.5 truncate max-w-[165px]">
+                            <img
+                              src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente') + '&background=059669&color=fff'}
+                              alt={contact?.name || 'Cliente'}
+                              className="w-4 h-4 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                            />
+                            <span className="truncate font-bold text-slate-800 group-hover:text-emerald-700 transition">
+                              {contact?.name || 'Cliente'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="font-mono text-[10px] text-slate-500 font-medium">
+                              {formatCanonicalPhone(contact?.phone)}
+                            </span>
+                            {contact?.lid && (
+                              <span className="text-[8px] font-mono font-semibold px-1 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200" title={`LID: ${contact.lid}`}>
+                                LID
+                              </span>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Etiquetas WhatsApp Business & Tags */}
+                        {contact && ((contact.whatsappLabels && contact.whatsappLabels.length > 0) || (contact.tags && contact.tags.length > 0)) && (
+                          <div className="flex items-center gap-1 mb-2 flex-wrap">
+                            {Array.from(new Set([...(contact.whatsappLabels || []), ...(contact.tags || [])]))
+                              .filter(t => t && t !== 'WhatsApp Web Sincronizado' && !t.startsWith('Funil:'))
+                              .slice(0, 2)
+                              .map((lbl, lIdx) => (
+                                <span
+                                  key={lIdx}
+                                  className="text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70 px-1.5 py-0.2 rounded inline-flex items-center gap-0.5"
+                                  title={`Etiqueta: ${lbl}`}
+                                >
+                                  <span>🏷️</span>
+                                  <span className="truncate max-w-[100px]">{lbl}</span>
+                                </span>
+                              ))}
+                          </div>
+                        )}
 
                         {/* Empreendimento / Unidade Apresentada */}
                         {((contact?.presentedProperties && contact.presentedProperties.length > 0) || (deal.presentedProperties && deal.presentedProperties.length > 0)) && (
@@ -799,7 +864,29 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   {hoveredContact.temperature === 'HOT' ? '🔥 Quente' : hoveredContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-mono">{hoveredContact.phone}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-[10px] text-slate-300 font-mono font-medium">
+                  {formatCanonicalPhone(hoveredContact.phone)}
+                </p>
+                {hoveredContact.lid && (
+                  <span className="text-[8px] font-mono font-semibold px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700" title={`LID: ${hoveredContact.lid}`}>
+                    LID
+                  </span>
+                )}
+              </div>
+              {/* Etiquetas WhatsApp no Hover Card */}
+              {((hoveredContact.whatsappLabels && hoveredContact.whatsappLabels.length > 0) || (hoveredContact.tags && hoveredContact.tags.length > 0)) && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {Array.from(new Set([...(hoveredContact.whatsappLabels || []), ...(hoveredContact.tags || [])]))
+                    .filter(t => t && t !== 'WhatsApp Web Sincronizado' && !t.startsWith('Funil:'))
+                    .slice(0, 2)
+                    .map((lbl, idx) => (
+                      <span key={idx} className="text-[8.5px] font-semibold bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 px-1.5 py-0.2 rounded">
+                        🏷️ {lbl}
+                      </span>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -905,6 +992,72 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
 
             {/* Form Body */}
             <form onSubmit={handleSaveDealDetails} className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Card de Identificação do Lead & Contato Imobiliário */}
+              {(() => {
+                const modalContact = getDealContact(selectedDealForModal);
+                if (!modalContact) return null;
+
+                const contactLabels = Array.from(new Set([...(modalContact.whatsappLabels || []), ...(modalContact.tags || [])]))
+                  .filter(t => t && t !== 'WhatsApp Web Sincronizado' && !t.startsWith('Funil:'));
+
+                return (
+                  <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={modalContact.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(modalContact.name) + '&background=059669&color=fff'}
+                        alt={modalContact.name}
+                        className="w-11 h-11 rounded-full object-cover ring-2 ring-emerald-500/20 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-sm text-slate-900 truncate">{modalContact.name}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                            modalContact.temperature === 'HOT' ? 'bg-rose-100 text-rose-700' :
+                            modalContact.temperature === 'WARM' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {modalContact.temperature === 'HOT' ? '🔥 Quente' : modalContact.temperature === 'WARM' ? '⚡ Morno' : '❄️ Frio'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono text-xs text-slate-600 font-medium">
+                            {formatCanonicalPhone(modalContact.phone)}
+                          </span>
+                          {modalContact.lid && (
+                            <span className="text-[8.5px] font-mono font-semibold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700" title={`WhatsApp LID: ${modalContact.lid}`}>
+                              LID
+                            </span>
+                          )}
+                        </div>
+                        {contactLabels.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {contactLabels.slice(0, 4).map((lbl, idx) => (
+                              <span key={idx} className="text-[9.5px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300/60 px-1.5 py-0.2 rounded inline-flex items-center gap-0.5">
+                                <span>🏷️</span>
+                                <span>{lbl}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cid = modalContact.id;
+                        setSelectedDealForModal(null);
+                        onOpenChat(cid);
+                      }}
+                      className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition shadow-xs shrink-0 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
               {/* Título do Negócio */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Título do Negócio / Imóvel</label>

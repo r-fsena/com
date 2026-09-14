@@ -277,6 +277,9 @@ export function formatCanonicalPhone(phone: string | undefined | null): string {
   if (!digits) return '';
 
   if (isLidIdentifier(digits)) {
+    if (digits.startsWith('4400') || digits.startsWith('5500')) {
+      return `ID ${digits}`;
+    }
     return `LID ${digits}`;
   }
 

@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.35';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.36';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -503,10 +503,24 @@ ${isDeveloperMode ? `
     }
   }
 
+  function isWhatsAppSyntheticOrInvalidPhone(raw) {
+    if (!raw) return true;
+    const digits = String(raw).replace(/\D/g, '');
+    if (!digits || digits.length < 10) return true;
+    if (digits.length >= 14) return true; // LID
+    if (digits.startsWith('4400') || digits.startsWith('5500')) return true; // Hashes / IDs sintéticos
+    if (digits.startsWith('55') && digits.slice(2, 4) === '00') return true; // DDD 00 inválido
+    if (String(raw).includes('@lid')) return true;
+    return false;
+  }
+
   function formatPhoneDisplay(raw) {
     if (!raw) return '';
     const digits = String(raw).replace(/\D/g, '');
-    if (digits.length >= 14) return `LID ${digits}`;
+    if (isWhatsAppSyntheticOrInvalidPhone(digits)) {
+      if (digits.startsWith('4400') || digits.startsWith('5500')) return `ID ${digits}`;
+      return `LID ${digits}`;
+    }
     if (digits.length === 11) return `+55 (${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     if (digits.length === 10) return `+55 (${digits.slice(0, 2)}) 9${digits.slice(2, 6)}-${digits.slice(6)}`;
     if (digits.startsWith('55') && digits.length === 13) return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
@@ -738,8 +752,94 @@ ${isDeveloperMode ? `
     return false;
   }
 
-  // 2. Extrai dados da conversa ativa no WhatsApp Web (Blindada contra duplicações e grupos)
-  function extractActiveChatData(accumulatedMessagesMap = null) {
+  // Extrai Etiquetas do WhatsApp Business em um elemento de linha da lista lateral
+  function extractLabelsFromRowElement(rowContainer) {
+    if (!rowContainer) return [];
+    const labels = new Set();
+
+    try {
+      const explicitEls = rowContainer.querySelectorAll(
+        '[data-testid*="label" i], [aria-label*="etiqueta" i], [aria-label*="label" i], span[title*="etiqueta" i], [title*="label" i]'
+      );
+      explicitEls.forEach(el => {
+        const raw = (el.getAttribute('title') || el.getAttribute('aria-label') || el.innerText || '').trim();
+        const clean = raw.replace(/^(etiqueta|label):\s*/i, '').trim();
+        if (clean && clean.length >= 2 && clean.length <= 40 && !clean.includes('\n')) {
+          labels.add(clean);
+        }
+      });
+
+      // Badges visuais com cor de preenchimento (pills do WhatsApp Business)
+      const badges = rowContainer.querySelectorAll('div[data-testid="cell-frame-secondary"] span, div[data-testid="cell-frame-title"] ~ div span');
+      badges.forEach(b => {
+        const bg = window.getComputedStyle ? window.getComputedStyle(b).backgroundColor : '';
+        const text = (b.getAttribute('title') || b.innerText || '').trim();
+        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && text && text.length >= 2 && text.length <= 30 && !/^\d+$/.test(text)) {
+          const lower = text.toLowerCase();
+          if (lower !== 'lida' && lower !== 'entregue' && lower !== 'enviada' && lower !== 'read' && lower !== 'delivered') {
+            labels.add(text);
+          }
+        }
+      });
+    } catch (e) {}
+
+    return Array.from(labels);
+  }
+
+  // Extrai Etiquetas do WhatsApp Business no cabeçalho da conversa aberta (#main header)
+  function extractLabelsFromMainHeader() {
+    const labels = new Set();
+    const header = document.querySelector('#main header');
+    if (!header) return [];
+
+    try {
+      const explicitEls = header.querySelectorAll(
+        '[data-testid*="label" i], [aria-label*="etiqueta" i], [aria-label*="label" i], [title*="etiqueta" i], [title*="label" i]'
+      );
+      explicitEls.forEach(el => {
+        const raw = (el.getAttribute('title') || el.getAttribute('aria-label') || el.innerText || '').trim();
+        const clean = raw.replace(/^(etiqueta|label):\s*/i, '').trim();
+        if (clean && clean.length >= 2 && clean.length <= 40 && !clean.includes('\n')) {
+          labels.add(clean);
+        }
+      });
+
+      // Tags/pills visíveis no header
+      const pills = header.querySelectorAll('div[role="button"] span, header span[dir="auto"]');
+      pills.forEach(p => {
+        const txt = (p.getAttribute('title') || p.innerText || '').trim();
+        const lower = txt.toLowerCase();
+        if (
+          txt &&
+          txt.length >= 2 &&
+          txt.length <= 35 &&
+          !txt.includes('\n') &&
+          !lower.includes('online') &&
+          !lower.includes('visto por') &&
+          !lower.includes('last seen') &&
+          !lower.includes('digitando') &&
+          !lower.includes('typing') &&
+          !lower.includes('dados do') &&
+          !lower.includes('clique aqui') &&
+          txt !== currentActiveName
+        ) {
+          const bg = window.getComputedStyle ? window.getComputedStyle(p).backgroundColor : '';
+          const parentBg = p.parentElement && window.getComputedStyle ? window.getComputedStyle(p.parentElement).backgroundColor : '';
+          const hasBg = (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') ||
+                        (parentBg && parentBg !== 'rgba(0, 0, 0, 0)' && parentBg !== 'transparent');
+          const hasTagSvg = Boolean(p.querySelector('svg') || p.parentElement?.querySelector('svg'));
+          if (hasBg || hasTagSvg) {
+            labels.add(txt);
+          }
+        }
+      });
+    } catch (e) {}
+
+    return Array.from(labels);
+  }
+
+  // 2. Extrai dados da conversa ativa no WhatsApp Web (Blindada contra duplicações, grupos e tags do Business)
+  function extractActiveChatData(accumulatedMessagesMap = null, rowLabels = []) {
     const main = document.querySelector('#main');
     if (!main) {
       console.log('[Brokiva] #main não encontrado');
@@ -817,20 +917,20 @@ ${isDeveloperMode ? `
       }
     }
 
-    // Método C: Avatar no header (img src com u=telefone)
+    // Método C: Avatar no header (APENAS se tiver parâmetro explícito 'u=telefone@c.us')
     if (!resolvedPhone) {
       const avatarImg = main.querySelector('header img[src]');
       if (avatarImg) {
         const src = avatarImg.getAttribute('src') || '';
-        const match = src.match(/u=(\d{8,15})%40/) || src.match(/(\d{10,14})/);
-        if (match && match[1] && match[1].length <= 13) resolvedPhone = match[1];
+        const match = src.match(/[?&]u=(\d{10,15})%40c\.us/i) || src.match(/[?&]u=(\d{10,15})@c\.us/i);
+        if (match && match[1]) resolvedPhone = match[1];
       }
     }
 
     // Método D: Se o próprio nome do contato for número
     if (!resolvedPhone) {
       const digits = contactName.replace(/\D/g, '');
-      if (digits.length >= 8 && digits.length <= 13) {
+      if (digits.length >= 8 && digits.length <= 13 && !isWhatsAppSyntheticOrInvalidPhone(digits)) {
         resolvedPhone = digits;
       }
     }
@@ -840,11 +940,11 @@ ${isDeveloperMode ? `
       const pureL = resolvedLid.replace(/@.*$/, '').replace(/\D/g, '');
       if (!resolvedPhone && pureL) {
         const fromMap = inMemoryLidPhoneMap.get(pureL);
-        if (fromMap) {
+        if (fromMap && !isWhatsAppSyntheticOrInvalidPhone(fromMap)) {
           resolvedPhone = fromMap;
         }
       }
-      if (resolvedPhone && resolvedPhone.length <= 13) {
+      if (resolvedPhone && resolvedPhone.length <= 13 && !isWhatsAppSyntheticOrInvalidPhone(resolvedPhone)) {
         rememberLidPhone(pureL, resolvedPhone);
       } else if (!resolvedPhone) {
         resolvedPhone = pureL;
@@ -882,13 +982,19 @@ ${isDeveloperMode ? `
 
     const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
 
-    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens limpas e deduplicadas para ${contactName} (${resolvedPhone})`);
+    // Extrai Etiquetas do WhatsApp Business
+    const headerLabels = extractLabelsFromMainHeader();
+    const combinedLabels = Array.from(new Set([...headerLabels, ...(rowLabels || [])])).filter(Boolean);
+
+    console.log(`[Brokiva] Extraídas ${validContentMsgs.length} mensagens e ${combinedLabels.length} etiquetas para ${contactName} (${resolvedPhone})`);
 
     return {
       phone: resolvedPhone,
       lid: resolvedLid || undefined,
       name: contactName,
       avatarUrl: avatarUrl || undefined,
+      tags: combinedLabels,
+      labels: combinedLabels,
       messages: validContentMsgs,
       lastMessagePreview: lastMsg ? lastMsg.content : '',
       lastMessageAt: lastMsg ? lastMsg.timestamp : new Date().toISOString(),
@@ -1842,7 +1948,7 @@ const PT_MONTH_NAMES = {
     return accumulatedMessages;
   }
 
-  async function extractPhoneFromContactDrawer() {
+  async function extractContactDetailsFromDrawer() {
     try {
       const main = document.querySelector('#main');
       if (!main) return null;
@@ -1860,6 +1966,8 @@ const PT_MONTH_NAMES = {
 
       let foundPhone = null;
       let foundPushName = null;
+      let foundLabels = [];
+
       // Aguarda até 1200ms a gaveta lateral montar no DOM
       for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise(r => setTimeout(r, 120));
@@ -1868,18 +1976,62 @@ const PT_MONTH_NAMES = {
         );
         if (sidePanel) {
           const text = sidePanel.innerText || '';
-          const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/) ||
-                             text.match(/\+?55\s?\d{2}\s?9?\d{8}/) ||
-                             text.match(/\+?\d{1,3}\s?\(?\d{2,3}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
-                             text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
-          if (phoneMatch) {
-            foundPhone = phoneMatch[0].replace(/\D/g, '');
+
+          // 1. Busca telefone formatado na gaveta
+          if (!foundPhone) {
+            const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/) ||
+                               text.match(/\+?55\s?\d{2}\s?9?\d{8}/) ||
+                               text.match(/\+?\d{1,3}\s?\(?\d{2,3}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
+                               text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
+            if (phoneMatch) {
+              const digits = phoneMatch[0].replace(/\D/g, '');
+              if (digits.length >= 10 && digits.length <= 13) {
+                foundPhone = digits.startsWith('55') ? digits : `55${digits}`;
+              }
+            }
+          }
+
+          // 2. Busca pushName (~ Nome)
+          if (!foundPushName) {
             const pushMatch = text.match(/~\s*([^\n\r]+)/);
             if (pushMatch && pushMatch[1]) {
               foundPushName = pushMatch[1].trim();
             }
-            if (foundPhone.length >= 10) break;
           }
+
+          // 3. Busca Etiquetas / Labels no WhatsApp Business
+          const labelElements = sidePanel.querySelectorAll(
+            '[data-testid*="label" i], [aria-label*="etiqueta" i], [aria-label*="label" i], span[title*="Etiqueta" i]'
+          );
+          labelElements.forEach(el => {
+            const labelText = (el.getAttribute('title') || el.getAttribute('aria-label') || el.innerText || '').trim();
+            const clean = labelText.replace(/^(etiqueta|label):\s*/i, '').trim();
+            if (clean && clean.length >= 2 && clean.length <= 40 && !clean.includes('\n')) {
+              if (!foundLabels.includes(clean)) foundLabels.push(clean);
+            }
+          });
+
+          // Também verifica seções de texto que contêm "Etiquetas"
+          const headings = Array.from(sidePanel.querySelectorAll('span, div, h2, h3'));
+          const etiquetasHeading = headings.find(h => {
+            const t = (h.innerText || '').trim().toLowerCase();
+            return t === 'etiquetas' || t === 'labels';
+          });
+          if (etiquetasHeading) {
+            const container = etiquetasHeading.closest('div[role="button"]') || etiquetasHeading.parentElement?.parentElement;
+            if (container) {
+              const chipSpans = container.querySelectorAll('span[dir="auto"], span[title], div[role="button"] span');
+              chipSpans.forEach(s => {
+                const txt = (s.getAttribute('title') || s.innerText || '').trim();
+                const lower = txt.toLowerCase();
+                if (txt && txt.length >= 2 && txt.length <= 40 && lower !== 'etiquetas' && lower !== 'labels' && !txt.includes('\n')) {
+                  if (!foundLabels.includes(txt)) foundLabels.push(txt);
+                }
+              });
+            }
+          }
+
+          if (foundPhone) break;
         }
       }
 
@@ -1891,25 +2043,31 @@ const PT_MONTH_NAMES = {
       if (closeBtn) closeBtn.click();
       await new Promise(r => setTimeout(r, 150));
 
-      return foundPhone;
+      return { phone: foundPhone, pushName: foundPushName, labels: foundLabels };
     } catch (e) {
       return null;
     }
   }
 
-  async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid, allowDrawer = false) {
+  const extractPhoneFromContactDrawer = extractContactDetailsFromDrawer;
+
+  async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid, allowDrawer = false, outDetails = null) {
     const phoneStr = String(phoneOrLid || '').trim();
 
     // Se já é um telefone canônico brasileiro válido
-    const isSynthetic = phoneStr.includes('554863562855') || phoneStr.startsWith('55486356');
-    if (!isSynthetic && phoneStr.length >= 10 && phoneStr.length <= 13 && phoneStr.startsWith('55')) {
+    if (!isWhatsAppSyntheticOrInvalidPhone(phoneStr) && phoneStr.length >= 10 && phoneStr.length <= 13 && phoneStr.startsWith('55')) {
       return phoneStr;
     }
 
-    // 1. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial da agenda
+    // 1. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial da agenda e etiquetas
     if (allowDrawer) {
       try {
-        const drawerPhone = await extractPhoneFromContactDrawer();
+        const details = await extractContactDetailsFromDrawer();
+        if (details && outDetails) {
+          if (details.labels && details.labels.length > 0) outDetails.labels = details.labels;
+          if (details.pushName) outDetails.pushName = details.pushName;
+        }
+        const drawerPhone = details?.phone;
         if (drawerPhone && typeof drawerPhone === 'string' && drawerPhone.length >= 8) {
           const fullPhone = (drawerPhone.startsWith('55') || drawerPhone.length > 11) ? drawerPhone : `55${drawerPhone}`;
           if (phoneStr) rememberLidPhone(phoneStr, fullPhone);
@@ -1928,7 +2086,7 @@ const PT_MONTH_NAMES = {
         const found = list.find(c => c && c.name && String(c.name).toLowerCase().trim() === norm);
         if (found && found.phone) {
           const clean = String(found.phone).replace(/\D/g, '');
-          if (clean.length >= 10 && clean.length <= 13) {
+          if (clean.length >= 10 && clean.length <= 13 && !isWhatsAppSyntheticOrInvalidPhone(clean)) {
             console.log(`[Brokiva] Telefone extraído do cache de contatos CRM para "${contactName}": ${clean}`);
             return clean;
           }
@@ -1946,15 +2104,15 @@ const PT_MONTH_NAMES = {
           resolve(resp?.result);
         });
       });
-      if (res && res.phone && typeof res.phone === 'string') {
+      if (res && res.phone && typeof res.phone === 'string' && !isWhatsAppSyntheticOrInvalidPhone(res.phone)) {
         console.log(`[Brokiva] Telefone resolvido pelo CRM para "${contactName}": ${res.phone}`);
         return res.phone;
       }
     } catch (e) {}
 
-    // 4. Se tiver LID numérico, usa o LID
-    if (phoneStr && phoneStr.length >= 8) {
-      return isSynthetic ? (phoneStr.replace(/\D/g, '') || '') : phoneStr;
+    // 4. Se tiver LID numérico, usa o LID (a menos que seja hash 4400/5500)
+    if (phoneStr && phoneStr.length >= 8 && !phoneStr.startsWith('4400') && !phoneStr.startsWith('5500')) {
+      return phoneStr;
     }
 
     // 5. Fallback final determinístico: se o contato não tem telefone exposto nem LID,
@@ -2103,8 +2261,13 @@ const PT_MONTH_NAMES = {
       } catch (e) {}
     }
 
-    // Resolve o telefone ANTES de validar (abre gaveta lateral para contatos salvos por apelido como "Amor")
-    chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true);
+    // Resolve o telefone ANTES de validar (abre gaveta lateral para contatos salvos por apelido como "Amor" ou agenda)
+    const drawerDetails = {};
+    chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true, drawerDetails);
+    if (drawerDetails.labels && drawerDetails.labels.length > 0) {
+      chatData.labels = Array.from(new Set([...(chatData.labels || []), ...drawerDetails.labels]));
+      chatData.tags = Array.from(new Set([...(chatData.tags || []), ...drawerDetails.labels]));
+    }
 
     if (!chatData.phone || chatData.phone.length < 8) {
       logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_NO_PHONE', `Telefone de ${chatData.name} não identificado`);
@@ -2433,6 +2596,8 @@ const PT_MONTH_NAMES = {
         const rowPreview = (secEl?.getAttribute('title') || secEl?.innerText || '').trim();
         const hasOutgoingCheck = Boolean(rowContainer.querySelector('span[data-icon*="status-"], span[data-testid*="status-"], [data-icon="status-dblcheck"], [data-icon="status-check"], [data-icon="status-time"]') || /^(você|voce|you)\s*:/i.test(rowPreview));
 
+        const rowLabels = extractLabelsFromRowElement(rowContainer);
+
         rows.push({
           title: contactTitle,
           key,
@@ -2442,6 +2607,7 @@ const PT_MONTH_NAMES = {
           rowAvatarSrc: rowAvatarSrc || '',
           rowPreview,
           isOutgoing: hasOutgoingCheck,
+          labels: rowLabels,
         });
       }
     }
@@ -2805,10 +2971,10 @@ const PT_MONTH_NAMES = {
         if (cancelSyncRequested) break;
 
         // Extrai dados completos da conversa aberta com todo o histórico acumulado
-        let chatData = extractActiveChatData(accumulatedMap);
+        let chatData = extractActiveChatData(accumulatedMap, nextRow?.labels || []);
         if (!chatData || !chatData.messages || chatData.messages.length === 0) {
           await new Promise(r => setTimeout(r, 350));
-          chatData = extractActiveChatData(accumulatedMap);
+          chatData = extractActiveChatData(accumulatedMap, nextRow?.labels || []);
         }
 
         if (chatData) {
@@ -2838,7 +3004,18 @@ const PT_MONTH_NAMES = {
               }
             } catch (e) {}
           }
-          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, false);
+
+          // Abre a gaveta de contato caso o contato não possua telefone direto no header (salvo na agenda / LID)
+          const phoneNeedsDrawer = !chatData.phone ||
+            isWhatsAppSyntheticOrInvalidPhone(chatData.phone) ||
+            (!chatData.phone.startsWith('55') && chatData.phone.length <= 11);
+
+          const drawerDetails = {};
+          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, phoneNeedsDrawer, drawerDetails);
+          if (drawerDetails.labels && drawerDetails.labels.length > 0) {
+            chatData.labels = Array.from(new Set([...(chatData.labels || []), ...drawerDetails.labels]));
+            chatData.tags = Array.from(new Set([...(chatData.tags || []), ...drawerDetails.labels]));
+          }
         }
 
         if (chatData && chatData.phone && !isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {

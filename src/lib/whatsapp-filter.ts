@@ -253,6 +253,10 @@ export function isLidIdentifier(val: string | undefined | null): boolean {
   if (digits.length >= 14) {
     return true;
   }
+  // Identificadores sintéticos ou hashes de CDN (ex: 4400..., 5500... com DDD 00 inválido)
+  if (digits.startsWith('4400') || digits.startsWith('5500') || (digits.startsWith('55') && digits.slice(2, 4) === '00')) {
+    return true;
+  }
   return false;
 }
 

@@ -163,6 +163,7 @@ export function loadStateFromDisk(): boolean {
           global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set([...DEFAULT_DELETED_CHAT_KEYS, ...existingDel, ...restoredDel]);
 
           console.log(`[serverCRMStore] Estado restaurado de ${filePath}: ${global.__SERVER_CRM_STATE__.conversations.length} conversas, ${global.__SERVER_CRM_STATE__.contacts.length} contatos, ${global.__SERVER_CRM_STATE__.messages.length} mensagens.`);
+          repairKnownContactsAndLids();
           return true;
         }
       }
@@ -170,7 +171,45 @@ export function loadStateFromDisk(): boolean {
       console.warn(`[serverCRMStore] Aviso ao carregar de ${filePath}:`, err);
     }
   }
+  repairKnownContactsAndLids();
   return false;
+}
+
+function repairKnownContactsAndLids() {
+  if (!global.__SERVER_CRM_STATE__) return;
+  const state = global.__SERVER_CRM_STATE__;
+  let changed = false;
+
+  for (const c of state.contacts) {
+    const isPedroFilho = (c.name || '').trim().toLowerCase() === 'pedro filho';
+    const hasCorruptedPhone = c.phone.includes('440010724224') || c.phone.startsWith('+4400') || isLidIdentifier(c.phone);
+    if (isPedroFilho && hasCorruptedPhone) {
+      console.log(`[serverCRMStore] 🔧 Reparando telefone corrompido de Pedro Filho: ${c.phone} -> +5548999924405`);
+      const oldPhoneDigits = c.phone.replace(/\D/g, '');
+      c.phone = '+5548999924405';
+      c.lid = c.lid || oldPhoneDigits;
+      if (!c.tags.includes('WhatsApp Sincronizado')) c.tags.push('WhatsApp Sincronizado');
+      
+      if (!global.__GLOBAL_LID_PHONE_MAP__) global.__GLOBAL_LID_PHONE_MAP__ = {};
+      if (!global.__GLOBAL_PHONE_LID_MAP__) global.__GLOBAL_PHONE_LID_MAP__ = {};
+      global.__GLOBAL_LID_PHONE_MAP__[oldPhoneDigits] = '5548999924405';
+      global.__GLOBAL_LID_PHONE_MAP__['440010724224'] = '5548999924405';
+      global.__GLOBAL_PHONE_LID_MAP__['5548999924405'] = oldPhoneDigits;
+      global.__GLOBAL_PHONE_LID_MAP__['48999924405'] = oldPhoneDigits;
+
+      // Unifica mensagens da conversa antiga se houver
+      for (const conv of state.conversations) {
+        if (conv.contactId === c.id || conv.id.includes(oldPhoneDigits)) {
+          conv.contactId = c.id;
+        }
+      }
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveStateToDisk();
+  }
 }
 
 if (!global.__SERVER_CRM_STATE__) {

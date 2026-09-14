@@ -51,6 +51,8 @@ const IngestChatSchema = z.object({
   name: z.string().optional(),
   avatarUrl: z.string().optional(),
   lid: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  labels: z.array(z.string()).optional(),
   messages: z.array(IngestMessageSchema).default([]),
   lastMessagePreview: z.string().optional(),
   lastMessageAt: z.string().or(z.number()).optional(),
@@ -125,7 +127,8 @@ export async function POST(req: NextRequest) {
         cleanPhone = `55${cleanPhone}`;
       }
 
-      // Localiza se já existe contato ou conversa prévia com esse número ou LID
+      // Localiza se já existe contato ou conversa prévia com esse número, LID ou Nome Exato
+      const cleanIncomingName = (chat.name || '').trim().toLowerCase();
       const currentState = serverCRMStore.getState();
       const existingContact = currentState.contacts.find(c => {
         const matchPhone = arePhonesEquivalent(c.phone, rawDigits) || 
@@ -133,11 +136,27 @@ export async function POST(req: NextRequest) {
                            arePhonesEquivalent(c.phone, chat.phone);
         const matchLid = (incomingLid && c.lid && cleanLid(c.lid) === incomingLid) ||
                          (c.lid && rawDigits && cleanLid(c.lid) === cleanLid(rawDigits));
-        return matchPhone || matchLid;
+        if (matchPhone || matchLid) return true;
+
+        // Unificação Inteligente por Nome Exato: se o contato existente possui um identificador corrompido/LID
+        // (ex: LID, 4400..., 5500... sintético) e o novo registro traz o telefone real da mesma pessoa:
+        const cleanNameA = (c.name || '').trim().toLowerCase();
+        if (cleanNameA && cleanIncomingName && cleanNameA === cleanIncomingName && cleanNameA !== 'contato whatsapp') {
+          const cHasInvalidPhone = isLidIdentifier(c.phone) || !c.phone || c.phone.includes('4400') || c.phone.includes('5500') || !c.phone.startsWith('+55');
+          const incomingIsReal = cleanPhone.startsWith('55') && cleanPhone.length >= 10 && cleanPhone.length <= 13 && !isLidIdentifier(cleanPhone);
+          if (cHasInvalidPhone && incomingIsReal) {
+            return true;
+          }
+        }
+        return false;
       });
 
       // Se o contato existente possuir telefone real válido, adota-o como canônico
-      if (existingContact?.phone && !isLidIdentifier(existingContact.phone)) {
+      // MAS se o contato existente tinha um identificador inválido/LID e o novo dado traz um telefone real, o telefone real tem precedência!
+      const existingHasValidPhone = existingContact?.phone && !isLidIdentifier(existingContact.phone) && existingContact.phone.startsWith('+55');
+      const incomingHasValidPhone = cleanPhone.startsWith('55') && !isLidIdentifier(cleanPhone) && cleanPhone.length >= 10 && cleanPhone.length <= 13;
+
+      if (existingHasValidPhone && !incomingHasValidPhone) {
         cleanPhone = existingContact.phone.replace(/\D/g, '');
       }
 
@@ -294,7 +313,12 @@ export async function POST(req: NextRequest) {
         source: 'WHATSAPP',
         temperature: existingContact?.temperature || 'COLD',
         aiPriorityScore: existingContact?.aiPriorityScore !== undefined ? existingContact.aiPriorityScore : 0,
-        tags: existingContact?.tags?.length ? existingContact.tags : ['WhatsApp Web Sincronizado'],
+        tags: Array.from(new Set([
+          ...(chat.tags || []),
+          ...(chat.labels || []),
+          ...(existingContact?.tags || []),
+          'WhatsApp Web Sincronizado',
+        ])).filter(Boolean),
         targetRegions: existingContact?.targetRegions || [],
         preferredPropertyType: existingContact?.preferredPropertyType,
         maxPropertyValue: existingContact?.maxPropertyValue,

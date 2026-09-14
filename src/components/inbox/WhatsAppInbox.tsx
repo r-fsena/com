@@ -1024,8 +1024,19 @@ export function WhatsAppInbox() {
     }
   }, [activeConversation?.id, activeConversation?.unreadCount, markConversationAsRead]);
 
-  // Tags disponíveis para filtro
-  const availableTags = ['Lead Quente', 'Investidor', 'Lançamento', 'Visita Agendada', 'Financiamento'];
+  // Tags disponíveis para filtro (combina tags padrão com todas as etiquetas importadas do WhatsApp Business)
+  const dynamicContactTags = React.useMemo(() => {
+    return Array.from(new Set(
+      contacts.flatMap(c => c.tags || [])
+    )).filter(t => t && t !== 'WhatsApp Web Sincronizado');
+  }, [contacts]);
+
+  const availableTags = React.useMemo(() => {
+    return Array.from(new Set([
+      ...dynamicContactTags,
+      'Lead Quente', 'Investidor', 'Lançamento', 'Visita Agendada', 'Financiamento'
+    ]));
+  }, [dynamicContactTags]);
 
   // Filtered Conversations
   const filteredConversations = conversations.filter(c => {
@@ -1668,9 +1679,17 @@ export function WhatsAppInbox() {
                     })()}
 
                     <div className="flex items-center justify-between gap-1 text-[10px] mt-1">
-                      <span className="text-slate-400 font-mono">
-                        {formatDisplayPhone(contact?.phone || conv.id)}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-slate-400 font-mono shrink-0">
+                          {formatDisplayPhone(contact?.phone || conv.id)}
+                        </span>
+                        {/* Etiquetas do WhatsApp Business / Tags */}
+                        {contact?.tags && contact.tags.filter(t => t !== 'WhatsApp Web Sincronizado').slice(0, 2).map((t, idx) => (
+                          <span key={idx} className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 text-[#3742AC] border border-indigo-200/60 truncate max-w-[90px]" title={`Etiqueta: ${t}`}>
+                            🏷️ {t}
+                          </span>
+                        ))}
+                      </div>
 
                       <div className="flex items-center gap-1">
                         {urgency && urgency.urgencyLevel === 'CRITICAL_UNANSWERED' && (

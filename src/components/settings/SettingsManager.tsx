@@ -1415,18 +1415,18 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-slate-900">Extensão Brokiva para Google Chrome</h3>
                     <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                      v1.0.34 Oficial
+                      v1.0.35 Oficial
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5 max-w-xl leading-relaxed">
-                    Sincronize conversas e históricos de mensagens direto do WhatsApp Web para o CRM e utilize o Copiloto de IA em tempo real.
+                    Sincronize conversas e históricos de mensagens direto do WhatsApp Web para o CRM e utilize a Brok.ia em tempo real.
                   </p>
                 </div>
               </div>
 
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.34.zip"
+                download="brokiva-chrome-extension-v1.0.35.zip"
                 className="inline-flex items-center justify-center gap-2 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] px-4 py-2.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer shrink-0"
               >
                 <Download className="w-4 h-4" />

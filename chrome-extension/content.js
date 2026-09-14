@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.34';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.35';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -2544,7 +2544,7 @@ const PT_MONTH_NAMES = {
 
     if (titleEl) titleEl.innerText = 'Sincronizando com a Brokiva CRM';
     if (subtitleEl) subtitleEl.innerText = 'Importando histórico completo de conversas e mensagens com segurança...';
-    if (statChats) statChats.innerText = `0 / ${maxChats}`;
+    if (statChats) statChats.innerText = (!maxChats || maxChats === Infinity) ? '0 conversas' : `0 / ${maxChats}`;
     if (statMsgs) statMsgs.innerText = '0';
     if (statPct) statPct.innerText = '0%';
     if (leadName) leadName.innerText = 'Iniciando varredura no WhatsApp Web...';
@@ -2590,12 +2590,29 @@ const PT_MONTH_NAMES = {
     const leadAction = document.getElementById('brokiva-lead-action');
     const bar = document.getElementById('brokiva-modal-progress-bar');
 
-    const pct = Math.min(100, Math.round(((syncedCount || 0) / maxChats) * 100));
+    const isUnlimited = !maxChats || maxChats === Infinity;
 
-    if (statChats && syncedCount !== undefined) statChats.innerText = `${syncedCount} / ${maxChats}`;
+    if (statChats && syncedCount !== undefined) {
+      statChats.innerText = isUnlimited ? `${syncedCount} ${syncedCount === 1 ? 'conversa' : 'conversas'}` : `${syncedCount} / ${maxChats}`;
+    }
     if (statMsgs && totalMessages !== undefined) statMsgs.innerText = `${totalMessages.toLocaleString('pt-BR')}`;
-    if (statPct) statPct.innerText = `${pct}%`;
-    if (bar) bar.style.width = `${pct}%`;
+
+    if (isUnlimited) {
+      const pane = findPaneSideScrollContainer() || document.querySelector('#pane-side');
+      let scrollPct = 0;
+      if (pane && pane.scrollHeight > pane.clientHeight) {
+        scrollPct = Math.min(98, Math.max(5, Math.round(((pane.scrollTop + pane.clientHeight) / pane.scrollHeight) * 100)));
+      } else {
+        scrollPct = Math.min(95, Math.max(5, (syncedCount || 0) * 2));
+      }
+      if (statPct) statPct.innerText = `${scrollPct}% rolado`;
+      if (bar) bar.style.width = `${scrollPct}%`;
+    } else {
+      const pct = Math.min(100, Math.round(((syncedCount || 0) / maxChats) * 100));
+      if (statPct) statPct.innerText = `${pct}%`;
+      if (bar) bar.style.width = `${pct}%`;
+    }
+
     if (leadName && contactName) leadName.innerText = contactName;
     if (leadAction && actionText) leadAction.innerText = actionText;
   }
@@ -2671,7 +2688,7 @@ const PT_MONTH_NAMES = {
       progressStatus.innerText = 'Iniciando varredura e rolagem das conversas...';
     }
 
-    const MAX_TARGET_CHATS = 50; // Limite de conversas para sincronizar
+    const MAX_TARGET_CHATS = Infinity; // Varredura completa de todas as conversas sem limite prévio fixado
     let totalMessagesSynced = 0;
 
     // Abre a tela de carregamento (modal com blur) cobrindo o WhatsApp Web
@@ -2730,7 +2747,7 @@ const PT_MONTH_NAMES = {
           progressStatus.innerText = `Lendo chat ${totalAttempts} (${syncedChats.length} salvos): ${currentName}...`;
         }
 
-        logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat (${syncedChats.length + 1}/${MAX_TARGET_CHATS}): ${currentName}`);
+        logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat #${syncedChats.length + 1}: ${currentName}`);
 
         const headerTitleEl = document.querySelector('#main header span[title], #main header div[role="button"] span, #main header span[dir="auto"]');
         const previousHeaderTitle = (headerTitleEl ? (headerTitleEl.getAttribute('title') || headerTitleEl.innerText) : '').trim();
@@ -2851,8 +2868,14 @@ const PT_MONTH_NAMES = {
         }
 
         // Atualiza barra de progresso na sidebar
-        const pct = Math.min(100, Math.round((syncedChats.length / MAX_TARGET_CHATS) * 100));
-        if (progressFill) progressFill.style.width = `${pct}%`;
+        const paneForPct = findPaneSideScrollContainer() || document.querySelector('#pane-side');
+        let currentPct = 10;
+        if (paneForPct && paneForPct.scrollHeight > paneForPct.clientHeight) {
+          currentPct = Math.min(98, Math.max(5, Math.round(((paneForPct.scrollTop + paneForPct.clientHeight) / paneForPct.scrollHeight) * 100)));
+        } else {
+          currentPct = Math.min(95, Math.max(5, syncedChats.length * 2));
+        }
+        if (progressFill) progressFill.style.width = `${currentPct}%`;
 
         // Pausa breve entre conversas
         await new Promise(r => setTimeout(r, 200));

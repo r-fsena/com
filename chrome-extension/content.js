@@ -23,7 +23,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.36';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.37';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -204,11 +204,27 @@
             <span id="sovereign-sync-badge" class="sovereign-lead-pill">Pronto</span>
           </div>
           <p style="font-size:11px; color:#64748b; margin-bottom:10px;">
-            Extrai conversas e todo o histórico passado para o seu CRM sem limites.
+            Escolha o modo de importação de conversas para o CRM:
           </p>
-          <button id="sovereign-batch-sync-btn" class="sovereign-btn-sync" style="background:#3742AC;">
-            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Sincronizar Histórico Completo</span>
-          </button>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div>
+              <button id="sovereign-batch-sync-recent-btn" class="sovereign-btn-sync" style="background:#3742AC;">
+                <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Sincronizar Recentes (Ativos)</span>
+              </button>
+              <p style="font-size:10px; color:#64748b; margin-top:3px; margin-left:2px; line-height:1.3;">
+                ⚡ Atualiza rapidamente os chats ativos no topo da lista (dia a dia).
+              </p>
+            </div>
+
+            <div>
+              <button id="sovereign-batch-sync-full-btn" class="sovereign-btn-sync" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border:1px solid #334155;">
+                <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg> Carteira Completa (Todos os Tempos)</span>
+              </button>
+              <p style="font-size:10px; color:#64748b; margin-top:3px; margin-left:2px; line-height:1.3;">
+                🌐 Rola até o fim sem corte de data. Leads inativos/antigos recebem a etiqueta "Base Antiga / Reativação".
+              </p>
+            </div>
+          </div>
           <div id="sovereign-progress-bar" class="sovereign-progress-bar">
             <div id="sovereign-progress-fill" class="sovereign-progress-fill" style="background:#3742AC;"></div>
           </div>
@@ -265,7 +281,9 @@ ${isDeveloperMode ? `
       `;
 
       // Conecta botões das ferramentas
-      document.getElementById('sovereign-batch-sync-btn')?.addEventListener('click', () => executeBatchHistoryScan());
+      document.getElementById('sovereign-batch-sync-recent-btn')?.addEventListener('click', () => executeBatchHistoryScan({ mode: 'RECENT' }));
+      document.getElementById('sovereign-batch-sync-full-btn')?.addEventListener('click', () => executeBatchHistoryScan({ mode: 'FULL' }));
+      document.getElementById('sovereign-batch-sync-btn')?.addEventListener('click', () => executeBatchHistoryScan({ mode: 'FULL' }));
       document.getElementById('sovereign-sync-current-btn')?.addEventListener('click', () => syncCurrentActiveChat());
       if (isDeveloperMode) {
         document.getElementById('sovereign-diagnostic-btn')?.addEventListener('click', () => runStepByStepDiagnostic());
@@ -999,6 +1017,43 @@ ${isDeveloperMode ? `
       lastMessagePreview: lastMsg ? lastMsg.content : '',
       lastMessageAt: lastMsg ? lastMsg.timestamp : new Date().toISOString(),
     };
+  }
+
+  // Identifica se uma conversa é antiga/inativa (última mensagem > 60 dias ou ano anterior) e adiciona tag de Reativação
+  function checkAndTagOldChat(chatData) {
+    if (!chatData) return false;
+    let isOld = false;
+
+    let lastTime = 0;
+    if (chatData.lastMessageAt) {
+      const dt = new Date(chatData.lastMessageAt);
+      if (!isNaN(dt.getTime())) lastTime = dt.getTime();
+    }
+    if (!lastTime && chatData.messages && chatData.messages.length > 0) {
+      const lastMsg = chatData.messages[chatData.messages.length - 1];
+      if (lastMsg && lastMsg.timestamp) {
+        const dt = new Date(lastMsg.timestamp);
+        if (!isNaN(dt.getTime())) lastTime = dt.getTime();
+      }
+    }
+
+    const now = new Date();
+    if (lastTime > 0) {
+      const lastDate = new Date(lastTime);
+      const diffDays = (now.getTime() - lastTime) / (1000 * 60 * 60 * 24);
+      const isPrevYear = lastDate.getFullYear() < now.getFullYear();
+      if (diffDays >= 60 || isPrevYear) {
+        isOld = true;
+      }
+    }
+
+    if (isOld) {
+      const tag = 'Base Antiga / Reativação';
+      chatData.tags = Array.from(new Set([...(chatData.tags || []), tag]));
+      chatData.labels = Array.from(new Set([...(chatData.labels || []), tag]));
+    }
+
+    return isOld;
   }
 
   // Utilitário para converter divisores de data do WhatsApp Web em português para objeto Date real
@@ -2282,18 +2337,21 @@ const PT_MONTH_NAMES = {
       return;
     }
 
-    logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})`);
+    const isOldLead = checkAndTagOldChat(chatData);
+
+    logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})${isOldLead ? ' [Base Antiga / Reativação]' : ''}`);
     if (badge) badge.innerText = 'Salvando...';
 
     const response = await dispatchSyncBatchChats([chatData]);
         if (response && response.success) {
           logToConsoleAndCloudWatch("INFO", "SYNC_SINGLE_SUCCESS", `✓ Sucesso! ${chatData.messages.length} msgs enviadas para Brokiva`);
           if (badge) {
-            badge.innerText = `✓ ${chatData.messages.length} msgs`;
-            badge.style.background = "#dcfce7";
-            badge.style.color = "#15803d";
+            badge.innerText = `✓ ${chatData.messages.length} msgs${isOldLead ? ' (Reativação)' : ''}`;
+            badge.style.background = isOldLead ? "#fef3c7" : "#dcfce7";
+            badge.style.color = isOldLead ? "#b45309" : "#15803d";
           }
-          alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!`);
+          const oldNote = isOldLead ? '\n\n🏷️ Identificado como "Base Antiga / Reativação" (última mensagem com mais de 60 dias).' : '';
+          alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!${oldNote}`);
         } else {
           const err = response?.error || "Erro desconhecido na sincronização.";
           logToConsoleAndCloudWatch("WARN", "SYNC_SINGLE_FAILED", `Falha ao sincronizar: ${err}`);
@@ -2692,7 +2750,7 @@ const PT_MONTH_NAMES = {
     return overlay;
   }
 
-  function openSyncModal(maxChats) {
+  function openSyncModal(maxChats, syncMode = 'FULL') {
     cancelSyncRequested = false;
     const overlay = ensureSyncModalExists();
     overlay.classList.add('active');
@@ -2708,8 +2766,16 @@ const PT_MONTH_NAMES = {
     const iconWrap = document.getElementById('brokiva-modal-icon');
     const footer = document.getElementById('brokiva-modal-footer');
 
-    if (titleEl) titleEl.innerText = 'Sincronizando com a Brokiva CRM';
-    if (subtitleEl) subtitleEl.innerText = 'Importando histórico completo de conversas e mensagens com segurança...';
+    if (titleEl) {
+      titleEl.innerText = syncMode === 'RECENT'
+        ? '⚡ Sincronizando Conversas Recentes'
+        : '🌐 Sincronizando Carteira Completa (Todos os Tempos)';
+    }
+    if (subtitleEl) {
+      subtitleEl.innerText = syncMode === 'RECENT'
+        ? 'Lendo as conversas mais ativas no topo da lista para rápida atualização...'
+        : 'Varrendo todo o histórico do WhatsApp. Conversas antigas serão catalogadas para reativação...';
+    }
     if (statChats) statChats.innerText = (!maxChats || maxChats === Infinity) ? '0 conversas' : `0 / ${maxChats}`;
     if (statMsgs) statMsgs.innerText = '0';
     if (statPct) statPct.innerText = '0%';
@@ -2838,29 +2904,38 @@ const PT_MONTH_NAMES = {
   }
 
   // 5. Varredura Automática Paginada com Carregamento Profundo e Tela de Bloqueio
-  async function executeBatchHistoryScan() {
+  async function executeBatchHistoryScan(options = {}) {
     if (isSyncing) return;
     isSyncing = true;
 
-    const btn = document.getElementById('sovereign-batch-sync-btn');
+    const syncMode = options?.mode || 'FULL'; // 'RECENT' ou 'FULL'
+    const MAX_TARGET_CHATS = syncMode === 'RECENT' ? 60 : Infinity;
+
+    const btnRecent = document.getElementById('sovereign-batch-sync-recent-btn');
+    const btnFull = document.getElementById('sovereign-batch-sync-full-btn');
+    const btnOld = document.getElementById('sovereign-batch-sync-btn');
     const progressBar = document.getElementById('sovereign-progress-bar');
     const progressFill = document.getElementById('sovereign-progress-fill');
     const progressStatus = document.getElementById('sovereign-progress-status');
 
-    if (btn) btn.disabled = true;
+    if (btnRecent) btnRecent.disabled = true;
+    if (btnFull) btnFull.disabled = true;
+    if (btnOld) btnOld.disabled = true;
     if (progressBar) progressBar.style.display = 'block';
     if (progressStatus) {
       progressStatus.style.display = 'block';
-      progressStatus.innerText = 'Iniciando varredura e rolagem das conversas...';
+      progressStatus.innerText = syncMode === 'RECENT'
+        ? 'Iniciando sincronização rápida (conversas ativas no topo)...'
+        : 'Iniciando varredura da carteira completa (sem limite de data)...';
     }
 
-    const MAX_TARGET_CHATS = Infinity; // Varredura completa de todas as conversas sem limite prévio fixado
     let totalMessagesSynced = 0;
+    let consecutiveOldChatsInRecentMode = 0;
 
     // Abre a tela de carregamento (modal com blur) cobrindo o WhatsApp Web
-    openSyncModal(MAX_TARGET_CHATS);
+    openSyncModal(MAX_TARGET_CHATS, syncMode);
 
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', 'Varredura em lote profunda iniciada');
+    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', `Varredura iniciada em modo: ${syncMode} (Max chats: ${MAX_TARGET_CHATS})`);
 
     const scrollContainer = findPaneSideScrollContainer() || document.querySelector('#pane-side');
     if (!scrollContainer) {
@@ -2868,7 +2943,9 @@ const PT_MONTH_NAMES = {
       closeSyncModal();
       alert('Nenhum chat visível no WhatsApp Web. Certifique-se de que o WhatsApp Web está aberto.');
       isSyncing = false;
-      if (btn) btn.disabled = false;
+      if (btnRecent) btnRecent.disabled = false;
+      if (btnFull) btnFull.disabled = false;
+      if (btnOld) btnOld.disabled = false;
       return;
     }
 
@@ -3019,27 +3096,41 @@ const PT_MONTH_NAMES = {
         }
 
         if (chatData && chatData.phone && !isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
+          const isOldLead = checkAndTagOldChat(chatData);
+
+          if (isOldLead) {
+            consecutiveOldChatsInRecentMode++;
+          } else {
+            consecutiveOldChatsInRecentMode = 0;
+          }
+
           syncedChats.push(chatData);
           const msgsCount = chatData.messages ? chatData.messages.length : 0;
           totalMessagesSynced += msgsCount;
 
-          logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${msgsCount} msgs de ${chatData.name} (${chatData.phone})`);
+          logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${msgsCount} msgs de ${chatData.name} (${chatData.phone})${isOldLead ? ' [Base Antiga / Reativação]' : ''}`);
 
           // Envia imediatamente cada chat usando o despacho resiliente com fallback fetch
           const res = await dispatchSyncBatchChats([chatData]);
-                    if (res && res.success) {
-                      logToConsoleAndCloudWatch("INFO", "CHAT_SAVED_OK", `✓ Chat ${chatData.name} salvo com sucesso no CRM`);
-                    } else {
-                      logToConsoleAndCloudWatch("WARN", "CHAT_SAVE_FAIL", `Falha ao salvar ${chatData.name}: ${res?.error || "sem resposta"}`);
-                    }
+          if (res && res.success) {
+            logToConsoleAndCloudWatch("INFO", "CHAT_SAVED_OK", `✓ Chat ${chatData.name} salvo com sucesso no CRM`);
+          } else {
+            logToConsoleAndCloudWatch("WARN", "CHAT_SAVE_FAIL", `Falha ao salvar ${chatData.name}: ${res?.error || "sem resposta"}`);
+          }
 
           updateSyncModalProgress({
             syncedCount: syncedChats.length,
             maxChats: MAX_TARGET_CHATS,
             contactName: `${chatData.name} (${formatPhoneDisplay(chatData.phone)})`,
-            actionText: `✓ ${msgsCount} mensagens sincronizadas`,
+            actionText: `✓ ${msgsCount} mensagens sincronizadas${isOldLead ? ' • Base Antiga / Reativação' : ''}`,
             totalMessages: totalMessagesSynced,
           });
+
+          // Se estiver no modo RECENT e já atingiu 4 conversas inativas consecutivas (>60 dias ou ano anterior), conclui a varredura rápida
+          if (syncMode === 'RECENT' && consecutiveOldChatsInRecentMode >= 4) {
+            logToConsoleAndCloudWatch('INFO', 'RECENT_MODE_CUTOFF', 'Atingido limite de 4 conversas consecutivas inativas no modo Recentes. Concluindo rotina rápida.');
+            break;
+          }
         } else {
           logToConsoleAndCloudWatch('WARN', 'CHAT_SKIPPED', `Chat "${currentName}": Ignorado (grupo, canal ou sem identificador válido)`);
         }
@@ -3096,7 +3187,9 @@ const PT_MONTH_NAMES = {
     }
 
     isSyncing = false;
-    if (btn) btn.disabled = false;
+    if (btnRecent) btnRecent.disabled = false;
+    if (btnFull) btnFull.disabled = false;
+    if (btnOld) btnOld.disabled = false;
     if (progressFill) progressFill.style.width = '100%';
     if (progressStatus) {
       if (syncedChats.length === 0) {

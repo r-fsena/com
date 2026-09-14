@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Contact, Deal, Conversation, Message, AIInsight, User } from '@/types/crm';
+import { Contact, Deal, Conversation, Message, AIInsight, User, QuickReplyTemplate } from '@/types/crm';
 import { MOCK_USERS } from '@/lib/mock-data';
 import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 
@@ -11,6 +11,7 @@ export interface ServerCRMState {
   messages: Message[];
   aiInsights: Record<string, AIInsight>;
   users?: User[];
+  quickReplies?: QuickReplyTemplate[];
 }
 
 // Base de dados limpa para produção e operação real
@@ -527,6 +528,7 @@ export const serverCRMStore = {
       messages: remainingMessages,
       aiInsights: remainingInsights,
       users: current.users || mergeUserLists(MOCK_USERS, []),
+      quickReplies: current.quickReplies || [],
     };
 
     global.__SERVER_CRM_STATE__ = next;
@@ -564,6 +566,15 @@ export const serverCRMStore = {
       return d;
     });
 
+    // Mescla modelos de respostas rápidas por ID preservando itens mais recentes
+    const mergedQuickReplies = partial.quickReplies !== undefined
+      ? Array.from(
+          new Map(
+            [...(current.quickReplies || []), ...(partial.quickReplies || [])].map(q => [q.id, q])
+          ).values()
+        )
+      : (current.quickReplies || []);
+
     const next: ServerCRMState = {
       contacts: mergedContacts,
       deals: cleanDeals,
@@ -571,6 +582,7 @@ export const serverCRMStore = {
       messages: mergedMessages,
       aiInsights: partial.aiInsights ? { ...current.aiInsights, ...partial.aiInsights } : current.aiInsights,
       users: mergedUsers,
+      quickReplies: mergedQuickReplies,
     };
     global.__SERVER_CRM_STATE__ = next;
     saveStateToDisk();

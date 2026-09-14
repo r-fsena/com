@@ -44,9 +44,11 @@ import {
   UserX,
   UserCheck,
   Download,
-  Puzzle
+  Puzzle,
+  Zap
 } from 'lucide-react';
 import { UserRole, User, TenantFeatureFlags, TenantAIConfig, AIProvider, AITone, AIObjective } from '@/types/crm';
+import { MessageTemplatesModal } from '@/components/templates/MessageTemplatesModal';
 
 interface SettingsManagerProps {
   onOpenQrCodeModal?: () => void;
@@ -70,8 +72,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     resetCRMDatabase
   } = useCRM();
   
-  // 7 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Módulos (Feature Flags), Inteligência Artificial
-  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'FLAGS' | 'AI'>('TENANT');
+  // 8 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Módulos (Feature Flags), Inteligência Artificial, Modelos
+  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'FLAGS' | 'AI' | 'TEMPLATES'>('TENANT');
   const [flagsSavedMessage, setFlagsSavedMessage] = useState<string | null>(null);
   const [isResettingData, setIsResettingData] = useState(false);
   const [resetDataSuccess, setResetDataSuccess] = useState(false);
@@ -456,6 +458,19 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-extrabold flex items-center gap-1">
             <span>BYOK</span>
           </span>
+        </button>
+
+        {/* 8. MODELOS DE MENSAGENS (RESPOSTAS RÁPIDAS) */}
+        <button
+          onClick={() => setActiveTab('TEMPLATES')}
+          className={`py-3.5 border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'TEMPLATES'
+              ? 'border-[#3742AC] text-[#3742AC] font-bold'
+              : 'border-transparent hover:text-slate-800'
+          }`}
+        >
+          <Zap className="w-4 h-4 text-amber-500 fill-amber-500" />
+          <span>8. Modelos de Mensagens</span>
         </button>
       </div>
 
@@ -2016,6 +2031,15 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               </button>
             </div>
           </form>
+        )}
+
+        {/* ========================================================================= */}
+        {/* SUBMENU 8: MODELOS DE MENSAGENS & RESPOSTAS RÁPIDAS                     */}
+        {/* ========================================================================= */}
+        {activeTab === 'TEMPLATES' && (
+          <div className="w-full">
+            <MessageTemplatesModal inline={true} />
+          </div>
         )}
       </div>
 

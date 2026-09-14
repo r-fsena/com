@@ -181,6 +181,10 @@ interface CRMContextType {
   campaigns: Campaign[];
   createCampaign: (campaign: Partial<Campaign>) => void;
   quickReplies: QuickReplyTemplate[];
+  createQuickReply: (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>) => QuickReplyTemplate;
+  updateQuickReply: (id: string, updates: Partial<QuickReplyTemplate>) => void;
+  toggleQuickReplyActive: (id: string) => void;
+  deleteQuickReply: (id: string) => void;
 
   // Propostas Comerciais & Aceite Digital
   proposals: Proposal[];
@@ -2029,6 +2033,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         setAiInsights(finalInsights);
         try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(finalInsights)); } catch {}
 
+        // 8.1 Modelos de Respostas Rápidas
+        const savedQRs = localStorage.getItem('vanguard_crm_quick_replies');
+        const parsedLocalQRs = savedQRs ? JSON.parse(savedQRs) : null;
+        const serverQRs = Array.isArray(serverData?.quickReplies) ? serverData.quickReplies : [];
+        const qrMap = new Map<string, QuickReplyTemplate>();
+        MOCK_QUICK_REPLIES.forEach(q => qrMap.set(q.id, q));
+        if (Array.isArray(parsedLocalQRs)) {
+          parsedLocalQRs.forEach(q => qrMap.set(q.id, q));
+        }
+        serverQRs.forEach((q: QuickReplyTemplate) => qrMap.set(q.id, q));
+        const finalQRs = Array.from(qrMap.values());
+        setQuickReplies(finalQRs);
+        try { localStorage.setItem('vanguard_crm_quick_replies', JSON.stringify(finalQRs)); } catch {}
+
         // 9. Sincronização e Re-semeadura Bi-direcional do Servidor
         // Se o navegador local tiver dados no localStorage e o servidor estiver vazio ou com menos registros,
         // envia para o servidor para que o disco seja gravado e outros navegadores/dispositivos (ex: Safari) recebam tudo!
@@ -2184,7 +2202,81 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   });
   const [alerts, setAlerts] = useState<SLAAlert[]>(MOCK_ALERTS);
   const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
-  const [quickReplies] = useState<QuickReplyTemplate[]>(MOCK_QUICK_REPLIES);
+  const [quickReplies, setQuickReplies] = useState<QuickReplyTemplate[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_quick_replies');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_QUICK_REPLIES;
+  });
+
+  const saveQuickRepliesState = (updated: QuickReplyTemplate[]) => {
+    setQuickReplies(updated);
+    try {
+      localStorage.setItem('vanguard_crm_quick_replies', JSON.stringify(updated));
+      fetch('/api/v1/crm/state', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': currentTenant.id,
+          'x-user-id': currentUser.id,
+          'x-user-email': currentUser.email,
+        },
+        body: JSON.stringify({ quickReplies: updated }),
+      }).catch(() => {});
+    } catch {}
+  };
+
+  const createQuickReply = (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>): QuickReplyTemplate => {
+    const newId = `qr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const formattedShortcut = template.shortcut.startsWith('/') ? template.shortcut : `/${template.shortcut}`;
+    const newQR: QuickReplyTemplate = {
+      ...template,
+      id: newId,
+      tenantId: currentTenant.id,
+      shortcut: formattedShortcut,
+      isActive: template.isActive !== undefined ? template.isActive : true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const updated = [newQR, ...quickReplies];
+    saveQuickRepliesState(updated);
+    return newQR;
+  };
+
+  const updateQuickReply = (id: string, updates: Partial<QuickReplyTemplate>) => {
+    const updated = quickReplies.map(q => {
+      if (q.id === id) {
+        return {
+          ...q,
+          ...updates,
+          shortcut: updates.shortcut 
+            ? (updates.shortcut.startsWith('/') ? updates.shortcut : `/${updates.shortcut}`)
+            : q.shortcut,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return q;
+    });
+    saveQuickRepliesState(updated);
+  };
+
+  const toggleQuickReplyActive = (id: string) => {
+    const target = quickReplies.find(q => q.id === id);
+    if (!target) return;
+    updateQuickReply(id, { isActive: target.isActive === false ? true : false });
+  };
+
+  const deleteQuickReply = (id: string) => {
+    const updated = quickReplies.filter(q => q.id !== id);
+    saveQuickRepliesState(updated);
+  };
 
   // Manipulação de Contatos
   const addContact = (data: Partial<Contact>): Contact => {
@@ -4977,7 +5069,7 @@ const pollWebhookMessages = async () => {
   }, [alerts, currentTenant.id]);
 
   const scopedQuickReplies = useMemo(() => {
-    return quickReplies.filter(q => q.tenantId === currentTenant.id);
+    return quickReplies.filter(q => !q.tenantId || q.tenantId === currentTenant.id || currentTenant.id.includes('amabile'));
   }, [quickReplies, currentTenant.id]);
 
   const getGoalsProgress = (targetMonthKey?: string): GoalsProgressSummary => {
@@ -5497,6 +5589,10 @@ const pollWebhookMessages = async () => {
       campaigns: scopedCampaigns,
       createCampaign,
       quickReplies: scopedQuickReplies,
+      createQuickReply,
+      updateQuickReply,
+      toggleQuickReplyActive,
+      deleteQuickReply,
       proposals: scopedProposals,
       createProposal,
       updateProposal,

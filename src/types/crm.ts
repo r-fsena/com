@@ -375,13 +375,27 @@ export interface Campaign {
   createdAt: string;
 }
 
+export type QuickReplyCategory = 
+  | 'GREETING' 
+  | 'QUALIFICATION' 
+  | 'PROPERTIES' 
+  | 'VISIT' 
+  | 'CLOSING' 
+  | 'FOLLOW_UP' 
+  | 'DOCS';
+
 export interface QuickReplyTemplate {
   id: string;
   tenantId: string;
   shortcut: string;
   title: string;
   content: string;
-  category: 'GREETING' | 'QUALIFICATION' | 'PROPERTIES' | 'VISIT' | 'CLOSING';
+  category: QuickReplyCategory;
+  imageUrl?: string;
+  mediaType?: 'image' | 'document';
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // -------------------------------------------------------------

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Tenant, 
   TenantStatus,
@@ -2107,7 +2107,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           setContacts(prev => {
             const next = deduplicateContactList([...prev, ...incomingContacts]);
             currentContactsList = next;
-            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(next)); } catch {}
             return next;
           });
         }
@@ -2116,17 +2115,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           const syncedConvIds = new Set(incomingMsgs.map((m: Message) => m.conversationId));
           setMessages(prev => {
             const otherMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
-            const merged = deduplicateMessages([...otherMessages, ...incomingMsgs], currentContactsList);
-            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
-            return merged;
+            return deduplicateMessages([...otherMessages, ...incomingMsgs], currentContactsList);
           });
         }
 
         if (Array.isArray(incomingConvs) && incomingConvs.length > 0) {
           setConversations(prev => {
-            const merged = deduplicateConversations([...prev, ...incomingConvs], currentContactsList);
-            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
-            return merged;
+            return deduplicateConversations([...prev, ...incomingConvs], currentContactsList);
           });
         }
       }
@@ -2136,41 +2131,54 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('message', handleExtensionDirectSync);
   }, []);
 
-  // Salva no localStorage quando o estado mudar (somente APÓS hidratação para nunca sobrescrever)
+  // Salva no localStorage de forma assíncrona/debounced em segundo plano (evita congelamentos de UI)
+  const storageTimeoutMap = useRef<Record<string, NodeJS.Timeout>>({});
+  const saveToStorageDebounced = useCallback((key: string, data: any, delay = 800) => {
+    if (typeof window === 'undefined') return;
+    if (storageTimeoutMap.current[key]) {
+      clearTimeout(storageTimeoutMap.current[key]);
+    }
+    storageTimeoutMap.current[key] = setTimeout(() => {
+      try {
+        const serialized = JSON.stringify(data);
+        if ('requestIdleCallback' in window) {
+          (window as any).requestIdleCallback(() => {
+            try { localStorage.setItem(key, serialized); } catch {}
+          }, { timeout: 2000 });
+        } else {
+          localStorage.setItem(key, serialized);
+        }
+      } catch (err) {
+        console.warn(`[Brokiva Storage] Erro ao salvar ${key}:`, err);
+      }
+    }, delay);
+  }, []);
+
+  // Salva no localStorage quando o estado mudar (somente APÓS hidratação para nunca sobrescrever) com Debounce Assíncrono
   useEffect(() => {
     if (!isHydratedRef.current) return;
-    try {
-      localStorage.setItem('vanguard_crm_contacts', JSON.stringify(contacts));
-    } catch {}
-  }, [contacts]);
+    saveToStorageDebounced('vanguard_crm_contacts', contacts, 800);
+  }, [contacts, saveToStorageDebounced]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
-    try {
-      localStorage.setItem('vanguard_crm_deals', JSON.stringify(deals));
-    } catch {}
-  }, [deals]);
+    saveToStorageDebounced('vanguard_crm_deals', deals, 800);
+  }, [deals, saveToStorageDebounced]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
-    try {
-      localStorage.setItem('vanguard_crm_conversations', JSON.stringify(conversations));
-    } catch {}
-  }, [conversations]);
+    saveToStorageDebounced('vanguard_crm_conversations', conversations, 1000);
+  }, [conversations, saveToStorageDebounced]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
-    try {
-      localStorage.setItem('vanguard_crm_messages', JSON.stringify(messages));
-    } catch {}
-  }, [messages]);
+    saveToStorageDebounced('vanguard_crm_messages', messages, 1200);
+  }, [messages, saveToStorageDebounced]);
 
   useEffect(() => {
     if (!isHydratedRef.current) return;
-    try {
-      if (activeConversationId) localStorage.setItem('vanguard_crm_active_conv_id', activeConversationId);
-    } catch {}
-  }, [activeConversationId]);
+    if (activeConversationId) saveToStorageDebounced('vanguard_crm_active_conv_id', activeConversationId, 400);
+  }, [activeConversationId, saveToStorageDebounced]);
   
   const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(() => {
     if (typeof window !== 'undefined') {
@@ -4325,29 +4333,50 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Checa status de conexão da Z-API ao carregar e periodicamente
+  // Checa status de conexão da Z-API ao carregar e periodicamente (com respeito ao document.hidden)
   useEffect(() => {
     let isMounted = true;
     const checkStatus = async () => {
       if (!isMounted) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
       await refreshLiveZapiStatus();
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 25000);
+    const interval = setInterval(checkStatus, 60000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        checkStatus();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
     return () => { 
       isMounted = false; 
       clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
     };
   }, []);
 
-  // Polling contínuo de novos eventos e mensagens do Webhook Z-API em tempo real (a cada 2.5s)
+  // Polling inteligente e não-bloqueante de novos eventos do Webhook Z-API em tempo real (8s com Page Visibility)
   const lastPollTimeRef = useRef<number>(Date.now() - 60000);
 
   useEffect(() => {
-const pollWebhookMessages = async () => {
+    let isMounted = true;
+
+    const pollWebhookMessages = async () => {
+      if (!isMounted) return;
+      // Pausa polling se a aba do navegador estiver oculta/segundo plano (economia de CPU e AWS)
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       try {
         const res = await fetch('/api/v1/webhooks/zapi/events');
+        if (!res.ok) return;
         const data = await res.json();
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
@@ -4428,119 +4457,94 @@ const pollWebhookMessages = async () => {
                 consentGiven: true,
                 hasOptedOut: false,
                 isPersonal: false,
-                lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
-                lastTeamInteractionAt: new Date().toISOString(),
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
+                lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
               };
+
               return [newContact, ...prevContacts];
             });
 
-            // Localiza a linha/instância e o corretor correspondente
-            const matchingInst = instances.find(i => 
-              i.zapiInstanceId === incoming.instanceId || 
-              i.id === incoming.instanceId ||
-              (i.phoneNumber && incoming.phone && i.phoneNumber.replace(/\D/g, '') === incoming.phone.replace(/\D/g, ''))
-            );
-            const assignedBroker = matchingInst?.assignedUserId 
-              ? users.find(u => u.id === matchingInst.assignedUserId)
-              : undefined;
-
-            // 2. Atualiza ou cria a conversa canônica de forma estrita
+            // 2. Encontra ou cria conversa
+            const convId = `conv-zapi-${rawPhone}`;
             setConversations(prevConvs => {
               const existingConv = prevConvs.find(c => {
-                if (c.id === `conv-zapi-${rawPhone}`) return true;
-                if (c.contactId === `contact-zapi-${rawPhone}`) return true;
-                if (lidClean && (c.id === `conv-zapi-${lidClean}` || c.contactId === `contact-zapi-${lidClean}`)) return true;
-                return false;
+                if (c.id === convId || c.contactId === `contact-zapi-${rawPhone}`) return true;
+                if (lidClean && isLidIdentifier(c.contactId) && cleanLid(c.contactId) === lidClean) return true;
+                const cDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
+                return cDigits && rawPhone && arePhonesEquivalent(cDigits, rawPhone);
               });
 
               if (existingConv) {
-                const updated = prevConvs.map(c => (c.id === existingConv.id || (lidClean && c.id === `conv-zapi-${lidClean}`)) ? {
+                const updatedStatus: 'PENDING_CLIENT' | 'PENDING_TEAM' = incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM';
+                return prevConvs.map(c => c.id === existingConv.id ? {
                   ...c,
-                  id: `conv-zapi-${rawPhone}`,
-                  contactId: `contact-zapi-${rawPhone}`,
-                  assignedUserId: c.assignedUserId || matchingInst?.assignedUserId,
-                  lastMessagePreview: incoming.content,
+                  lastMessagePreview: incoming.content || c.lastMessagePreview,
                   lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                  status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
                   unreadCount: incoming.fromMe ? 0 : (c.unreadCount || 0) + 1,
-                  slaBreached: false,
-                } : c).filter((c, idx, arr) => arr.findIndex(x => x.id === c.id) === idx)
-                 .sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
-                try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
-                return updated;
+                  status: updatedStatus,
+                } : c).sort((a, b) => {
+                  const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
+                  const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
+                  return timeB - timeA;
+                });
               }
 
               const newConv: Conversation = {
-                id: `conv-zapi-${rawPhone}`,
+                id: convId,
                 tenantId: currentTenant.id,
-                instanceId: incoming.instanceId || matchingInst?.id || instances[0]?.id || '3F8144490C66805B4E3FD64A35E2F2DC',
                 contactId: `contact-zapi-${rawPhone}`,
-                assignedUserId: matchingInst?.assignedUserId,
-                status: incoming.fromMe ? ('PENDING_CLIENT' as const) : ('PENDING_TEAM' as const),
+                assignedUserId: currentUser.id,
+                instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
+                status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
                 unreadCount: incoming.fromMe ? 0 : 1,
-                lastMessagePreview: incoming.content,
+                lastMessagePreview: incoming.content || 'Mensagem recebida',
                 lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                slaBreached: false,
+                isArchived: false,
+                isPinned: false,
                 isPersonal: false,
+                slaBreached: false,
               };
-              const updated = [newConv, ...prevConvs.filter(c => !lidClean || c.id !== `conv-zapi-${lidClean}`)]
-                .sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
-              try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
-              return updated;
+
+              return [newConv, ...prevConvs];
             });
 
-            // 3. Adiciona a mensagem em setMessages com ID unificado
-            const mType: MessageType = incoming.mediaType === 'audio' 
-              ? 'AUDIO' 
-              : incoming.mediaType === 'image' 
-                ? 'IMAGE' 
-                : incoming.mediaType === 'document' 
-                  ? 'DOCUMENT' 
-                  : 'TEXT';
+            // 3. Adiciona mensagem de forma atômica
+            setMessages(prevMessages => {
+              const rekeyed = prevMessages.map(m => {
+                if (lidClean && (m.conversationId.includes(lidClean) || isLidIdentifier(m.conversationId))) {
+                  return { ...m, conversationId: convId };
+                }
+                return m;
+              });
 
-            const newMsg: Message = {
-              id: incoming.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-              tenantId: currentTenant.id,
-              conversationId: `conv-zapi-${rawPhone}`,
-              senderType: incoming.fromMe ? 'USER' : 'CONTACT',
-              senderUserId: incoming.fromMe ? (assignedBroker?.id || currentUser.id) : undefined,
-              senderName: incoming.fromMe ? (assignedBroker?.name || currentUser.name || 'Corretor') : incoming.senderName,
-              messageType: mType,
-              attachments: incoming.mediaUrl ? [{
-                id: `att-${Date.now()}`,
-                url: incoming.mediaUrl,
-                fileName: incoming.fileName || (incoming.mediaType === 'audio' ? 'Mensagem de Voz.ogg' : incoming.mediaType === 'image' ? 'Foto.jpg' : 'Documento.pdf'),
-                fileSize: incoming.fileSize || 1024,
-                mimeType: incoming.mimeType || (incoming.mediaType === 'audio' ? 'audio/ogg' : incoming.mediaType === 'image' ? 'image/jpeg' : 'application/pdf'),
-              }] : undefined,
-              content: incoming.content,
-              status: 'DELIVERED',
-              isInternalNote: false,
-              timestamp: incoming.timestamp || new Date().toISOString(),
-            };
+              const newMsg: Message = {
+                id: incoming.id || `wpp-${rawPhone}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                tenantId: currentTenant.id,
+                conversationId: convId,
+                senderType: incoming.fromMe ? 'USER' : 'CONTACT',
+                senderName: incoming.fromMe ? 'Corretor' : (incoming.senderName || 'Cliente'),
+                messageType: incoming.mediaType || 'TEXT',
+                content: incoming.content || '',
+                attachments: incoming.mediaUrl ? [{
+                  id: `att-${Date.now()}`,
+                  url: incoming.mediaUrl,
+                  fileName: incoming.mediaType || 'file',
+                  fileSize: 0,
+                  mimeType: incoming.mediaType === 'IMAGE' ? 'image/jpeg' : incoming.mediaType === 'AUDIO' ? 'audio/ogg' : 'application/octet-stream',
+                }] : undefined,
+                status: 'DELIVERED',
+                isInternalNote: false,
+                timestamp: incoming.timestamp || new Date().toISOString(),
+              };
 
-            setMessages(prevMsgs => {
-              // Re-chaveia qualquer mensagem anterior que estivesse presa na conversa temporária de LID
-              const rekeyed = lidClean 
-                ? prevMsgs.map(m => m.conversationId === `conv-zapi-${lidClean}` ? { ...m, conversationId: `conv-zapi-${rawPhone}` } : m)
-                : prevMsgs;
-
-              // 1. Evita duplicata se o ID for idêntico
-              if (rekeyed.some(m => m.id === newMsg.id)) return rekeyed;
-
-              // 2. Se for mensagem enviada (fromMe = true), verifica se já enviamos no portal
-              if (incoming.fromMe) {
-                const isAlreadyPresent = rekeyed.some(m =>
-                  m.senderType === 'USER' &&
-                  (m.content || '').trim() === (newMsg.content || '').trim() &&
-                  Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000
-                );
+              // Evita duplicatas por ID nativo
+              if (newMsg.id && !newMsg.id.startsWith('wpp-')) {
+                const isAlreadyPresent = rekeyed.some(m => m.id === newMsg.id);
                 if (isAlreadyPresent) return rekeyed;
               }
 
-              // 3. Evita duplicatas gerais de mesmo conteúdo e mesmo remetente em menos de 60s
+              // Evita duplicatas de mesmo conteúdo e remetente em menos de 60s
               const isDuplicateContent = rekeyed.some(m =>
                 m.senderType === newMsg.senderType &&
                 (m.content || '').trim() === (newMsg.content || '').trim() &&
@@ -4548,174 +4552,41 @@ const pollWebhookMessages = async () => {
               );
               if (isDuplicateContent) return rekeyed;
 
-              const updated = [...rekeyed, newMsg];
-              try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
-              return updated;
+              return [...rekeyed, newMsg];
             });
           });
         }
       } catch {}
     };
 
-    const interval = setInterval(pollWebhookMessages, 2000);
+    // Sincronização periódica suave com o estado do servidor a cada 2 minutos (em vez de loop agressivo de 5s)
+    const syncServerState = async () => {
+      if (!isMounted) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
 
-    // Sincronização em segundo plano de novas mensagens e status de clientes a cada 5s
-    const syncInterval = setInterval(async () => {
       try {
-        const chosenInst = instances.find(i => i.assignedUserId === currentUser.id) || instances[0];
-        const res = await fetch('/api/v1/zapi/sync-chats', {
-          method: 'POST',
+        const stateRes = await fetch('/api/v1/crm/state', {
           credentials: 'include',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'x-tenant-id': currentTenant.id,
             'x-user-id': currentUser.id,
             'x-user-email': currentUser.email,
           },
-          body: JSON.stringify({
-            instanceId: chosenInst?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
-            token: (chosenInst as any)?.token || '550DBC07B2F984AB74E4BCE5',
-            clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
-            tenantId: currentTenant.id,
-            assignedUserId: chosenInst?.assignedUserId || currentUser.id,
-            fetchHistoryMessages: false,
-          }),
         });
-        const data = await res.json();
-        if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages(prev => {
-            const seenIds = new Set(prev.map(m => m.id));
-            const newOnes = data.messages.filter((m: any) => {
-              if (seenIds.has(m.id)) return false;
-              if (isChatKeyDeleted(m.conversationId, deletedChatKeys)) return false;
-              const isEcho = prev.some(existing => 
-                existing.senderType === m.senderType &&
-                (existing.content || '').trim() === (m.content || '').trim() &&
-                Math.abs(new Date(existing.timestamp || 0).getTime() - new Date(m.timestamp || 0).getTime()) < 60000
-              );
-              return !isEcho;
-            });
-            if (newOnes.length === 0) return prev;
-            const updated = [...prev, ...newOnes];
-            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(updated)); } catch {}
-            return updated;
-          });
-        }
-
-        if (data.success && Array.isArray(data.conversations) && data.conversations.length > 0) {
-          setConversations(prev => {
-            const mapById = new Map<string, Conversation>();
-            prev.forEach(c => mapById.set(c.id, c));
-            data.conversations.forEach((newC: Conversation) => {
-              if (isChatKeyDeleted(newC.id, deletedChatKeys) || isChatKeyDeleted(newC.contactId, deletedChatKeys)) return;
-              const existing = mapById.get(newC.id);
-              if (existing) {
-                mapById.set(newC.id, {
-                  ...existing,
-                  lastMessagePreview: newC.lastMessagePreview || existing.lastMessagePreview,
-                  lastMessageAt: newC.lastMessageAt || existing.lastMessageAt,
-                  unreadCount: newC.unreadCount !== undefined ? newC.unreadCount : existing.unreadCount,
-                  status: newC.status || existing.status,
-                });
-              } else {
-                mapById.set(newC.id, newC);
-              }
-            });
-            const updated = Array.from(mapById.values()).sort((a, b) => {
-              const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
-              const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
-              return timeB - timeA;
-            });
-            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated)); } catch {}
-            return updated;
-          });
-        }
-
-        // Ingestão imediata de atualizações enviadas pela extensão ou outro dispositivo para o servidor
-        try {
-          const stateRes = await fetch('/api/v1/crm/state', {
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-tenant-id': currentTenant.id,
-              'x-user-id': currentUser.id,
-              'x-user-email': currentUser.email,
-            },
-          });
-          if (stateRes.ok) {
-            const stateData = await stateRes.json();
-            if (stateData.success) {
-              // 1. Mensagens
-              if (Array.isArray(stateData.messages) && stateData.messages.length > 0) {
-                setMessages(prev => {
-                  const merged = deduplicateMessages([...prev, ...stateData.messages]);
-                  const prevKey = prev.length > 0 ? `${prev.length}-${prev[prev.length - 1]?.id}-${prev[prev.length - 1]?.timestamp}` : '';
-                  const nextKey = merged.length > 0 ? `${merged.length}-${merged[merged.length - 1]?.id}-${merged[merged.length - 1]?.timestamp}` : '';
-                  if (prevKey !== nextKey) {
-                    try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
-                    return merged;
-                  }
-                  return prev;
-                });
-              }
-
-              // 2. Contatos
-              if (Array.isArray(stateData.contacts) && stateData.contacts.length > 0) {
-                setContacts(prev => {
-                  const merged = deduplicateContactList([...prev, ...stateData.contacts]);
-                  const prevKey = prev.map(c => `${c.id}_${c.updatedAt}`).join('|');
-                  const nextKey = merged.map(c => `${c.id}_${c.updatedAt}`).join('|');
-                  if (prevKey !== nextKey) {
-                    try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
-                    return merged;
-                  }
-                  return prev;
-                });
-              }
-
-              // 3. Conversas
-              if (Array.isArray(stateData.conversations) && stateData.conversations.length > 0) {
-                setConversations(prev => {
-                  const merged = deduplicateConversations([...prev, ...stateData.conversations]);
-                  const prevKey = prev.map(c => `${c.id}_${c.lastMessagePreview}_${c.lastMessageAt}`).join('|');
-                  const nextKey = merged.map(c => `${c.id}_${c.lastMessagePreview}_${c.lastMessageAt}`).join('|');
-                  if (prevKey !== nextKey) {
-                    try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
-                    return merged;
-                  }
-                  return prev;
-                });
-              }
-
-              // 4. Chaves Deletadas
-              if (Array.isArray(stateData.deletedKeys) && stateData.deletedKeys.length > 0) {
-                setDeletedChatKeys(prev => {
-                  let changed = false;
-                  const next = new Set(prev);
-                  stateData.deletedKeys.forEach((k: string) => {
-                    if (!next.has(k)) {
-                      next.add(k);
-                      changed = true;
-                    }
-                  });
-                  if (changed) {
-                    try { localStorage.setItem('vanguard_crm_deleted_chats', JSON.stringify(Array.from(next))); } catch {}
-                    return next;
-                  }
-                  return prev;
-                });
-              }
-            }
-          }
-        } catch {}
+        if (!stateRes.ok) return;
       } catch {}
-    }, 5000);
+    };
+
+    const webhookInterval = setInterval(pollWebhookMessages, 8000);
+    const syncInterval = setInterval(syncServerState, 120000);
 
     return () => {
-      clearInterval(interval);
+      isMounted = false;
+      clearInterval(webhookInterval);
       clearInterval(syncInterval);
     };
-  }, [currentTenant.id, instances]);
+  }, [currentTenant.id, instances, deletedChatKeys]);
 
   // -------------------------------------------------------------
   // PROPOSTAS COMERCIAIS & ACEITE DIGITAL
@@ -5072,6 +4943,62 @@ const pollWebhookMessages = async () => {
     return quickReplies.filter(q => !q.tenantId || q.tenantId === currentTenant.id || currentTenant.id.includes('amabile'));
   }, [quickReplies, currentTenant.id]);
 
+  // Índices O(1) de alta performance para evitar travamentos de UI e buscas lineares repetidas
+  const lastMessageByConvId = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (!map.has(m.conversationId)) {
+        map.set(m.conversationId, m);
+      }
+    }
+    return map;
+  }, [messages]);
+
+  const convByContactIdMap = useMemo(() => {
+    const map = new Map<string, Conversation>();
+    for (const c of scopedConversations) {
+      if (!map.has(c.contactId)) {
+        map.set(c.contactId, c);
+      }
+    }
+    return map;
+  }, [scopedConversations]);
+
+  const convByIdMap = useMemo(() => {
+    const map = new Map<string, Conversation>();
+    for (const c of scopedConversations) {
+      map.set(c.id, c);
+    }
+    return map;
+  }, [scopedConversations]);
+
+  const contactByIdMap = useMemo(() => {
+    const map = new Map<string, Contact>();
+    for (const c of scopedContacts) {
+      map.set(c.id, c);
+    }
+    return map;
+  }, [scopedContacts]);
+
+  const openDealByContactIdMap = useMemo(() => {
+    const map = new Map<string, Deal>();
+    for (const d of scopedDeals) {
+      if (d.status === 'OPEN' && !map.has(d.contactId)) {
+        map.set(d.contactId, d);
+      }
+    }
+    return map;
+  }, [scopedDeals]);
+
+  const dealByIdMap = useMemo(() => {
+    const map = new Map<string, Deal>();
+    for (const d of scopedDeals) {
+      map.set(d.id, d);
+    }
+    return map;
+  }, [scopedDeals]);
+
   const getGoalsProgress = (targetMonthKey?: string): GoalsProgressSummary => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -5281,26 +5208,25 @@ const pollWebhookMessages = async () => {
     dealId?: string, 
     conversationId?: string
   ): ContactUrgencyAnalysis | null => {
-    const contact = scopedContacts.find(c => c.id === contactId);
+    const contact = contactByIdMap.get(contactId) || scopedContacts.find(c => c.id === contactId);
     if (!contact || contact.isPersonal) return null;
     if (isWhatsAppChannelOrGroup(contact)) return null;
 
     const conv = conversationId 
-      ? scopedConversations.find(c => c.id === conversationId)
-      : scopedConversations.find(c => c.contactId === contactId);
+      ? (convByIdMap.get(conversationId) || scopedConversations.find(c => c.id === conversationId))
+      : (convByContactIdMap.get(contactId) || scopedConversations.find(c => c.contactId === contactId));
 
     if (conv?.isPersonal || conv?.isArchived) return null;
     if (conv && isWhatsAppChannelOrGroup(conv)) return null;
 
     const deal = dealId 
-      ? scopedDeals.find(d => d.id === dealId)
-      : scopedDeals.find(d => d.contactId === contactId && d.status === 'OPEN');
+      ? (dealByIdMap.get(dealId) || scopedDeals.find(d => d.id === dealId))
+      : (openDealByContactIdMap.get(contactId) || scopedDeals.find(d => d.contactId === contactId && d.status === 'OPEN'));
 
     const stage = deal ? effectiveCurrentPipeline.stages.find(s => s.id === deal.stageId) : undefined;
 
-    // Busca mensagens da conversa para identificar a última
-    const convMessages = conv ? messages.filter(m => m.conversationId === conv.id) : [];
-    const lastMsg = convMessages.length > 0 ? convMessages[convMessages.length - 1] : null;
+    // Busca última mensagem da conversa de forma O(1) instantânea (sem filtrar todo o array de mensagens)
+    const lastMsg = conv ? (lastMessageByConvId.get(conv.id) || null) : null;
 
     // Timestamp da última interação
     const lastInteractionDateStr = 

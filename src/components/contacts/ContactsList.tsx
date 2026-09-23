@@ -61,8 +61,24 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
     }
   };
 
-  const totalLeadsCount = contacts.filter(c => !c.isPersonal).length;
-  const totalPersonalCount = contacts.filter(c => !!c.isPersonal).length;
+  const { totalLeadsCount, totalPersonalCount } = React.useMemo(() => {
+    let leads = 0;
+    let personal = 0;
+    for (const c of contacts) {
+      if (c.isPersonal) personal++;
+      else leads++;
+    }
+    return { totalLeadsCount: leads, totalPersonalCount: personal };
+  }, [contacts]);
+
+  // Mapa O(1) de corretores por ID
+  const userMap = React.useMemo(() => {
+    const map = new Map<string, (typeof users)[0]>();
+    for (const u of users) {
+      map.set(u.id, u);
+    }
+    return map;
+  }, [users]);
 
   // Agrega dinamicamente todas as etiquetas do WhatsApp Business e Tags presentes nos contatos
   const availableLabels = React.useMemo(() => {
@@ -78,46 +94,60 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
     return Array.from(set).sort();
   }, [contacts]);
 
-  const filtered = contacts.filter(c => {
-    // Filtro por tipo (Comercial vs Pessoal)
-    if (contactTypeFilter === 'LEADS' && c.isPersonal) return false;
-    if (contactTypeFilter === 'PERSONAL' && !c.isPersonal) return false;
-
+  const filtered = React.useMemo(() => {
     const qClean = search.toLowerCase().trim();
     const qDigits = search.replace(/\D/g, '');
-    const cPhoneDigits = (c.phone || '').replace(/\D/g, '');
-    const cFormattedPhone = formatCanonicalPhone(c.phone).toLowerCase();
 
-    const matchesSearch = !qClean || 
-      c.name.toLowerCase().includes(qClean) ||
-      c.phone.toLowerCase().includes(qClean) ||
-      cFormattedPhone.includes(qClean) ||
-      (qDigits.length >= 4 && cPhoneDigits.includes(qDigits)) ||
-      (c.lid && c.lid.toLowerCase().includes(qClean)) ||
-      (c.email && c.email.toLowerCase().includes(qClean)) ||
-      (c.tags && c.tags.some(t => t.toLowerCase().includes(qClean))) ||
-      (c.whatsappLabels && c.whatsappLabels.some(l => l.toLowerCase().includes(qClean)));
+    return contacts.filter(c => {
+      // Filtro por tipo (Comercial vs Pessoal)
+      if (contactTypeFilter === 'LEADS' && c.isPersonal) return false;
+      if (contactTypeFilter === 'PERSONAL' && !c.isPersonal) return false;
 
-    if (!matchesSearch) return false;
-    if (temperatureFilter !== 'ALL' && c.temperature !== temperatureFilter) return false;
-    if (sourceFilter !== 'ALL' && c.source !== sourceFilter) return false;
+      const cPhoneDigits = (c.phone || '').replace(/\D/g, '');
+      const cFormattedPhone = formatCanonicalPhone(c.phone).toLowerCase();
 
-    if (labelFilter !== 'ALL') {
-      const hasLabel = (c.whatsappLabels && c.whatsappLabels.includes(labelFilter)) ||
-                       (c.tags && c.tags.includes(labelFilter));
-      if (!hasLabel) return false;
-    }
+      const matchesSearch = !qClean || 
+        c.name.toLowerCase().includes(qClean) ||
+        c.phone.toLowerCase().includes(qClean) ||
+        cFormattedPhone.includes(qClean) ||
+        (qDigits.length >= 4 && cPhoneDigits.includes(qDigits)) ||
+        (c.lid && c.lid.toLowerCase().includes(qClean)) ||
+        (c.email && c.email.toLowerCase().includes(qClean)) ||
+        (c.tags && c.tags.some(t => t.toLowerCase().includes(qClean))) ||
+        (c.whatsappLabels && c.whatsappLabels.some(l => l.toLowerCase().includes(qClean)));
 
-    if (inactivityFilter !== 'ALL') {
-      const urgency = getContactUrgencyAnalysis(c.id);
-      if (!urgency) return false;
-      if (inactivityFilter === 'UNANSWERED' && !urgency.isUnansweredByTeam) return false;
-      if (inactivityFilter === 'OVER_48H' && urgency.hoursSinceLastInteraction < 48) return false;
-      if (inactivityFilter === 'OVER_7D' && urgency.daysSinceLastInteraction < 7) return false;
-    }
+      if (!matchesSearch) return false;
+      if (temperatureFilter !== 'ALL' && c.temperature !== temperatureFilter) return false;
+      if (sourceFilter !== 'ALL' && c.source !== sourceFilter) return false;
 
-    return true;
-  });
+      if (labelFilter !== 'ALL') {
+        const hasLabel = (c.whatsappLabels && c.whatsappLabels.includes(labelFilter)) ||
+                         (c.tags && c.tags.includes(labelFilter));
+        if (!hasLabel) return false;
+      }
+
+      if (inactivityFilter !== 'ALL') {
+        const urgency = getContactUrgencyAnalysis(c.id);
+        if (!urgency) return false;
+        if (inactivityFilter === 'UNANSWERED' && !urgency.isUnansweredByTeam) return false;
+        if (inactivityFilter === 'OVER_48H' && urgency.hoursSinceLastInteraction < 48) return false;
+        if (inactivityFilter === 'OVER_7D' && urgency.daysSinceLastInteraction < 7) return false;
+      }
+
+      return true;
+    });
+  }, [contacts, contactTypeFilter, search, temperatureFilter, sourceFilter, labelFilter, inactivityFilter, getContactUrgencyAnalysis]);
+
+  // Paginação / Windowing progressivo para renderização instantânea (60 FPS)
+  const [visibleLimit, setVisibleLimit] = useState(50);
+
+  React.useEffect(() => {
+    setVisibleLimit(50);
+  }, [search, contactTypeFilter, temperatureFilter, sourceFilter, labelFilter, inactivityFilter]);
+
+  const visibleContacts = React.useMemo(() => {
+    return filtered.slice(0, visibleLimit);
+  }, [filtered, visibleLimit]);
 
   const handleExportCSV = () => {
     const headers = ['Nome', 'Telefone', 'Email', 'Temperatura', 'Origem', 'Entrada (R$)', 'Orcamento Max (R$)', 'Regioes', 'Tags', 'LGPD Opt-in'];
@@ -332,8 +362,8 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((contact) => {
-                const broker = users.find(u => u.id === contact.assignedUserId);
+              {visibleContacts.map((contact) => {
+                const broker = userMap.get(contact.assignedUserId || '');
                 const urgency = getContactUrgencyAnalysis(contact.id);
 
                 return (
@@ -562,6 +592,32 @@ export function ContactsList({ onOpenNewLead, onOpenChat }: ContactsListProps) {
               })}
             </tbody>
           </table>
+
+          {/* Barra de Paginação / Carregamento de Alta Performance */}
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <span>
+              Exibindo <strong>{visibleContacts.length}</strong> de <strong>{filtered.length}</strong> contatos
+              {filtered.length > visibleContacts.length && ' (renderização sob demanda de alta velocidade)'}
+            </span>
+            {filtered.length > visibleContacts.length && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleLimit(prev => Math.min(prev + 50, filtered.length))}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg font-bold text-slate-700 transition cursor-pointer shadow-xs"
+                >
+                  Carregar mais 50
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibleLimit(filtered.length)}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg font-bold text-emerald-800 transition cursor-pointer"
+                >
+                  Carregar todos ({filtered.length})
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

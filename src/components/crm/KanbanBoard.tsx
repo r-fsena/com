@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { arePhonesEquivalent, formatCanonicalPhone, isLidIdentifier, cleanLid, canonicalPhoneKey } from '@/lib/whatsapp-filter';
 import { 
@@ -98,35 +98,72 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
-  // Resolução inteligente e resiliente do contato vinculado ao deal
+  // Mapa indexado O(1) de contatos para resolução ultra-rápida de Deals
+  const contactLookup = useMemo(() => {
+    const byId = new Map<string, Contact>();
+    const byCleanId = new Map<string, Contact>();
+    const byLid = new Map<string, Contact>();
+    const byPhoneSuffix = new Map<string, Contact>();
+    const byKey = new Map<string, Contact>();
+    const byName = new Map<string, Contact>();
+
+    for (const c of contacts) {
+      byId.set(c.id, c);
+      const cleanDealContactId = c.id.replace(/^(contact|conv)-zapi-/, '');
+      byCleanId.set(cleanDealContactId, c);
+
+      if (c.lid) {
+        byLid.set(c.lid, c);
+        const lidDigits = cleanLid(c.lid);
+        if (lidDigits) byLid.set(lidDigits, c);
+      }
+
+      if (c.phone) {
+        const digits = c.phone.replace(/\D/g, '');
+        if (digits.length >= 8) {
+          byPhoneSuffix.set(digits.slice(-8), c);
+          const pKey = canonicalPhoneKey(digits);
+          if (pKey) byKey.set(pKey, c);
+        }
+      }
+
+      if (c.name) {
+        byName.set(c.name.toLowerCase().trim(), c);
+      }
+    }
+
+    return { byId, byCleanId, byLid, byPhoneSuffix, byKey, byName };
+  }, [contacts]);
+
+  // Resolução inteligente e resiliente do contato vinculado ao deal em O(1)
   const getDealContact = useCallback((deal: Deal | null | undefined): Contact | undefined => {
     if (!deal) return undefined;
     if (deal.contactId) {
       // 1. Match direto por ID
-      const byId = contacts.find(c => c.id === deal.contactId);
+      const byId = contactLookup.byId.get(deal.contactId);
       if (byId) return byId;
 
       // 2. Match por ID limpo sem prefixos
       const cleanDealContactId = deal.contactId.replace(/^(contact|conv)-zapi-/, '');
-      const byCleanId = contacts.find(c => c.id.replace(/^(contact|conv)-zapi-/, '') === cleanDealContactId);
+      const byCleanId = contactLookup.byCleanId.get(cleanDealContactId);
       if (byCleanId) return byCleanId;
 
       // 3. Match por LID
       if (isLidIdentifier(deal.contactId)) {
         const lidDigits = cleanLid(deal.contactId);
-        const byLid = contacts.find(c => c.lid && (cleanLid(c.lid) === lidDigits || c.lid === deal.contactId));
+        const byLid = contactLookup.byLid.get(lidDigits) || contactLookup.byLid.get(deal.contactId);
         if (byLid) return byLid;
       }
 
       // 4. Match por telefone equivalente e chave canônica
       const digits = deal.contactId.replace(/\D/g, '');
       if (digits && digits.length >= 8) {
-        const byPhone = contacts.find(c => arePhonesEquivalent(c.phone, digits) || (c.phone && c.phone.replace(/\D/g, '').endsWith(digits.slice(-8))));
-        if (byPhone) return byPhone;
+        const bySuffix = contactLookup.byPhoneSuffix.get(digits.slice(-8));
+        if (bySuffix) return bySuffix;
 
         const pKey = canonicalPhoneKey(digits);
         if (pKey) {
-          const byKey = contacts.find(c => c.phone && canonicalPhoneKey(c.phone) === pKey);
+          const byKey = contactLookup.byKey.get(pKey);
           if (byKey) return byKey;
         }
       }
@@ -136,64 +173,90 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     if (deal.title && deal.title.includes(' - ')) {
       const namePart = deal.title.split(' - ').pop()?.trim().toLowerCase();
       if (namePart && namePart.length >= 3) {
-        const byName = contacts.find(c => c.name && c.name.toLowerCase().trim() === namePart);
+        const byName = contactLookup.byName.get(namePart);
         if (byName) return byName;
       }
     }
 
     return undefined;
-  }, [contacts]);
+  }, [contactLookup]);
 
   // Quantidade de negócios em inatividade / esfriando (exclui contatos pessoais)
-  const staleDealsCount = deals.filter(d => {
-    if (d.status !== 'OPEN') return false;
-    const c = getDealContact(d);
-    if (c?.isPersonal) return false;
-    return getDealUrgencyAnalysis(d).urgencyLevel !== 'HEALTHY';
-  }).length;
+  const staleDealsCount = useMemo(() => {
+    return deals.filter(d => {
+      if (d.status !== 'OPEN') return false;
+      const c = getDealContact(d);
+      if (c?.isPersonal) return false;
+      return getDealUrgencyAnalysis(d).urgencyLevel !== 'HEALTHY';
+    }).length;
+  }, [deals, getDealContact, getDealUrgencyAnalysis]);
 
   // Filtragem de deals (apenas leads comerciais, contatos pessoais nunca entram no funil)
-  const filteredDeals = deals.filter(deal => {
-    const contact = getDealContact(deal);
-    if (contact?.isPersonal) return false;
-    
-    // Filtro por Oportunidades Paradas / Esfriando
-    if (filterStaleOnly) {
-      const urgency = getDealUrgencyAnalysis(deal);
-      if (urgency.urgencyLevel === 'HEALTHY') return false;
-    }
+  const filteredDeals = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    const qDigits = searchQuery.replace(/\D/g, '');
 
-    // Filtro por Corretor
-    if (selectedBroker !== 'ALL' && deal.assignedUserId !== selectedBroker) return false;
-    
-    // Filtro por Temperatura
-    if (selectedTemperature !== 'ALL' && contact?.temperature !== selectedTemperature) return false;
+    return deals.filter(deal => {
+      const contact = getDealContact(deal);
+      if (contact?.isPersonal) return false;
+      
+      // Filtro por Oportunidades Paradas / Esfriando
+      if (filterStaleOnly) {
+        const urgency = getDealUrgencyAnalysis(deal);
+        if (urgency.urgencyLevel === 'HEALTHY') return false;
+      }
 
-    // Busca textual inteligente (título, nome, telefone canônico, dígitos e etiquetas)
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const qDigits = searchQuery.replace(/\D/g, '');
-      const matchTitle = deal.title.toLowerCase().includes(q);
-      const matchClient = contact?.name?.toLowerCase().includes(q) || false;
-      const matchPhone = contact?.phone && (
-        contact.phone.toLowerCase().includes(q) ||
-        formatCanonicalPhone(contact.phone).toLowerCase().includes(q) ||
-        (qDigits.length >= 4 && contact.phone.replace(/\D/g, '').includes(qDigits))
-      );
-      const matchTags = (contact?.tags || []).some(t => t.toLowerCase().includes(q)) ||
-                        (contact?.whatsappLabels || []).some(l => l.toLowerCase().includes(q));
+      // Filtro por Corretor
+      if (selectedBroker !== 'ALL' && deal.assignedUserId !== selectedBroker) return false;
+      
+      // Filtro por Temperatura
+      if (selectedTemperature !== 'ALL' && contact?.temperature !== selectedTemperature) return false;
 
-      if (!matchTitle && !matchClient && !matchPhone && !matchTags) return false;
-    }
+      // Busca textual inteligente (título, nome, telefone canônico, dígitos e etiquetas)
+      if (q) {
+        const matchTitle = deal.title.toLowerCase().includes(q);
+        const matchClient = contact?.name?.toLowerCase().includes(q) || false;
+        const matchPhone = contact?.phone && (
+          contact.phone.toLowerCase().includes(q) ||
+          formatCanonicalPhone(contact.phone).toLowerCase().includes(q) ||
+          (qDigits.length >= 4 && contact.phone.replace(/\D/g, '').includes(qDigits))
+        );
+        const matchTags = (contact?.tags || []).some(t => t.toLowerCase().includes(q)) ||
+                          (contact?.whatsappLabels || []).some(l => l.toLowerCase().includes(q));
 
-    return true;
-  });
+        if (!matchTitle && !matchClient && !matchPhone && !matchTags) return false;
+      }
+
+      return true;
+    });
+  }, [deals, getDealContact, filterStaleOnly, getDealUrgencyAnalysis, selectedBroker, selectedTemperature, searchQuery]);
 
   // Métricas do Funil
-  const totalPipelineValue = filteredDeals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
-  const openDealsCount = filteredDeals.filter(d => d.status === 'OPEN').length;
-  const wonDealsCount = filteredDeals.filter(d => d.status === 'WON').length;
-  const wonTotalValue = filteredDeals.filter(d => d.status === 'WON').reduce((acc, d) => acc + d.expectedValue, 0);
+  const { totalPipelineValue, openDealsCount, wonDealsCount, wonTotalValue } = useMemo(() => {
+    let pipelineVal = 0;
+    let openCount = 0;
+    let wonCount = 0;
+    let wonVal = 0;
+
+    for (const d of filteredDeals) {
+      if (d.status !== 'LOST') {
+        pipelineVal += d.expectedValue || 0;
+      }
+      if (d.status === 'OPEN') {
+        openCount++;
+      } else if (d.status === 'WON') {
+        wonCount++;
+        wonVal += d.expectedValue || 0;
+      }
+    }
+
+    return {
+      totalPipelineValue: pipelineVal,
+      openDealsCount: openCount,
+      wonDealsCount: wonCount,
+      wonTotalValue: wonVal,
+    };
+  }, [filteredDeals]);
 
   const handleMoveStage = (dealId: string, targetStageId: string) => {
     const stage = currentPipeline.stages.find(s => s.id === targetStageId);

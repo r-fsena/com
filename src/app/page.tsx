@@ -55,8 +55,22 @@ export default function CRMApp() {
     return 'dashboard';
   });
 
+  const [isPendingTab, startTransition] = React.useTransition();
+
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => {
+    return new Set(['dashboard', 'inbox', 'kanban']);
+  });
+
   const setCurrentTab = (tab: string) => {
-    setCurrentTabState(tab);
+    setVisitedTabs(prev => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+    startTransition(() => {
+      setCurrentTabState(tab);
+    });
     try {
       localStorage.setItem('vanguard_crm_current_tab', tab);
     } catch {}
@@ -205,42 +219,99 @@ export default function CRMApp() {
               onNavigateTab={(tab) => setCurrentTab(tab)}
             />
 
-            {/* View Switcher */}
+            {/* View Switcher com Keep-Alive View Cache para navegação instantânea */}
             <main className="flex-1 flex overflow-hidden relative min-w-0">
+                {/* 1. WhatsApp Inbox (Sempre Preservado) */}
                 <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'inbox' ? 'flex' : 'hidden'}`}>
                   <WhatsAppInbox />
                 </div>
+
+                {/* 2. Dashboard de Vendas (Preservado após primeira visita) */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'dashboard' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('dashboard') && (
+                    <SalesDashboard 
+                      onOpenChat={handleOpenChatForContact} 
+                      onNavigateToGoals={() => setCurrentTab('goals')}
+                    />
+                  )}
+                </div>
+
+                {/* 3. Funil de Vendas / Kanban (Preservado após primeira visita) */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'kanban' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('kanban') && (
+                    <KanbanBoard
+                      onOpenLeadModal={() => setIsNewLeadOpen(true)}
+                      onOpenChat={handleOpenChatForContact}
+                    />
+                  )}
+                </div>
+
+                {/* 4. Lista de Contatos / Leads */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'contacts' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('contacts') && (
+                    <ContactsList
+                      onOpenNewLead={() => setIsNewLeadOpen(true)}
+                      onOpenChat={handleOpenChatForContact}
+                    />
+                  )}
+                </div>
+
+                {/* 5. Tarefas & Visitas */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'tasks' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('tasks') && <TasksManager />}
+                </div>
+
+                {/* 6. Metas & Performance */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'goals' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('goals') && <GoalsManager />}
+                </div>
+
+                {/* 7. Gestão Financeira (Asaas) */}
+                {isFeatureEnabled('asaasBilling') && (
+                  <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'financial' ? 'flex flex-col' : 'hidden'}`}>
+                    {visitedTabs.has('financial') && <FinancialDashboard />}
+                  </div>
+                )}
+
+                {/* 8. Propostas Comerciais */}
+                {isFeatureEnabled('proposals') && (
+                  <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'proposals' ? 'flex flex-col' : 'hidden'}`}>
+                    {visitedTabs.has('proposals') && <ProposalManager />}
+                  </div>
+                )}
+
+                {/* 9. Automações & Regras */}
+                {isFeatureEnabled('automations') && (
+                  <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'automations' ? 'flex flex-col' : 'hidden'}`}>
+                    {visitedTabs.has('automations') && <AutomationManager />}
+                  </div>
+                )}
+
+                {/* 10. Campanhas em Lote */}
+                {isFeatureEnabled('campaigns') && (
+                  <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'campaigns' ? 'flex flex-col' : 'hidden'}`}>
+                    {visitedTabs.has('campaigns') && <CampaignManager />}
+                  </div>
+                )}
+
+                {/* 11. Brok.ia Copilot */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'copilot' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('copilot') && <CopilotManager />}
+                </div>
+
+                {/* 12. Configurações da Imobiliária */}
+                <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'settings' ? 'flex flex-col' : 'hidden'}`}>
+                  {visitedTabs.has('settings') && (
+                    <SettingsManager onOpenQrCodeModal={() => setCurrentTab('whatsapp-connection')} />
+                  )}
+                </div>
+
+                {/* 13. Conexão Z-API (Carregamento pontual quando ativo) */}
+                {currentTab === 'whatsapp-connection' && <WhatsAppConnectionView />}
+
+                {/* 14. Importação WhatsApp */}
                 {currentTab === 'whatsapp-import' && (
                   <WhatsAppImportView onGoToInbox={() => setCurrentTab('inbox')} />
-                )}
-                {currentTab === 'whatsapp-connection' && <WhatsAppConnectionView />}
-                {currentTab === 'kanban' && (
-                  <KanbanBoard
-                    onOpenLeadModal={() => setIsNewLeadOpen(true)}
-                    onOpenChat={handleOpenChatForContact}
-                  />
-                )}
-                {currentTab === 'contacts' && (
-                  <ContactsList
-                    onOpenNewLead={() => setIsNewLeadOpen(true)}
-                    onOpenChat={handleOpenChatForContact}
-                  />
-                )}
-                {currentTab === 'proposals' && isFeatureEnabled('proposals') && <ProposalManager />}
-                {currentTab === 'financial' && isFeatureEnabled('asaasBilling') && <FinancialDashboard />}
-                {currentTab === 'tasks' && <TasksManager />}
-                {currentTab === 'automations' && isFeatureEnabled('automations') && <AutomationManager />}
-                {currentTab === 'campaigns' && isFeatureEnabled('campaigns') && <CampaignManager />}
-                {currentTab === 'dashboard' && (
-                  <SalesDashboard 
-                    onOpenChat={handleOpenChatForContact} 
-                    onNavigateToGoals={() => setCurrentTab('goals')}
-                  />
-                )}
-                {currentTab === 'goals' && <GoalsManager />}
-                {currentTab === 'copilot' && <CopilotManager />}
-                {currentTab === 'settings' && (
-                  <SettingsManager onOpenQrCodeModal={() => setCurrentTab('whatsapp-connection')} />
                 )}
             </main>
           </div>

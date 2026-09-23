@@ -26,9 +26,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { instanceId, token, clientToken } = body;
 
-    const currentInstanceId = instanceId || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const currentToken = token || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-    const securityToken = clientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+    const currentInstanceId = instanceId || process.env.ZAPI_INSTANCE_ID || '';
+    const currentToken = token || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const securityToken = clientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
 
     const client = new ZApiClient({
       instanceId: currentInstanceId,

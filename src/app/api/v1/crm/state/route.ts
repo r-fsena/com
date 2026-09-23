@@ -5,14 +5,19 @@ import { validateApiSession } from '@/lib/api-auth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  // Validação não-bloqueante para permitir hidratação em novos navegadores / Safari
-  const { session } = validateApiSession(req);
+  const { session, errorResponse } = validateApiSession(req);
+  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
+
+  // Em produção, se não for same-origin da UI e não tiver sessão autenticada, bloqueia acesso
+  if (process.env.NODE_ENV === 'production' && !session && !isSameOrigin) {
+    return errorResponse || NextResponse.json({ success: false, error: 'Acesso não autorizado.' }, { status: 401 });
+  }
 
   try {
     const clientTenantHeader = req.headers.get('x-tenant-id');
     const queryTenant = req.nextUrl.searchParams.get('tenantId');
     
-    // Regra de segurança: se autenticado e não for SuperAdmin, força o tenantId da sessão do usuário
+    // Regra de segurança: se autenticado e não for SuperAdmin, força estritamente o tenantId da sessão do usuário
     let targetTenantId = session?.tenantId || clientTenantHeader || queryTenant || 'tenant-amabile-barbarotti';
     if (session && !session.isSuperAdmin && session.tenantId) {
       targetTenantId = session.tenantId;
@@ -38,11 +43,10 @@ export async function POST(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
   });
-  // Permite sincronização interna e cross-device mesmo se o cookie de sessão não for transmitido pelo navegador
-  const clientTenantHeader = req.headers.get('x-tenant-id');
-  const clientUserHeader = req.headers.get('x-user-id');
-  const isInternal = clientTenantHeader || clientUserHeader || req.headers.get('sec-fetch-site') === 'same-origin' || req.headers.get('referer')?.includes(req.nextUrl.host);
-  if (errorResponse && !isInternal) {
+  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
+
+  // Bloqueio rigoroso: apenas sessões assinadas ou requisições same-origin verificadas
+  if (errorResponse && !isSameOrigin) {
     return errorResponse;
   }
 
@@ -55,7 +59,10 @@ export async function POST(req: NextRequest) {
     serverCRMStore.updateState(payload);
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
 
-    const targetTenantId = session?.tenantId || clientTenantHeader || 'tenant-amabile-barbarotti';
+    const clientTenantHeader = req.headers.get('x-tenant-id');
+    const targetTenantId = (session && !session.isSuperAdmin && session.tenantId) 
+      ? session.tenantId 
+      : (session?.tenantId || clientTenantHeader || 'tenant-amabile-barbarotti');
 
     // Se houver DATABASE_URL (PostgreSQL), persiste os contatos qualificados em segundo plano
     if (process.env.DATABASE_URL && Array.isArray(payload.contacts) && payload.contacts.length > 0) {

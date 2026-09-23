@@ -47,10 +47,10 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Form de Credenciais da Instância (Segredos gerenciados via .env / servidor)
   const [instanceId, setInstanceId] = useState(
-    instances[0]?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC'
+    instances[0]?.zapiInstanceId || ''
   );
-  const [instanceToken, setInstanceToken] = useState((instances[0] as any)?.token || '550DBC07B2F984AB74E4BCE5');
-  const [clientToken, setClientToken] = useState('Fc78d61c833db4b50864816b70766aee8S');
+  const [instanceToken, setInstanceToken] = useState((instances[0] as any)?.token || '');
+  const [clientToken, setClientToken] = useState((instances[0] as any)?.clientToken || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [syncHistoryDays, setSyncHistoryDays] = useState<number>(15);
 
@@ -59,9 +59,9 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Função para buscar QR Code real da API
   const fetchLiveQrCode = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const t = tok || instanceToken || '550DBC07B2F984AB74E4BCE5';
-    const ct = cTok !== undefined ? cTok : (clientToken || 'Fc78d61c833db4b50864816b70766aee8S');
+    const id = instId || instanceId || '';
+    const t = tok || instanceToken || '';
+    const ct = cTok !== undefined ? cTok : (clientToken || '');
 
     if (!id || !t || isFetchingQrRef.current) return;
 
@@ -95,9 +95,9 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Função para checar status sem causar loops de re-render
   const checkStatusOnce = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const t = tok || instanceToken || '550DBC07B2F984AB74E4BCE5';
-    const ct = cTok !== undefined ? cTok : (clientToken || 'Fc78d61c833db4b50864816b70766aee8S');
+    const id = instId || instanceId || '';
+    const t = tok || instanceToken || '';
+    const ct = cTok !== undefined ? cTok : (clientToken || '');
 
     if (!id || !t || isCheckingRef.current) return;
 

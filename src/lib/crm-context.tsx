@@ -3130,9 +3130,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             fileName: attachments?.[0]?.fileName,
             phone: targetPhone,
             senderUserId: currentUser.id,
-            instanceId: brokerInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
-            instanceToken: (brokerInstance as any)?.token || '550DBC07B2F984AB74E4BCE5',
-            clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+            instanceId: brokerInstance?.zapiInstanceId || '',
+            instanceToken: (brokerInstance as any)?.token || '',
+            clientToken: (brokerInstance as any)?.clientToken || '',
           }),
         }).then(async res => {
           if (!res.ok) {
@@ -3998,9 +3998,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           'x-user-email': currentUser.email,
         },
         body: JSON.stringify({
-          instanceId: chosenInst?.zapiInstanceId || chosenInst?.id || '3F8144490C66805B4E3FD64A35E2F2DC',
-          token: (chosenInst as any)?.token || '550DBC07B2F984AB74E4BCE5',
-          clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+          instanceId: chosenInst?.zapiInstanceId || chosenInst?.id || '',
+          token: (chosenInst as any)?.token || '',
+          clientToken: (chosenInst as any)?.clientToken || '',
           tenantId: currentTenant.id,
           assignedUserId: chosenInst?.assignedUserId || currentUser.id,
           fetchHistoryMessages: true,

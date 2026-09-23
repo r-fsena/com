@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const state = serverCRMStore.getState();
+    const targetTenantId = session?.isSuperAdmin ? undefined : session?.tenantId;
+    const state = targetTenantId ? serverCRMStore.getScopedState(targetTenantId) : serverCRMStore.getState();
     const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
     
     const contact = state.contacts.find(c => 

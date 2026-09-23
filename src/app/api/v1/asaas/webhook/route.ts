@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
   // Validação Estrita de Segurança do Webhook Asaas (asaas-access-token)
@@ -6,12 +7,19 @@ export async function POST(req: NextRequest) {
   const asaasToken = req.headers.get('asaas-access-token');
 
   if (expectedToken) {
-    if (!asaasToken || asaasToken !== expectedToken) {
+    const isTokenValid = asaasToken && asaasToken.length === expectedToken.length &&
+      crypto.timingSafeEqual(Buffer.from(asaasToken), Buffer.from(expectedToken));
+    if (!isTokenValid) {
       return NextResponse.json(
         { success: false, error: 'Acesso negado: Token de webhook Asaas ausente ou inválido' },
         { status: 401 }
       );
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { success: false, error: 'Segurança de webhook: ASAAS_WEBHOOK_TOKEN não configurado no servidor' },
+      { status: 403 }
+    );
   }
 
   try {

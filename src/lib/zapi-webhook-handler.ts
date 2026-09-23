@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier } from '@/lib/whatsapp-filter';
@@ -12,12 +13,19 @@ export async function processZapiWebhookRequest(
   const clientToken = request.headers.get('client-token') || request.nextUrl.searchParams.get('token');
 
   if (expectedToken) {
-    if (!clientToken || clientToken !== expectedToken) {
+    const isTokenValid = clientToken && clientToken.length === expectedToken.length &&
+      crypto.timingSafeEqual(Buffer.from(clientToken), Buffer.from(expectedToken));
+    if (!isTokenValid) {
       return NextResponse.json(
         { success: false, error: 'Acesso negado: Token de webhook Z-API ausente ou inválido' },
         { status: 401 }
       );
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { success: false, error: 'Segurança de webhook: ZAPI_WEBHOOK_SECRET não configurado no servidor' },
+      { status: 403 }
+    );
   }
 
   try {

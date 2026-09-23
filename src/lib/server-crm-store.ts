@@ -282,9 +282,9 @@ export const serverCRMStore = {
     instanceToken?: string,
     clientToken?: string
   ): Promise<Record<string, string>> {
-    const instId = instanceId || process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const instTok = instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-    const secTok = clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
+    const instId = instanceId || process.env.ZAPI_INSTANCE_ID || '';
+    const instTok = instanceToken || process.env.ZAPI_INSTANCE_TOKEN || '';
+    const secTok = clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
 
     if (!instId || !instTok) return global.__GLOBAL_LID_PHONE_MAP__ || {};
 

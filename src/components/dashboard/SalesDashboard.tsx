@@ -84,38 +84,38 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
   };
 
   // Motor de Metas & Acompanhamento
-  const currentGoals = getGoalsProgress();
+  const currentGoals = useMemo(() => getGoalsProgress(), [getGoalsProgress, deals]);
 
   // Métricas Principais (Exclusivo para Leads Comerciais - ignora contatos pessoais)
   const commercialContacts = useMemo(() => contacts.filter(c => !c.isPersonal), [contacts]);
   const commercialContactIds = useMemo(() => new Set(commercialContacts.map(c => c.id)), [commercialContacts]);
 
   const commercialDeals = useMemo(() => deals.filter(d => commercialContactIds.has(d.contactId)), [deals, commercialContactIds]);
-  const totalVGV = commercialDeals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
+  const totalVGV = useMemo(() => commercialDeals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0), [commercialDeals]);
   const totalLeads = commercialContacts.length;
-  const wonDeals = commercialDeals.filter(d => d.status === 'WON');
-  const wonVGV = wonDeals.reduce((acc, d) => acc + d.expectedValue, 0);
+  const wonDeals = useMemo(() => commercialDeals.filter(d => d.status === 'WON'), [commercialDeals]);
+  const wonVGV = useMemo(() => wonDeals.reduce((acc, d) => acc + d.expectedValue, 0), [wonDeals]);
 
   // Meta Mensal Calculada pelo Motor de Metas
   const monthlyTargetVGV = currentGoals.monthlyVGV.target;
   const targetPercent = currentGoals.monthlyVGV.percentage;
 
   // Leads com Mensagem Não Respondida (Apenas Comerciais e Não Arquivadas)
-  const unreadConversations = conversations.filter(c => 
+  const unreadConversations = useMemo(() => conversations.filter(c => 
     (c.unreadCount || 0) > 0 && 
     commercialContactIds.has(c.contactId) && 
     !c.isPersonal && 
     !c.isArchived && 
     !isWhatsAppChannelOrGroup(c)
-  );
+  ), [conversations, commercialContactIds]);
 
   // Radar de Inatividade & Pareamento Emergencial
-  const urgentRadar = getUrgentContactsRadar();
-  const criticalUnanswered = urgentRadar.filter(r => r.urgencyLevel === 'CRITICAL_UNANSWERED');
-  const staleDeals = urgentRadar.filter(r => r.urgencyLevel === 'HIGH_STALE_DEAL');
+  const urgentRadar = useMemo(() => getUrgentContactsRadar(), [getUrgentContactsRadar, conversations, deals, contacts]);
+  const criticalUnanswered = useMemo(() => urgentRadar.filter(r => r.urgencyLevel === 'CRITICAL_UNANSWERED'), [urgentRadar]);
+  const staleDeals = useMemo(() => urgentRadar.filter(r => r.urgencyLevel === 'HIGH_STALE_DEAL'), [urgentRadar]);
 
   // Visitas & Tarefas Agendadas
-  const pendingTasks = tasks.filter(t => !t.isCompleted);
+  const pendingTasks = useMemo(() => tasks.filter(t => !t.isCompleted), [tasks]);
 
   const handleGoToChat = (contactId?: string) => {
     if (!contactId) return;

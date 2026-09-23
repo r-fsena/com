@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     const displayName = foundUser?.name || (name ? String(name).trim() : cleanEmail.split('@')[0]);
     const finalEmail = foundUser?.email || cleanEmail || `${displayName.toLowerCase().replace(/\s+/g, '.')}@amabile.com.br`;
     const finalUserId = foundUser?.id || `user-broker-${displayName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
-    const finalRole = foundUser?.role || (finalEmail.includes('admin') || finalEmail.includes('rafael') ? 'SUPERADMIN' : 'BROKER');
+    const finalRole = foundUser?.role || 'BROKER';
 
     const sessionPayload = {
       userId: finalUserId,

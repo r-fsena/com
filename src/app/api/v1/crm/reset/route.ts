@@ -6,21 +6,14 @@ import { validateApiSession } from '@/lib/api-auth';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  // 0. Validação de Sessão & Identidade
+  // 0. Validação Estrita de Sessão & Identidade (Apenas ADMIN ou SUPERADMIN)
   const { session, errorResponse } = validateApiSession(req, {
-    requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN', 'MANAGER', 'BROKER'],
+    requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN'],
   });
 
-  const clientTenantHeader = req.headers.get('x-tenant-id');
-  const clientUserHeader = req.headers.get('x-user-id');
-  const isInternal = Boolean(
-    clientTenantHeader ||
-    clientUserHeader ||
-    req.headers.get('sec-fetch-site') === 'same-origin' ||
-    req.headers.get('referer')?.includes(req.nextUrl.host)
-  );
+  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
 
-  if (errorResponse && !isInternal) {
+  if (errorResponse && !isSameOrigin) {
     return errorResponse;
   }
 
@@ -30,8 +23,9 @@ export async function POST(req: NextRequest) {
       body = await req.json();
     } catch {}
 
-    const targetTenantId = body?.tenantId || clientTenantHeader || session?.tenantId || 'tenant-amabile-barbarotti';
-    const wipeAll = body?.wipeAll === true || (!body?.tenantId && !clientTenantHeader && session?.isSuperAdmin);
+    const isMaster = session?.isSuperAdmin || session?.role === 'SUPERADMIN' || session?.role === 'ADMIN_MASTER';
+    const targetTenantId = isMaster ? (body?.tenantId || session?.tenantId || 'tenant-amabile-barbarotti') : (session?.tenantId || 'tenant-amabile-barbarotti');
+    const wipeAll = isMaster && body?.wipeAll === true;
 
     if (wipeAll) {
       // 1. Limpa o buffer global de estado em memória e persistência em disco

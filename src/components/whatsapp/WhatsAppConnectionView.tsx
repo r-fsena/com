@@ -103,9 +103,9 @@ export function WhatsAppConnectionView() {
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
   const getZapiQueryParams = () => {
-    const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
-    const tok = (activeInstance as any)?.token || '550DBC07B2F984AB74E4BCE5';
-    const cTok = 'Fc78d61c833db4b50864816b70766aee8S';
+    const instId = activeInstance?.zapiInstanceId || '';
+    const tok = (activeInstance as any)?.token || '';
+    const cTok = (activeInstance as any)?.clientToken || '';
     return new URLSearchParams({
       instanceId: instId,
       token: tok,
@@ -315,9 +315,9 @@ export function WhatsAppConnectionView() {
     setAutoConfigSuccess(false);
 
     try {
-      const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
-      const tok = (activeInstance as any)?.token || '550DBC07B2F984AB74E4BCE5';
-      const cTok = 'Fc78d61c833db4b50864816b70766aee8S';
+      const instId = activeInstance?.zapiInstanceId || '';
+      const tok = (activeInstance as any)?.token || '';
+      const cTok = (activeInstance as any)?.clientToken || '';
 
       const res = await fetch('/api/v1/zapi/auto-configure', {
         method: 'POST',
@@ -355,9 +355,9 @@ export function WhatsAppConnectionView() {
     setIsDisconnecting(true);
     setShowConfirmDisconnect(false);
     try {
-      const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
-      const tok = (activeInstance as any)?.token || '550DBC07B2F984AB74E4BCE5';
-      const cTok = 'Fc78d61c833db4b50864816b70766aee8S';
+      const instId = activeInstance?.zapiInstanceId || '';
+      const tok = (activeInstance as any)?.token || '';
+      const cTok = (activeInstance as any)?.clientToken || '';
 
       const res = await fetch('/api/v1/zapi/disconnect', {
         method: 'POST',

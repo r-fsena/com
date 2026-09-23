@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
     }
 
     const s3 = new S3StorageClient();
-    const result = await s3.generatePresignedUploadUrl(validated.data);
+    const tenantId = session?.isSuperAdmin ? validated.data.tenantId : (session?.tenantId || validated.data.tenantId);
+    const result = await s3.generatePresignedUploadUrl({ ...validated.data, tenantId });
 
     return NextResponse.json({ data: result }, { status: 200 });
   } catch (err: any) {

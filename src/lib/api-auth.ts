@@ -51,13 +51,6 @@ export function verifySessionToken(token: string): any | null {
       }
       return JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
     }
-    // Fallback de transição controlada para token codificado em base64url simples
-    if (parts.length === 1) {
-      const decoded = JSON.parse(Buffer.from(token, 'base64url').toString('utf-8'));
-      if (decoded && (decoded.email || decoded.userId)) {
-        return decoded;
-      }
-    }
     return null;
   } catch {
     return null;
@@ -121,9 +114,9 @@ export function validateApiSession(req: NextRequest, options?: {
     }
   }
 
-  // 3.1 Verificação de cabeçalhos de usuário autenticado da UI interna do CRM
+  // 3.1 Proteção contra Header Spoofing: em produção, cabeçalhos crus nunca concedem autenticação sem assinatura
   const allKnownUsers = getAllKnownUsers();
-  if (!userEmail && (clientEmailHeader || clientUserHeader)) {
+  if (process.env.NODE_ENV !== 'production' && !userEmail && (clientEmailHeader || clientUserHeader)) {
     const targetEmail = clientEmailHeader.toLowerCase().trim();
     const foundUser = allKnownUsers.find(u => (targetEmail && u.email.toLowerCase() === targetEmail) || (clientUserHeader && u.id === clientUserHeader));
     if (foundUser) {

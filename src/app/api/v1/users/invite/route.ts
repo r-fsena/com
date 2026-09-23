@@ -32,10 +32,8 @@ export async function POST(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN'],
   });
-  const clientTenantHeader = req.headers.get('x-tenant-id');
-  const clientUserHeader = req.headers.get('x-user-id');
-  const isInternal = clientTenantHeader || clientUserHeader || req.headers.get('sec-fetch-site') === 'same-origin' || req.headers.get('referer')?.includes(req.nextUrl.host);
-  if (errorResponse && !isInternal) return errorResponse;
+  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
+  if (errorResponse && !isSameOrigin) return errorResponse;
 
   try {
     const body = await req.json();

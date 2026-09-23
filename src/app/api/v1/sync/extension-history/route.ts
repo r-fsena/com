@@ -245,6 +245,7 @@ export async function POST(req: NextRequest) {
 
           newMessages.push({
             id: mId,
+            externalId: m.id || mId,
             tenantId,
             conversationId,
             senderType: isFromMe ? 'USER' : 'CONTACT',
@@ -340,18 +341,24 @@ export async function POST(req: NextRequest) {
         ? lastMsgText 
         : 'Conversa sincronizada via Extensão Chrome';
 
+      const lastMsgObj = chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null;
+      const lastIsFromMe = lastMsgObj ? Boolean(lastMsgObj.fromMe) : false;
+
       newConversations.push({
         id: conversationId,
         tenantId,
         instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
         contactId,
         assignedUserId: brokerUserId || undefined,
-        status: 'PENDING_TEAM',
+        status: lastIsFromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
         unreadCount: 0,
         lastMessagePreview: cleanPreview,
         lastMessageAt: lastMsgTime,
         slaBreached: false,
         isPersonal: false,
+        aiEnabled: lastIsFromMe ? false : undefined,
+        humanTakeoverAt: lastIsFromMe ? lastMsgTime : undefined,
+        autoFollowupCount: 0,
       });
     }
 
@@ -362,6 +369,21 @@ export async function POST(req: NextRequest) {
       conversations: newConversations,
       messages: newMessages,
     });
+
+    // Se houver DATABASE_URL (PostgreSQL), persiste os contatos ingeridos no banco em segundo plano
+    if (process.env.DATABASE_URL && newContacts.length > 0) {
+      import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
+        for (const c of newContacts) {
+          if (c && (c.phone || c.id)) {
+            try {
+              await ContactsDBService.upsertContact(tenantId, c);
+            } catch (err) {
+              console.warn('[ExtensionSync] Erro ao persistir contato no banco:', err);
+            }
+          }
+        }
+      }).catch(err => console.warn('[ExtensionSync] Erro ao carregar ContactsDBService:', err));
+    }
 
     // Registra log estruturado no CloudWatch
     await recordExtensionLog({

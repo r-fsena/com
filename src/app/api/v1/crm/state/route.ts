@@ -9,10 +9,20 @@ export async function GET(req: NextRequest) {
   const { session } = validateApiSession(req);
 
   try {
-    const state = serverCRMStore.getState();
+    const clientTenantHeader = req.headers.get('x-tenant-id');
+    const queryTenant = req.nextUrl.searchParams.get('tenantId');
+    
+    // Regra de segurança: se autenticado e não for SuperAdmin, força o tenantId da sessão do usuário
+    let targetTenantId = session?.tenantId || clientTenantHeader || queryTenant || 'tenant-amabile-barbarotti';
+    if (session && !session.isSuperAdmin && session.tenantId) {
+      targetTenantId = session.tenantId;
+    }
+
+    const state = serverCRMStore.getScopedState(targetTenantId);
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
     return NextResponse.json({
       success: true,
+      tenantId: targetTenantId,
       deletedKeys,
       ...state,
     });
@@ -42,17 +52,18 @@ export async function POST(req: NextRequest) {
     if (body.user && !body.users) {
       payload.users = [body.user];
     }
-    const updatedState = serverCRMStore.updateState(payload);
+    serverCRMStore.updateState(payload);
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
+
+    const targetTenantId = session?.tenantId || clientTenantHeader || 'tenant-amabile-barbarotti';
 
     // Se houver DATABASE_URL (PostgreSQL), persiste os contatos qualificados em segundo plano
     if (process.env.DATABASE_URL && Array.isArray(payload.contacts) && payload.contacts.length > 0) {
       import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
-        const fallbackTenant = req.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti';
         for (const c of payload.contacts) {
           if (c && (c.phone || c.id)) {
             try {
-              await ContactsDBService.upsertContact(c.tenantId || fallbackTenant, c);
+              await ContactsDBService.upsertContact(c.tenantId || targetTenantId, c);
             } catch (dbErr) {
               console.warn('[ContactsDBService] Aviso ao persistir contato no banco:', dbErr);
             }
@@ -61,10 +72,13 @@ export async function POST(req: NextRequest) {
       }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
     }
 
+    const scopedState = serverCRMStore.getScopedState(targetTenantId);
+
     return NextResponse.json({
       success: true,
+      tenantId: targetTenantId,
       deletedKeys,
-      ...updatedState,
+      ...scopedState,
     });
   } catch (err: any) {
     return NextResponse.json({

@@ -283,6 +283,10 @@ export interface Conversation {
   isPinned?: boolean;
   isArchived?: boolean;
   isPersonal?: boolean;
+  aiEnabled?: boolean;
+  humanTakeoverAt?: string;
+  inactivityFollowupAt?: string;
+  autoFollowupCount?: number;
 }
 
 export interface AIResponseOption {

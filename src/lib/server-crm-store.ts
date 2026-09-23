@@ -48,6 +48,20 @@ export function mergeUserLists(oldUsers: User[] = [], newUsers: User[] = []): Us
   return Array.from(map.values());
 }
 
+/**
+ * Sanitiza o objeto de usuário removendo qualquer campo de senha, token ou hash
+ */
+export function sanitizeUser(u: User): User {
+  if (!u) return u;
+  const safe: any = { ...u };
+  delete safe.password;
+  delete safe.passwordHash;
+  delete safe.tempPassword;
+  delete safe.sessionToken;
+  delete safe.salt;
+  return safe as User;
+}
+
 const DEFAULT_DELETED_CHAT_KEYS = [
   '5511915361868',
   '11915361868',
@@ -488,9 +502,64 @@ export const serverCRMStore = {
     return global.__SERVER_CRM_STATE__;
   },
 
+  getScopedState(tenantId?: string): ServerCRMState {
+    const rawState = this.getState();
+    if (!tenantId || tenantId === 'all') {
+      return {
+        ...rawState,
+        users: (rawState.users || []).map(sanitizeUser),
+      };
+    }
+
+    const isAmabile = tenantId === 'tenant-amabile-barbarotti' || tenantId.includes('amabile');
+
+    const scopedContacts = rawState.contacts.filter(c => {
+      return c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId.includes('amabile')));
+    });
+
+    const scopedContactIds = new Set(scopedContacts.map(c => c.id));
+    const scopedPhones = new Set(scopedContacts.map(c => c.phone?.replace(/\D/g, '')).filter(Boolean));
+
+    const scopedConversations = rawState.conversations.filter(cv => {
+      if (cv.tenantId === tenantId || (isAmabile && (!cv.tenantId || cv.tenantId.includes('amabile')))) return true;
+      if (scopedContactIds.has(cv.contactId)) return true;
+      const digits = cv.id.replace(/\D/g, '');
+      if (digits && scopedPhones.has(digits)) return true;
+      return false;
+    });
+
+    const scopedConvIds = new Set(scopedConversations.map(cv => cv.id));
+
+    const scopedMessages = rawState.messages.filter(m => {
+      if (scopedConvIds.has(m.conversationId)) return true;
+      if (m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId.includes('amabile')))) return true;
+      return false;
+    });
+
+    const scopedDeals = rawState.deals.filter(d => {
+      return d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId.includes('amabile'))) || scopedContactIds.has(d.contactId);
+    });
+
+    const scopedQRs = (rawState.quickReplies || []).filter(q => {
+      return !q.tenantId || q.tenantId === tenantId || (isAmabile && q.tenantId.includes('amabile'));
+    });
+
+    const sanitizedUsers = (rawState.users || []).map(sanitizeUser);
+
+    return {
+      contacts: scopedContacts,
+      conversations: scopedConversations,
+      messages: scopedMessages,
+      deals: scopedDeals,
+      aiInsights: rawState.aiInsights || {},
+      users: sanitizedUsers,
+      quickReplies: scopedQRs,
+    };
+  },
+
   getUsers(): User[] {
     const state = this.getState();
-    return state.users && state.users.length > 0 ? state.users : MOCK_USERS;
+    return (state.users && state.users.length > 0 ? state.users : MOCK_USERS).map(sanitizeUser);
   },
 
   saveUser(user: User): User[] {
@@ -815,6 +884,10 @@ export const serverCRMStore = {
           lastMessagePreview: useNewer ? (preview || existing.lastMessagePreview) : existing.lastMessagePreview,
           lastMessageAt: useNewer ? conv.lastMessageAt : existing.lastMessageAt,
           unreadCount: Math.max(existing.unreadCount || 0, conv.unreadCount || 0),
+          aiEnabled: conv.aiEnabled !== undefined ? conv.aiEnabled : existing.aiEnabled,
+          humanTakeoverAt: conv.humanTakeoverAt || existing.humanTakeoverAt,
+          inactivityFollowupAt: conv.inactivityFollowupAt !== undefined ? conv.inactivityFollowupAt : existing.inactivityFollowupAt,
+          autoFollowupCount: conv.autoFollowupCount !== undefined ? conv.autoFollowupCount : (existing.autoFollowupCount || 0),
         });
       } else {
         map.set(canonicalConvId, {
@@ -822,6 +895,10 @@ export const serverCRMStore = {
           id: canonicalConvId,
           contactId: contact?.id || conv.contactId,
           lastMessagePreview: preview,
+          aiEnabled: conv.aiEnabled,
+          humanTakeoverAt: conv.humanTakeoverAt,
+          inactivityFollowupAt: conv.inactivityFollowupAt,
+          autoFollowupCount: conv.autoFollowupCount || 0,
         });
       }
     });
@@ -911,8 +988,9 @@ export const serverCRMStore = {
       };
 
       const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
+      const externalIdKey = m.externalId || (isNativeWppId ? m.id : null);
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
-      const key = isNativeWppId ? m.id! : `${convId}-${content}-${timeKey}-${m.senderType}`;
+      const key = externalIdKey ? `${convId}-${externalIdKey}` : `${convId}-${content}-${timeKey}-${m.senderType}`;
       const existing = map.get(key);
       if (!existing) {
         map.set(key, normalizedMsg);

@@ -155,6 +155,7 @@ export function WhatsAppInbox() {
     clearChatMessages,
     archiveConversation,
     deleteConversation,
+    toggleConversationAI,
     deletedChatKeys,
     pinConversation,
     contacts, 
@@ -2048,6 +2049,28 @@ export function WhatsAppInbox() {
               </div>
             )}
 
+            {/* Banner de Atendimento Manual (Human Takeover no WhatsApp) */}
+            {!activeContact.isPersonal && activeConversation.humanTakeoverAt && activeConversation.aiEnabled === false && (
+              <div className="bg-amber-50 border-b border-amber-200/90 px-4 py-2 text-xs text-amber-900 flex items-center justify-between z-10 shrink-0 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-[11px] font-bold shrink-0">👤</span>
+                  <div className="min-w-0">
+                    <span className="font-bold text-amber-950">Atendimento Manual: </span>
+                    <span className="text-amber-800">Você respondeu pelo WhatsApp no celular. A Brok.ia e lembretes automáticos estão pausados nesta conversa.</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleConversationAI(activeConversation.id, true)}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ml-3 shadow-xs cursor-pointer active:scale-95"
+                  title="Reativar assistência da Brok.ia nesta conversa"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                  <span>Reativar Brok.ia</span>
+                </button>
+              </div>
+            )}
+
             {/* SLA Alert Banner (se houver atraso e não for pessoal) */}
             {!activeContact.isPersonal && activeConversation.slaBreached && (
               <div className="bg-rose-500 text-white text-xs px-4 py-1.5 flex items-center justify-between font-medium shadow-xs">
@@ -2300,7 +2323,7 @@ export function WhatsAppInbox() {
             {/* ---------------------------------------------------- */}
             {/* IA COPILOTO: Sugestões Táticas e Quebra de Objeções  */}
             {/* ---------------------------------------------------- */}
-            {isFeatureEnabled('aiCopilot') && activeInsight && (activeInsight.suggestedResponse || (activeInsight.responseOptions && activeInsight.responseOptions.length > 0)) && (
+            {isFeatureEnabled('aiCopilot') && activeConversation.aiEnabled !== false && activeInsight && (activeInsight.suggestedResponse || (activeInsight.responseOptions && activeInsight.responseOptions.length > 0)) && (
               <div className="mx-4 mb-2 transition-all duration-200">
                 {isCopilotDismissed ? (
                   /* Estado Minimizado Totalmente (Pílula Flutuante Discreta) */

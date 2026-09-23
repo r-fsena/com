@@ -156,6 +156,7 @@ interface CRMContextType {
   clearChatMessages: (conversationId: string) => Promise<void>;
   archiveConversation: (conversationId: string, archive?: boolean) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  toggleConversationAI: (conversationId: string, enabled?: boolean) => void;
   deletedChatKeys: Set<string>;
   pinConversation: (conversationId: string) => Promise<void>;
   assignConversation: (conversationId: string, userId?: string) => void;
@@ -1976,10 +1977,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // 4. Mescla contatos com deduplicação estrita
+        // 4. Mescla contatos com prioridade para o Servidor Central
+        const otherTenantContacts = (Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []).filter(c => c.tenantId && c.tenantId !== currentTenant.id);
+        const serverTenantContacts = Array.isArray(serverData?.contacts) ? serverData.contacts : [];
+        const localTenantContacts = (Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []).filter(c => !c.tenantId || c.tenantId === currentTenant.id);
+
         const combinedContacts = [
-          ...(Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []),
-          ...(Array.isArray(serverData?.contacts) ? serverData.contacts : [])
+          ...serverTenantContacts,
+          ...localTenantContacts,
+          ...otherTenantContacts,
         ].map((c: any) => ({
           ...c,
           isPersonal: c.isPersonal === true ? true : false,
@@ -1989,10 +1995,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         setContacts(finalContacts);
         try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(finalContacts)); } catch {}
 
-        // 5. Mescla conversas garantindo unificação de LIDs e telefones canônicos
+        // 5. Mescla conversas garantindo unificação de LIDs e precedência do Servidor
+        const otherTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => cv.tenantId && cv.tenantId !== currentTenant.id);
+        const serverTenantConvs = Array.isArray(serverData?.conversations) ? serverData.conversations : [];
+        const localTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => !cv.tenantId || cv.tenantId === currentTenant.id);
+
         const combinedConvs = [
-          ...(Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []),
-          ...(Array.isArray(serverData?.conversations) ? serverData.conversations : [])
+          ...serverTenantConvs,
+          ...localTenantConvs,
+          ...otherTenantConvs,
         ].map((cv: any) => ({
           ...cv,
           isPersonal: cv.isPersonal === true ? true : false,
@@ -2004,24 +2015,26 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         // 6. Mescla mensagens
         const combinedMsgs = [
+          ...(Array.isArray(serverData?.messages) ? serverData.messages : []),
           ...(Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : []),
-          ...(Array.isArray(serverData?.messages) ? serverData.messages : [])
         ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content));
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
         setMessages(finalMsgs);
         try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(finalMsgs)); } catch {}
 
-        // 7. Mescla deals
-        const combinedDeals = [
-          ...(Array.isArray(parsedLocalDeals) ? parsedLocalDeals : []),
-          ...(Array.isArray(serverData?.deals) ? serverData.deals : [])
-        ].filter(d => !isChatKeyDeleted(d.contactId, combinedDeleted));
+        // 7. Mescla deals com autoridade do servidor
+        const otherTenantDeals = (Array.isArray(parsedLocalDeals) ? parsedLocalDeals : []).filter(d => d.tenantId && d.tenantId !== currentTenant.id);
+        const serverTenantDeals = Array.isArray(serverData?.deals) ? serverData.deals : [];
+        const localTenantDeals = (Array.isArray(parsedLocalDeals) ? parsedLocalDeals : []).filter(d => !d.tenantId || d.tenantId === currentTenant.id);
+
         const dealMap = new Map<string, Deal>();
-        combinedDeals.forEach(d => {
+        otherTenantDeals.forEach(d => dealMap.set(d.id, d));
+        localTenantDeals.forEach(d => dealMap.set(d.id, d));
+        serverTenantDeals.forEach((d: Deal) => {
           if (d && d.id) dealMap.set(d.id, d);
         });
-        const finalDeals = Array.from(dealMap.values());
+        const finalDeals = Array.from(dealMap.values()).filter(d => !isChatKeyDeleted(d.contactId, combinedDeleted));
         setDeals(finalDeals);
         try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(finalDeals)); } catch {}
 
@@ -3196,6 +3209,38 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         console.error('Erro ao arquivar conversa na Z-API:', err);
       }
     }
+  };
+
+  // Reativar ou Pausar IA Copiloto na Conversa (Human Takeover)
+  const toggleConversationAI = (conversationId: string, enabled?: boolean) => {
+    setConversations(prev => {
+      const updated = prev.map(c => {
+        if (c.id === conversationId) {
+          const nextVal = enabled !== undefined ? enabled : (c.aiEnabled === false ? true : false);
+          return {
+            ...c,
+            aiEnabled: nextVal,
+            humanTakeoverAt: nextVal ? undefined : (c.humanTakeoverAt || new Date().toISOString()),
+          };
+        }
+        return c;
+      });
+      try {
+        localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated));
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenant.id,
+            'x-user-id': currentUser.id,
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify({ conversations: updated }),
+        }).catch(() => {});
+      } catch {}
+      return updated;
+    });
   };
 
   // Deletar conversa completamente (Z-API + Local + Persistência Total)
@@ -4575,6 +4620,26 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           },
         });
         if (!stateRes.ok) return;
+        const stateData = await stateRes.json();
+        if (stateData && stateData.success && isMounted) {
+          if (Array.isArray(stateData.contacts) && stateData.contacts.length > 0) {
+            setContacts(prev => deduplicateContactList([...stateData.contacts, ...prev.filter(c => c.tenantId !== currentTenant.id)]));
+          }
+          if (Array.isArray(stateData.conversations) && stateData.conversations.length > 0) {
+            setConversations(prev => deduplicateConversations([...stateData.conversations, ...prev.filter(c => c.tenantId !== currentTenant.id)]));
+          }
+          if (Array.isArray(stateData.messages) && stateData.messages.length > 0) {
+            setMessages(prev => deduplicateMessages([...stateData.messages, ...prev]));
+          }
+          if (Array.isArray(stateData.deals) && stateData.deals.length > 0) {
+            setDeals(prev => {
+              const dealMap = new Map<string, Deal>();
+              prev.filter(d => d.tenantId !== currentTenant.id).forEach(d => dealMap.set(d.id, d));
+              stateData.deals.forEach((d: Deal) => dealMap.set(d.id, d));
+              return Array.from(dealMap.values());
+            });
+          }
+        }
       } catch {}
     };
 
@@ -5496,6 +5561,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       clearChatMessages,
       archiveConversation,
       deleteConversation,
+      toggleConversationAI,
       deletedChatKeys,
       pinConversation,
       assignConversation,

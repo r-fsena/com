@@ -98,6 +98,16 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
+  // Progressive Windowing de Cards por Etapa (Alta Performance para bases grandes)
+  const [visibleLimits, setVisibleLimits] = useState<Record<string, number>>({});
+  const getStageLimit = useCallback((stageId: string) => visibleLimits[stageId] || 15, [visibleLimits]);
+  const handleLoadMoreForStage = useCallback((stageId: string) => {
+    setVisibleLimits(prev => ({
+      ...prev,
+      [stageId]: (prev[stageId] || 15) + 20
+    }));
+  }, []);
+
   // Mapa indexado O(1) de contatos para resolução ultra-rápida de Deals
   const contactLookup = useMemo(() => {
     const byId = new Map<string, Contact>();
@@ -654,20 +664,37 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                 </div>
               </div>
 
-              {/* Deal Cards Container */}
-              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {/* Deal Cards Container com Progressive Windowing */}
+              <div 
+                className="flex-1 overflow-y-auto space-y-2.5 pr-1"
+                onScroll={(e) => {
+                  const target = e.currentTarget;
+                  if (target.scrollHeight - target.scrollTop <= target.clientHeight + 80) {
+                    if (stageDeals.length > getStageLimit(stage.id)) {
+                      handleLoadMoreForStage(stage.id);
+                    }
+                  }
+                }}
+              >
                 {stageDeals.length === 0 ? (
                   <div className="py-10 text-center text-slate-400 text-xs border-2 border-dashed border-slate-300/70 rounded-xl">
                     Nenhum negócio nesta etapa
                   </div>
                 ) : (
-                  stageDeals.map((deal) => {
-                    const contact = getDealContact(deal);
-                    const broker = users.find(u => u.id === deal.assignedUserId);
-                    const urgency = getDealUrgencyAnalysis(deal);
+                  (() => {
+                    const stageLimit = getStageLimit(stage.id);
+                    const visibleStageDeals = stageDeals.slice(0, stageLimit);
+                    const hasMore = stageDeals.length > stageLimit;
 
                     return (
-                      <div
+                      <>
+                        {visibleStageDeals.map((deal) => {
+                          const contact = getDealContact(deal);
+                          const broker = users.find(u => u.id === deal.assignedUserId);
+                          const urgency = getDealUrgencyAnalysis(deal);
+
+                          return (
+                            <div
                         key={deal.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, deal.id)}
@@ -885,7 +912,25 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                         </div>
                       </div>
                     );
-                  })
+                  })}
+
+                        {/* Botão de Carga Progressiva quando houver mais negócios na etapa */}
+                        {hasMore && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLoadMoreForStage(stage.id);
+                            }}
+                            className="w-full py-2 bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-300 shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                          >
+                            <span>Ver mais {Math.min(20, stageDeals.length - stageLimit)} negócios</span>
+                            <span className="text-[10px] text-slate-400 font-normal">({stageDeals.length - stageLimit} restantes)</span>
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()
                 )}
               </div>
             </div>

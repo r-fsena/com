@@ -278,6 +278,51 @@ export function WhatsAppInbox() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [visibleMessageCount, setVisibleMessageCount] = useState(60);
 
+  // Janelamento de conversas visíveis (evita renderizar centenas de nós DOM simultâneos)
+  const [visibleChatLimit, setVisibleChatLimit] = useState(35);
+
+  // Mapa de contatos indexado O(1) por ID e telefone para eliminar loops destrutivos
+  const contactLookup = React.useMemo(() => {
+    const byId = new Map<string, typeof contacts[0]>();
+    const byPhone = new Map<string, typeof contacts[0]>();
+    for (const c of contacts) {
+      if (c.id) byId.set(c.id, c);
+      const digits = (c.phone || '').replace(/\D/g, '');
+      if (digits) {
+        byPhone.set(digits, c);
+        if (digits.length >= 8) {
+          byPhone.set(digits.slice(-8), c);
+        }
+      }
+    }
+    const findContact = (contactId?: string, convId?: string) => {
+      if (contactId && byId.has(contactId)) return byId.get(contactId);
+      if (convId && byId.has(convId)) return byId.get(convId);
+      const cleanContactId = (contactId || '').replace(/^(contact|conv)-zapi-/, '');
+      if (cleanContactId && byId.has(cleanContactId)) return byId.get(cleanContactId);
+      const cleanConvId = (convId || '').replace(/^(contact|conv)-zapi-/, '');
+      if (cleanConvId && byId.has(cleanConvId)) return byId.get(cleanConvId);
+      
+      const digits = (convId || contactId || '').replace(/\D/g, '');
+      if (digits) {
+        if (byPhone.has(digits)) return byPhone.get(digits);
+        if (digits.length >= 8 && byPhone.has(digits.slice(-8))) return byPhone.get(digits.slice(-8));
+      }
+      return undefined;
+    };
+    return { byId, byPhone, findContact };
+  }, [contacts]);
+
+  // Mapa de instâncias O(1)
+  const instanceMap = React.useMemo(() => {
+    const map = new Map<string, typeof instances[0]>();
+    for (const inst of instances) {
+      if (inst.id) map.set(inst.id, inst);
+      if (inst.zapiInstanceId) map.set(inst.zapiInstanceId, inst);
+    }
+    return map;
+  }, [instances]);
+
   // Mapa pré-indexado O(1) de timestamps das conversas para ordenação ultra-rápida sem congelamentos
   const convLatestTimeMap = React.useMemo(() => {
     const map = new Map<string, number>();
@@ -1094,29 +1139,16 @@ export function WhatsAppInbox() {
         return false;
       }
 
-      // Identifica contato associado antes dos filtros
-      const contact = contacts.find(cnt => cnt.id === c.contactId) || contacts.find(cnt => {
-        const cDigits = (cnt.phone || '').replace(/\D/g, '');
-        const convDigits = (c.id || c.contactId || '').replace(/\D/g, '');
-        return cDigits && convDigits && (cDigits === convDigits || cDigits.endsWith(convDigits) || convDigits.endsWith(cDigits) || arePhonesEquivalent(cDigits, convDigits));
-      });
+      // Identifica contato associado antes dos filtros com lookup O(1)
+      const contact = contactLookup.findContact(c.contactId, c.id);
 
-      // Oculta conversas estritamente vazias sem contato, sem mensagens e sem preview (lazy check para não iterar todas as mensagens)
+      // Oculta conversas estritamente vazias sem contato, sem mensagens e sem preview (verificação leve)
       if (!contact && !c.lastMessagePreview && (!c.unreadCount || c.unreadCount === 0)) {
-        const convDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
-        const hasAnyMessage = messages.some(m => {
-          if (m.isInternalNote || !m.content || isWhatsAppSystemMessage(m.content)) return false;
-          if (m.conversationId === c.id) return true;
-          if (c.contactId && (m.conversationId === c.contactId || m.conversationId === `conv-${c.contactId}`)) return true;
-          const mDigits = m.conversationId.replace(/\D/g, '');
-          if (convDigits && mDigits && arePhonesEquivalent(convDigits, mDigits)) return true;
-          return false;
-        });
-        if (!hasAnyMessage) return false;
+        return false;
       }
 
-      // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor)
-      const convInstance = instances.find(i => i.id === c.instanceId || i.zapiInstanceId === c.instanceId);
+      // Filtro por Linha WhatsApp (Central da Empresa vs Linha Direta de Corretor) com lookup O(1)
+      const convInstance = c.instanceId ? instanceMap.get(c.instanceId) : undefined;
       const isDirectLine = Boolean(convInstance && convInstance.type === 'BROKER_DIRECT');
       const isCentralLine = !isDirectLine; // Toda conversa padrão ou sem instância direta pertence à Central
 
@@ -1186,9 +1218,8 @@ export function WhatsAppInbox() {
   }, [
     conversations,
     deletedChatKeys,
-    contacts,
-    messages,
-    instances,
+    contactLookup,
+    instanceMap,
     instanceFilter,
     searchFilter,
     selectedTagFilter,
@@ -1198,21 +1229,31 @@ export function WhatsAppInbox() {
     convLatestTimeMap
   ]);
 
+  // Reseta paginação das conversas quando mudar de filtro ou busca
+  React.useEffect(() => {
+    setVisibleChatLimit(35);
+  }, [filterTab, searchFilter, selectedTagFilter, instanceFilter]);
+
+  // Lista janelada de conversas para o DOM (evita renderizar 200+ cards de chat simultaneamente)
+  const displayedConversations = React.useMemo(() => {
+    return filteredConversations.slice(0, visibleChatLimit);
+  }, [filteredConversations, visibleChatLimit]);
+
   const emergencyConversationsCount = React.useMemo(() => {
     return conversations.filter(c => {
-      const contact = contacts.find(cnt => cnt.id === c.contactId);
+      const contact = contactLookup.findContact(c.contactId, c.id);
       if (contact?.isPersonal || c.isPersonal) return false;
       const urgency = getContactUrgencyAnalysis(c.contactId, undefined, c.id);
       return urgency && urgency.urgencyLevel !== 'HEALTHY';
     }).length;
-  }, [conversations, contacts, getContactUrgencyAnalysis]);
+  }, [conversations, contactLookup, getContactUrgencyAnalysis]);
 
   const personalConversationsCount = React.useMemo(() => {
     return conversations.filter(c => {
-      const contact = contacts.find(cnt => cnt.id === c.contactId);
+      const contact = contactLookup.findContact(c.contactId, c.id);
       return Boolean(contact?.isPersonal || c.isPersonal);
     }).length;
-  }, [conversations, contacts]);
+  }, [conversations, contactLookup]);
 
   const handleSend = (e?: React.FormEvent | React.KeyboardEvent) => {
     e?.preventDefault();
@@ -1621,8 +1662,18 @@ export function WhatsAppInbox() {
           </div>
         </div>
 
-        {/* Lista de Chats */}
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100/80">
+        {/* Lista de Chats com Scroll Infinito Progressivo */}
+        <div 
+          className="flex-1 overflow-y-auto divide-y divide-slate-100/80"
+          onScroll={(e) => {
+            const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+            if (scrollHeight - scrollTop - clientHeight < 250) {
+              if (visibleChatLimit < filteredConversations.length) {
+                setVisibleChatLimit(prev => Math.min(prev + 30, filteredConversations.length));
+              }
+            }
+          }}
+        >
           {filteredConversations.length === 0 ? (
             <div className="p-8 text-center space-y-2">
               <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
@@ -1632,156 +1683,157 @@ export function WhatsAppInbox() {
               <p className="text-[11px] text-slate-400">As mensagens recebidas no WhatsApp aparecerão aqui.</p>
             </div>
           ) : (
-            filteredConversations.map((conv) => {
-              const contact = contacts.find(c => c.id === conv.contactId) || contacts.find(c => c.phone.replace(/\D/g, '') === conv.id.replace(/\D/g, ''));
-              const isSelected = conv.id === activeConversation?.id;
-              const urgency = getContactUrgencyAnalysis(conv.contactId, undefined, conv.id);
-              const isContactPersonal = Boolean(contact?.isPersonal || conv.isPersonal);
+            <>
+              {displayedConversations.map((conv) => {
+                const contact = contactLookup.findContact(conv.contactId, conv.id);
+                const isSelected = conv.id === activeConversation?.id;
+                const urgency = getContactUrgencyAnalysis(conv.contactId, undefined, conv.id);
+                const isContactPersonal = Boolean(contact?.isPersonal || conv.isPersonal);
 
-              return (
-                <button
-                  key={conv.id}
-                  onClick={() => {
-                    setActiveConversationId(conv.id);
-                    markConversationAsRead(conv.id);
-                  }}
-                  className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group cursor-pointer ${
-                    isSelected 
-                      ? 'bg-indigo-50/50 border-l-4 border-[#3742AC]' 
-                      : urgency?.urgencyLevel === 'CRITICAL_UNANSWERED'
-                      ? 'bg-rose-50/30 border-l-4 border-rose-500 hover:bg-rose-50/50'
-                      : urgency?.urgencyLevel === 'HIGH_STALE_DEAL'
-                      ? 'border-l-4 border-amber-400 hover:bg-slate-50'
-                      : isContactPersonal
-                      ? 'bg-slate-50/40 hover:bg-slate-100/60'
-                      : 'hover:bg-slate-50'
-                  }`}
-                >
-                  {/* Avatar */}
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
-                      alt={contact?.name}
-                      className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200"
-                    />
-                    {contact?.temperature === 'HOT' && !isContactPersonal && (
-                      <span className="absolute -bottom-1 -right-1 text-xs" title="Lead Quente">
-                        🔥
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#3742AC]' : 'text-slate-900'}`}>
-                          {contact?.name || 'Lead WhatsApp'}
-                        </h3>
-                        {isContactPersonal && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-200/80 text-slate-600 border border-slate-300 shrink-0">
-                            👤 Pessoal
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                        <span 
-                          className="text-[10px] text-slate-400 font-sans group-hover:hidden"
-                          title={conv.lastMessageAt ? safeFormatDate(conv.lastMessageAt, 'dd/MM/yyyy às HH:mm') : ''}
-                        >
-                          {formatWhatsAppDate(conv.lastMessageAt)}
+                return (
+                  <button
+                    key={conv.id}
+                    onClick={() => {
+                      setActiveConversationId(conv.id);
+                      markConversationAsRead(conv.id);
+                    }}
+                    className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group cursor-pointer ${
+                      isSelected 
+                        ? 'bg-indigo-50/50 border-l-4 border-[#3742AC]' 
+                        : urgency?.urgencyLevel === 'CRITICAL_UNANSWERED'
+                        ? 'bg-rose-50/30 border-l-4 border-rose-500 hover:bg-rose-50/50'
+                        : urgency?.urgencyLevel === 'HIGH_STALE_DEAL'
+                        ? 'border-l-4 border-amber-400 hover:bg-slate-50'
+                        : isContactPersonal
+                        ? 'bg-slate-50/40 hover:bg-slate-100/60'
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    {/* Avatar */}
+                    <div className="relative flex-shrink-0">
+                      <img
+                        src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
+                        alt={contact?.name}
+                        className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-200"
+                      />
+                      {contact?.temperature === 'HOT' && !isContactPersonal && (
+                        <span className="absolute -bottom-1 -right-1 text-xs" title="Lead Quente">
+                          🔥
                         </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Tem certeza que deseja excluir permanentemente a conversa com ${contact?.name || 'este contato'} do CRM e do WhatsApp?`)) {
-                              deleteConversation(conv.id);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#3742AC]' : 'text-slate-900'}`}>
+                            {contact?.name || 'Lead WhatsApp'}
+                          </h3>
+                          {isContactPersonal && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-200/80 text-slate-600 border border-slate-300 shrink-0">
+                              👤 Pessoal
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                          <span 
+                            className="text-[10px] text-slate-400 font-sans group-hover:hidden"
+                            title={conv.lastMessageAt ? safeFormatDate(conv.lastMessageAt, 'dd/MM/yyyy às HH:mm') : ''}
+                          >
+                            {formatWhatsAppDate(conv.lastMessageAt)}
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
                               e.stopPropagation();
-                              deleteConversation(conv.id);
-                            }
-                          }}
-                          title="Excluir conversa permanentemente"
-                          className="hidden group-hover:flex items-center justify-center p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3 text-rose-500" />
-                        </span>
+                              if (window.confirm(`Tem certeza que deseja excluir permanentemente a conversa com ${contact?.name || 'este contato'} do CRM e do WhatsApp?`)) {
+                                deleteConversation(conv.id);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.stopPropagation();
+                                deleteConversation(conv.id);
+                              }
+                            }}
+                            title="Excluir conversa permanentemente"
+                            className="hidden group-hover:flex items-center justify-center p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3 text-rose-500" />
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Preview da Mensagem Ultra Rápido O(1) (sem loop destrutivo de mensagens) */}
+                      {(() => {
+                        const rawPreview = (conv.lastMessagePreview && !isWhatsAppSystemMessage(conv.lastMessagePreview) && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber'))
+                          ? conv.lastMessagePreview
+                          : '📱 Conversa sincronizada';
+                        const preview = conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : rawPreview;
+                        return (
+                          <p className={`text-[11px] truncate mb-1 leading-relaxed ${conv.unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
+                            {preview}
+                          </p>
+                        );
+                      })()}
+
+                      <div className="flex items-center justify-between gap-1 text-[10px] mt-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-slate-400 font-mono shrink-0">
+                            {formatDisplayPhone(contact?.phone || conv.id)}
+                          </span>
+                          {/* Etiquetas do WhatsApp Business / Tags */}
+                          {contact?.tags && contact.tags.filter(t => t !== 'WhatsApp Web Sincronizado').slice(0, 2).map((t, idx) => (
+                            <span key={idx} className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 text-[#3742AC] border border-indigo-200/60 truncate max-w-[90px]" title={`Etiqueta: ${t}`}>
+                              🏷️ {t}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          {urgency && urgency.urgencyLevel === 'CRITICAL_UNANSWERED' && (
+                            <span 
+                              className="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300 animate-pulse flex items-center gap-0.5" 
+                              title={urgency.urgencyReason}
+                            >
+                              🚨 No Vácuo ({urgency.formattedTimeAgo})
+                            </span>
+                          )}
+
+                          {urgency && urgency.urgencyLevel === 'HIGH_STALE_DEAL' && (
+                            <span 
+                              className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-0.5" 
+                              title={urgency.urgencyReason}
+                            >
+                              ⏱️ {urgency.formattedTimeAgo}
+                            </span>
+                          )}
+
+                          {conv.unreadCount > 0 && (
+                            <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white text-[10px] font-bold flex items-center justify-center shadow-2xs">
+                              {conv.unreadCount}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  </button>
+                );
+              })}
 
-                    {/* Preview da Mensagem */}
-                    {(() => {
-                      const itemConvDigits = (conv.id + (conv.contactId || '')).replace(/\D/g, '');
-                      const convMsgs = messages.filter(m => {
-                        if (m.isInternalNote || !m.content || isWhatsAppSystemMessage(m.content)) return false;
-                        if (m.conversationId === conv.id) return true;
-                        if (conv.contactId && (m.conversationId === conv.contactId || m.conversationId === `conv-${conv.contactId}`)) return true;
-                        const mDigits = m.conversationId.replace(/\D/g, '');
-                        if (itemConvDigits && mDigits && arePhonesEquivalent(itemConvDigits, mDigits)) return true;
-                        if (contact?.phone && arePhonesEquivalent(contact.phone, m.conversationId)) return true;
-                        return false;
-                      });
-                      const latest = convMsgs.length > 0 ? convMsgs[convMsgs.length - 1] : null;
-                      const rawPreview = (conv.lastMessagePreview && !isWhatsAppSystemMessage(conv.lastMessagePreview) && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber'))
-                        ? conv.lastMessagePreview
-                        : '📱 Conversa sincronizada';
-                      const preview = latest?.content 
-                        || (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : rawPreview);
-                      return (
-                        <p className={`text-[11px] truncate mb-1 leading-relaxed ${conv.unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
-                          {preview}
-                        </p>
-                      );
-                    })()}
-
-                    <div className="flex items-center justify-between gap-1 text-[10px] mt-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-slate-400 font-mono shrink-0">
-                          {formatDisplayPhone(contact?.phone || conv.id)}
-                        </span>
-                        {/* Etiquetas do WhatsApp Business / Tags */}
-                        {contact?.tags && contact.tags.filter(t => t !== 'WhatsApp Web Sincronizado').slice(0, 2).map((t, idx) => (
-                          <span key={idx} className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 text-[#3742AC] border border-indigo-200/60 truncate max-w-[90px]" title={`Etiqueta: ${t}`}>
-                            🏷️ {t}
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        {urgency && urgency.urgencyLevel === 'CRITICAL_UNANSWERED' && (
-                          <span 
-                            className="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300 animate-pulse flex items-center gap-0.5" 
-                            title={urgency.urgencyReason}
-                          >
-                            🚨 No Vácuo ({urgency.formattedTimeAgo})
-                          </span>
-                        )}
-
-                        {urgency && urgency.urgencyLevel === 'HIGH_STALE_DEAL' && (
-                          <span 
-                            className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-0.5" 
-                            title={urgency.urgencyReason}
-                          >
-                            ⏱️ {urgency.formattedTimeAgo}
-                          </span>
-                        )}
-
-                        {conv.unreadCount > 0 && (
-                          <span className="w-5 h-5 rounded-full bg-[#3742AC] text-white text-[10px] font-bold flex items-center justify-center shadow-2xs">
-                            {conv.unreadCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })
+              {visibleChatLimit < filteredConversations.length && (
+                <div className="p-3 text-center bg-slate-50/80 border-t border-slate-100">
+                  <button
+                    onClick={() => setVisibleChatLimit(prev => Math.min(prev + 30, filteredConversations.length))}
+                    className="text-xs font-bold text-[#3742AC] hover:text-[#2b348a] py-1.5 px-4 rounded-lg bg-indigo-50/80 hover:bg-indigo-100/80 border border-indigo-200/60 transition cursor-pointer"
+                  >
+                    Carregar mais conversas ({displayedConversations.length} de {filteredConversations.length})
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

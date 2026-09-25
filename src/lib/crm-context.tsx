@@ -1900,6 +1900,38 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // Salva no localStorage de forma assíncrona/debounced em segundo plano (evita congelamentos de UI e estouro de cota)
+  const storageTimeoutMap = useRef<Record<string, NodeJS.Timeout>>({});
+  const saveToStorageDebounced = useCallback((key: string, data: any, delay = 800) => {
+    if (typeof window === 'undefined') return;
+    if (storageTimeoutMap.current[key]) {
+      clearTimeout(storageTimeoutMap.current[key]);
+    }
+    storageTimeoutMap.current[key] = setTimeout(() => {
+      const doSave = () => {
+        try {
+          // Proteção de Quota e Performance: mensagens locais limitadas a 300 mais recentes
+          let payloadToSave = data;
+          if (key === 'vanguard_crm_messages' && Array.isArray(data) && data.length > 300) {
+            payloadToSave = data.slice(-300);
+          } else if (key === 'vanguard_crm_contacts' && Array.isArray(data) && data.length > 800) {
+            payloadToSave = data.slice(0, 800);
+          }
+          const serialized = JSON.stringify(payloadToSave);
+          localStorage.setItem(key, serialized);
+        } catch (err) {
+          console.warn(`[Brokiva Storage] Erro controlado ao salvar ${key}:`, err);
+        }
+      };
+
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(doSave, { timeout: 3000 });
+      } else {
+        setTimeout(doSave, 0);
+      }
+    }, delay);
+  }, []);
+
   // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima, Safari e novos dispositivos)
   const isHydratedRef = useRef(false);
 
@@ -1993,7 +2025,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         const finalContacts = deduplicateContactList(combinedContacts);
         setContacts(finalContacts);
-        try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(finalContacts)); } catch {}
+        saveToStorageDebounced('vanguard_crm_contacts', finalContacts, 800);
 
         // 5. Mescla conversas garantindo unificação de LIDs e precedência do Servidor
         const otherTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => cv.tenantId && cv.tenantId !== currentTenant.id);
@@ -2011,7 +2043,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         const finalConvs = deduplicateConversations(combinedConvs, finalContacts);
         setConversations(finalConvs);
-        try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(finalConvs)); } catch {}
+        saveToStorageDebounced('vanguard_crm_conversations', finalConvs, 1000);
 
         // 6. Mescla mensagens
         const combinedMsgs = [
@@ -2021,7 +2053,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
         setMessages(finalMsgs);
-        try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(finalMsgs)); } catch {}
+        saveToStorageDebounced('vanguard_crm_messages', finalMsgs, 1500);
 
         // 7. Mescla deals com autoridade do servidor
         const otherTenantDeals = (Array.isArray(parsedLocalDeals) ? parsedLocalDeals : []).filter(d => d.tenantId && d.tenantId !== currentTenant.id);
@@ -2036,7 +2068,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
         const finalDeals = Array.from(dealMap.values()).filter(d => !isChatKeyDeleted(d.contactId, combinedDeleted));
         setDeals(finalDeals);
-        try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(finalDeals)); } catch {}
+        saveToStorageDebounced('vanguard_crm_deals', finalDeals, 800);
 
         // 8. Insights
         const finalInsights = {
@@ -2044,7 +2076,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           ...(serverData?.aiInsights || {})
         };
         setAiInsights(finalInsights);
-        try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(finalInsights)); } catch {}
+        saveToStorageDebounced('vanguard_crm_ai_insights', finalInsights, 1200);
 
         // 8.1 Modelos de Respostas Rápidas
         const savedQRs = localStorage.getItem('vanguard_crm_quick_replies');
@@ -2144,28 +2176,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('message', handleExtensionDirectSync);
   }, []);
 
-  // Salva no localStorage de forma assíncrona/debounced em segundo plano (evita congelamentos de UI)
-  const storageTimeoutMap = useRef<Record<string, NodeJS.Timeout>>({});
-  const saveToStorageDebounced = useCallback((key: string, data: any, delay = 800) => {
-    if (typeof window === 'undefined') return;
-    if (storageTimeoutMap.current[key]) {
-      clearTimeout(storageTimeoutMap.current[key]);
-    }
-    storageTimeoutMap.current[key] = setTimeout(() => {
-      try {
-        const serialized = JSON.stringify(data);
-        if ('requestIdleCallback' in window) {
-          (window as any).requestIdleCallback(() => {
-            try { localStorage.setItem(key, serialized); } catch {}
-          }, { timeout: 2000 });
-        } else {
-          localStorage.setItem(key, serialized);
-        }
-      } catch (err) {
-        console.warn(`[Brokiva Storage] Erro ao salvar ${key}:`, err);
-      }
-    }, delay);
-  }, []);
+
 
   // Salva no localStorage quando o estado mudar (somente APÓS hidratação para nunca sobrescrever) com Debounce Assíncrono
   useEffect(() => {

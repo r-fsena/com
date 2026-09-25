@@ -1582,6 +1582,28 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                         </label>
                       </div>
                     </div>
+
+                    {/* Mapeamento de Etiquetas do WhatsApp Business (Opção C) */}
+                    <div className="pt-2 border-t border-slate-200/60">
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                          🏷️ Etiquetas do WhatsApp Business:
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Leads com essas etiquetas são posicionados aqui automaticamente
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={(stage.whatsappLabelMapping || []).join(', ')}
+                        onChange={(e) => {
+                          const val = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                          handleUpdateStageField(idx, 'whatsappLabelMapping', val);
+                        }}
+                        placeholder="Ex: Novo Lead, Visita Agendada, Proposta (separadas por vírgula)"
+                        className="w-full text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>

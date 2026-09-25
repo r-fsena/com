@@ -241,21 +241,81 @@ async function runBackgroundSyncWorker(params: {
         isPersonal: false,
       });
 
-      newMessages.push({
-        id: `msg-sync-${cleanPhone}`,
-        tenantId,
-        conversationId,
-        senderType: 'CONTACT',
-        senderName: resolvedName,
-        messageType: 'TEXT',
-        content: chat.lastMessage || `Conversa ativa no WhatsApp com ${resolvedName}`,
-        status: 'DELIVERED',
-        isInternalNote: false,
-        timestamp: interactionIso,
-      });
+      if (chat.lastMessage) {
+        newMessages.push({
+          id: `msg-sync-${cleanPhone}`,
+          tenantId,
+          conversationId,
+          senderType: 'CONTACT',
+          senderName: resolvedName,
+          messageType: 'TEXT',
+          content: chat.lastMessage,
+          status: 'DELIVERED',
+          isInternalNote: false,
+          timestamp: interactionIso,
+        });
+      }
     }
 
-    // 4. Salva no Store Global do Servidor
+    // 3.5. Busca histórico real de mensagens para as 25 conversas mais recentes em paralelo controlado
+    syncJobStore.updateJob(jobId, {
+      progress: 85,
+      currentStepText: 'Baixando histórico de mensagens das conversas ativas...',
+    });
+
+    const activeChatsSlice = sortedEntries.slice(0, 25);
+    await Promise.allSettled(
+      activeChatsSlice.map(async ([cleanPhone, chat]: [string, any]) => {
+        try {
+          if (!cleanPhone) return;
+
+          const msgRes = await fetch(
+            `https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chat-messages/${cleanPhone}?page=1&pageSize=25`,
+            { headers }
+          );
+
+          if (msgRes.ok) {
+            const msgsData = await msgRes.json();
+            if (Array.isArray(msgsData)) {
+              msgsData.forEach((m: any, idx: number) => {
+                if (m && (m.text || m.body || m.caption || m.message || m.audio || m.image || m.document)) {
+                  const isFromMe = Boolean(m.fromMe);
+                  const text = m.text?.message || m.body || m.caption || m.message || (m.image ? '📷 [Foto]' : m.audio ? '🎙️ [Áudio]' : m.document ? '📄 [Documento]' : '');
+                  const timestamp = m.momment ? new Date(Number(m.momment)).toISOString() : (m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString());
+
+                  if (cutoffMs > 0 && new Date(timestamp).getTime() < cutoffMs) return;
+
+                  const mId = m.id || m.zaapId || m.messageId || `hist-bg-${cleanPhone}-${idx}-${Date.now()}`;
+                  const mediaUrl = m.image?.imageUrl || m.audio?.audioUrl || m.document?.documentUrl;
+
+                  newMessages.push({
+                    id: mId,
+                    tenantId,
+                    conversationId: `conv-zapi-${cleanPhone}`,
+                    senderType: isFromMe ? 'USER' : 'CONTACT',
+                    senderName: isFromMe ? 'Corretor' : (chat.name || 'Cliente'),
+                    messageType: m.audio ? 'AUDIO' : m.image ? 'IMAGE' : m.document ? 'DOCUMENT' : 'TEXT',
+                    attachments: mediaUrl ? [{
+                      id: `att-${mId}`,
+                      url: mediaUrl,
+                      fileName: m.document?.fileName || (m.image ? 'Foto.jpg' : 'Audio.ogg'),
+                      fileSize: 1024,
+                      mimeType: m.image ? 'image/jpeg' : m.audio ? 'audio/ogg' : 'application/pdf',
+                    }] : undefined,
+                    content: text,
+                    status: 'DELIVERED',
+                    isInternalNote: false,
+                    timestamp,
+                  });
+                }
+              });
+            }
+          }
+        } catch {}
+      })
+    );
+
+    // 4. Salva no Store Global do Servidor e Auto-sincroniza Deals no Funil
     serverCRMStore.updateState({
       contacts: newContacts,
       conversations: newConversations,

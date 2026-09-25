@@ -207,6 +207,7 @@ export interface PipelineStage {
   colorHex: string;
   isWon?: boolean;
   isLost?: boolean;
+  whatsappLabelMapping?: string[]; // Nomes das etiquetas do WhatsApp Business vinculadas a esta etapa
 }
 
 export interface Pipeline {

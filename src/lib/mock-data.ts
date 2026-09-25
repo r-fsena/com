@@ -160,14 +160,14 @@ export const MOCK_PIPELINES: Pipeline[] = [
     name: 'Funil Geral de Vendas',
     isDefault: true,
     stages: [
-      { id: 'stage-1', pipelineId: 'pipe-amabile-default', name: '1. Novo Lead WhatsApp', order: 1, slaHours: 2, colorHex: '#3b82f6' },
-      { id: 'stage-2', pipelineId: 'pipe-amabile-default', name: '2. Primeiro Contato Realizado', order: 2, slaHours: 12, colorHex: '#6366f1' },
-      { id: 'stage-3', pipelineId: 'pipe-amabile-default', name: '3. Em Qualificação / Perfil', order: 3, slaHours: 24, colorHex: '#8b5cf6' },
-      { id: 'stage-4', pipelineId: 'pipe-amabile-default', name: '4. Imóveis Apresentados', order: 4, slaHours: 48, colorHex: '#a855f7' },
-      { id: 'stage-5', pipelineId: 'pipe-amabile-default', name: '5. Visita Agendada', order: 5, slaHours: 72, colorHex: '#d97706' },
-      { id: 'stage-6', pipelineId: 'pipe-amabile-default', name: '6. Proposta em Mesa', order: 6, slaHours: 48, colorHex: '#f59e0b' },
-      { id: 'stage-7', pipelineId: 'pipe-amabile-default', name: '7. Contrato Fechado', order: 7, slaHours: 0, colorHex: '#059669', isWon: true },
-      { id: 'stage-8', pipelineId: 'pipe-amabile-default', name: 'Perdido / Descarte', order: 8, slaHours: 0, colorHex: '#ef4444', isLost: true },
+      { id: 'stage-1', pipelineId: 'pipe-amabile-default', name: '1. Novo Lead WhatsApp', order: 1, slaHours: 2, colorHex: '#3b82f6', whatsappLabelMapping: ['Novo Cliente', 'Novo Lead', 'Lead', 'WhatsApp'] },
+      { id: 'stage-2', pipelineId: 'pipe-amabile-default', name: '2. Primeiro Contato Realizado', order: 2, slaHours: 12, colorHex: '#6366f1', whatsappLabelMapping: ['Primeiro Contato', 'Atendimento Iniciado'] },
+      { id: 'stage-3', pipelineId: 'pipe-amabile-default', name: '3. Em Qualificação / Perfil', order: 3, slaHours: 24, colorHex: '#8b5cf6', whatsappLabelMapping: ['Qualificação', 'Perfil', 'Investidor'] },
+      { id: 'stage-4', pipelineId: 'pipe-amabile-default', name: '4. Imóveis Apresentados', order: 4, slaHours: 48, colorHex: '#a855f7', whatsappLabelMapping: ['Imóveis Enviados', 'Apresentado'] },
+      { id: 'stage-5', pipelineId: 'pipe-amabile-default', name: '5. Visita Agendada', order: 5, slaHours: 72, colorHex: '#d97706', whatsappLabelMapping: ['Visita Agendada', 'Visita', 'Agendado'] },
+      { id: 'stage-6', pipelineId: 'pipe-amabile-default', name: '6. Proposta em Mesa', order: 6, slaHours: 48, colorHex: '#f59e0b', whatsappLabelMapping: ['Proposta', 'Negociação', 'Em Negociação'] },
+      { id: 'stage-7', pipelineId: 'pipe-amabile-default', name: '7. Contrato Fechado', order: 7, slaHours: 0, colorHex: '#059669', isWon: true, whatsappLabelMapping: ['Fechado', 'Contrato', 'Vendido', 'Pago'] },
+      { id: 'stage-8', pipelineId: 'pipe-amabile-default', name: 'Perdido / Descarte', order: 8, slaHours: 0, colorHex: '#ef4444', isLost: true, whatsappLabelMapping: ['Perdido', 'Descarte', 'Desistiu'] },
     ]
   }
 ];

@@ -13,6 +13,52 @@
   let currentActiveName = '';
   let currentBrokerName = 'Rafael Sena';
 
+  // Injeta o WA Native Bridge no contexto MAIN para acesso de alta performance ao Store
+  function injectNativeBridge() {
+    try {
+      if (document.getElementById('brokiva-wa-bridge-script')) return;
+      const script = document.createElement('script');
+      script.id = 'brokiva-wa-bridge-script';
+      script.src = chrome.runtime.getURL('wa-bridge.js');
+      script.type = 'text/javascript';
+      (document.head || document.documentElement).appendChild(script);
+      console.log('[Brokiva] Native Bridge script injetado com sucesso.');
+    } catch (err) {
+      console.warn('[Brokiva] Falha ao injetar Native Bridge:', err);
+    }
+  }
+  injectNativeBridge();
+
+  // Helper para consultar o Native Bridge via postMessage
+  function queryNativeStore(type, payload = {}, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+      const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      let resolved = false;
+
+      const handler = (event) => {
+        if (!event.data || event.data.requestId !== requestId) return;
+        resolved = true;
+        window.removeEventListener('message', handler);
+        resolve(event.data);
+      };
+
+      window.addEventListener('message', handler);
+
+      window.postMessage({
+        type,
+        requestId,
+        ...payload,
+      }, '*');
+
+      setTimeout(() => {
+        if (!resolved) {
+          window.removeEventListener('message', handler);
+          resolve({ success: false, timeout: true });
+        }
+      }, timeoutMs);
+    });
+  }
+
   try {
     chrome?.storage?.local?.get(['brokerName'], res => {
       if (res?.brokerName) currentBrokerName = res.brokerName;
@@ -3028,6 +3074,68 @@ ${isDeveloperMode ? `
     openSyncModal(MAX_TARGET_CHATS, syncMode);
 
     logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', `Varredura iniciada em modo: ${syncMode} (Max chats: ${MAX_TARGET_CHATS})`);
+
+    // 1. TENTA PRIMEIRO A SINCRONIZAÇÃO NATIVA INSTANTÂNEA VIA STORE BRIDGE (O(1))
+    try {
+      logToConsoleAndCloudWatch('INFO', 'NATIVE_STORE_ATTEMPT', 'Consultando WhatsApp Native Bridge...');
+      const bridgeData = await queryNativeStore('BROKIVA_GET_ALL_DATA', {}, 3000);
+
+      if (bridgeData && bridgeData.success && bridgeData.data && Array.isArray(bridgeData.data.chats) && bridgeData.data.chats.length > 0) {
+        const rawChats = bridgeData.data.chats;
+        const nativeChats = syncMode === 'RECENT' ? rawChats.slice(0, MAX_TARGET_CHATS) : rawChats;
+        const nativeContacts = bridgeData.data.contacts || [];
+        const nativeLabels = bridgeData.data.labels || [];
+
+        logToConsoleAndCloudWatch('INFO', 'NATIVE_STORE_SUCCESS', `Store Bridge respondeu com ${nativeChats.length} chats, ${nativeContacts.length} contatos e ${nativeLabels.length} etiquetas!`);
+
+        // Mapeia fotos de contatos em alta resolução
+        const picMap = new Map();
+        nativeContacts.forEach(c => {
+          if (c.phone && c.profilePicUrl) picMap.set(c.phone, c.profilePicUrl);
+        });
+
+        const chatsToIngest = nativeChats.map(c => {
+          const rawLabels = c.labels || [];
+          return {
+            phone: c.phone,
+            name: c.name || `WhatsApp ${c.phone.slice(-4)}`,
+            avatarUrl: picMap.get(c.phone) || null,
+            labels: rawLabels,
+            tags: rawLabels.map(l => `[Etiqueta] ${l}`),
+            lastMessagePreview: c.lastMessagePreview || '📱 Conversa sincronizada via WhatsApp',
+            lastMessageAt: c.lastMessageTimestamp ? new Date(c.lastMessageTimestamp).toISOString() : new Date().toISOString(),
+            messages: [],
+          };
+        });
+
+        // Para os 25 chats mais recentes, extrai mensagens direto da memória do WhatsApp Web
+        for (let i = 0; i < Math.min(25, chatsToIngest.length); i++) {
+          const target = chatsToIngest[i];
+          try {
+            const msgsRes = await queryNativeStore('BROKIVA_GET_CHAT_MESSAGES', { phone: target.phone, limit: 30 }, 1000);
+            if (msgsRes && msgsRes.success && Array.isArray(msgsRes.messages) && msgsRes.messages.length > 0) {
+              target.messages = msgsRes.messages;
+            }
+          } catch {}
+        }
+
+        updateSyncModalProgress(chatsToIngest.length, chatsToIngest.length, 0);
+        const sendRes = await dispatchSyncBatchChats(chatsToIngest);
+
+        if (sendRes && sendRes.success) {
+          logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Sincronização nativa concluída com sucesso! ${chatsToIngest.length} conversas salvas no CRM.`);
+          closeSyncModal();
+          alert(`🎉 Sincronização Concluída com Sucesso!\n\nForam sincronizadas ${chatsToIngest.length} conversas, contatos e etiquetas do WhatsApp diretamente no seu CRM Brokiva.`);
+          isSyncing = false;
+          if (btnRecent) btnRecent.disabled = false;
+          if (btnFull) btnFull.disabled = false;
+          if (btnOld) btnOld.disabled = false;
+          return;
+        }
+      }
+    } catch (bridgeErr) {
+      logToConsoleAndCloudWatch('WARN', 'NATIVE_STORE_FALLBACK', 'Ponte nativa indisponível. Continuando via varredura visual...');
+    }
 
     const scrollContainer = findPaneSideScrollContainer() || document.querySelector('#pane-side');
     if (!scrollContainer) {

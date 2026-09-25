@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { Contact, Deal, Conversation, Message, AIInsight, User, QuickReplyTemplate } from '@/types/crm';
-import { MOCK_USERS } from '@/lib/mock-data';
+import { Contact, Deal, Conversation, Message, AIInsight, User, QuickReplyTemplate, PipelineStage } from '@/types/crm';
+import { MOCK_USERS, MOCK_PIPELINES } from '@/lib/mock-data';
 import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
@@ -669,7 +669,7 @@ export const serverCRMStore = {
 
     // Reconcilia deals garantindo que o contactId aponte para o contato canônico unificado
     const rawDeals = partial.deals || current.deals;
-    const cleanDeals = rawDeals.map(d => {
+    let cleanDeals = rawDeals.map(d => {
       if (!d || !d.contactId) return d;
       const matched = mergedContacts.find(c => 
         c.id === d.contactId || 
@@ -680,6 +680,11 @@ export const serverCRMStore = {
       }
       return d;
     });
+
+    // Auto-sincroniza deals com etiquetas do WhatsApp se contatos novos foram fornecidos
+    if (partial.contacts && partial.contacts.length > 0) {
+      cleanDeals = this.syncDealsWithWhatsAppLabels(mergedContacts, cleanDeals);
+    }
 
     // Mescla modelos de respostas rápidas por ID preservando itens mais recentes
     const mergedQuickReplies = partial.quickReplies !== undefined
@@ -702,6 +707,93 @@ export const serverCRMStore = {
     global.__SERVER_CRM_STATE__ = next;
     saveStateToDisk();
     return next;
+  },
+
+  syncDealsWithWhatsAppLabels(
+    contacts: Contact[],
+    currentDeals: Deal[],
+    stages: PipelineStage[] = MOCK_PIPELINES[0].stages
+  ): Deal[] {
+    const dealsByContactId = new Map<string, Deal>();
+    currentDeals.forEach(d => {
+      if (d.contactId) dealsByContactId.set(d.contactId, d);
+    });
+
+    const updatedDeals = [...currentDeals];
+
+    contacts.forEach(c => {
+      if (c.isPersonal || !c.name || c.name.startsWith('+') || c.name === 'Lead WhatsApp') return;
+      
+      // Coleta todas as etiquetas do contato (whatsappLabels + tags que começam com [Etiqueta])
+      const labels = new Set<string>();
+      if (Array.isArray(c.whatsappLabels)) {
+        c.whatsappLabels.forEach(l => labels.add(l.toLowerCase().trim()));
+      }
+      if (Array.isArray(c.tags)) {
+        c.tags.forEach(t => {
+          if (t.startsWith('[Etiqueta] ')) {
+            labels.add(t.replace('[Etiqueta] ', '').toLowerCase().trim());
+          }
+        });
+      }
+
+      if (labels.size === 0) return;
+
+      // Procura a melhor etapa correspondente
+      let matchedStage: PipelineStage | undefined;
+      for (const stage of stages) {
+        if (stage.whatsappLabelMapping) {
+          const hasMatch = stage.whatsappLabelMapping.some(m => labels.has(m.toLowerCase().trim()));
+          if (hasMatch) {
+            matchedStage = stage;
+            break;
+          }
+        }
+        // Matching por similaridade de nome
+        const stageNorm = stage.name.toLowerCase();
+        for (const lbl of Array.from(labels)) {
+          if (stageNorm.includes(lbl) || lbl.includes(stageNorm)) {
+            matchedStage = stage;
+            break;
+          }
+        }
+        if (matchedStage) break;
+      }
+
+      if (matchedStage) {
+        const existingDeal = dealsByContactId.get(c.id);
+        if (existingDeal) {
+          // Atualiza etapa se a nova etapa for mais avançada ou se estiver aberta
+          if (existingDeal.stageId !== matchedStage.id && existingDeal.status === 'OPEN') {
+            existingDeal.stageId = matchedStage.id;
+            if (matchedStage.isWon) existingDeal.status = 'WON';
+            if (matchedStage.isLost) existingDeal.status = 'LOST';
+            existingDeal.updatedAt = new Date().toISOString();
+          }
+        } else {
+          // Cria o Deal automaticamente para este lead com etiqueta do WhatsApp!
+          const newDeal: Deal = {
+            id: `deal-auto-${c.id.replace(/\D/g, '') || Date.now()}`,
+            tenantId: c.tenantId,
+            contactId: c.id,
+            pipelineId: stages[0]?.pipelineId || 'pipe-amabile-default',
+            stageId: matchedStage.id,
+            assignedUserId: c.assignedUserId || 'user-1',
+            title: `Negociação • ${c.name}`,
+            expectedValue: 450000,
+            manualProbability: 50,
+            aiProbabilityScore: c.aiPriorityScore || 75,
+            status: matchedStage.isWon ? 'WON' : matchedStage.isLost ? 'LOST' : 'OPEN',
+            createdAt: c.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          updatedDeals.push(newDeal);
+          dealsByContactId.set(c.id, newDeal);
+        }
+      }
+    });
+
+    return updatedDeals;
   },
 
   mergeContacts(oldList: Contact[], newList: Contact[]): Contact[] {

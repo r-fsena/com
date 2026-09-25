@@ -614,7 +614,7 @@ export const serverCRMStore = {
 
     const removedContactIds = new Set<string>();
     const remainingContacts = current.contacts.filter(c => {
-      const match = c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId.includes('amabile')));
+      const match = c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile')));
       if (match) {
         removedContactIds.add(c.id);
         if (c.phone) removedContactIds.add(c.phone);
@@ -627,7 +627,7 @@ export const serverCRMStore = {
     const removedConvIds = new Set<string>();
     const remainingConvs = current.conversations.filter(cv => {
       const match = cv.tenantId === tenantId ||
-                    (isAmabile && (!cv.tenantId || cv.tenantId.includes('amabile'))) ||
+                    (isAmabile && (!cv.tenantId || cv.tenantId === 'tenant-vanguard-01' || cv.tenantId.includes('amabile'))) ||
                     removedContactIds.has(cv.contactId) ||
                     removedContactIds.has(cv.id);
       if (match) {
@@ -638,12 +638,12 @@ export const serverCRMStore = {
     });
 
     const remainingDeals = current.deals.filter(d => {
-      const match = d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId.includes('amabile'))) || removedContactIds.has(d.contactId);
+      const match = d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile'))) || removedContactIds.has(d.contactId);
       return !match;
     });
 
     const remainingMessages = current.messages.filter(m => {
-      const match = m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId.includes('amabile'))) || removedConvIds.has(m.conversationId);
+      const match = m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile'))) || removedConvIds.has(m.conversationId);
       return !match;
     });
 

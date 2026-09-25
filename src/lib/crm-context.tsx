@@ -564,7 +564,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem('vanguard_crm_current_pipeline');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0 && parsed.tenantId !== 'tenant-vanguard-01') return parsed;
+          if (parsed && Array.isArray(parsed.stages) && parsed.stages.length > 0) {
+            parsed.tenantId = 'tenant-amabile-barbarotti';
+            return parsed;
+          }
         }
       } catch {}
     }
@@ -577,8 +580,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem('vanguard_crm_current_tenant');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed && parsed.id !== 'tenant-horizonte-02' && parsed.id !== 'tenant-alphaville-03' && parsed.id !== 'tenant-vanguard-01') {
+          if (parsed && parsed.id !== 'tenant-horizonte-02' && parsed.id !== 'tenant-alphaville-03') {
             const isAmabile = parsed.id === 'tenant-amabile-barbarotti' || 
+                              parsed.id === 'tenant-vanguard-01' ||
                               parsed.slug === 'amabile-barbarotti' || 
                               (parsed.name && parsed.name.toLowerCase().includes('amabile'));
             if (isAmabile) {
@@ -1497,9 +1501,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             const initialDel = getStoredDeletedChatKeys();
             parsed = parsed
-              .filter((c: Contact) => c.tenantId !== 'tenant-vanguard-01' && !isChatKeyDeleted(c.id, initialDel) && !isChatKeyDeleted(c.phone, initialDel) && !isChatKeyDeleted(c.lid, initialDel) && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
+              .filter((c: Contact) => !isChatKeyDeleted(c.id, initialDel) && !isChatKeyDeleted(c.phone, initialDel) && !isChatKeyDeleted(c.lid, initialDel) && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
               .map((c: Contact) => {
-                const isAmabileContact = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
+                const isAmabileContact = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
                 return {
                   ...c,
                   tenantId: isAmabileContact ? 'tenant-amabile-barbarotti' : c.tenantId,
@@ -1523,12 +1527,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed = parsed
-              .filter((d: Deal) => d.tenantId !== 'tenant-vanguard-01')
               .map((d: Deal) => {
-                const isAmabileDeal = !d.tenantId || d.tenantId === 'tenant-amabile-barbarotti' || d.tenantId.includes('amabile') || d.tenantId.startsWith('tenant-17');
+                const isAmabileDeal = !d.tenantId || d.tenantId === 'tenant-amabile-barbarotti' || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile') || d.tenantId.startsWith('tenant-17');
                 return {
                   ...d,
                   tenantId: isAmabileDeal ? 'tenant-amabile-barbarotti' : d.tenantId,
+                  pipelineId: (!d.pipelineId || d.pipelineId === 'pipe-vendas-residencial') ? 'pipe-amabile-default' : d.pipelineId,
                 };
               });
             return parsed;
@@ -1655,7 +1659,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             const initialDel = getStoredDeletedChatKeys();
             parsed = parsed
               .filter((c: Conversation) => {
-                if (c.tenantId === 'tenant-vanguard-01') return false;
                 if (isChatKeyDeleted(c.id, initialDel) || isChatKeyDeleted(c.contactId, initialDel)) return false;
                 const digits = (c.id + (c.contactId || '')).replace(/\D/g, '');
                 if (digits && isChatKeyDeleted(digits, initialDel)) return false;
@@ -1663,7 +1666,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 return isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }) || Boolean(c.lastMessagePreview && c.lastMessagePreview.length > 0);
               })
               .map((c: Conversation) => {
-                const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
+                const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
                 const cleanPreview = (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) ? 'Conversa sincronizada via WhatsApp' : c.lastMessagePreview;
                 return {
                   ...c,
@@ -1691,7 +1694,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             const initialDel = getStoredDeletedChatKeys();
             parsed = parsed.filter((m: Message) => {
-              if (m.tenantId === 'tenant-vanguard-01') return false;
               if (isChatKeyDeleted(m.conversationId, initialDel)) return false;
               if (!m.content) return false;
               const clean = m.content.trim().toLowerCase();
@@ -1702,6 +1704,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
               if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) return false;
               return true;
+            }).map((m: Message) => {
+              const isAmabileMsg = !m.tenantId || m.tenantId === 'tenant-amabile-barbarotti' || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile') || m.tenantId.startsWith('tenant-17');
+              return {
+                ...m,
+                tenantId: isAmabileMsg ? 'tenant-amabile-barbarotti' : m.tenantId,
+              };
             });
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
             return parsed;
@@ -4661,20 +4669,34 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const stateData = await stateRes.json();
         if (stateData && stateData.success && isMounted) {
           if (Array.isArray(stateData.contacts) && stateData.contacts.length > 0) {
-            setContacts(prev => deduplicateContactList([...stateData.contacts, ...prev.filter(c => c.tenantId !== currentTenant.id)]));
+            setContacts(prev => {
+              const merged = deduplicateContactList([...stateData.contacts, ...prev]);
+              try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
+              return merged;
+            });
           }
           if (Array.isArray(stateData.conversations) && stateData.conversations.length > 0) {
-            setConversations(prev => deduplicateConversations([...stateData.conversations, ...prev.filter(c => c.tenantId !== currentTenant.id)]));
+            setConversations(prev => {
+              const merged = deduplicateConversations([...stateData.conversations, ...prev]);
+              try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
+              return merged;
+            });
           }
           if (Array.isArray(stateData.messages) && stateData.messages.length > 0) {
-            setMessages(prev => deduplicateMessages([...stateData.messages, ...prev]));
+            setMessages(prev => {
+              const merged = deduplicateMessages([...stateData.messages, ...prev]);
+              try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
+              return merged;
+            });
           }
           if (Array.isArray(stateData.deals) && stateData.deals.length > 0) {
             setDeals(prev => {
               const dealMap = new Map<string, Deal>();
-              prev.filter(d => d.tenantId !== currentTenant.id).forEach(d => dealMap.set(d.id, d));
+              prev.forEach(d => dealMap.set(d.id, d));
               stateData.deals.forEach((d: Deal) => dealMap.set(d.id, d));
-              return Array.from(dealMap.values());
+              const merged = Array.from(dealMap.values());
+              try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(merged)); } catch {}
+              return merged;
             });
           }
         }
@@ -4682,6 +4704,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
 
     pollWebhookMessages();
+    syncServerState();
     const webhookInterval = setInterval(pollWebhookMessages, 3000);
     const syncInterval = setInterval(syncServerState, 60000);
 
@@ -4702,7 +4725,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((p: Proposal) => p.tenantId !== 'tenant-vanguard-01');
+            parsed = parsed.map((p: Proposal) => {
+              const isAmabileProp = !p.tenantId || p.tenantId === 'tenant-amabile-barbarotti' || p.tenantId === 'tenant-vanguard-01' || p.tenantId.includes('amabile');
+              return {
+                ...p,
+                tenantId: isAmabileProp ? 'tenant-amabile-barbarotti' : p.tenantId,
+              };
+            });
             return parsed;
           }
         }
@@ -4861,7 +4890,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            parsed = parsed.filter((t: FinancialTransaction) => t.tenantId !== 'tenant-vanguard-01');
+            parsed = parsed.map((t: FinancialTransaction) => {
+              const isAmabileTx = !t.tenantId || t.tenantId === 'tenant-amabile-barbarotti' || t.tenantId === 'tenant-vanguard-01' || t.tenantId.includes('amabile');
+              return {
+                ...t,
+                tenantId: isAmabileTx ? 'tenant-amabile-barbarotti' : t.tenantId,
+              };
+            });
             return parsed;
           }
         }
@@ -4993,17 +5028,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   // -------------------------------------------------------------
   // ISOLAMENTO MULTI-TENANCY SEGURO (SEGREGAÇÃO TOTAL POR IMOBILIÁRIA)
   // -------------------------------------------------------------
+  const isCurrentAmabile = currentTenant.id === 'tenant-amabile-barbarotti' || currentTenant.id.includes('amabile');
+
   const scopedContacts = useMemo(() => {
-    return contacts.filter(c => c.tenantId === currentTenant.id);
-  }, [contacts, currentTenant.id]);
+    return contacts.filter(c => c.tenantId === currentTenant.id || (isCurrentAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile'))));
+  }, [contacts, currentTenant.id, isCurrentAmabile]);
 
   const scopedConversations = useMemo(() => {
-    return conversations.filter(c => c.tenantId === currentTenant.id);
-  }, [conversations, currentTenant.id]);
+    return conversations.filter(c => c.tenantId === currentTenant.id || (isCurrentAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile'))));
+  }, [conversations, currentTenant.id, isCurrentAmabile]);
 
   const scopedInstances = useMemo(() => {
-    return instances.filter(i => i.tenantId === currentTenant.id);
-  }, [instances, currentTenant.id]);
+    return instances.filter(i => i.tenantId === currentTenant.id || (isCurrentAmabile && (!i.tenantId || i.tenantId === 'tenant-vanguard-01' || i.tenantId.includes('amabile'))));
+  }, [instances, currentTenant.id, isCurrentAmabile]);
 
   const effectiveActiveInstanceId = useMemo(() => {
     if (activeInstanceId && scopedInstances.some(i => i.id === activeInstanceId)) {
@@ -5020,20 +5057,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [scopedConversations, activeConversationId]);
 
   const scopedDeals = useMemo(() => {
-    return deals.filter(d => d.tenantId === currentTenant.id);
-  }, [deals, currentTenant.id]);
+    return deals.filter(d => d.tenantId === currentTenant.id || (isCurrentAmabile && (!d.tenantId || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile'))));
+  }, [deals, currentTenant.id, isCurrentAmabile]);
 
   const scopedTasks = useMemo(() => {
-    return tasks.filter(t => t.tenantId === currentTenant.id);
-  }, [tasks, currentTenant.id]);
+    return tasks.filter(t => t.tenantId === currentTenant.id || (isCurrentAmabile && (!t.tenantId || t.tenantId === 'tenant-vanguard-01' || t.tenantId.includes('amabile'))));
+  }, [tasks, currentTenant.id, isCurrentAmabile]);
 
   const scopedProposals = useMemo(() => {
-    return proposals.filter(p => p.tenantId === currentTenant.id);
-  }, [proposals, currentTenant.id]);
+    return proposals.filter(p => p.tenantId === currentTenant.id || (isCurrentAmabile && (!p.tenantId || p.tenantId === 'tenant-vanguard-01' || p.tenantId.includes('amabile'))));
+  }, [proposals, currentTenant.id, isCurrentAmabile]);
 
   const scopedTransactions = useMemo(() => {
-    return transactions.filter(t => t.tenantId === currentTenant.id);
-  }, [transactions, currentTenant.id]);
+    return transactions.filter(t => t.tenantId === currentTenant.id || (isCurrentAmabile && (!t.tenantId || t.tenantId === 'tenant-vanguard-01' || t.tenantId.includes('amabile'))));
+  }, [transactions, currentTenant.id, isCurrentAmabile]);
 
   const scopedCampaigns = useMemo(() => {
     return campaigns.filter(c => c.tenantId === currentTenant.id);

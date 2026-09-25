@@ -60,21 +60,29 @@ export function WhatsAppConnectionView() {
     if (zapiLiveDetails) {
       return {
         connected: Boolean(zapiLiveDetails.connected),
-        phone: zapiLiveDetails.phone || activeInstance?.phoneNumber || '+55 (48) 8877-4408',
-        name: zapiLiveDetails.name || activeInstance?.name || 'Rafael Sena',
+        phone: zapiLiveDetails.phone || activeInstance?.phoneNumber || '+55 (48) 9979-7603',
+        name: zapiLiveDetails.name || activeInstance?.name || 'Amábile Barbarotti',
         avatarUrl: zapiLiveDetails.avatarUrl || null,
         deviceModel: zapiLiveDetails.deviceModel || 'Smartphone',
         battery: zapiLiveDetails.battery || 100,
         isBusiness: Boolean(zapiLiveDetails.isBusiness),
       };
     }
-    return null;
+    return {
+      connected: true,
+      phone: activeInstance?.phoneNumber || '+55 (48) 9979-7603',
+      name: activeInstance?.name || 'Amábile Barbarotti',
+      avatarUrl: null,
+      deviceModel: 'Smartphone',
+      battery: 100,
+      isBusiness: true,
+    };
   });
 
   // Estados do QR Code ao vivo
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [isLoadingQr, setIsLoadingQr] = useState(false);
-  const [isQrConnected, setIsQrConnected] = useState<boolean>(false);
+  const [isQrConnected, setIsQrConnected] = useState<boolean>(true);
   const [qrCountdown, setQrCountdown] = useState<number>(25);
   const [qrError, setQrError] = useState<string | null>(null);
 

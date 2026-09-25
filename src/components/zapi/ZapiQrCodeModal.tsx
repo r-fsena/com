@@ -86,8 +86,19 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       });
       const data = await res.json();
 
-      if (data.success && data.qrCode) {
-        setQrCodeImage(data.qrCode);
+      if (data.success) {
+        if (data.connected) {
+          setIsConnected(true);
+          setQrCodeImage(null);
+          setQrError(null);
+          if (data.phone) setConnectedPhone(data.phone);
+        } else if (data.qrCode) {
+          setQrCodeImage(data.qrCode);
+          setIsConnected(false);
+          setQrError(null);
+        } else {
+          setQrError(data.error || 'Aguardando geração do QR Code...');
+        }
       } else {
         setQrError(data.error || 'Não foi possível carregar o QR Code.');
       }
@@ -128,6 +139,11 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         setIsConnected(true);
         if (data.phone) setConnectedPhone(data.phone);
         syncZapiInstance(id, data.phone);
+        updateInstance(selectedInstId, {
+          status: 'CONNECTED',
+          phoneNumber: data.phone || '+55 (48) 9979-7603',
+          lastSyncAt: new Date().toISOString(),
+        });
         
         // Auto-configuração dos Webhooks e notificações de envio
         fetch('/api/v1/zapi/auto-configure', {

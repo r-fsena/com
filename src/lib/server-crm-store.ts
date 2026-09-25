@@ -156,11 +156,29 @@ export function loadStateFromDisk(): boolean {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.state) {
           const rawUsers = Array.isArray(parsed.state.users) ? parsed.state.users : [];
+          const rawContacts = (parsed.state.contacts || []).map((c: any) => ({
+            ...c,
+            tenantId: (!c.tenantId || c.tenantId === 'tenant-vanguard-01') ? 'tenant-amabile-barbarotti' : c.tenantId,
+          }));
+          const rawConvs = (parsed.state.conversations || []).map((cv: any) => ({
+            ...cv,
+            tenantId: (!cv.tenantId || cv.tenantId === 'tenant-vanguard-01') ? 'tenant-amabile-barbarotti' : cv.tenantId,
+          }));
+          const rawDeals = (parsed.state.deals || []).map((d: any) => ({
+            ...d,
+            tenantId: (!d.tenantId || d.tenantId === 'tenant-vanguard-01') ? 'tenant-amabile-barbarotti' : d.tenantId,
+            pipelineId: (!d.pipelineId || d.pipelineId === 'pipe-vendas-residencial') ? 'pipe-amabile-default' : d.pipelineId,
+          }));
+          const rawMsgs = (parsed.state.messages || []).map((m: any) => ({
+            ...m,
+            tenantId: (!m.tenantId || m.tenantId === 'tenant-vanguard-01') ? 'tenant-amabile-barbarotti' : m.tenantId,
+          }));
+
           global.__SERVER_CRM_STATE__ = {
-            contacts: parsed.state.contacts || [],
-            deals: parsed.state.deals || [],
-            conversations: parsed.state.conversations || [],
-            messages: parsed.state.messages || [],
+            contacts: rawContacts,
+            deals: rawDeals,
+            conversations: rawConvs,
+            messages: rawMsgs,
             aiInsights: parsed.state.aiInsights || {},
             users: mergeUserLists(MOCK_USERS, rawUsers),
             quickReplies: parsed.state.quickReplies || [],
@@ -514,14 +532,14 @@ export const serverCRMStore = {
     const isAmabile = tenantId === 'tenant-amabile-barbarotti' || tenantId.includes('amabile');
 
     const scopedContacts = rawState.contacts.filter(c => {
-      return c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId.includes('amabile')));
+      return c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile')));
     });
 
     const scopedContactIds = new Set(scopedContacts.map(c => c.id));
     const scopedPhones = new Set(scopedContacts.map(c => c.phone?.replace(/\D/g, '')).filter(Boolean));
 
     const scopedConversations = rawState.conversations.filter(cv => {
-      if (cv.tenantId === tenantId || (isAmabile && (!cv.tenantId || cv.tenantId.includes('amabile')))) return true;
+      if (cv.tenantId === tenantId || (isAmabile && (!cv.tenantId || cv.tenantId === 'tenant-vanguard-01' || cv.tenantId.includes('amabile')))) return true;
       if (scopedContactIds.has(cv.contactId)) return true;
       const digits = cv.id.replace(/\D/g, '');
       if (digits && scopedPhones.has(digits)) return true;
@@ -532,16 +550,16 @@ export const serverCRMStore = {
 
     const scopedMessages = rawState.messages.filter(m => {
       if (scopedConvIds.has(m.conversationId)) return true;
-      if (m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId.includes('amabile')))) return true;
+      if (m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile')))) return true;
       return false;
     });
 
     const scopedDeals = rawState.deals.filter(d => {
-      return d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId.includes('amabile'))) || scopedContactIds.has(d.contactId);
+      return d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile'))) || scopedContactIds.has(d.contactId);
     });
 
     const scopedQRs = (rawState.quickReplies || []).filter(q => {
-      return !q.tenantId || q.tenantId === tenantId || (isAmabile && q.tenantId.includes('amabile'));
+      return !q.tenantId || q.tenantId === tenantId || (isAmabile && (q.tenantId === 'tenant-vanguard-01' || q.tenantId.includes('amabile')));
     });
 
     const sanitizedUsers = (rawState.users || []).map(sanitizeUser);

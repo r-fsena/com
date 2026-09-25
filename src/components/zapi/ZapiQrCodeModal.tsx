@@ -59,23 +59,29 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Função para buscar QR Code real da API
   const fetchLiveQrCode = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId || '';
-    const t = tok || instanceToken || '';
+    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const t = tok !== undefined ? tok : (instanceToken || '');
     const ct = cTok !== undefined ? cTok : (clientToken || '');
 
-    if (!id || !t || isFetchingQrRef.current) return;
+    if (isFetchingQrRef.current) return;
 
     try {
       isFetchingQrRef.current = true;
       setIsLoading(true);
       setQrError(null);
-      const url = `/api/v1/zapi/qr-code?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}${ct ? `&clientToken=${encodeURIComponent(ct)}` : ''}`;
+      const params = new URLSearchParams();
+      if (id) params.set('instanceId', id);
+      if (t) params.set('token', t);
+      if (ct) params.set('clientToken', ct);
+      params.set('tenantId', currentTenant?.id || 'tenant-amabile-barbarotti');
+
+      const url = `/api/v1/zapi/qr-code?${params.toString()}`;
       const res = await fetch(url, {
         credentials: 'include',
         headers: {
-          'x-tenant-id': currentTenant.id,
-          'x-user-id': currentUser.id,
-          'x-user-email': currentUser.email,
+          'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
+          'x-user-id': currentUser?.id || 'user-1',
+          'x-user-email': currentUser?.email || 'admin@amabile.com',
         }
       });
       const data = await res.json();
@@ -91,24 +97,30 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setIsLoading(false);
       isFetchingQrRef.current = false;
     }
-  }, [instanceId, instanceToken, clientToken, currentTenant.id, currentUser.id, currentUser.email]);
+  }, [instanceId, instanceToken, clientToken, currentTenant?.id, currentUser?.id, currentUser?.email]);
 
   // Função para checar status sem causar loops de re-render
   const checkStatusOnce = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId || '';
-    const t = tok || instanceToken || '';
+    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const t = tok !== undefined ? tok : (instanceToken || '');
     const ct = cTok !== undefined ? cTok : (clientToken || '');
 
-    if (!id || !t || isCheckingRef.current) return;
+    if (isCheckingRef.current) return;
 
     try {
       isCheckingRef.current = true;
-      const res = await fetch(`/api/v1/zapi/status?instanceId=${encodeURIComponent(id)}&token=${encodeURIComponent(t)}&clientToken=${encodeURIComponent(ct)}`, {
+      const params = new URLSearchParams();
+      if (id) params.set('instanceId', id);
+      if (t) params.set('token', t);
+      if (ct) params.set('clientToken', ct);
+      params.set('tenantId', currentTenant?.id || 'tenant-amabile-barbarotti');
+
+      const res = await fetch(`/api/v1/zapi/status?${params.toString()}`, {
         credentials: 'include',
         headers: {
-          'x-tenant-id': currentTenant.id,
-          'x-user-id': currentUser.id,
-          'x-user-email': currentUser.email,
+          'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
+          'x-user-id': currentUser?.id || 'user-1',
+          'x-user-email': currentUser?.email || 'admin@amabile.com',
         }
       });
       const data = await res.json();
@@ -123,15 +135,15 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
           credentials: 'include',
           headers: { 
             'Content-Type': 'application/json',
-            'x-tenant-id': currentTenant.id,
-            'x-user-id': currentUser.id,
-            'x-user-email': currentUser.email,
+            'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
+            'x-user-id': currentUser?.id || 'user-1',
+            'x-user-email': currentUser?.email || 'admin@amabile.com',
           },
           body: JSON.stringify({
             instanceId: id,
             token: t,
             clientToken: ct,
-            tenantId: currentTenant.id,
+            tenantId: currentTenant?.id || 'tenant-amabile-barbarotti',
           }),
         }).catch(() => {});
 
@@ -146,7 +158,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     } catch {} finally {
       isCheckingRef.current = false;
     }
-  }, [instanceId, instanceToken, clientToken, syncZapiInstance, syncWhatsAppChats]);
+  }, [instanceId, instanceToken, clientToken, currentTenant?.id, currentUser?.id, currentUser?.email, syncZapiInstance, syncWhatsAppChats]);
 
   // Inicialização estável ao abrir o modal
   useEffect(() => {
@@ -164,7 +176,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       }
 
       // Se não estiver conectado, checa status e busca QR Code uma única vez
-      if (!isInstConnected && instanceId && instanceToken) {
+      if (!isInstConnected) {
         checkStatusOnce(instanceId, instanceToken, clientToken);
         fetchLiveQrCode(instanceId, instanceToken, clientToken);
       }
@@ -173,7 +185,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Polling seguro de status apenas enquanto o modal estiver aberto e NÃO conectado
   useEffect(() => {
-    if (!isOpen || isConnected || !instanceId || !instanceToken) return;
+    if (!isOpen || isConnected) return;
 
     const timer = setInterval(() => {
       setCountdown(prev => {

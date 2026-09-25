@@ -4334,7 +4334,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   // Consulta e atualiza o status de conexão da Z-API em tempo real
   const refreshLiveZapiStatus = async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/v1/zapi/status');
+      const res = await fetch(`/api/v1/zapi/status?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}`, {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
+          'x-user-id': currentUser?.id || 'user-1',
+          'x-user-email': currentUser?.email || 'admin@amabile.com',
+        }
+      });
       const data = await res.json();
       const connected = Boolean(data.success && data.connected);
       setIsZapiConnected(connected);

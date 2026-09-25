@@ -222,6 +222,27 @@ export function WhatsAppConnectionView() {
     }
   };
 
+  // Sincroniza em tempo real com o contexto global do CRM
+  useEffect(() => {
+    if (zapiLiveDetails) {
+      setLiveDetails({
+        connected: Boolean(zapiLiveDetails.connected),
+        phone: zapiLiveDetails.phone || activeInstance?.phoneNumber || '+55 (48) 9979-7603',
+        name: zapiLiveDetails.name || activeInstance?.name || 'Amábile Barbarotti',
+        avatarUrl: zapiLiveDetails.avatarUrl || null,
+        deviceModel: zapiLiveDetails.deviceModel || 'Smartphone',
+        battery: zapiLiveDetails.battery || 100,
+        isBusiness: Boolean(zapiLiveDetails.isBusiness),
+      });
+      if (zapiLiveDetails.connected) {
+        setIsQrConnected(true);
+        setQrCodeData(null);
+      }
+    } else if (crmZapiConnected !== undefined) {
+      setIsQrConnected(crmZapiConnected);
+    }
+  }, [zapiLiveDetails, crmZapiConnected, activeInstance]);
+
   useEffect(() => {
     if (activeInstance) {
       setInstanceIdInput(activeInstance.zapiInstanceId || activeInstance.id || '');
@@ -229,7 +250,7 @@ export function WhatsAppConnectionView() {
     handleRefreshAllStatus();
   }, []);
 
-  const isConnected = Boolean(liveDetails?.connected ?? isQrConnected);
+  const isConnected = Boolean(liveDetails?.connected || isQrConnected || crmZapiConnected || activeInstance?.status === 'CONNECTED');
 
   // Polling de detecção de conexão e auto-renovação de QR Code enquanto desconectado
   useEffect(() => {
@@ -249,7 +270,7 @@ export function WhatsAppConnectionView() {
       });
     }, 1000);
 
-    // Timer rápido de status a cada 4 segundos para detectar leitura do QR Code instantaneamente
+    // Timer rápido de status a cada 3 segundos para detectar leitura do QR Code instantaneamente
     const statusTimer = setInterval(async () => {
       try {
         const query = getZapiQueryParams();
@@ -267,17 +288,23 @@ export function WhatsAppConnectionView() {
           setQrCodeData(null);
           setLiveDetails({
             connected: true,
-            phone: data.phone || '+55 (48) 8877-4408',
-            name: data.name || 'Rafael Sena',
+            phone: data.phone || '+55 (48) 9979-7603',
+            name: data.name || 'Amábile Barbarotti',
             avatarUrl: data.avatarUrl || null,
-            deviceModel: data.deviceModel || 'iPhone',
+            deviceModel: data.deviceModel || 'Smartphone',
             battery: data.battery || 100,
             isBusiness: Boolean(data.isBusiness),
+          });
+          updateInstance(activeInstance?.id || 'inst-amabile-central', {
+            status: 'CONNECTED',
+            phoneNumber: data.phone || '+55 (48) 9979-7603',
+            name: data.name || 'Central WhatsApp • Amábile Barbarotti',
+            lastSyncAt: new Date().toISOString(),
           });
           await refreshLiveZapiStatus();
         }
       } catch {}
-    }, 4000);
+    }, 3000);
 
     return () => {
       clearInterval(countdownTimer);

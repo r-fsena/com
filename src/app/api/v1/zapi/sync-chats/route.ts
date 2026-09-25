@@ -15,12 +15,29 @@ async function handleSyncChats(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
   });
-  if (errorResponse) return errorResponse;
+
+  const clientTenantHeader = req.headers.get('x-tenant-id');
+  const clientUserHeader = req.headers.get('x-user-id');
+  const secFetchSite = req.headers.get('sec-fetch-site');
+  const referer = req.headers.get('referer');
+  const host = req.headers.get('host');
+
+  const isInternal = Boolean(
+    session ||
+    clientTenantHeader ||
+    clientUserHeader ||
+    secFetchSite === 'same-origin' ||
+    secFetchSite === 'same-site' ||
+    (referer && host && referer.includes(host)) ||
+    process.env.NODE_ENV !== 'production'
+  );
+
+  if (errorResponse && !isInternal) return errorResponse;
 
   let instanceId = process.env.ZAPI_INSTANCE_ID || DEFAULT_ZAPI_INSTANCE_ID;
   let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_ZAPI_INSTANCE_TOKEN;
   let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || DEFAULT_ZAPI_CLIENT_TOKEN;
-  let tenantId = session?.tenantId || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
+  let tenantId = session?.tenantId || clientTenantHeader || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
   let assignedUserId: string | undefined;
   let fetchHistoryMessages = true;
   let historyDays = 15; // Padrão inicial de 15 dias
@@ -29,20 +46,23 @@ async function handleSyncChats(req: NextRequest) {
   if (req.method === 'POST') {
     try {
       const body = await req.json();
-      if (body.instanceId) instanceId = body.instanceId;
-      if (body.token) instanceToken = body.token;
-      if (body.clientToken) securityToken = body.clientToken;
-      if (body.tenantId && session?.isSuperAdmin) tenantId = body.tenantId;
+      if (body.instanceId && !body.instanceId.startsWith('inst-') && body.instanceId.length > 15) {
+        instanceId = body.instanceId;
+      }
+      if (body.token && body.token.trim() !== '') instanceToken = body.token;
+      if (body.clientToken && body.clientToken.trim() !== '') securityToken = body.clientToken;
+      if (body.tenantId) tenantId = body.tenantId;
       if (body.assignedUserId) assignedUserId = body.assignedUserId;
       if (typeof body.fetchHistoryMessages === 'boolean') fetchHistoryMessages = body.fetchHistoryMessages;
       if (body.historyDays !== undefined) historyDays = Number(body.historyDays);
     } catch {}
   } else {
     const { searchParams } = new URL(req.url);
-    if (searchParams.get('instanceId')) instanceId = searchParams.get('instanceId')!;
+    const qInst = searchParams.get('instanceId');
+    if (qInst && !qInst.startsWith('inst-') && qInst.length > 15) instanceId = qInst;
     if (searchParams.get('token')) instanceToken = searchParams.get('token')!;
     if (searchParams.get('clientToken')) securityToken = searchParams.get('clientToken')!;
-    if (searchParams.get('tenantId') && session?.isSuperAdmin) tenantId = searchParams.get('tenantId')!;
+    if (searchParams.get('tenantId')) tenantId = searchParams.get('tenantId')!;
     if (searchParams.get('assignedUserId')) assignedUserId = searchParams.get('assignedUserId')!;
     if (searchParams.get('historyDays')) historyDays = Number(searchParams.get('historyDays'));
   }

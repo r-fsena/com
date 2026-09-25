@@ -1605,7 +1605,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const updateInstance = (instanceId: string, updates: Partial<WhatsAppInstance>) => {
     setInstances(prev => {
-      const updated = prev.map(inst => inst.id === instanceId ? { ...inst, ...updates } : inst);
+      const updated = prev.map(inst => (inst.id === instanceId || inst.zapiInstanceId === instanceId || prev.length === 1) ? { ...inst, ...updates } : inst);
       try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
       return updated;
     });
@@ -4361,13 +4361,26 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
 
         setInstances(prev => {
-          const updated = prev.map(i => ({
-            ...i,
-            status: 'CONNECTED' as const,
-            phoneNumber: data.phone || i.phoneNumber,
-            name: data.name || i.name,
-            lastSyncAt: new Date().toISOString()
-          }));
+          const updated = prev.length > 0 
+            ? prev.map(i => ({
+                ...i,
+                status: 'CONNECTED' as const,
+                phoneNumber: data.phone || i.phoneNumber || '+55 (48) 9979-7603',
+                name: data.name || i.name || 'Central WhatsApp • Amábile Barbarotti',
+                lastSyncAt: new Date().toISOString()
+              }))
+            : [{
+                id: 'inst-amabile-central',
+                tenantId: currentTenant?.id || 'tenant-amabile-barbarotti',
+                name: data.name || 'Central WhatsApp • Amábile Barbarotti',
+                phoneNumber: data.phone || '+55 (48) 9979-7603',
+                zapiInstanceId: data.instanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
+                status: 'CONNECTED' as const,
+                type: 'COMPANY_CENTRAL' as const,
+                isDefault: true,
+                batteryLevel: 100,
+                lastSyncAt: new Date().toISOString()
+              }];
           try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
           return updated;
         });
@@ -4396,7 +4409,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Checa status de conexão da Z-API ao carregar e periodicamente (com respeito ao document.hidden)
+  // Checa status de conexão da Z-API ao carregar e periodicamente a cada 15s (com respeito ao document.hidden)
   useEffect(() => {
     let isMounted = true;
     const checkStatus = async () => {
@@ -4406,7 +4419,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 60000);
+    const interval = setInterval(checkStatus, 15000);
 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && !document.hidden) {

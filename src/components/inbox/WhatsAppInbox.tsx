@@ -190,7 +190,9 @@ export function WhatsAppInbox() {
     loadChatHistory,
     isFeatureEnabled,
     currentTenant,
-    getContactUrgencyAnalysis
+    getContactUrgencyAnalysis,
+    isZapiConnected,
+    zapiLiveDetails,
   } = useCRM();
 
   const [showResetModal, setShowResetModal] = useState(false);
@@ -1460,8 +1462,8 @@ export function WhatsAppInbox() {
               <h2 className="text-sm font-extrabold text-slate-900">
                 Conversas
               </h2>
-              {instances[0]?.status === 'CONNECTED' ? (
-                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              {(isZapiConnected || instances.some(i => i.status === 'CONNECTED')) ? (
+                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs" title={zapiLiveDetails?.phone ? `Conectado: ${zapiLiveDetails.name || 'WhatsApp'} (${zapiLiveDetails.phone})` : 'Conectado ao vivo'}>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span>Ao Vivo</span>
                 </span>

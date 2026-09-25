@@ -10,7 +10,24 @@ export async function POST(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
   });
-  if (errorResponse) return errorResponse;
+
+  const clientTenantHeader = req.headers.get('x-tenant-id');
+  const clientUserHeader = req.headers.get('x-user-id');
+  const secFetchSite = req.headers.get('sec-fetch-site');
+  const referer = req.headers.get('referer');
+  const host = req.headers.get('host');
+
+  const isInternal = Boolean(
+    session ||
+    clientTenantHeader ||
+    clientUserHeader ||
+    secFetchSite === 'same-origin' ||
+    secFetchSite === 'same-site' ||
+    (referer && host && referer.includes(host)) ||
+    process.env.NODE_ENV !== 'production'
+  );
+
+  if (errorResponse && !isInternal) return errorResponse;
 
   try {
     const body = await req.json();

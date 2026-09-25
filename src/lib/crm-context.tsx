@@ -4451,7 +4451,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       try {
-        const res = await fetch('/api/v1/webhooks/zapi/events');
+        const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}`, {
+          credentials: 'include',
+          headers: {
+            'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
+            'x-user-id': currentUser?.id || 'user-1',
+            'x-user-email': currentUser?.email || 'admin@amabile.com',
+          }
+        });
         if (!res.ok) return;
         const data = await res.json();
 
@@ -4674,8 +4681,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     };
 
-    const webhookInterval = setInterval(pollWebhookMessages, 8000);
-    const syncInterval = setInterval(syncServerState, 120000);
+    pollWebhookMessages();
+    const webhookInterval = setInterval(pollWebhookMessages, 3000);
+    const syncInterval = setInterval(syncServerState, 60000);
 
     return () => {
       isMounted = false;

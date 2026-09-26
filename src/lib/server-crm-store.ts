@@ -72,6 +72,11 @@ const DEFAULT_DELETED_CHAT_KEYS = [
   '5548996290235',
   'contact-zapi-554896290235',
   'conv-zapi-554896290235',
+  '554899797603',
+  '4899797603',
+  '55489797603',
+  'contact-zapi-554899797603',
+  'conv-zapi-554899797603',
 ];
 
 declare global {
@@ -971,15 +976,29 @@ export const serverCRMStore = {
         ? contact.phone.replace(/\D/g, '')
         : (isLid ? (this.resolvePhoneFromLid(rawDigits) || rawDigits) : rawDigits);
 
-      const canonicalConvId = canonicalPhone 
-        ? `conv-zapi-${canonicalPhone}`
-        : conv.id;
+      // Preserva o ID original se a conversa já existia (ex: conv-custom-xxx ou conv-1)
+      const existingInOld = oldConvs.find(c => 
+        c.id === conv.id || 
+        (contact && c.contactId === contact.id) ||
+        (conv.contactId && c.contactId === conv.contactId)
+      );
+
+      const canonicalConvId = existingInOld ? existingInOld.id : (conv.id || (canonicalPhone ? `conv-zapi-${canonicalPhone}` : `conv-${Date.now()}`));
 
       const preview = (conv.lastMessagePreview && isWhatsAppSystemMessage(conv.lastMessagePreview))
         ? 'Conversa sincronizada via WhatsApp'
         : conv.lastMessagePreview;
 
-      const existing = map.get(canonicalConvId);
+      // Procura no mapa por canonicalConvId ou por contactId
+      let existing = map.get(canonicalConvId);
+      if (!existing && contact) {
+        for (const c of Array.from(map.values())) {
+          if (c.contactId === contact.id) {
+            existing = c;
+            break;
+          }
+        }
+      }
       if (existing) {
         // Preserva a mensagem mais recente entre as duas
         const timeA = parseWhatsAppTimestamp(existing.lastMessageAt);

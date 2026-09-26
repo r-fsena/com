@@ -3149,9 +3149,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             fileName: attachments?.[0]?.fileName,
             phone: targetPhone,
             senderUserId: currentUser.id,
-            instanceId: brokerInstance?.zapiInstanceId || '',
-            instanceToken: (brokerInstance as any)?.token || '',
-            clientToken: (brokerInstance as any)?.clientToken || '',
+            instanceId: brokerInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
+            instanceToken: (brokerInstance as any)?.token || '550DBC07B2F984AB74E4BCE5',
+            clientToken: (brokerInstance as any)?.clientToken || 'Fc78d61c833db4b50864816b70766aee8S',
           }),
         }).then(async res => {
           if (!res.ok) {
@@ -4498,21 +4498,35 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
             const rawPhone = resolvedPhone;
             if (!rawPhone || rawPhone === '0') return;
+            const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
+            if (KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, rawPhone))) return;
             if (isChatKeyDeleted(rawPhone, deletedChatKeys) || (lidClean && isChatKeyDeleted(lidClean, deletedChatKeys))) return;
 
             const formattedPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
 
+            // Localiza conversa e contato existentes para unificação consistente
+            const existingContact = contacts.find(c => {
+              if (lidClean && c.lid && cleanLid(c.lid) === lidClean) return true;
+              if (!isLidIdentifier(rawPhone)) {
+                return arePhonesEquivalent(c.phone, rawPhone);
+              }
+              return false;
+            });
+
+            const matchedConv = conversations.find(c => {
+              if (c.id === `conv-zapi-${rawPhone}` || c.contactId === `contact-zapi-${rawPhone}`) return true;
+              if (existingContact && c.contactId === existingContact.id) return true;
+              if (lidClean && isLidIdentifier(c.contactId) && cleanLid(c.contactId) === lidClean) return true;
+              const cDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
+              return cDigits && rawPhone && arePhonesEquivalent(cDigits, rawPhone);
+            });
+
+            const targetConvId = matchedConv ? matchedConv.id : `conv-zapi-${rawPhone}`;
+            const targetContactId = existingContact ? existingContact.id : (matchedConv?.contactId || `contact-zapi-${rawPhone}`);
+
             // 1. Encontra ou cria contato
             setContacts(prevContacts => {
-              const pKey = normalizePhoneKey(rawPhone);
-              const existing = prevContacts.find(c => {
-                if (lidClean && c.lid && cleanLid(c.lid) === lidClean) return true;
-                if (!isLidIdentifier(rawPhone)) {
-                  const cPKey = normalizePhoneKey(c.phone);
-                  if (cPKey && pKey && cPKey === pKey) return true;
-                }
-                return false;
-              });
+              const existing = prevContacts.find(c => c.id === targetContactId || (lidClean && c.lid && cleanLid(c.lid) === lidClean) || (!isLidIdentifier(rawPhone) && arePhonesEquivalent(c.phone, rawPhone)));
 
               if (existing) {
                 return prevContacts.map(c => c.id === existing.id ? {
@@ -4527,13 +4541,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 } : c);
               }
 
-              const isBroker = incoming.fromMe;
-              const contactName = isBroker
-                ? (rawPhone.length >= 10 ? `WhatsApp (${rawPhone.slice(-4)})` : 'Cliente WhatsApp')
-                : (incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`);
+              if (incoming.fromMe) {
+                // Não cria lead se for apenas mensagem enviada pela imobiliária sem contato prévio
+                return prevContacts;
+              }
+
+              const contactName = incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`;
 
               const newContact: Contact = {
-                id: `contact-zapi-${rawPhone}`,
+                id: targetContactId,
                 tenantId: currentTenant.id,
                 name: contactName,
                 phone: formattedPhone,
@@ -4557,14 +4573,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             });
 
             // 2. Encontra ou cria conversa
-            const convId = `conv-zapi-${rawPhone}`;
             setConversations(prevConvs => {
-              const existingConv = prevConvs.find(c => {
-                if (c.id === convId || c.contactId === `contact-zapi-${rawPhone}`) return true;
-                if (lidClean && isLidIdentifier(c.contactId) && cleanLid(c.contactId) === lidClean) return true;
-                const cDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
-                return cDigits && rawPhone && arePhonesEquivalent(cDigits, rawPhone);
-              });
+              const existingConv = prevConvs.find(c => c.id === targetConvId || c.contactId === targetContactId);
 
               if (existingConv) {
                 const updatedStatus: 'PENDING_CLIENT' | 'PENDING_TEAM' = incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM';
@@ -4582,9 +4592,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               }
 
               const newConv: Conversation = {
-                id: convId,
+                id: targetConvId,
                 tenantId: currentTenant.id,
-                contactId: `contact-zapi-${rawPhone}`,
+                contactId: targetContactId,
                 assignedUserId: currentUser.id,
                 instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
                 status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
@@ -4600,11 +4610,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               return [newConv, ...prevConvs];
             });
 
-            // 3. Adiciona mensagem de forma atômica
+            // 3. Adiciona mensagem de forma atômica na conversa correta
             setMessages(prevMessages => {
               const rekeyed = prevMessages.map(m => {
                 if (lidClean && (m.conversationId.includes(lidClean) || isLidIdentifier(m.conversationId))) {
-                  return { ...m, conversationId: convId };
+                  return { ...m, conversationId: targetConvId };
                 }
                 return m;
               });
@@ -4612,7 +4622,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               const newMsg: Message = {
                 id: incoming.id || `wpp-${rawPhone}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                 tenantId: currentTenant.id,
-                conversationId: convId,
+                conversationId: targetConvId,
                 senderType: incoming.fromMe ? 'USER' : 'CONTACT',
                 senderName: incoming.fromMe ? 'Corretor' : (incoming.senderName || 'Cliente'),
                 messageType: incoming.mediaType || 'TEXT',

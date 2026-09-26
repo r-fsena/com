@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
-import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 
 export async function processZapiWebhookRequest(
   request: NextRequest,
@@ -37,25 +37,59 @@ export async function processZapiWebhookRequest(
   }
 
   try {
-    // 1. Extração robusta de LID e Telefone Real do contato
+    // 1. Detecção inicial de direção (fromMe)
+    const fromMe = Boolean(
+      body.fromMe || 
+      (body.data && body.data.fromMe) || 
+      body.type === 'MessageSend' ||
+      body.event === 'on-message-send' ||
+      false
+    );
+
+    const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
+
+    // 1.1 Extração robusta de LID e Telefone Real do contato (lead)
     let lid = '';
-    if (body.lid) {
-      lid = cleanLid(body.lid);
-    } else if (String(body.phone || '').includes('@lid')) {
-      lid = cleanLid(body.phone);
-    } else if (String(body.chatId || '').includes('@lid')) {
-      lid = cleanLid(body.chatId);
+    if (fromMe) {
+      if (body.recipientLid) {
+        lid = cleanLid(body.recipientLid);
+      } else if (String(body.chatId || '').includes('@lid')) {
+        lid = cleanLid(body.chatId);
+      } else if (String(body.to || '').includes('@lid')) {
+        lid = cleanLid(body.to);
+      }
+    } else {
+      if (body.lid) {
+        lid = cleanLid(body.lid);
+      } else if (String(body.phone || '').includes('@lid')) {
+        lid = cleanLid(body.phone);
+      } else if (String(body.chatId || '').includes('@lid')) {
+        lid = cleanLid(body.chatId);
+      }
     }
 
-    let realPhoneCandidate = body.chatPhone 
-      || (!isLidIdentifier(body.phone) ? body.phone : '')
-      || (!isLidIdentifier(body.senderPhone) ? body.senderPhone : '')
-      || (!isLidIdentifier(body.recipientPhone) ? body.recipientPhone : '')
-      || (!isLidIdentifier(body.to) ? body.to : '')
-      || (!isLidIdentifier(body.chatId) ? body.chatId : '')
-      || (!isLidIdentifier(body.from) ? body.from : '')
-      || (body.data && (body.data.chatPhone || (!isLidIdentifier(body.data.phone) ? body.data.phone : '') || body.data.senderPhone))
-      || '';
+    let realPhoneCandidate = '';
+    if (fromMe) {
+      // Quando enviado pelo corretor/WhatsApp da empresa, o cliente é o DESTINATÁRIO
+      realPhoneCandidate = 
+        (!isLidIdentifier(body.recipientPhone) ? body.recipientPhone : '')
+        || (!isLidIdentifier(body.to) ? body.to : '')
+        || body.chatPhone
+        || (!isLidIdentifier(body.chatId) ? body.chatId : '')
+        || (body.data && (body.data.recipientPhone || body.data.to || body.data.chatPhone))
+        || (!isLidIdentifier(body.phone) && !KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, body.phone)) ? body.phone : '')
+        || '';
+    } else {
+      // Quando recebido do cliente, o cliente é o REMETENTE
+      realPhoneCandidate = 
+        body.chatPhone 
+        || (!isLidIdentifier(body.phone) ? body.phone : '')
+        || (!isLidIdentifier(body.senderPhone) ? body.senderPhone : '')
+        || (!isLidIdentifier(body.from) ? body.from : '')
+        || (!isLidIdentifier(body.chatId) ? body.chatId : '')
+        || (body.data && (body.data.chatPhone || (!isLidIdentifier(body.data.phone) ? body.data.phone : '') || body.data.senderPhone))
+        || '';
+    }
 
     let cleanPhone = String(realPhoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
 
@@ -68,6 +102,23 @@ export async function processZapiWebhookRequest(
     // Normaliza telefone nacional (DDI 55)
     if (cleanPhone && !cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
       cleanPhone = `55${cleanPhone}`;
+    }
+
+    // Trava anti-duplicação: Se o telefone for a própria linha conectada da imobiliária
+    if (cleanPhone && KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, cleanPhone))) {
+      // Tenta recuperar o telefone do cliente do chatId ou to
+      const alt = String(body.recipientPhone || body.to || body.chatId || '').replace(/@.*$/, '').replace(/\D/g, '');
+      if (alt && !KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, alt))) {
+        cleanPhone = alt.startsWith('55') || alt.length < 10 ? alt : `55${alt}`;
+      } else {
+        // Ignora para não criar conversa consigo mesmo no CRM
+        return NextResponse.json({
+          received: true,
+          ignored: true,
+          reason: 'Mensagem da própria linha conectada ignorada para evitar chat espúrio consigo mesmo',
+          status: 'SUCCESS',
+        });
+      }
     }
 
     // Se temos tanto o telefone real quanto o LID, registra imediatamente no mapa global
@@ -112,7 +163,6 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    const fromMe = Boolean(body.fromMe || (body.data && body.data.fromMe) || false);
     const senderName = body.senderName 
       || body.chatName 
       || body.pushName 
@@ -203,14 +253,32 @@ export async function processZapiWebhookRequest(
 
     // Se temos um telefone e conteúdo válido, registra no buffer global de eventos
     if (cleanPhone && cleanPhone !== '0') {
+      const serverState = serverCRMStore.getState();
+      
+      // Localiza contato existente por equivalência de telefone ou LID
+      const existingContact = serverState.contacts.find(c => 
+        (cleanPhone && arePhonesEquivalent(c.phone, cleanPhone)) ||
+        (lid && c.lid && cleanLid(c.lid) === cleanLid(lid))
+      );
+
+      const canonicalConvId = `conv-zapi-${cleanPhone}`;
+      const existingConv = serverState.conversations.find(conv => 
+        (existingContact && conv.contactId === existingContact.id) ||
+        conv.id === canonicalConvId ||
+        (cleanPhone && arePhonesEquivalent((conv.id + (conv.contactId || '')).replace(/\D/g, ''), cleanPhone))
+      );
+
+      const targetConvId = existingConv ? existingConv.id : canonicalConvId;
+      const targetContactId = existingContact ? existingContact.id : (existingConv?.contactId || `contact-zapi-${cleanPhone}`);
+
       const savedMsg = webhookStore.addMessage({
         id: messageId,
         tenantId,
         instanceId,
         phone: cleanPhone,
         lid: lid || undefined,
-        senderName: fromMe ? (body.senderName || 'Corretor') : senderName,
-        senderPhoto,
+        senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
+        senderPhoto: existingContact?.avatarUrl || senderPhoto,
         content,
         mediaType,
         mediaUrl,
@@ -218,12 +286,10 @@ export async function processZapiWebhookRequest(
         timestamp: new Date().toISOString(),
       });
 
-      const canonicalConvId = `conv-zapi-${cleanPhone}`;
-
       // Atualiza também no serverCRMStore unificando conversa e mensagem
       serverCRMStore.updateState({
-        contacts: !fromMe && cleanPhone && !isLidIdentifier(cleanPhone) ? [{
-          id: `contact-zapi-${cleanPhone}`,
+        contacts: (!existingContact && !fromMe && cleanPhone && !isLidIdentifier(cleanPhone)) ? [{
+          id: targetContactId,
           tenantId,
           name: senderName,
           phone: `+${cleanPhone}`,
@@ -244,12 +310,12 @@ export async function processZapiWebhookRequest(
           updatedAt: new Date().toISOString(),
         }] : [],
         conversations: [{
-          id: canonicalConvId,
+          id: targetConvId,
           tenantId,
           instanceId,
-          contactId: `contact-zapi-${cleanPhone}`,
+          contactId: targetContactId,
           status: fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
-          unreadCount: fromMe ? 0 : 1,
+          unreadCount: fromMe ? 0 : ((existingConv?.unreadCount || 0) + 1),
           lastMessagePreview: content.substring(0, 100),
           lastMessageAt: new Date().toISOString(),
           slaBreached: false,
@@ -263,9 +329,9 @@ export async function processZapiWebhookRequest(
           id: messageId,
           externalId: messageId,
           tenantId,
-          conversationId: canonicalConvId,
+          conversationId: targetConvId,
           senderType: fromMe ? 'USER' : 'CONTACT',
-          senderName: fromMe ? (body.senderName || 'Corretor') : senderName,
+          senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
           messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
           content,
           status: 'DELIVERED',

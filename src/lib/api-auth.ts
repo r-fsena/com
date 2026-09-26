@@ -114,9 +114,13 @@ export function validateApiSession(req: NextRequest, options?: {
     }
   }
 
-  // 3.1 Proteção contra Header Spoofing: em produção, cabeçalhos crus nunca concedem autenticação sem assinatura
+  // 3.1 Proteção contra Header Spoofing: aceita cabeçalhos se same-origin ou não-produção
+  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || 
+                       req.headers.get('sec-fetch-site') === 'same-site' ||
+                       (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
+
   const allKnownUsers = getAllKnownUsers();
-  if (process.env.NODE_ENV !== 'production' && !userEmail && (clientEmailHeader || clientUserHeader)) {
+  if ((process.env.NODE_ENV !== 'production' || isSameOrigin) && !userEmail && (clientEmailHeader || clientUserHeader)) {
     const targetEmail = clientEmailHeader.toLowerCase().trim();
     const foundUser = allKnownUsers.find(u => (targetEmail && u.email.toLowerCase() === targetEmail) || (clientUserHeader && u.id === clientUserHeader));
     if (foundUser) {

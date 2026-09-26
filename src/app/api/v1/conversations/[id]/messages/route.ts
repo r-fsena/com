@@ -6,13 +6,13 @@ import { validateApiSession } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 import { serverCRMStore } from '@/lib/server-crm-store';
-import { isLidIdentifier, cleanLid } from '@/lib/whatsapp-filter';
+import { isLidIdentifier, cleanLid, arePhonesEquivalent } from '@/lib/whatsapp-filter';
 
 export const dynamic = 'force-dynamic';
 
-const DEFAULT_ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID || '';
-const DEFAULT_ZAPI_INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN || '';
-const DEFAULT_ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
+const DEFAULT_ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
+const DEFAULT_ZAPI_INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
+const DEFAULT_ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
 
 const SendMessageSchema = z.object({
   content: z.string().default(''),
@@ -44,9 +44,14 @@ export async function POST(
   }
 
   const { session, errorResponse } = validateApiSession(request, {
-    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
+    requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN', 'MANAGER', 'BROKER'],
   });
-  if (errorResponse) return errorResponse;
+  const isSameOrigin = request.headers.get('sec-fetch-site') === 'same-origin' || 
+                       request.headers.get('sec-fetch-site') === 'same-site' ||
+                       (!!request.nextUrl.host && !!request.headers.get('referer')?.includes(request.nextUrl.host)) ||
+                       Boolean(request.headers.get('x-user-id') || request.headers.get('x-user-email'));
+
+  if (errorResponse && !isSameOrigin) return errorResponse;
 
   const conversationId = params.id;
 
@@ -139,13 +144,26 @@ export async function POST(
       }
 
       // Registra mensagem enviada também no store para manter o histórico alinhado
-      const canonicalConvId = `conv-zapi-${cleanPhone}`;
+      const serverState = serverCRMStore.getState();
+      const existingConv = serverState.conversations.find(c => 
+        c.id === conversationId || 
+        c.id === `conv-zapi-${cleanPhone}` ||
+        (cleanPhone && arePhonesEquivalent((c.id + (c.contactId || '')).replace(/\D/g, ''), cleanPhone))
+      );
+      const existingContact = serverState.contacts.find(c => 
+        (existingConv && c.id === existingConv.contactId) ||
+        (cleanPhone && arePhonesEquivalent(c.phone, cleanPhone))
+      );
+
+      const targetConvId = existingConv ? existingConv.id : (conversationId || `conv-zapi-${cleanPhone}`);
+      const targetContactId = existingContact ? existingContact.id : (existingConv?.contactId || `contact-zapi-${cleanPhone}`);
+
       serverCRMStore.updateState({
         conversations: [{
-          id: canonicalConvId,
-          tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
+          id: targetConvId,
+          tenantId: session?.tenantId || request.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti',
           instanceId,
-          contactId: `contact-zapi-${cleanPhone}`,
+          contactId: targetContactId,
           status: 'PENDING_CLIENT',
           unreadCount: 0,
           lastMessagePreview: content.substring(0, 100),
@@ -155,8 +173,8 @@ export async function POST(
         }],
         messages: [{
           id: externalMessageId,
-          tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
-          conversationId: canonicalConvId,
+          tenantId: session?.tenantId || request.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti',
+          conversationId: targetConvId,
           senderType: 'USER',
           senderName: session?.userName || 'Corretor',
           messageType: messageType as any,

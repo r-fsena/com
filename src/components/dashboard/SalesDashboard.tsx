@@ -737,7 +737,86 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
         {/* COLUNA DIREITA (4 COLUNAS): GAUGE DE METAS + DARK CALENDAR WIDGET */}
         <div className="lg:col-span-4 space-y-6">
           
-          {/* 1. GAUGE / RADIAL TARGET WIDGET (ESTILO SOVEREIGN) */}
+          {/* 1. FUNIL DE VENDAS DO CORRETOR (WIDGET COMPACTO - NO TOPO) */}
+          <div className="sovereign-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-[#3742AC]" />
+                  Funil de Vendas & Esteira
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {commercialDeals.length} oportunidades • R$ {(totalVGV / 1000000).toFixed(1)}M VGV
+                </p>
+              </div>
+
+              <button 
+                type="button" 
+                onClick={() => setIsFunnelModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
+                title="Abrir Apresentação do Funil"
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>Expandir</span>
+              </button>
+            </div>
+
+            {/* Mini visualizador de funil em barras decrescentes */}
+            <div className="space-y-2 pt-1">
+              {funnelStages.slice(0, 5).map((item, idx) => {
+                const colors = [
+                  'bg-[#3742AC] text-white',
+                  'bg-indigo-600 text-white',
+                  'bg-blue-600 text-white',
+                  'bg-cyan-600 text-white',
+                  'bg-emerald-600 text-white'
+                ];
+                const colorClass = item.stage.isWon ? 'bg-emerald-600 text-white' : item.stage.isLost ? 'bg-rose-600 text-white' : colors[idx % colors.length];
+
+                return (
+                  <div 
+                    key={item.stage.id} 
+                    className="space-y-1 cursor-pointer group"
+                    onClick={() => setIsFunnelModalOpen(true)}
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-700 group-hover:text-[#3742AC] transition truncate max-w-[170px]">
+                        {item.stage.name}
+                      </span>
+                      <div className="flex items-center gap-2 font-mono shrink-0">
+                        <span className="text-[10px] text-slate-400">
+                          R$ {(item.vgv / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k
+                        </span>
+                        <span className="font-extrabold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded-md text-[11px]">
+                          {item.count}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Barra de progresso visual */}
+                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                        style={{ width: `${Math.max(6, item.percent)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Botão de Apresentação Completa */}
+            <button
+              type="button"
+              onClick={() => setIsFunnelModalOpen(true)}
+              className="w-full py-2 px-3 bg-gradient-to-r from-indigo-50/80 to-slate-50 hover:from-indigo-100 hover:to-indigo-50 border border-indigo-100/80 rounded-xl text-xs font-bold text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer shadow-2xs"
+            >
+              <Layers className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
+              <span>Ver Apresentação Executiva do Funil</span>
+              <ChevronRight className="w-3 h-3 text-[#3742AC] group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
+
+          {/* 2. GAUGE / RADIAL TARGET WIDGET (METAS & PERFORMANCE) */}
           <div className="sovereign-card p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div>
@@ -851,85 +930,6 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
               <Target className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
               <span>Abrir Motor de Metas no Menu</span>
               <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-[#3742AC]" />
-            </button>
-          </div>
-
-          {/* 2. FUNIL DE VENDAS DO CORRETOR (WIDGET COMPACTO) */}
-          <div className="sovereign-card p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-[#3742AC]" />
-                  Funil de Vendas & Esteira
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {commercialDeals.length} oportunidades • R$ {(totalVGV / 1000000).toFixed(1)}M VGV
-                </p>
-              </div>
-
-              <button 
-                type="button" 
-                onClick={() => setIsFunnelModalOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
-                title="Abrir Apresentação do Funil"
-              >
-                <ArrowUpRight className="w-3.5 h-3.5" />
-                <span>Expandir</span>
-              </button>
-            </div>
-
-            {/* Mini visualizador de funil em barras decrescentes */}
-            <div className="space-y-2 pt-1">
-              {funnelStages.slice(0, 5).map((item, idx) => {
-                const colors = [
-                  'bg-[#3742AC] text-white',
-                  'bg-indigo-600 text-white',
-                  'bg-blue-600 text-white',
-                  'bg-cyan-600 text-white',
-                  'bg-emerald-600 text-white'
-                ];
-                const colorClass = item.stage.isWon ? 'bg-emerald-600 text-white' : item.stage.isLost ? 'bg-rose-600 text-white' : colors[idx % colors.length];
-
-                return (
-                  <div 
-                    key={item.stage.id} 
-                    className="space-y-1 cursor-pointer group"
-                    onClick={() => setIsFunnelModalOpen(true)}
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700 group-hover:text-[#3742AC] transition truncate max-w-[170px]">
-                        {item.stage.name}
-                      </span>
-                      <div className="flex items-center gap-2 font-mono shrink-0">
-                        <span className="text-[10px] text-slate-400">
-                          R$ {(item.vgv / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k
-                        </span>
-                        <span className="font-extrabold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded-md text-[11px]">
-                          {item.count}
-                        </span>
-                      </div>
-                    </div>
-                    {/* Barra de progresso visual */}
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
-                        style={{ width: `${Math.max(6, item.percent)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Botão de Apresentação Completa */}
-            <button
-              type="button"
-              onClick={() => setIsFunnelModalOpen(true)}
-              className="w-full py-2 px-3 bg-gradient-to-r from-indigo-50/80 to-slate-50 hover:from-indigo-100 hover:to-indigo-50 border border-indigo-100/80 rounded-xl text-xs font-bold text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer shadow-2xs"
-            >
-              <Layers className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
-              <span>Ver Apresentação Executiva do Funil</span>
-              <ChevronRight className="w-3 h-3 text-[#3742AC] group-hover:translate-x-0.5 transition-transform" />
             </button>
           </div>
 

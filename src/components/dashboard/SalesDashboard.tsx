@@ -31,6 +31,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { GoalsEngineModal } from './GoalsEngineModal';
+import { SalesFunnelModal } from './SalesFunnelModal';
 import { ContactUrgencyAnalysis } from '@/types/crm';
 import { isWhatsAppChannelOrGroup, formatCanonicalPhone } from '@/lib/whatsapp-filter';
 
@@ -51,6 +52,7 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
     currentTenant, 
     conversations, 
     tasks, 
+    toggleTask,
     proposals,
     currentUser,
     openChatForContact,
@@ -62,8 +64,9 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
   const [tableSearch, setTableSearch] = useState('');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const ITEMS_PER_PAGE = 8;
-  const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
+  const [isFunnelModalOpen, setIsFunnelModalOpen] = useState(false);
 
   const handleOpenGoals = () => {
     if (onNavigateToGoals) {
@@ -167,9 +170,72 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
   const paginatedRadarList = filteredRadarList.slice((safeCurrentPage - 1) * ITEMS_PER_PAGE, safeCurrentPage * ITEMS_PER_PAGE);
   const paginatedDealsList = filteredDealsList.slice((safeCurrentPage - 1) * ITEMS_PER_PAGE, safeCurrentPage * ITEMS_PER_PAGE);
 
-  // Dias do Mês para o Calendário Sovereign
-  const currentMonthName = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  const daysInMonth = Array.from({ length: 31 }, (_, i) => i + 1);
+  // Navegação Interativa da Agenda do Dia
+  const handlePrevDay = () => {
+    setSelectedDate(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() - 1);
+      return d;
+    });
+  };
+
+  const handleNextDay = () => {
+    setSelectedDate(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + 1);
+      return d;
+    });
+  };
+
+  const handleGoToToday = () => {
+    setSelectedDate(new Date());
+  };
+
+  const selectedDateISO = selectedDate.toISOString().slice(0, 10);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const isToday = selectedDateISO === todayISO;
+
+  const formattedDayTitle = useMemo(() => {
+    const dayNumber = selectedDate.getDate();
+    const monthLong = selectedDate.toLocaleDateString('pt-BR', { month: 'long' });
+    const weekday = selectedDate.toLocaleDateString('pt-BR', { weekday: 'long' });
+    const capWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    
+    if (isToday) return `Hoje • ${dayNumber} de ${monthLong}`;
+    return `${capWeekday}, ${dayNumber} de ${monthLong}`;
+  }, [selectedDate, isToday]);
+
+  // Tarefas filtradas para o dia selecionado
+  const dayTasks = useMemo(() => {
+    const list = tasks.filter(t => {
+      if (!t.dueDate) return false;
+      return t.dueDate.slice(0, 10) === selectedDateISO;
+    });
+
+    if (list.length > 0) return list;
+
+    // Se for o dia de hoje e não houver tarefas com dueDate exato de hoje, exibe tarefas pendentes reais da equipe
+    if (isToday && tasks.length > 0) {
+      return tasks.slice(0, 5);
+    }
+    return [];
+  }, [tasks, selectedDateISO, isToday]);
+
+  // Resumo do Funil de Vendas para o Dashboard
+  const funnelStages = useMemo(() => {
+    const sorted = [...currentPipeline.stages].sort((a, b) => a.order - b.order);
+    const totalDeals = commercialDeals.length || 1;
+    return sorted.map((stage) => {
+      const dealsInStage = commercialDeals.filter(d => d.stageId === stage.id);
+      const vgv = dealsInStage.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
+      return {
+        stage,
+        count: dealsInStage.length,
+        vgv,
+        percent: Math.round((dealsInStage.length / totalDeals) * 100),
+      };
+    });
+  }, [currentPipeline, commercialDeals]);
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-5rem)] overflow-y-auto bg-[#F0F3FA] p-6 sm:p-8 space-y-6">
@@ -187,8 +253,9 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
             </div>
             <button 
               type="button" 
-              className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition cursor-pointer"
-              title="Ver detalhes do funil"
+              onClick={() => setIsFunnelModalOpen(true)}
+              className="w-8 h-8 rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-[#3742AC] flex items-center justify-center transition cursor-pointer"
+              title="Ver apresentação do funil de vendas"
             >
               <ArrowUpRight className="w-4 h-4" />
             </button>
@@ -787,69 +854,236 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
             </button>
           </div>
 
-          {/* 2. DARK ACCENT CALENDAR / SCHEDULE WIDGET (SOVEREIGN NAVY) */}
-          <div className="sovereign-navy-card p-6 space-y-4">
+          {/* 2. FUNIL DE VENDAS DO CORRETOR (WIDGET COMPACTO) */}
+          <div className="sovereign-card p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-extrabold text-white">Calendar & Agenda</h3>
-                <span className="text-[11px] text-indigo-200 capitalize">{currentMonthName}</span>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-[#3742AC]" />
+                  Funil de Vendas & Esteira
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {commercialDeals.length} oportunidades • R$ {(totalVGV / 1000000).toFixed(1)}M VGV
+                </p>
               </div>
-              <span className="text-[10px] font-bold bg-white/10 text-indigo-100 px-2.5 py-1 rounded-full border border-white/10">
-                Hoje • Dia {new Date().getDate()}
-              </span>
+
+              <button 
+                type="button" 
+                onClick={() => setIsFunnelModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
+                title="Abrir Apresentação do Funil"
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>Expandir</span>
+              </button>
             </div>
 
-            {/* Cabeçalho dos dias da semana */}
-            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-indigo-300">
-              <span>D</span>
-              <span>S</span>
-              <span>T</span>
-              <span>Q</span>
-              <span>Q</span>
-              <span>S</span>
-              <span>S</span>
-            </div>
-
-            {/* Grade de Dias Sovereign */}
-            <div className="grid grid-cols-7 gap-1 text-center text-xs">
-              {daysInMonth.slice(0, 28).map((day) => {
-                const isSelected = day === selectedCalendarDay;
-                const isToday = day === new Date().getDate();
-                const hasTask = day % 4 === 0;
+            {/* Mini visualizador de funil em barras decrescentes */}
+            <div className="space-y-2 pt-1">
+              {funnelStages.slice(0, 5).map((item, idx) => {
+                const colors = [
+                  'bg-[#3742AC] text-white',
+                  'bg-indigo-600 text-white',
+                  'bg-blue-600 text-white',
+                  'bg-cyan-600 text-white',
+                  'bg-emerald-600 text-white'
+                ];
+                const colorClass = item.stage.isWon ? 'bg-emerald-600 text-white' : item.stage.isLost ? 'bg-rose-600 text-white' : colors[idx % colors.length];
 
                 return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => setSelectedCalendarDay(day)}
-                    className={`h-7 w-7 rounded-full flex items-center justify-center font-semibold transition cursor-pointer text-[11px] mx-auto ${
-                      isSelected
-                        ? 'bg-[#3742AC] text-white font-bold ring-2 ring-indigo-400'
-                        : isToday
-                        ? 'bg-emerald-500 text-white font-bold'
-                        : hasTask
-                        ? 'bg-white/15 text-indigo-100 hover:bg-white/25'
-                        : 'text-indigo-200 hover:bg-white/10'
-                    }`}
+                  <div 
+                    key={item.stage.id} 
+                    className="space-y-1 cursor-pointer group"
+                    onClick={() => setIsFunnelModalOpen(true)}
                   >
-                    {day}
-                  </button>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-700 group-hover:text-[#3742AC] transition truncate max-w-[170px]">
+                        {item.stage.name}
+                      </span>
+                      <div className="flex items-center gap-2 font-mono shrink-0">
+                        <span className="text-[10px] text-slate-400">
+                          R$ {(item.vgv / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k
+                        </span>
+                        <span className="font-extrabold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded-md text-[11px]">
+                          {item.count}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Barra de progresso visual */}
+                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                        style={{ width: `${Math.max(6, item.percent)}%` }}
+                      />
+                    </div>
+                  </div>
                 );
               })}
             </div>
 
-            {/* Lista de Próxima Visita */}
-            <div className="bg-white/10 rounded-2xl p-3 border border-white/10 text-xs space-y-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-bold text-emerald-300 flex items-center gap-1">
-                  <CalendarIcon className="w-3.5 h-3.5" /> Visita de Hoje
-                </span>
-                <span className="font-mono text-indigo-200">14:30</span>
+            {/* Botão de Apresentação Completa */}
+            <button
+              type="button"
+              onClick={() => setIsFunnelModalOpen(true)}
+              className="w-full py-2 px-3 bg-gradient-to-r from-indigo-50/80 to-slate-50 hover:from-indigo-100 hover:to-indigo-50 border border-indigo-100/80 rounded-xl text-xs font-bold text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer shadow-2xs"
+            >
+              <Layers className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
+              <span>Ver Apresentação Executiva do Funil</span>
+              <ChevronRight className="w-3 h-3 text-[#3742AC] group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
+
+          {/* 3. AGENDA & APRESENTAÇÃO DO DIA COM NAVEGAÇÃO POR SETAS */}
+          <div className="sovereign-navy-card p-6 space-y-4">
+            
+            {/* Header da Agenda com Navegador de Datas por Setas */}
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handlePrevDay}
+                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                  title="Dia Anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleNextDay}
+                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                  title="Próximo Dia"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
-              <p className="font-bold text-white truncate">
-                {pendingTasks[0]?.title || 'Atendimento presencial • Cobertura Duplex'}
-              </p>
+
+              <div className="text-center truncate">
+                <h3 className="text-xs font-extrabold text-white truncate">
+                  {formattedDayTitle}
+                </h3>
+                <span className="text-[10px] text-indigo-200">
+                  {dayTasks.length} {dayTasks.length === 1 ? 'compromisso' : 'compromissos'}
+                </span>
+              </div>
+
+              {!isToday ? (
+                <button
+                  type="button"
+                  onClick={handleGoToToday}
+                  className="px-2 py-1 rounded-md text-[10px] font-bold bg-[#3742AC] hover:bg-indigo-600 text-white transition cursor-pointer"
+                >
+                  Hoje
+                </button>
+              ) : (
+                <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                  Hoje
+                </span>
+              )}
             </div>
+
+            {/* Lista de Apresentação dos Compromissos do Dia */}
+            <div className="space-y-2 max-h-[310px] overflow-y-auto pr-1">
+              {dayTasks.length === 0 ? (
+                <div className="py-8 text-center text-indigo-200/70 space-y-1.5">
+                  <CalendarIcon className="w-7 h-7 text-indigo-300/50 mx-auto" />
+                  <p className="text-xs font-semibold text-white">Nenhum compromisso agendado.</p>
+                  <p className="text-[10px] text-indigo-300">Agenda livre para prospecção ou follow-up no WhatsApp!</p>
+                </div>
+              ) : (
+                dayTasks.map((task) => {
+                  const contact = contacts.find(c => c.id === task.contactId);
+                  const isCompleted = task.isCompleted;
+
+                  // Tipagem e Ícone
+                  const isVisit = task.taskType === 'VISIT';
+                  const isWhatsApp = task.taskType === 'WHATSAPP';
+                  const isCall = task.taskType === 'CALL';
+                  const isProposal = task.taskType === 'PROPOSAL';
+
+                  const badgeColor = isVisit 
+                    ? 'bg-amber-400/20 text-amber-200 border-amber-400/30'
+                    : isProposal
+                    ? 'bg-purple-400/20 text-purple-200 border-purple-400/30'
+                    : isWhatsApp
+                    ? 'bg-emerald-400/20 text-emerald-200 border-emerald-400/30'
+                    : 'bg-indigo-400/20 text-indigo-200 border-indigo-400/30';
+
+                  const typeLabel = isVisit 
+                    ? '🏠 Visita' 
+                    : isProposal 
+                    ? '📄 Proposta' 
+                    : isWhatsApp 
+                    ? '💬 WhatsApp' 
+                    : '📞 Ligação';
+
+                  // Extrai horário se presente
+                  const time = task.dueDate?.includes('T') ? task.dueDate.split('T')[1]?.slice(0, 5) : '14:00';
+
+                  return (
+                    <div 
+                      key={task.id}
+                      className={`p-3 rounded-xl border transition flex items-start justify-between gap-2.5 ${
+                        isCompleted
+                          ? 'bg-white/5 border-white/5 opacity-60'
+                          : 'bg-white/10 hover:bg-white/15 border-white/10'
+                      }`}
+                    >
+                      {/* Checkbox para Concluir */}
+                      <button
+                        type="button"
+                        onClick={() => toggleTask(task.id)}
+                        className={`mt-0.5 w-4 h-4 rounded-md flex items-center justify-center border transition shrink-0 cursor-pointer ${
+                          isCompleted
+                            ? 'bg-emerald-500 border-emerald-400 text-white'
+                            : 'border-white/30 hover:border-white text-transparent'
+                        }`}
+                        title={isCompleted ? 'Marcar como pendente' : 'Marcar como concluído'}
+                      >
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </button>
+
+                      {/* Informações da Tarefa */}
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9.5px] px-1.5 py-0.2 rounded-md font-bold border ${badgeColor}`}>
+                            {typeLabel}
+                          </span>
+                          <span className="text-[10px] font-mono text-indigo-200 font-semibold">
+                            {time}
+                          </span>
+                        </div>
+
+                        <p className={`text-xs font-bold truncate leading-tight ${isCompleted ? 'line-through text-indigo-200' : 'text-white'}`}>
+                          {task.title}
+                        </p>
+
+                        {contact && (
+                          <div className="flex items-center gap-1.5 pt-0.5">
+                            <span className="text-[10px] text-indigo-200 truncate">
+                              Lead: <strong className="text-white font-medium">{contact.name}</strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Botão de Ação Rápida WhatsApp */}
+                      {contact && (
+                        <button
+                          type="button"
+                          onClick={() => handleGoToChat(contact.id)}
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-emerald-600 text-white transition shrink-0 cursor-pointer"
+                          title="Falar no WhatsApp"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
           </div>
 
         </div>
@@ -860,6 +1094,13 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
       <GoalsEngineModal
         isOpen={isGoalsModalOpen}
         onClose={() => setIsGoalsModalOpen(false)}
+      />
+
+      {/* Modal de Apresentação Executiva do Funil de Vendas */}
+      <SalesFunnelModal
+        isOpen={isFunnelModalOpen}
+        onClose={() => setIsFunnelModalOpen(false)}
+        onOpenChat={onOpenChat}
       />
 
     </div>

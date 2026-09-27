@@ -204,6 +204,8 @@ export function WhatsAppInbox() {
   const [searchFilter, setSearchFilter] = useState('');
   const [messageInput, setMessageInput] = useState('');
   const messageTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [contactPresence, setContactPresence] = useState<string | null>(null);
+  const lastPresenceSentRef = useRef<number>(0);
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showLeadDrawer, setShowLeadDrawer] = useState(false);
@@ -427,6 +429,36 @@ export function WhatsAppInbox() {
     };
     return fallbackContact;
   }, [contacts, activeConversation, currentTenant.id]);
+
+  // Polling leve e não intrusivo de presença para o contato ativo (Item 4)
+  React.useEffect(() => {
+    if (!activeContact?.phone) {
+      setContactPresence(null);
+      return;
+    }
+    const clean = activeContact.phone.replace(/\D/g, '');
+    if (!clean) return;
+
+    let isMounted = true;
+    const checkPresence = async () => {
+      try {
+        const res = await fetch(`/api/v1/zapi/actions?phone=${clean}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setContactPresence(data.presence || null);
+          }
+        }
+      } catch {}
+    };
+
+    checkPresence();
+    const interval = setInterval(checkPresence, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeContact?.phone]);
 
   const activeMessages = React.useMemo(() => {
     if (!activeConversation) return [];
@@ -1878,7 +1910,19 @@ export function WhatsAppInbox() {
                       </span>
                     ) : null}
                   </div>
-                  <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
+                  {contactPresence === 'COMPOSING' ? (
+                    <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5 animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span>digitando...</span>
+                    </p>
+                  ) : contactPresence === 'RECORDING' ? (
+                    <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5 animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span>gravando áudio...</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500 font-mono">{formatDisplayPhone(activeContact.phone)}</p>
+                  )}
                 </div>
               </div>
 
@@ -2794,7 +2838,22 @@ export function WhatsAppInbox() {
                       : 'Digite sua mensagem... (Enter envia, Shift+Enter pula linha)'
                   }
                   value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMessageInput(val);
+                    if (val.trim() && activeContact?.phone && !isInternalNote) {
+                      const now = Date.now();
+                      if (now - lastPresenceSentRef.current > 4000) {
+                        lastPresenceSentRef.current = now;
+                        const clean = activeContact.phone.replace(/\D/g, '');
+                        fetch('/api/v1/zapi/actions', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ action: 'send-presence', phone: clean, presence: 'composing' }),
+                        }).catch(() => {});
+                      }
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       if (e.shiftKey) {

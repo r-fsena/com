@@ -1,3 +1,5 @@
+process.env.CRM_STORAGE_FILE = '/tmp/crm-test-suite.json';
+
 import { test, describe, beforeEach, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
@@ -196,5 +198,42 @@ describe('Z-API Webhook & Message Sync Tests', () => {
     assert.strictEqual(res.status, 200, 'Deve autorizar via headers de usuário sem 401');
     assert.strictEqual(data.isInternalNote, true);
     assert.strictEqual(data.conversationId, 'conv-custom-100');
+  });
+
+  test('Incoming message with status RECEIVED and audio/ptt is saved as a message and NOT treated as status callback', async () => {
+    const audioMsgId = 'msg-incoming-audio-test-01';
+    const req = new NextRequest('http://localhost:3000/api/v1/webhooks/zapi', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'client-token': 'Fc78d61c833db4b50864816b70766aee8S',
+      },
+      body: JSON.stringify({
+        instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
+        id: audioMsgId,
+        messageId: audioMsgId,
+        phone: customerPhone,
+        fromMe: false,
+        status: 'RECEIVED',
+        audio: {
+          audioUrl: 'https://example.com/audio.ogg',
+          mimeType: 'audio/ogg; codecs=opus',
+        },
+      }),
+    });
+
+    const res = await processZapiWebhookRequest(req);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.received, true);
+    assert.notStrictEqual(data.type, 'MessageStatusCallback', 'Não pode ser interceptado como MessageStatusCallback');
+    assert.strictEqual(data.phone, customerPhone);
+
+    const state = serverCRMStore.getState();
+    const msg = state.messages.find(m => m.id === audioMsgId);
+    assert.ok(msg, 'Mensagem de áudio deve ser salva com sucesso no CRM');
+    assert.strictEqual(msg?.messageType, 'AUDIO');
+    assert.strictEqual(msg?.senderType, 'CONTACT');
   });
 });

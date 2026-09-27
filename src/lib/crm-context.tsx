@@ -2906,9 +2906,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   // Manipulação de Deals / Kanban
   const moveDealStage = (dealId: string, targetStageId: string) => {
     const stage = effectiveCurrentPipeline.stages.find(s => s.id === targetStageId);
+    let targetContactPhone = '';
+
     setDeals(prev => {
       const updated = prev.map(deal => {
         if (deal.id === dealId) {
+          const matchedContact = contacts.find(c => c.id === deal.contactId);
+          if (matchedContact?.phone) {
+            targetContactPhone = matchedContact.phone.replace(/\D/g, '');
+          }
           return {
             ...deal,
             stageId: targetStageId,
@@ -2935,6 +2941,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return updated;
     });
+
+    // Sincroniza em background a etiqueta correspondente no WhatsApp Business se houver telefone e etapa
+    if (targetContactPhone && stage?.name) {
+      fetch('/api/v1/zapi/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add-tag',
+          phone: targetContactPhone,
+          tagId: stage.name,
+        }),
+      }).catch(() => {});
+    }
   };
 
   const createDeal = (data: Partial<Deal>): Deal => {
@@ -3169,10 +3188,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Marca conversa como lida (remove contadores de pendência e badges)
+  // Marca conversa como lida (remove contadores de pendência e badges locais + sincroniza com o WhatsApp oficial via Z-API)
   const markConversationAsRead = (conversationId: string) => {
+    let targetPhone = '';
     setConversations(prev => prev.map(conv => {
       if (conv.id === conversationId && (conv.unreadCount > 0 || conv.status === 'PENDING_TEAM')) {
+        const contact = contacts.find(c => c.id === conv.contactId);
+        targetPhone = contact?.phone || conv.id.replace(/\D/g, '');
         return {
           ...conv,
           unreadCount: 0,
@@ -3181,6 +3203,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
       return conv;
     }));
+
+    if (targetPhone) {
+      const clean = targetPhone.replace(/\D/g, '');
+      if (clean && clean.length >= 8) {
+        fetch('/api/v1/zapi/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'read', phone: clean }),
+        }).catch(() => {});
+      }
+    }
   };
 
   // Limpar histórico de mensagens da conversa (Z-API + Local)

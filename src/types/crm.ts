@@ -284,6 +284,9 @@ export interface Conversation {
   isPinned?: boolean;
   isArchived?: boolean;
   isPersonal?: boolean;
+  isMuted?: boolean;
+  muteEndTime?: string;
+  businessNote?: string;
   aiEnabled?: boolean;
   humanTakeoverAt?: string;
   inactivityFollowupAt?: string;

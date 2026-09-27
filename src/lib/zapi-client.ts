@@ -181,13 +181,43 @@ export class ZApiClient {
   }
 
   /**
-   * Configuração do Webhook de Status de Mensagem
+   * Configuração atômica de todos os webhooks na Z-API (Moderno / Recomendado)
    */
-  async configureWebhookStatus(webhookUrl: string): Promise<ZApiResponse> {
-    return this.request('update-webhook-status', {
+  async updateEveryWebhooks(webhookUrl: string, notifySentByMe: boolean = true): Promise<ZApiResponse> {
+    return this.request('update-every-webhooks', {
+      method: 'PUT',
+      body: JSON.stringify({
+        value: webhookUrl,
+        notifySentByMe,
+      }),
+    });
+  }
+
+  /**
+   * Configuração do Webhook de Status de Mensagem (Nome oficial da documentação Z-API)
+   */
+  async configureWebhookMessageStatus(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-message-status', {
       method: 'PUT',
       body: JSON.stringify({ value: webhookUrl }),
     });
+  }
+
+  /**
+   * Configuração do Webhook de Presença de Chat (Digitando / Gravando áudio)
+   */
+  async configureWebhookChatPresence(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-chat-presence', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
+  /**
+   * Configuração do Webhook de Status de Mensagem (Legado)
+   */
+  async configureWebhookStatus(webhookUrl: string): Promise<ZApiResponse> {
+    return this.configureWebhookMessageStatus(webhookUrl);
   }
 
   /**
@@ -222,12 +252,23 @@ export class ZApiClient {
 
   /**
    * Configura automaticamente todas as URLs de webhook e token de segurança na Z-API (Zero-Config)
+   * Tenta primeiro o endpoint atômico moderno 'update-every-webhooks', com fallback para endpoints granulares.
    */
   async configureAllWebhooks(webhookUrl: string): Promise<{ success: boolean; errors?: string[] }> {
+    try {
+      const atomicResult = await this.updateEveryWebhooks(webhookUrl, true);
+      if (atomicResult.success) {
+        return { success: true };
+      }
+    } catch {
+      // Prossegue para o fallback individual se o endpoint atômico não for aceito
+    }
+
     const results = await Promise.allSettled([
       this.configureWebhookReceived(webhookUrl),
       this.configureWebhookDelivery(webhookUrl),
-      this.configureWebhookStatus(webhookUrl),
+      this.configureWebhookMessageStatus(webhookUrl),
+      this.configureWebhookChatPresence(webhookUrl),
       this.configureWebhookConnected(webhookUrl),
       this.configureWebhookDisconnected(webhookUrl),
       this.configureNotifySentByMe(),
@@ -315,9 +356,12 @@ export class ZApiClient {
   }
 
   /**
-   * Modifica o status do chat no WhatsApp (archive, unarchive, clear, delete, pin, unpin, mute, unmute)
+   * Modifica o status do chat no WhatsApp (read, unread, archive, unarchive, clear, delete, pin, unpin, mute, unmute)
    */
-  async modifyChat(phone: string, action: 'archive' | 'unarchive' | 'clear' | 'delete' | 'pin' | 'unpin' | 'mute' | 'unmute'): Promise<ZApiResponse> {
+  async modifyChat(
+    phone: string,
+    action: 'read' | 'unread' | 'archive' | 'unarchive' | 'clear' | 'delete' | 'pin' | 'unpin' | 'mute' | 'unmute'
+  ): Promise<ZApiResponse> {
     const cleanPhone = phone.replace(/\D/g, '');
     return this.request('modify-chat', {
       method: 'POST',
@@ -326,6 +370,130 @@ export class ZApiClient {
         action,
       }),
     });
+  }
+
+  /**
+   * Valida se o número possui conta no WhatsApp e retorna dados canônicos e LID (Oficial Z-API)
+   */
+  async phoneExists(phone: string): Promise<ZApiResponse<{ exists: boolean; phone?: string; lid?: string }>> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const res = await this.request<any>(`phone-exists/${cleanPhone}`);
+    if (res.success && res.data) {
+      // Se retornar array de 1 elemento conforme docs Z-API
+      const item = Array.isArray(res.data) ? res.data[0] : res.data;
+      return {
+        success: true,
+        data: {
+          exists: Boolean(item.exists === true || item.exists === 'true'),
+          phone: item.phone || cleanPhone,
+          lid: item.lid || undefined,
+        },
+      };
+    }
+    return res;
+  }
+
+  /**
+   * Obtém a URL da foto de perfil atualizada do contato (Oficial Z-API)
+   */
+  async getProfilePicture(phone: string): Promise<ZApiResponse<{ link?: string }>> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const res = await this.request<any>(`profile-picture?phone=${cleanPhone}`);
+    if (res.success && res.data) {
+      const item = Array.isArray(res.data) ? res.data[0] : res.data;
+      return {
+        success: true,
+        data: {
+          link: item?.link || item?.url || item?.imageUrl || undefined,
+        },
+      };
+    }
+    return res;
+  }
+
+  /**
+   * Lista todas as etiquetas cadastradas no WhatsApp Business (Oficial Z-API)
+   */
+  async getTags(): Promise<ZApiResponse<Array<{ id: string; name: string; color: string | number }>>> {
+    return this.request('tags');
+  }
+
+  /**
+   * Atribui uma etiqueta do WhatsApp Business ao chat do cliente (Oficial Z-API)
+   */
+  async addTagToChat(phone: string, tagId: string): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request(`chats/${cleanPhone}/tags/${tagId}/add`, {
+      method: 'PUT',
+    });
+  }
+
+  /**
+   * Remove uma etiqueta do WhatsApp Business do chat do cliente (Oficial Z-API)
+   */
+  async removeTagFromChat(phone: string, tagId: string): Promise<ZApiResponse> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request(`chats/${cleanPhone}/tags/${tagId}/remove`, {
+      method: 'PUT',
+    });
+  }
+
+  /**
+   * Lista contatos da agenda do aparelho (Oficial Z-API)
+   */
+  async getContacts(page: number = 1, pageSize: number = 100): Promise<ZApiResponse<any[]>> {
+    return this.request(`contacts?page=${page}&pageSize=${pageSize}`);
+  }
+
+  /**
+   * Obtém metadados detalhados de um contato específico (Oficial Z-API)
+   */
+  async getContactMetadata(phone: string): Promise<ZApiResponse<{
+    name?: string;
+    short?: string;
+    vname?: string;
+    notify?: string;
+    imgUrl?: string;
+    about?: string;
+    phone?: string;
+  }>> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request(`contacts/${cleanPhone}`);
+  }
+
+  /**
+   * Lista conversas / chats ativos no WhatsApp (Oficial Z-API)
+   */
+  async getChats(page: number = 1, pageSize: number = 100): Promise<ZApiResponse<any[]>> {
+    return this.request(`chats?page=${page}&pageSize=${pageSize}`);
+  }
+
+  /**
+   * Obtém metadados detalhados de um chat específico (Oficial Z-API)
+   */
+  async getChatMetadata(phone: string): Promise<ZApiResponse<{
+    phone?: string;
+    unread?: string;
+    lastMessageTime?: string;
+    isMuted?: string;
+    muteEndTime?: number;
+    isMarkedSpam?: boolean;
+    profileThumbnail?: string;
+    notes?: { id?: string; content?: string; createdAt?: number; lastUpdateAt?: number };
+    about?: string;
+    isGroup?: boolean;
+  }>> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.request(`chats/${cleanPhone}`);
+  }
+
+  /**
+   * Consulta lote de mensagens do histórico de um chat (Oficial Z-API)
+   */
+  async getChatMessages(phone: string, amount: number = 20, lastMessageId?: string): Promise<ZApiResponse<any[]>> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const query = lastMessageId ? `?amount=${amount}&lastMessageId=${lastMessageId}` : `?amount=${amount}`;
+    return this.request(`chat-messages/${cleanPhone}${query}`);
   }
 
   /**

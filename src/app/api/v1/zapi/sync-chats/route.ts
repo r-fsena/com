@@ -175,11 +175,12 @@ async function handleSyncChats(req: NextRequest) {
         return;
       }
 
-      // Se o chat não tem mensagem no WhatsApp, nem mensagens não lidas, nem histórico prévio salvo no CRM, é um chat vazio/excluído
+      // Se o chat não tem mensagem no WhatsApp, nem mensagens não lidas, nem histórico prévio salvo no CRM e nem data de atividade, é um chat vazio/excluído
       const unreadCount = Number(c.unread || c.messagesUnread || 0);
       const rawLastMsg = typeof c.lastMessage === 'string' ? c.lastMessage.trim() : (c.lastMessage?.message || c.lastMessage?.text || c.message || '');
+      const lastMsgTime = parseWhatsAppTimestamp(c.lastMessageTime);
       const hasStoredMsgs = serverCRMStore.getState().messages.some(m => m.conversationId === `conv-zapi-${clean}` || (m as any).phone === clean);
-      if (!rawLastMsg && unreadCount === 0 && !hasStoredMsgs) {
+      if (!rawLastMsg && unreadCount === 0 && !hasStoredMsgs && (!lastMsgTime || lastMsgTime <= 0)) {
         return;
       }
 
@@ -301,6 +302,11 @@ async function handleSyncChats(req: NextRequest) {
         ? c.lastMessage
         : (c.lastMessage?.message || c.message || (unread > 0 ? `💬 ${unread} nova(s) mensagem(ns)` : '📱 Conversa sincronizada via WhatsApp'));
 
+      const isPinned = Boolean(c.pinned === true || c.pinned === 'true');
+      const isMuted = Boolean(c.isMuted === '1' || c.isMuted === 1 || c.isMuted === true);
+      const muteEndTime = c.muteEndTime ? new Date(Number(c.muteEndTime)).toISOString() : undefined;
+      const businessNote = c.notes?.content ? String(c.notes.content).trim() : undefined;
+
       return {
         id: `conv-zapi-${cleanPhone}`,
         tenantId,
@@ -312,6 +318,10 @@ async function handleSyncChats(req: NextRequest) {
         lastMessagePreview: lastMessageText,
         lastMessageAt: lastMsgDate,
         slaBreached: false,
+        isPinned,
+        isMuted,
+        muteEndTime,
+        businessNote,
         isPersonal: false,
       };
     });
@@ -346,6 +356,24 @@ async function handleSyncChats(req: NextRequest) {
           status: 'DELIVERED',
           isInternalNote: false,
           timestamp: lastMsgDate,
+        });
+      }
+
+      // Se houver anotação atribuída ao chat no WhatsApp Business, anexa como Nota Interna do Lead
+      if (c.notes?.content && String(c.notes.content).trim()) {
+        const noteText = String(c.notes.content).trim();
+        const noteTime = c.notes.createdAt ? new Date(Number(c.notes.createdAt)).toISOString() : lastMsgDate;
+        chatLastMessages.push({
+          id: `sync-note-${cleanPhone}-${c.notes.id || c.notes.createdAt || 'initial'}`,
+          tenantId,
+          conversationId: `conv-zapi-${cleanPhone}`,
+          senderType: 'USER',
+          senderName: 'WhatsApp Business (Nota)',
+          messageType: 'TEXT',
+          content: `📝 [Nota do WhatsApp Business]: ${noteText}`,
+          status: 'DELIVERED',
+          isInternalNote: true,
+          timestamp: noteTime,
         });
       }
     });

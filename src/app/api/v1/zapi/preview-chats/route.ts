@@ -159,6 +159,9 @@ export async function POST(req: NextRequest) {
         lastMessagePreview: chat.lastMessage || chat.snippet || 'Mensagem recente',
         lastMessageTimestamp: timestampMs > 0 ? new Date(timestampMs).toISOString() : new Date().toISOString(),
         unreadCount: Number(chat.unreadCount || 0),
+        isPinned: Boolean(chat.pinned === true || chat.pinned === 'true'),
+        isMuted: Boolean(chat.isMuted === '1' || chat.isMuted === 1 || chat.isMuted === true),
+        businessNote: chat.notes?.content ? String(chat.notes.content).trim() : undefined,
         isGroup: false,
         whatsappLabels: resolvedLabels,
       });

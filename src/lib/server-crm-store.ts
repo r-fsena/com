@@ -87,12 +87,15 @@ declare global {
 }
 
 function getCandidateStoragePaths(): string[] {
-  const paths: string[] = [];
   if (process.env.CRM_STORAGE_FILE) {
-    paths.push(process.env.CRM_STORAGE_FILE);
+    return [process.env.CRM_STORAGE_FILE];
   }
+  const paths: string[] = [];
   // 1. Diretório data do projeto local (persistência local e Docker)
   paths.push(path.join(process.cwd(), 'data', 'crm-state.json'));
+  // 1.1 Se process.cwd() for .next/standalone, sobe até a raiz do projeto
+  paths.push(path.join(process.cwd(), '..', '..', 'data', 'crm-state.json'));
+  paths.push(path.join(process.cwd(), '..', 'data', 'crm-state.json'));
   // 2. Diretório alternativo .data
   paths.push(path.join(process.cwd(), '.data', 'crm-state.json'));
   // 3. Fallback para /tmp (ambientes serverless, AWS Lambda onde cwd é somente leitura)
@@ -1138,5 +1141,118 @@ export const serverCRMStore = {
       const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
       return timeA - timeB;
     });
-  }
+  },
+
+  /**
+   * Atualiza o status de entrega e leitura de mensagens no servidor (Callback Z-API)
+   */
+  updateMessageStatus(messageIds: string[], status: 'SENT' | 'DELIVERED' | 'READ'): number {
+    if (!messageIds || messageIds.length === 0) return 0;
+    const idSet = new Set(messageIds.map(id => String(id).trim()));
+
+    const state = this.getState();
+    let updatedCount = 0;
+
+    const updatedMessages = state.messages.map(m => {
+      const matches = idSet.has(m.id) || (m.externalId && idSet.has(m.externalId));
+      if (matches && m.status !== status) {
+        updatedCount++;
+        return {
+          ...m,
+          status,
+        };
+      }
+      return m;
+    });
+
+    if (updatedCount > 0) {
+      state.messages = updatedMessages;
+      saveStateToDisk();
+    }
+
+    return updatedCount;
+  },
+
+  /**
+   * Marca uma conversa como lida e zera contadores no servidor
+   */
+  markConversationRead(conversationIdOrPhone: string): boolean {
+    const clean = conversationIdOrPhone.replace(/\D/g, '');
+    const state = this.getState();
+    let modified = false;
+
+    state.conversations = state.conversations.map(conv => {
+      const matches = 
+        conv.id === conversationIdOrPhone || 
+        conv.id === `conv-zapi-${clean}` ||
+        (clean && arePhonesEquivalent(conv.id.replace(/\D/g, ''), clean));
+
+      if (matches && (conv.unreadCount > 0 || conv.status === 'PENDING_TEAM')) {
+        modified = true;
+        return {
+          ...conv,
+          unreadCount: 0,
+          status: conv.status === 'PENDING_TEAM' ? 'OPEN' : conv.status,
+        };
+      }
+      return conv;
+    });
+
+    if (modified) {
+      saveStateToDisk();
+    }
+    return modified;
+  },
+
+  /**
+   * Atualiza o avatar de um contato
+   */
+  updateContactAvatar(phone: string, avatarUrl: string): boolean {
+    if (!phone || !avatarUrl) return false;
+    const cleanPhone = phone.replace(/\D/g, '');
+
+    const state = this.getState();
+    let modified = false;
+
+    state.contacts = state.contacts.map(c => {
+      if (c.phone && arePhonesEquivalent(c.phone, cleanPhone) && !c.avatarUrl) {
+        modified = true;
+        return {
+          ...c,
+          avatarUrl,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return c;
+    });
+
+    if (modified) {
+      saveStateToDisk();
+    }
+    return modified;
+  },
+
+  // Mapa de presença de chat em memória ('COMPOSING', 'RECORDING', 'PAUSED', 'AVAILABLE', 'UNAVAILABLE')
+  presenceMap: new Map<string, { status: string; updatedAt: number }>(),
+
+  setPresence(phone: string, status: string): void {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) return;
+    this.presenceMap.set(cleanPhone, {
+      status,
+      updatedAt: Date.now(),
+    });
+  },
+
+  getPresence(phone: string): string | null {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const entry = this.presenceMap.get(cleanPhone);
+    if (!entry) return null;
+    // Se passou mais de 25 segundos sem renovação, considera expirado/inativo
+    if (Date.now() - entry.updatedAt > 25000) {
+      this.presenceMap.delete(cleanPhone);
+      return null;
+    }
+    return entry.status;
+  },
 };

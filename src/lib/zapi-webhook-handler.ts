@@ -37,6 +37,58 @@ export async function processZapiWebhookRequest(
   }
 
   try {
+    // 0.1 Tratamento do Webhook de Status de Mensagem (MessageStatusCallback - Oficial Z-API)
+    // Mensagens normais (recebidas ou enviadas) NUNCA devem ser tratadas como status callback
+    const isStatusCallback = Boolean(
+      body.type === 'MessageStatusCallback' || 
+      (Array.isArray(body.ids) && body.ids.length > 0 && !body.phone && !body.chatPhone && !body.chatId && !body.text && !body.message && !body.body && !body.audio && !body.image && !body.document)
+    );
+
+    if (isStatusCallback) {
+      const statusRaw = String(body.status || '').toUpperCase();
+      let crmStatus: 'SENT' | 'DELIVERED' | 'READ' = 'DELIVERED';
+      if (statusRaw === 'SENT') {
+        crmStatus = 'SENT';
+      } else if (statusRaw === 'RECEIVED') {
+        crmStatus = 'DELIVERED';
+      } else if (statusRaw === 'READ' || statusRaw === 'READ_BY_ME' || statusRaw === 'PLAYED') {
+        crmStatus = 'READ';
+      }
+
+      const rawIds = Array.isArray(body.ids) ? body.ids : (body.id ? [body.id] : []);
+      const updatedCount = serverCRMStore.updateMessageStatus(rawIds, crmStatus);
+
+      return NextResponse.json({
+        received: true,
+        type: 'MessageStatusCallback',
+        status: crmStatus,
+        rawStatus: statusRaw,
+        updatedCount,
+        success: true,
+      });
+    }
+
+    // 0.2 Tratamento do Webhook de Presença no Chat (PresenceChatCallback - Oficial Z-API)
+    const isPresenceCallback = Boolean(
+      body.type === 'PresenceChatCallback' ||
+      (body.status && ['COMPOSING', 'RECORDING', 'PAUSED'].includes(body.status) && !body.ids && !body.text && !body.message && !body.body && !body.audio && !body.image && !body.document)
+    );
+
+    if (isPresenceCallback) {
+      const presenceStatus = String(body.status || '').toUpperCase();
+      const phoneRaw = String(body.phone || body.chatPhone || '').replace(/\D/g, '');
+      if (phoneRaw) {
+        serverCRMStore.setPresence(phoneRaw, presenceStatus);
+      }
+      return NextResponse.json({
+        received: true,
+        type: 'PresenceChatCallback',
+        phone: phoneRaw,
+        status: presenceStatus,
+        success: true,
+      });
+    }
+
     // 1. Detecção inicial de direção (fromMe)
     const fromMe = Boolean(
       body.fromMe || 
@@ -339,6 +391,24 @@ export async function processZapiWebhookRequest(
           timestamp: new Date().toISOString(),
         }],
       });
+
+      // Se o contato não possuir foto cadastrada, enriquece em segundo plano com a foto oficial do WhatsApp
+      if (cleanPhone && (!existingContact?.avatarUrl && !senderPhoto) && !isLidIdentifier(cleanPhone)) {
+        setTimeout(async () => {
+          try {
+            const { ZApiClient } = await import('@/lib/zapi-client');
+            const zapi = new ZApiClient({
+              instanceId,
+              instanceToken: process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5',
+              securityToken: expectedToken,
+            });
+            const pic = await zapi.getProfilePicture(cleanPhone);
+            if (pic.success && pic.data?.link) {
+              serverCRMStore.updateContactAvatar(cleanPhone, pic.data.link);
+            }
+          } catch {}
+        }, 800);
+      }
     }
 
     return NextResponse.json({

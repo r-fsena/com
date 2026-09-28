@@ -1889,8 +1889,8 @@ export function WhatsAppInbox() {
                       {(() => {
                         const rawPreview = (conv.lastMessagePreview && !isWhatsAppSystemMessage(conv.lastMessagePreview) && !conv.lastMessagePreview.includes('Conversa ativa') && !conv.lastMessagePreview.includes('Gostaria de receber'))
                           ? conv.lastMessagePreview
-                          : '📱 Conversa sincronizada';
-                        const preview = conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : rawPreview;
+                          : (conv.unreadCount > 0 ? `💬 ${conv.unreadCount} nova(s) mensagem(ns)` : '📱 Conversa sincronizada');
+                        const preview = rawPreview;
                         return (
                           <p className={`text-[11px] truncate mb-1 leading-relaxed ${conv.unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500'}`}>
                             {preview}

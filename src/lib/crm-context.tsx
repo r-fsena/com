@@ -2208,8 +2208,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [messages, saveToStorageDebounced]);
 
   useEffect(() => {
-    if (!isHydratedRef.current) return;
-    if (activeConversationId) saveToStorageDebounced('vanguard_crm_active_conv_id', activeConversationId, 400);
+    if (!isHydratedRef.current || !activeConversationId) return;
+    saveToStorageDebounced('vanguard_crm_active_conv_id', activeConversationId, 400);
+    // Zera imediatamente o unreadCount da conversa que o usuário está visualizando ativamente
+    setConversations(prev => {
+      const target = prev.find(c => c.id === activeConversationId || c.contactId === activeConversationId);
+      if (!target || target.unreadCount === 0) return prev;
+      return prev.map(c => (c.id === target.id) ? { ...c, unreadCount: 0 } : c);
+    });
   }, [activeConversationId, saveToStorageDebounced]);
   
   const [aiInsights, setAiInsights] = useState<Record<string, AIInsight>>(() => {
@@ -4480,8 +4486,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Polling inteligente e não-bloqueante de novos eventos do Webhook Z-API em tempo real (8s com Page Visibility)
-  const lastPollTimeRef = useRef<number>(Date.now() - 60000);
+  // Polling inteligente e não-bloqueante de novos eventos do Webhook Z-API em tempo real com deduplicação rigorosa
+  const lastPollTimeRef = useRef<number>(Date.now() - 120000);
+  const processedMsgIdsRef = useRef<Set<string>>(new Set());
+  const activeConversationIdRef = useRef<string | null>(activeConversationId);
+  activeConversationIdRef.current = activeConversationId;
+
+  // Popula os IDs de mensagens existentes na memória para evitar reprocessamento
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      messages.forEach(m => {
+        if (m.id) processedMsgIdsRef.current.add(m.id);
+        if (m.externalId) processedMsgIdsRef.current.add(m.externalId);
+      });
+    }
+  }, [messages.length]);
 
   useEffect(() => {
     let isMounted = true;
@@ -4492,7 +4511,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       try {
-        const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}`, {
+        const sinceParam = lastPollTimeRef.current ? `&since=${lastPollTimeRef.current}` : '';
+        const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}${sinceParam}`, {
           credentials: 'include',
           headers: {
             'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
@@ -4502,10 +4522,25 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
         if (!res.ok) return;
         const data = await res.json();
+        if (data.serverTime) {
+          lastPollTimeRef.current = data.serverTime;
+        }
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          data.messages.forEach((incoming: any) => {
-            if (isWhatsAppChannelOrGroup(incoming)) return;
+          // Filtra estritamente apenas mensagens novas que ainda não foram processadas
+          const freshMessages = data.messages.filter((incoming: any) => {
+            if (!incoming || !incoming.id) return false;
+            if (isWhatsAppChannelOrGroup(incoming)) return false;
+            if (processedMsgIdsRef.current.has(incoming.id)) return false;
+            return true;
+          });
+
+          // Se não há mensagens novas, encerra imediatamente sem disparar re-render do React
+          if (freshMessages.length === 0) return;
+
+          freshMessages.forEach((incoming: any) => {
+            processedMsgIdsRef.current.add(incoming.id);
+
             let resolvedPhone = incoming.phone ? incoming.phone.replace(/\D/g, '') : '';
             const isLid = isLidIdentifier(incoming.phone) || (incoming.lid && isLidIdentifier(incoming.lid));
             const lidClean = cleanLid(incoming.lid || (isLidIdentifier(incoming.phone) ? incoming.phone : ''));
@@ -4605,14 +4640,27 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             // 2. Encontra ou cria conversa
             setConversations(prevConvs => {
               const existingConv = prevConvs.find(c => c.id === targetConvId || c.contactId === targetContactId);
+              const currentActive = activeConversationIdRef.current;
+              const isChatCurrentlyOpen = Boolean(
+                currentActive && (
+                  currentActive === targetConvId || 
+                  (existingConv && currentActive === existingConv.id) ||
+                  (rawPhone && arePhonesEquivalent(currentActive.replace(/\D/g, ''), rawPhone))
+                )
+              );
 
               if (existingConv) {
                 const updatedStatus: 'PENDING_CLIENT' | 'PENDING_TEAM' = incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM';
+                // Incrementa unreadCount uma única vez se o chat NÃO estiver aberto na tela
+                const newUnreadCount = incoming.fromMe
+                  ? 0
+                  : (isChatCurrentlyOpen ? 0 : ((existingConv.unreadCount || 0) + 1));
+
                 return prevConvs.map(c => c.id === existingConv.id ? {
                   ...c,
                   lastMessagePreview: incoming.content || c.lastMessagePreview,
                   lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                  unreadCount: incoming.fromMe ? 0 : (c.unreadCount || 0) + 1,
+                  unreadCount: newUnreadCount,
                   status: updatedStatus,
                 } : c).sort((a, b) => {
                   const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
@@ -4628,7 +4676,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 assignedUserId: currentUser.id,
                 instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
                 status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
-                unreadCount: incoming.fromMe ? 0 : 1,
+                unreadCount: (incoming.fromMe || isChatCurrentlyOpen) ? 0 : 1,
                 lastMessagePreview: incoming.content || 'Mensagem recebida',
                 lastMessageAt: incoming.timestamp || new Date().toISOString(),
                 isArchived: false,
@@ -4651,6 +4699,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
               const newMsg: Message = {
                 id: incoming.id || `wpp-${rawPhone}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                externalId: incoming.id || undefined,
                 tenantId: currentTenant.id,
                 conversationId: targetConvId,
                 senderType: incoming.fromMe ? 'USER' : 'CONTACT',
@@ -4669,9 +4718,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 timestamp: incoming.timestamp || new Date().toISOString(),
               };
 
-              // Evita duplicatas por ID nativo
+              // Evita duplicatas por ID nativo ou externalId
               if (newMsg.id && !newMsg.id.startsWith('wpp-')) {
-                const isAlreadyPresent = rekeyed.some(m => m.id === newMsg.id);
+                const isAlreadyPresent = rekeyed.some(m => m.id === newMsg.id || (m.externalId && m.externalId === newMsg.id));
                 if (isAlreadyPresent) return rekeyed;
               }
 

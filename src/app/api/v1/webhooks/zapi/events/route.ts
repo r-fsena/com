@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
     ? (searchParams.get('tenantId') || session.tenantId) 
     : session?.tenantId || clientTenantHeader || queryTenant || 'tenant-amabile-barbarotti';
 
-  const allMessages = webhookStore.getAllMessages();
+  const allMessages = since > 0 
+    ? webhookStore.getMessagesSince(since)
+    : webhookStore.getAllMessages();
 
   // Filtra pelo tenant autorizado do usuário ou entrega para a instância ativa
   const messages = allMessages.filter(m => 

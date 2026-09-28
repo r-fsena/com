@@ -89,16 +89,29 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    // 1. Detecção inicial de direção (fromMe)
-    const fromMe = Boolean(
+    const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
+    const connectedPhoneInBody = body.connectedPhone ? String(body.connectedPhone).replace(/\D/g, '') : '';
+
+    const isConnectedPhone = (phoneCandidate: any) => {
+      if (!phoneCandidate) return false;
+      const digits = String(phoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
+      if (!digits) return false;
+      if (connectedPhoneInBody && arePhonesEquivalent(connectedPhoneInBody, digits)) return true;
+      return KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, digits));
+    };
+
+    // 1. Detecção robusta de direção (fromMe)
+    let fromMe = Boolean(
       body.fromMe === true || 
       body.fromMe === 'true' ||
       body.isSentByMe === true ||
       body.sentByMe === true ||
       body.isMyMessage === true ||
+      body.key?.fromMe === true ||
+      body.key?.fromMe === 'true' ||
       body.message?.key?.fromMe === true ||
       body.message?.fromMe === true ||
-      (body.data && (body.data.fromMe || body.data.isSentByMe || body.data.sentByMe)) ||
+      (body.data && (body.data.fromMe || body.data.isSentByMe || body.data.sentByMe || body.data.key?.fromMe)) ||
       body.type === 'MessageSend' ||
       body.type === 'SentMessage' ||
       body.type === 'SentCallback' ||
@@ -106,16 +119,38 @@ export async function processZapiWebhookRequest(
       false
     );
 
-    const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
-    const connectedPhoneInBody = body.connectedPhone ? String(body.connectedPhone).replace(/\D/g, '') : '';
+    // Se qualquer campo de remetente corresponder à linha conectada da imobiliária/corretor
+    if (!fromMe) {
+      const senderCandidates = [
+        body.senderPhone,
+        body.sender,
+        body.from,
+        body.author,
+        body.participantPhone,
+        body.participant,
+        body.message?.key?.participant,
+        body.key?.participant,
+        body.data?.senderPhone,
+        body.data?.sender,
+        body.data?.from,
+        body.data?.author,
+        body.data?.participantPhone,
+      ];
+      for (const cand of senderCandidates) {
+        if (cand && isConnectedPhone(cand)) {
+          fromMe = true;
+          break;
+        }
+      }
+    }
 
-    const isConnectedPhone = (phoneCandidate: string) => {
-      if (!phoneCandidate) return false;
-      const digits = String(phoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
-      if (!digits) return false;
-      if (connectedPhoneInBody && arePhonesEquivalent(connectedPhoneInBody, digits)) return true;
-      return KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, digits));
-    };
+    // Se body.phone for a linha conectada da imobiliária e houver outro participante (recipientPhone, chatPhone, to, chatId)
+    if (!fromMe && body.phone && isConnectedPhone(body.phone)) {
+      const otherParty = body.recipientPhone || body.to || body.chatPhone || body.chatId || body.data?.recipientPhone || body.data?.to || body.data?.chatPhone;
+      if (otherParty && !isConnectedPhone(otherParty)) {
+        fromMe = true;
+      }
+    }
 
     // 1.1 Extração robusta de LID e Telefone Real do contato (lead)
     let lid = '';
@@ -191,8 +226,9 @@ export async function processZapiWebhookRequest(
 
     // Trava anti-duplicação: Se o telefone for a própria linha conectada da imobiliária (conversa consigo mesmo)
     if (cleanPhone && isConnectedPhone(cleanPhone)) {
-      // Tenta recuperar o telefone do cliente do chatId ou to
-      const alt = String(body.recipientPhone || body.to || body.chatId || '').replace(/@.*$/, '').replace(/\D/g, '');
+      fromMe = true;
+      // Tenta recuperar o telefone do cliente do chatId, to, chatPhone ou recipientPhone
+      const alt = String(body.recipientPhone || body.to || body.chatPhone || body.chatId || '').replace(/@.*$/, '').replace(/\D/g, '');
       if (alt && !isConnectedPhone(alt)) {
         cleanPhone = alt.startsWith('55') || alt.length < 10 ? alt : `55${alt}`;
       } else {
@@ -362,7 +398,7 @@ export async function processZapiWebhookRequest(
         instanceId,
         phone: cleanPhone,
         lid: lid || undefined,
-        senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
+        senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
         chatName: body.chatName || undefined,
         senderPhoto: existingContact?.avatarUrl || senderPhoto,
         content,
@@ -417,7 +453,7 @@ export async function processZapiWebhookRequest(
           tenantId,
           conversationId: targetConvId,
           senderType: fromMe ? 'USER' : 'CONTACT',
-          senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
+          senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
           messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
           content,
           status: 'DELIVERED',

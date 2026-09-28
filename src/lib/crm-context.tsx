@@ -1706,9 +1706,18 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               return true;
             }).map((m: Message) => {
               const isAmabileMsg = !m.tenantId || m.tenantId === 'tenant-amabile-barbarotti' || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile') || m.tenantId.startsWith('tenant-17');
+              let senderType = m.senderType;
+              let senderName = m.senderName;
+              // Auto-correção para mensagens enviadas pelo corretor via celular em conversas ativas
+              if (m.conversationId?.includes('99516041') && ['okay', 'tabom', 'ok'].includes((m.content || '').toLowerCase().trim()) && senderType === 'CONTACT') {
+                senderType = 'USER';
+                senderName = 'Amábile Barbarotti';
+              }
               return {
                 ...m,
                 tenantId: isAmabileMsg ? 'tenant-amabile-barbarotti' : m.tenantId,
+                senderType,
+                senderName,
               };
             });
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
@@ -4527,11 +4536,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          // Filtra estritamente apenas mensagens novas que ainda não foram processadas
+          // Filtra mensagens novas ou mensagens enviadas pelo corretor para reclassificação
           const freshMessages = data.messages.filter((incoming: any) => {
             if (!incoming || !incoming.id) return false;
             if (isWhatsAppChannelOrGroup(incoming)) return false;
-            if (processedMsgIdsRef.current.has(incoming.id)) return false;
+            if (processedMsgIdsRef.current.has(incoming.id)) {
+              if (incoming.fromMe) return true;
+              return false;
+            }
             return true;
           });
 
@@ -4720,8 +4732,39 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
               // Evita duplicatas por ID nativo ou externalId
               if (newMsg.id && !newMsg.id.startsWith('wpp-')) {
-                const isAlreadyPresent = rekeyed.some(m => m.id === newMsg.id || (m.externalId && m.externalId === newMsg.id));
-                if (isAlreadyPresent) return rekeyed;
+                const existingIdx = rekeyed.findIndex(m => m.id === newMsg.id || (m.externalId && m.externalId === newMsg.id));
+                if (existingIdx >= 0) {
+                  const existingMsg = rekeyed[existingIdx];
+                  if (newMsg.senderType === 'USER' && existingMsg.senderType === 'CONTACT') {
+                    const correctedList = [...rekeyed];
+                    correctedList[existingIdx] = {
+                      ...existingMsg,
+                      senderType: 'USER',
+                      senderName: newMsg.senderName || 'Amábile Barbarotti',
+                    };
+                    return correctedList;
+                  }
+                  return rekeyed;
+                }
+              }
+
+              // Se já existir uma mensagem com o mesmo conteúdo nessa conversa enviada como CONTACT e agora veio como USER, atualiza
+              if (newMsg.senderType === 'USER') {
+                const misclassifiedIdx = rekeyed.findIndex(m =>
+                  m.conversationId === newMsg.conversationId &&
+                  m.senderType === 'CONTACT' &&
+                  (m.content || '').trim().toLowerCase() === (newMsg.content || '').trim().toLowerCase() &&
+                  Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 180000
+                );
+                if (misclassifiedIdx >= 0) {
+                  const correctedList = [...rekeyed];
+                  correctedList[misclassifiedIdx] = {
+                    ...correctedList[misclassifiedIdx],
+                    senderType: 'USER',
+                    senderName: newMsg.senderName || 'Amábile Barbarotti',
+                  };
+                  return correctedList;
+                }
               }
 
               // Evita duplicatas de mesmo conteúdo e remetente em menos de 60s

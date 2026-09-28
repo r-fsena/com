@@ -5,6 +5,7 @@ export interface LiveWebhookMessage {
   phone: string;
   lid?: string;
   senderName: string;
+  chatName?: string;
   senderPhoto?: string;
   content: string;
   mediaUrl?: string;

@@ -4566,20 +4566,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                   ...c,
                   lid: lidClean || c.lid,
                   name: incoming.fromMe
-                    ? existing.name
+                    ? ((existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.chatName || existing.name))
                     : ((existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.senderName || existing.name)),
                   avatarUrl: incoming.senderPhoto || c.avatarUrl,
-                  lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
+                  lastClientInteractionAt: incoming.fromMe ? c.lastClientInteractionAt : (incoming.timestamp || new Date().toISOString()),
+                  lastTeamInteractionAt: incoming.fromMe ? (incoming.timestamp || new Date().toISOString()) : c.lastTeamInteractionAt,
                   updatedAt: new Date().toISOString(),
                 } : c);
               }
 
-              if (incoming.fromMe) {
-                // Não cria lead se for apenas mensagem enviada pela imobiliária sem contato prévio
-                return prevContacts;
-              }
-
-              const contactName = incoming.senderName || `WhatsApp ${rawPhone.slice(-4)}`;
+              const contactName = (incoming.fromMe ? (incoming.chatName || incoming.senderName) : incoming.senderName) || `WhatsApp ${rawPhone.slice(-4)}`;
 
               const newContact: Contact = {
                 id: targetContactId,
@@ -4599,7 +4595,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 isPersonal: false,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
-                lastClientInteractionAt: incoming.timestamp || new Date().toISOString(),
+                lastClientInteractionAt: incoming.fromMe ? undefined : (incoming.timestamp || new Date().toISOString()),
+                lastTeamInteractionAt: incoming.fromMe ? (incoming.timestamp || new Date().toISOString()) : undefined,
               };
 
               return [newContact, ...prevContacts];

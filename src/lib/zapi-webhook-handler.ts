@@ -91,14 +91,31 @@ export async function processZapiWebhookRequest(
 
     // 1. Detecção inicial de direção (fromMe)
     const fromMe = Boolean(
-      body.fromMe || 
-      (body.data && body.data.fromMe) || 
+      body.fromMe === true || 
+      body.fromMe === 'true' ||
+      body.isSentByMe === true ||
+      body.sentByMe === true ||
+      body.isMyMessage === true ||
+      body.message?.key?.fromMe === true ||
+      body.message?.fromMe === true ||
+      (body.data && (body.data.fromMe || body.data.isSentByMe || body.data.sentByMe)) ||
       body.type === 'MessageSend' ||
+      body.type === 'SentMessage' ||
+      body.type === 'SentCallback' ||
       body.event === 'on-message-send' ||
       false
     );
 
     const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
+    const connectedPhoneInBody = body.connectedPhone ? String(body.connectedPhone).replace(/\D/g, '') : '';
+
+    const isConnectedPhone = (phoneCandidate: string) => {
+      if (!phoneCandidate) return false;
+      const digits = String(phoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
+      if (!digits) return false;
+      if (connectedPhoneInBody && arePhonesEquivalent(connectedPhoneInBody, digits)) return true;
+      return KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, digits));
+    };
 
     // 1.1 Extração robusta de LID e Telefone Real do contato (lead)
     let lid = '';
@@ -122,15 +139,31 @@ export async function processZapiWebhookRequest(
 
     let realPhoneCandidate = '';
     if (fromMe) {
-      // Quando enviado pelo corretor/WhatsApp da empresa, o cliente é o DESTINATÁRIO
-      realPhoneCandidate = 
-        (!isLidIdentifier(body.recipientPhone) ? body.recipientPhone : '')
-        || (!isLidIdentifier(body.to) ? body.to : '')
-        || body.chatPhone
-        || (!isLidIdentifier(body.chatId) ? body.chatId : '')
-        || (body.data && (body.data.recipientPhone || body.data.to || body.data.chatPhone))
-        || (!isLidIdentifier(body.phone) && !KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, body.phone)) ? body.phone : '')
-        || '';
+      // Quando enviado pelo corretor/WhatsApp da empresa, o cliente é o OUTRO participante (o destinatário ou o chat)
+      const candidateList = [
+        body.recipientPhone,
+        body.to,
+        body.chatPhone,
+        body.chatId,
+        body.message?.key?.remoteJid,
+        body.phone,
+        body.data?.recipientPhone,
+        body.data?.to,
+        body.data?.chatPhone,
+        body.data?.chatId,
+        body.data?.phone,
+        body.participantPhone,
+      ];
+
+      for (const cand of candidateList) {
+        if (!cand) continue;
+        if (isLidIdentifier(cand)) continue;
+        const cleaned = String(cand).replace(/@.*$/, '').replace(/\D/g, '');
+        if (cleaned && !isConnectedPhone(cleaned)) {
+          realPhoneCandidate = cand;
+          break;
+        }
+      }
     } else {
       // Quando recebido do cliente, o cliente é o REMETENTE
       realPhoneCandidate = 
@@ -148,7 +181,7 @@ export async function processZapiWebhookRequest(
     // Se chatPhone estiver presente com número completo
     if (body.chatPhone && !isLidIdentifier(body.chatPhone)) {
       const p = String(body.chatPhone).replace(/\D/g, '');
-      if (p.length >= 10 && !p.startsWith('1397')) cleanPhone = p;
+      if (p.length >= 10 && !p.startsWith('1397') && !isConnectedPhone(p)) cleanPhone = p;
     }
 
     // Normaliza telefone nacional (DDI 55)
@@ -156,18 +189,18 @@ export async function processZapiWebhookRequest(
       cleanPhone = `55${cleanPhone}`;
     }
 
-    // Trava anti-duplicação: Se o telefone for a própria linha conectada da imobiliária
-    if (cleanPhone && KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, cleanPhone))) {
+    // Trava anti-duplicação: Se o telefone for a própria linha conectada da imobiliária (conversa consigo mesmo)
+    if (cleanPhone && isConnectedPhone(cleanPhone)) {
       // Tenta recuperar o telefone do cliente do chatId ou to
       const alt = String(body.recipientPhone || body.to || body.chatId || '').replace(/@.*$/, '').replace(/\D/g, '');
-      if (alt && !KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, alt))) {
+      if (alt && !isConnectedPhone(alt)) {
         cleanPhone = alt.startsWith('55') || alt.length < 10 ? alt : `55${alt}`;
       } else {
         // Ignora para não criar conversa consigo mesmo no CRM
         return NextResponse.json({
           received: true,
           ignored: true,
-          reason: 'Mensagem da própria linha conectada ignorada para evitar chat espúrio consigo mesmo',
+          reason: 'Mensagem da própria linha conectada consigo mesma ignorada para evitar chat espúrio',
           status: 'SUCCESS',
         });
       }
@@ -330,6 +363,7 @@ export async function processZapiWebhookRequest(
         phone: cleanPhone,
         lid: lid || undefined,
         senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
+        chatName: body.chatName || undefined,
         senderPhoto: existingContact?.avatarUrl || senderPhoto,
         content,
         mediaType,
@@ -340,10 +374,10 @@ export async function processZapiWebhookRequest(
 
       // Atualiza também no serverCRMStore unificando conversa e mensagem
       serverCRMStore.updateState({
-        contacts: (!existingContact && !fromMe && cleanPhone && !isLidIdentifier(cleanPhone)) ? [{
+        contacts: (!existingContact && cleanPhone && !isLidIdentifier(cleanPhone)) ? [{
           id: targetContactId,
           tenantId,
-          name: senderName,
+          name: fromMe ? (body.chatName || `Contato ${cleanPhone.slice(-4)}`) : senderName,
           phone: `+${cleanPhone}`,
           lid: lid || undefined,
           avatarUrl: senderPhoto,
@@ -356,8 +390,8 @@ export async function processZapiWebhookRequest(
           consentGiven: true,
           hasOptedOut: false,
           isPersonal: false,
-          lastClientInteractionAt: new Date().toISOString(),
-          lastTeamInteractionAt: new Date().toISOString(),
+          lastClientInteractionAt: fromMe ? undefined : new Date().toISOString(),
+          lastTeamInteractionAt: fromMe ? new Date().toISOString() : undefined,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }] : [],

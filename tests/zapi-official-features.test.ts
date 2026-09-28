@@ -119,4 +119,49 @@ describe('Z-API Official Enhancements Tests (Items 1-6)', () => {
     assert.strictEqual(conv?.unreadCount, 0);
     assert.strictEqual(conv?.status, 'OPEN');
   });
+
+  test('Outgoing message sent from mobile WhatsApp (fromMe = true) is synced to CRM', async () => {
+    const clientPhone = '5548988990011';
+    const mobileSentMessageId = 'msg-mobile-sent-999';
+
+    const req = new NextRequest('http://localhost:3000/api/v1/webhooks/zapi', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'client-token': 'Fc78d61c833db4b50864816b70766aee8S',
+      },
+      body: JSON.stringify({
+        type: 'ReceivedCallback',
+        instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
+        messageId: mobileSentMessageId,
+        connectedPhone: '554899797603',
+        phone: clientPhone,
+        fromMe: true,
+        chatName: 'Cliente VIP',
+        senderName: 'Amábile Barbarotti',
+        text: {
+          message: 'Olá, acabei de te mandar a proposta pelo celular!',
+        },
+      }),
+    });
+
+    const res = await processZapiWebhookRequest(req);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.received, true);
+    assert.strictEqual(data.fromMe, true);
+    assert.strictEqual(data.phone, clientPhone);
+
+    const state = serverCRMStore.getState();
+    const saved = state.messages.find(m => m.id === mobileSentMessageId);
+    assert.ok(saved, 'Mensagem enviada do celular deve estar salva no serverCRMStore');
+    assert.strictEqual(saved?.senderType, 'USER', 'Remetente de mensagem fromMe deve ser USER');
+    assert.strictEqual(saved?.content, 'Olá, acabei de te mandar a proposta pelo celular!');
+
+    const conv = state.conversations.find(c => c.id === `conv-zapi-${clientPhone}`);
+    assert.ok(conv, 'Conversa deve existir para o cliente destinatário');
+    assert.strictEqual(conv?.status, 'PENDING_CLIENT', 'Status da conversa deve ser PENDING_CLIENT após envio do corretor');
+  });
 });
+

@@ -242,27 +242,31 @@ export class ZApiClient {
 
   /**
    * Configura para notificar mensagens enviadas pelo próprio celular (fromMe = true)
+   * A documentação oficial da Z-API exige PUT update-notify-sent-by-me com { notifySentByMe: true }
    */
   async configureNotifySentByMe(): Promise<ZApiResponse> {
     return this.request('update-notify-sent-by-me', {
       method: 'PUT',
-      body: JSON.stringify({ value: true }),
+      body: JSON.stringify({ notifySentByMe: true, value: true }),
     });
   }
 
   /**
    * Configura automaticamente todas as URLs de webhook e token de segurança na Z-API (Zero-Config)
-   * Tenta primeiro o endpoint atômico moderno 'update-every-webhooks', com fallback para endpoints granulares.
+   * Executa o endpoint atômico moderno 'update-every-webhooks' com notifySentByMe: true,
+   * e garante a ativação de notifySentByMe e endpoints granulares.
    */
   async configureAllWebhooks(webhookUrl: string): Promise<{ success: boolean; errors?: string[] }> {
     try {
-      const atomicResult = await this.updateEveryWebhooks(webhookUrl, true);
-      if (atomicResult.success) {
-        return { success: true };
-      }
+      await this.updateEveryWebhooks(webhookUrl, true);
     } catch {
-      // Prossegue para o fallback individual se o endpoint atômico não for aceito
+      // Prossegue para a configuração individual caso o endpoint atômico falhe
     }
+
+    // Garante ativação de notifySentByMe de forma explícita
+    try {
+      await this.configureNotifySentByMe();
+    } catch {}
 
     const results = await Promise.allSettled([
       this.configureWebhookReceived(webhookUrl),

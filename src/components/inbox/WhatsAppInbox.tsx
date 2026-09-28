@@ -60,7 +60,10 @@ import {
   StopCircle,
   Radio,
   UserPlus,
-  UserMinus
+  UserMinus,
+  Link2,
+  Globe,
+  Loader2
 } from 'lucide-react';
 import { safeFormatDate, formatWhatsAppDate, parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { formatBRL, formatCompactBRL, maskCurrencyInput, parseBRLInputToNumber } from '@/lib/currency-utils';
@@ -261,6 +264,13 @@ export function WhatsAppInbox() {
   const [propType, setPropType] = useState<PropertyType>('APARTMENT');
   const [propStatus, setPropStatus] = useState<'PRESENTED' | 'VISITING' | 'PROPOSAL' | 'DISCARDED'>('PRESENTED');
   const [propNotes, setPropNotes] = useState('');
+  const [propUrl, setPropUrl] = useState('');
+  const [propImageUrl, setPropImageUrl] = useState('');
+  const [propAreaM2, setPropAreaM2] = useState('');
+  const [propBedrooms, setPropBedrooms] = useState('');
+  const [propParkingSpots, setPropParkingSpots] = useState('');
+  const [isExtractingProp, setIsExtractingProp] = useState(false);
+  const [extractPropFeedback, setExtractPropFeedback] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
 
   // Estados de Manipulação de Mídia, Documentos e Áudios
   const [attachedMedia, setAttachedMedia] = useState<{
@@ -749,6 +759,61 @@ export function WhatsAppInbox() {
   };
 
   // Handlers do Módulo de Imóveis Apresentados
+  const handleImportPropertyFromUrl = async (urlOverride?: string) => {
+    const rawUrl = (urlOverride || propUrl).trim();
+    if (!rawUrl) {
+      setExtractPropFeedback({ type: 'error', message: 'Por favor, informe ou cole o link do anúncio.' });
+      return;
+    }
+
+    let normalizedUrl = rawUrl;
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      normalizedUrl = `https://${normalizedUrl}`;
+      setPropUrl(normalizedUrl);
+    }
+
+    setIsExtractingProp(true);
+    setExtractPropFeedback(null);
+
+    try {
+      const res = await fetch('/api/v1/properties/extract-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: normalizedUrl }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Falha ao buscar dados do link');
+      }
+
+      const info = json.data;
+      if (info.name) setPropName(info.name);
+      if (info.price) setPropPrice(maskCurrencyInput(info.price));
+      if (info.address) setPropAddress(info.address);
+      if (info.propertyType) setPropType(info.propertyType);
+      if (info.imageUrl) setPropImageUrl(info.imageUrl);
+      if (info.areaM2) setPropAreaM2(String(info.areaM2));
+      if (info.bedrooms) setPropBedrooms(String(info.bedrooms));
+      if (info.parkingSpots) setPropParkingSpots(String(info.parkingSpots));
+      if (info.notes && !propNotes) setPropNotes(info.notes);
+      if (info.url) setPropUrl(info.url);
+
+      if (json.warning) {
+        setExtractPropFeedback({ type: 'warning', message: json.warning });
+      } else {
+        setExtractPropFeedback({ type: 'success', message: 'Dados do anúncio capturados e preenchidos com sucesso!' });
+      }
+    } catch {
+      setExtractPropFeedback({
+        type: 'warning',
+        message: 'Não foi possível ler todos os dados automaticamente do portal. Você pode preencher os campos abaixo manualmente.',
+      });
+    } finally {
+      setIsExtractingProp(false);
+    }
+  };
+
   const handleSavePresentedProperty = () => {
     if (!activeContact || !propName.trim()) return;
     addPresentedProperty(activeContact.id, {
@@ -759,18 +824,37 @@ export function WhatsAppInbox() {
       propertyType: propType,
       status: propStatus,
       notes: propNotes.trim() || undefined,
+      url: propUrl.trim() || undefined,
+      imageUrl: propImageUrl.trim() || undefined,
+      areaM2: propAreaM2 ? parseInt(propAreaM2, 10) || undefined : undefined,
+      bedrooms: propBedrooms ? parseInt(propBedrooms, 10) || undefined : undefined,
+      parkingSpots: propParkingSpots ? parseInt(propParkingSpots, 10) || undefined : undefined,
     });
     setPropName('');
     setPropUnit('');
     setPropAddress('');
     setPropPrice('');
     setPropNotes('');
+    setPropUrl('');
+    setPropImageUrl('');
+    setPropAreaM2('');
+    setPropBedrooms('');
+    setPropParkingSpots('');
+    setExtractPropFeedback(null);
     setIsAddingProp(false);
   };
 
   const handleSendPropertyBriefToChat = (prop: PresentedProperty) => {
     const priceFormatted = prop.price ? `R$ ${Number(prop.price).toLocaleString('pt-BR')}` : 'Sob consulta';
-    const text = `🏢 *${prop.name}*\n${prop.unit ? `📐 *Unidade:* ${prop.unit}\n` : ''}${prop.address ? `📍 *Localização:* ${prop.address}\n` : ''}💰 *Valor:* ${priceFormatted}\n\nEstou à disposição para tirarmos dúvidas ou agendarmos uma visita!`;
+    
+    // Constrói especificações
+    const specs: string[] = [];
+    if (prop.areaM2) specs.push(`${prop.areaM2}m²`);
+    if (prop.bedrooms) specs.push(`${prop.bedrooms} ${prop.bedrooms === 1 ? 'quarto' : 'quartos'}`);
+    if (prop.parkingSpots) specs.push(`${prop.parkingSpots} ${prop.parkingSpots === 1 ? 'vaga' : 'vagas'}`);
+    const specsStr = specs.length > 0 ? `📐 *Especificações:* ${specs.join(' • ')}\n` : '';
+
+    const text = `🏢 *${prop.name}*\n${prop.unit ? `🚪 *Unidade:* ${prop.unit}\n` : ''}${specsStr}${prop.address ? `📍 *Localização:* ${prop.address}\n` : ''}💰 *Valor:* ${priceFormatted}\n${prop.url ? `\n🔗 *Veja o anúncio com fotos completas:*\n${prop.url}\n` : ''}\nEstou à disposição para tirarmos dúvidas ou agendarmos uma visita!`;
     setMessageInput(text);
     setIsInternalNote(false);
   };
@@ -3350,15 +3434,116 @@ export function WhatsAppInbox() {
 
               {/* Formulário Rápido de Inserção de Imóvel */}
               {isAddingProp && (
-                <div className="bg-white border border-emerald-300 rounded-xl p-3 shadow-xs space-y-2.5">
-                  <div className="text-[10px] font-bold text-emerald-900 flex items-center justify-between">
-                    <span>Cadastrar Empreendimento / Unidade</span>
-                    <span className="text-[9px] text-slate-400 font-normal">Preenchimento rápido</span>
+                <div className="bg-white border border-emerald-300 rounded-xl p-3 shadow-xs space-y-3">
+                  <div className="text-[10.5px] font-bold text-emerald-950 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Vincular Empreendimento ou Anúncio</span>
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-normal">Preenchimento rápido ou por link</span>
                   </div>
+
+                  {/* Seção de Importação por Link */}
+                  <div className="bg-gradient-to-r from-emerald-50/70 to-teal-50/70 border border-emerald-200/80 rounded-xl p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[9.5px] font-bold text-emerald-900 flex items-center gap-1">
+                        <Link2 className="w-3 h-3 text-emerald-600" />
+                        <span>Importar de um Link (Zap, Viva Real, Construtora...)</span>
+                      </label>
+                      <span className="text-[8.5px] font-medium text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded">Auto Preenchimento</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative flex-1">
+                        <input
+                          type="url"
+                          placeholder="Cole o link do anúncio aqui (ex: https://...)"
+                          value={propUrl}
+                          onChange={(e) => {
+                            setPropUrl(e.target.value);
+                            if (extractPropFeedback) setExtractPropFeedback(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleImportPropertyFromUrl();
+                            }
+                          }}
+                          className="w-full text-xs bg-white border border-emerald-300/80 rounded-lg pl-7 pr-2.5 py-1.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs font-mono text-[11px]"
+                        />
+                        <Globe className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleImportPropertyFromUrl()}
+                        disabled={isExtractingProp || !propUrl.trim()}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition shadow-2xs flex items-center gap-1 flex-shrink-0 cursor-pointer active:scale-95"
+                      >
+                        {isExtractingProp ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Buscando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Buscar Dados</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Feedback do Extrator */}
+                    {extractPropFeedback && (
+                      <div
+                        className={`text-[9.5px] p-2 rounded-lg flex items-start gap-1.5 font-medium ${
+                          extractPropFeedback.type === 'success'
+                            ? 'bg-emerald-100/80 text-emerald-900 border border-emerald-300'
+                            : extractPropFeedback.type === 'warning'
+                            ? 'bg-amber-100/80 text-amber-900 border border-amber-300'
+                            : 'bg-rose-100/80 text-rose-900 border border-rose-300'
+                        }`}
+                      >
+                        {extractPropFeedback.type === 'success' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        )}
+                        <span>{extractPropFeedback.message}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Thumbnail Preview (se houver imagem extraída) */}
+                  {propImageUrl && (
+                    <div className="flex items-center gap-2.5 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                      <img
+                        src={propImageUrl}
+                        alt="Capa do imóvel"
+                        className="w-12 h-12 object-cover rounded-md border border-slate-200 shadow-2xs flex-shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Foto Capturada</span>
+                        <p className="text-[10px] text-slate-700 truncate">{propImageUrl}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPropImageUrl('')}
+                        className="text-slate-400 hover:text-rose-500 p-1 rounded transition cursor-pointer"
+                        title="Remover foto"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Sugestões Rápidas do Catálogo */}
                   <div>
-                    <label className="text-[9px] font-bold text-slate-500 block mb-1">Catálogo (Sugestões Rápidas):</label>
+                    <label className="text-[9px] font-bold text-slate-500 block mb-1">Ou selecione do Catálogo Interno:</label>
                     <div className="flex flex-wrap gap-1">
                       {MOCK_CATALOG_PROPERTIES.map((cat, i) => (
                         <button
@@ -3367,7 +3552,7 @@ export function WhatsAppInbox() {
                           onClick={() => {
                             setPropName(cat.name);
                             setPropAddress(cat.address);
-                            setPropPrice(String(cat.price));
+                            setPropPrice(maskCurrencyInput(cat.price));
                             setPropType(cat.type);
                             setPropUnit(cat.defaultUnit);
                           }}
@@ -3379,9 +3564,10 @@ export function WhatsAppInbox() {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
+                  {/* Campos do Formulário */}
+                  <div className="space-y-1.5 pt-1 border-t border-slate-100">
                     <div>
-                      <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Empreendimento / Edifício *</label>
+                      <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Empreendimento / Título *</label>
                       <input
                         type="text"
                         placeholder="Ex: Edifício Lumina Batel"
@@ -3416,6 +3602,42 @@ export function WhatsAppInbox() {
                             className="w-full text-xs font-mono font-bold bg-transparent focus:outline-none"
                           />
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Grid de Metragem, Quartos e Vagas */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Área (m²)</label>
+                        <input
+                          type="number"
+                          placeholder="Ex: 115"
+                          value={propAreaM2}
+                          onChange={(e) => setPropAreaM2(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Quartos</label>
+                        <input
+                          type="number"
+                          placeholder="Ex: 3"
+                          value={propBedrooms}
+                          onChange={(e) => setPropBedrooms(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-0.5">Vagas</label>
+                        <input
+                          type="number"
+                          placeholder="Ex: 2"
+                          value={propParkingSpots}
+                          onChange={(e) => setPropParkingSpots(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
                       </div>
                     </div>
 
@@ -3493,46 +3715,73 @@ export function WhatsAppInbox() {
                     <Building className="w-5 h-5 text-slate-400 mx-auto mb-1 opacity-60" />
                     <p className="text-xs font-medium text-slate-600">Nenhum imóvel vinculado ainda</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      Cadastre os empreendimentos apresentados para acompanhar o interesse e agendar visitas com 1 clique.
+                      Cadastre os empreendimentos apresentados ou importe links para acompanhar o interesse e agendar visitas com 1 clique.
                     </p>
                   </div>
                 ) : (
                   (activeContact.presentedProperties || []).map((prop) => (
                     <div key={prop.id} className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-2xs space-y-2 hover:border-slate-300 transition">
-                      <div className="flex items-start justify-between gap-1.5">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-xs text-slate-900 truncate">{prop.name}</span>
+                      <div className="flex items-start gap-2.5">
+                        {/* Foto miniatura se existir */}
+                        {prop.imageUrl ? (
+                          <img
+                            src={prop.imageUrl}
+                            alt={prop.name}
+                            className="w-12 h-12 object-cover rounded-lg border border-slate-200 flex-shrink-0 shadow-2xs"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
+                            <Building2 className="w-4 h-4" />
                           </div>
-                          {prop.unit && (
-                            <div className="text-[10.5px] font-semibold text-emerald-700">
-                              📍 {prop.unit}
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className="min-w-0 flex-1">
+                              <span className="font-bold text-xs text-slate-900 truncate block">{prop.name}</span>
+                              {prop.unit && (
+                                <span className="text-[10px] font-semibold text-emerald-700 block">
+                                  🚪 {prop.unit}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Dropdown de Status */}
+                            <select
+                              value={prop.status}
+                              onChange={(e) => updatePresentedProperty(activeContact.id, prop.id, { status: e.target.value as any })}
+                              className={`text-[9.5px] font-bold rounded-lg px-2 py-0.5 border cursor-pointer focus:outline-none ${
+                                prop.status === 'PROPOSAL'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : prop.status === 'VISITING'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : prop.status === 'DISCARDED'
+                                  ? 'bg-slate-100 text-slate-600 border-slate-300'
+                                  : 'bg-blue-50 text-blue-800 border-blue-200'
+                              }`}
+                            >
+                              <option value="PRESENTED">👁️ Apresentado</option>
+                              <option value="VISITING">📅 Visita Marcada</option>
+                              <option value="PROPOSAL">💼 Proposta</option>
+                              <option value="DISCARDED">✖️ Descartado</option>
+                            </select>
+                          </div>
+
+                          {/* Badges de Especificações (m², quartos, vagas) */}
+                          {(prop.areaM2 || prop.bedrooms || prop.parkingSpots) && (
+                            <div className="flex items-center gap-1.5 mt-1 text-[9.5px] text-slate-500 font-medium">
+                              {prop.areaM2 && <span className="bg-slate-100 px-1.5 py-0.2 rounded">📐 {prop.areaM2}m²</span>}
+                              {prop.bedrooms && <span className="bg-slate-100 px-1.5 py-0.2 rounded">🛏️ {prop.bedrooms} qtos</span>}
+                              {prop.parkingSpots && <span className="bg-slate-100 px-1.5 py-0.2 rounded">🚗 {prop.parkingSpots} vag</span>}
                             </div>
                           )}
                         </div>
-
-                        {/* Dropdown de Status */}
-                        <select
-                          value={prop.status}
-                          onChange={(e) => updatePresentedProperty(activeContact.id, prop.id, { status: e.target.value as any })}
-                          className={`text-[9.5px] font-bold rounded-lg px-2 py-0.5 border cursor-pointer focus:outline-none ${
-                            prop.status === 'PROPOSAL'
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : prop.status === 'VISITING'
-                              ? 'bg-amber-100 text-amber-900 border-amber-300'
-                              : prop.status === 'DISCARDED'
-                              ? 'bg-slate-100 text-slate-600 border-slate-300'
-                              : 'bg-blue-50 text-blue-800 border-blue-200'
-                          }`}
-                        >
-                          <option value="PRESENTED">👁️ Apresentado</option>
-                          <option value="VISITING">📅 Visita Marcada</option>
-                          <option value="PROPOSAL">💼 Proposta</option>
-                          <option value="DISCARDED">✖️ Descartado</option>
-                        </select>
                       </div>
 
-                      {/* Endereço & Valor */}
+                      {/* Endereço & Valor & Link */}
                       <div className="text-[10.5px] text-slate-600 space-y-0.5">
                         {prop.address && (
                           <div className="flex items-center gap-1 text-slate-500 truncate">
@@ -3540,11 +3789,28 @@ export function WhatsAppInbox() {
                             <span className="truncate">{prop.address}</span>
                           </div>
                         )}
-                        {prop.price && (
-                          <div className="font-mono font-bold text-slate-900">
-                            💰 R$ {Number(prop.price).toLocaleString('pt-BR')}
-                          </div>
-                        )}
+                        <div className="flex items-center justify-between">
+                          {prop.price ? (
+                            <div className="font-mono font-bold text-slate-900">
+                              💰 R$ {Number(prop.price).toLocaleString('pt-BR')}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400 italic">Sob consulta</div>
+                          )}
+
+                          {prop.url && (
+                            <a
+                              href={prop.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/80 cursor-pointer"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                              <span>Ver Anúncio</span>
+                            </a>
+                          )}
+                        </div>
+
                         {prop.notes && (
                           <p className="text-[10px] text-slate-500 italic bg-slate-50 p-1.5 rounded-md border border-slate-100">
                             "{prop.notes}"

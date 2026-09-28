@@ -135,6 +135,12 @@ export interface PresentedProperty {
   status: 'PRESENTED' | 'VISITING' | 'PROPOSAL' | 'DISCARDED'; // Apresentado, Visita Marcada, Proposta, Descartado
   presentedAt: string;
   notes?: string;
+  url?: string; // Link direto do anúncio ou empreendimento
+  imageUrl?: string; // Foto de capa/miniatura do imóvel
+  areaM2?: number; // Área privativa em m²
+  bedrooms?: number; // Quantidade de quartos
+  suites?: number; // Quantidade de suítes
+  parkingSpots?: number; // Vagas de garagem
 }
 
 export interface BrokerNote {

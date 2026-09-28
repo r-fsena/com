@@ -1426,7 +1426,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
 
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.40.zip"
+                download="brokiva-chrome-extension-v1.0.41.zip"
                 className="inline-flex items-center justify-center gap-2 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] px-4 py-2.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer shrink-0"
               >
                 <Download className="w-4 h-4" />

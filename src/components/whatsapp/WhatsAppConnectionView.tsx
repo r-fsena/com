@@ -561,7 +561,7 @@ export function WhatsAppConnectionView() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full md:w-auto">
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.40.zip"
+                download="brokiva-chrome-extension-v1.0.41.zip"
                 className="inline-flex items-center justify-center gap-2 text-xs font-extrabold text-slate-950 bg-white hover:bg-slate-100 px-5 py-3 rounded-2xl shadow-md transition active:scale-95 cursor-pointer"
               >
                 <Download className="w-4 h-4 text-[#3742AC]" />
@@ -1103,7 +1103,7 @@ export function WhatsAppConnectionView() {
             <div className="flex items-center gap-2 pt-2">
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.40.zip"
+                download="brokiva-chrome-extension-v1.0.41.zip"
                 className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] rounded-xl shadow-xs transition text-center flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Download className="w-4 h-4" />

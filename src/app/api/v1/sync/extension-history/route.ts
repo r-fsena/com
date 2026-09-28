@@ -181,7 +181,9 @@ export async function POST(req: NextRequest) {
       const conversationId = existingConv ? existingConv.id : defaultConversationId;
 
       let contactName = (chat.name || '').trim();
-      if (!contactName || contactName === 'Contato WhatsApp' || contactName.toLowerCase() === 'whatsapp') {
+      if (existingContact?.name && !existingContact.name.startsWith('+') && !existingContact.name.startsWith('WhatsApp') && existingContact.name !== 'Contato WhatsApp') {
+        contactName = existingContact.name;
+      } else if (!contactName || contactName === 'Contato WhatsApp' || contactName.toLowerCase() === 'whatsapp') {
         contactName = existingContact?.name || formatCanonicalPhone(cleanPhone) || `Contato ${cleanPhone.slice(-4)}`;
       } else if (contactName.startsWith('+')) {
         contactName = formatCanonicalPhone(cleanPhone) || contactName;
@@ -303,13 +305,19 @@ export async function POST(req: NextRequest) {
         serverCRMStore.registerLidPhone(resolvedLid, resolvedPhone);
       }
 
+      const existingAvatar = existingContact?.avatarUrl;
+      const isExistingHd = Boolean(existingAvatar && existingAvatar.startsWith('http') && !existingAvatar.includes('ui-avatars.com'));
+      const finalAvatar = isExistingHd
+        ? existingAvatar
+        : (chat.avatarUrl || existingAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`);
+
       newContacts.push({
         id: contactId,
         tenantId,
         name: contactName,
         phone: resolvedPhone,
         lid: resolvedLid,
-        avatarUrl: chat.avatarUrl || existingContact?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`,
+        avatarUrl: finalAvatar,
         assignedUserId: brokerUserId || undefined,
         source: 'WHATSAPP',
         temperature: existingContact?.temperature || 'COLD',

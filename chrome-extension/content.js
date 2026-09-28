@@ -69,7 +69,7 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.38';
+    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.41';
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `
@@ -1408,7 +1408,7 @@ ${isDeveloperMode ? `
 
     // Coleta todos os elementos do chat em ordem cronológica de cima para baixo
     // Evita duplicidade entre div[role="row"] que já contenha balões filhos específicos (.message-in / .message-out)
-    const allCandidates = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"], div[data-testid*="system"]'));
+    const allCandidates = Array.from(main.querySelectorAll('div[data-id], div.message-in, div.message-out, div[role="row"], div[data-testid*="system"], div[data-testid*="msg-container"]'));
     const uniqueElements = [];
     const seenElements = new Set();
 
@@ -1536,7 +1536,7 @@ ${isDeveloperMode ? `
       const hasAudio = !hasVideo && !hasDoc && !hasImg && isVoiceOrAudio;
 
       // 5. Extração de texto digitado pelo usuário
-      const textNode = clone.querySelector('span.selectable-text, .selectable-text, .copyable-text span, div.copyable-text, span[dir="ltr"]');
+      const textNode = clone.querySelector('span._ao3e, span.selectable-text, .selectable-text, .copyable-text span, div.copyable-text span, div.copyable-text, span[dir="ltr"], span[dir="auto"]');
       let userTypedText = (textNode ? textNode.innerText : clone.innerText) || '';
       userTypedText = userTypedText.trim();
 
@@ -1884,6 +1884,72 @@ ${isDeveloperMode ? `
 
       if (!nameElem || !phoneElem) return;
 
+      // Injeta botão de sincronização rápida no topo da conversa aberta
+      if (main && !document.getElementById('brokiva-header-sync-btn')) {
+        const headerElem = main.querySelector('header');
+        if (headerElem && !isCurrentChatGroupOrChannel()) {
+          const topSyncBtn = document.createElement('button');
+          topSyncBtn.id = 'brokiva-header-sync-btn';
+          topSyncBtn.type = 'button';
+          topSyncBtn.title = 'Sincronizar histórico completo desta conversa no CRM Brokiva';
+          topSyncBtn.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Sincronizar Histórico</span>
+          `;
+          topSyncBtn.setAttribute('style', `
+            display: inline-flex;
+            align-items: center;
+            background: #3742AC;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: auto;
+            margin-right: 12px;
+            z-index: 99;
+            transition: background 0.15s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+          `);
+          topSyncBtn.addEventListener('mouseenter', () => { topSyncBtn.style.background = '#283182'; });
+          topSyncBtn.addEventListener('mouseleave', () => { topSyncBtn.style.background = '#3742AC'; });
+          topSyncBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            topSyncBtn.disabled = true;
+            topSyncBtn.style.opacity = '0.7';
+            topSyncBtn.innerHTML = `<span>⏳ Lendo histórico...</span>`;
+            try {
+              await syncCurrentActiveChat();
+            } finally {
+              topSyncBtn.disabled = false;
+              topSyncBtn.style.opacity = '1';
+              topSyncBtn.innerHTML = `<span>✓ Histórico Salvo!</span>`;
+              setTimeout(() => {
+                const b = document.getElementById('brokiva-header-sync-btn');
+                if (b) {
+                  b.innerHTML = `
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Sincronizar Histórico</span>
+                  `;
+                }
+              }, 4000);
+            }
+          });
+          const lastHeaderChild = headerElem.querySelector('div:last-child') || headerElem;
+          lastHeaderChild.parentNode.insertBefore(topSyncBtn, lastHeaderChild);
+        }
+      }
+
       if (!main) {
         if (lastLeadSignature !== 'none') {
           lastLeadSignature = 'none';
@@ -1950,8 +2016,21 @@ ${isDeveloperMode ? `
     const main = document.querySelector('#main');
     if (!main) return null;
 
-    // 1. Busca a partir de uma mensagem real existente no chat (método mais preciso do DOM)
-    const msg = main.querySelector('div.message-in, div.message-out, div[role="row"]');
+    // 1. Contêineres de scroll diretos conhecidos do WhatsApp Web
+    const directCandidates = [
+      main.querySelector('div.copyable-area > div[tabindex="-1"]'),
+      main.querySelector('div[tabindex="-1"][data-tab]'),
+      main.querySelector('div[data-testid="conversation-panel-messages"]'),
+      main.querySelector('div[role="application"]'),
+    ];
+    for (const cand of directCandidates) {
+      if (cand && cand.scrollHeight > cand.clientHeight && cand.clientHeight > 100) {
+        return cand;
+      }
+    }
+
+    // 2. Busca a partir de uma mensagem real existente no chat (método mais preciso do DOM)
+    const msg = main.querySelector('div[data-id], div.message-in, div.message-out, div[role="row"]');
     if (msg) {
       let curr = msg.parentElement;
       while (curr && curr !== main) {
@@ -1971,12 +2050,6 @@ ${isDeveloperMode ? `
         }
         curr = curr.parentElement;
       }
-    }
-
-    // 2. Fallbacks diretos conhecidos do WhatsApp Web
-    const directScroll = main.querySelector('div[tabindex="-1"][data-tab], div.copyable-area > div[tabindex="-1"], div[role="application"]');
-    if (directScroll && directScroll.scrollHeight > directScroll.clientHeight) {
-      return directScroll;
     }
 
     return document.querySelector('#main div[tabindex="-1"]') ||
@@ -2398,8 +2471,8 @@ ${isDeveloperMode ? `
 
     logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_START', 'Iniciando leitura da conversa aberta...');
 
-    // Rola para cima profundamente para carregar todo o histórico anterior (até 25 páginas)
-    const accumulatedMap = await deepScrollChatHistory(2, (step, total) => {
+    // Rola para cima profundamente para carregar todo o histórico anterior (até 15 rolagens)
+    const accumulatedMap = await deepScrollChatHistory(15, (step, total) => {
       if (badge) badge.innerText = `Lendo antigas (${step}/${total})...`;
     });
 
@@ -3119,18 +3192,28 @@ ${isDeveloperMode ? `
           } catch {}
         }
 
-        updateSyncModalProgress(chatsToIngest.length, chatsToIngest.length, 0);
+        updateSyncModalProgress({
+          syncedCount: 0,
+          maxChats: chatsToIngest.length,
+          contactName: 'Pré-carregando contatos...',
+          actionText: `Registrando ${chatsToIngest.length} contatos e etiquetas no CRM...`,
+          totalMessages: 0,
+        });
         const sendRes = await dispatchSyncBatchChats(chatsToIngest);
 
         if (sendRes && sendRes.success) {
-          logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Sincronização nativa concluída com sucesso! ${chatsToIngest.length} conversas salvas no CRM.`);
-          closeSyncModal();
-          alert(`🎉 Sincronização Concluída com Sucesso!\n\nForam sincronizadas ${chatsToIngest.length} conversas, contatos e etiquetas do WhatsApp diretamente no seu CRM Brokiva.`);
-          isSyncing = false;
-          if (btnRecent) btnRecent.disabled = false;
-          if (btnFull) btnFull.disabled = false;
-          if (btnOld) btnOld.disabled = false;
-          return;
+          logToConsoleAndCloudWatch('INFO', 'NATIVE_CONTACTS_INGESTED', `✓ ${chatsToIngest.length} contatos e etiquetas pré-salvos no CRM. Continuando para leitura física de mensagens no chat...`);
+          if (progressStatus) {
+            progressStatus.innerText = `✓ ${chatsToIngest.length} contatos pré-salvos! Lendo mensagens das conversas...`;
+          }
+          updateSyncModalProgress({
+            syncedCount: 0,
+            maxChats: MAX_TARGET_CHATS,
+            contactName: 'Iniciando leitura de mensagens...',
+            actionText: `✓ ${chatsToIngest.length} contatos pré-cadastrados. Lendo mensagens de cada conversa...`,
+            totalMessages: 0,
+          });
+          await new Promise(r => setTimeout(r, 600));
         }
       }
     } catch (bridgeErr) {
@@ -3235,7 +3318,8 @@ ${isDeveloperMode ? `
           totalMessages: totalMessagesSynced,
         });
 
-        const accumulatedMap = await deepScrollChatHistory(1, (step, total) => {
+        const scrollTarget = syncMode === 'RECENT' ? 5 : 8;
+        const accumulatedMap = await deepScrollChatHistory(scrollTarget, (step, total) => {
           updateSyncModalProgress({
             syncedCount: syncedChats.length,
             maxChats: MAX_TARGET_CHATS,

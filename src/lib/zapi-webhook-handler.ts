@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
-import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier, arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier, arePhonesEquivalent, KNOWN_LID_PHONE_MAP, resolveKnownPhone } from '@/lib/whatsapp-filter';
 
 export async function processZapiWebhookRequest(
   request: NextRequest,
@@ -169,29 +169,21 @@ export async function processZapiWebhookRequest(
 
     // 1.1 Extração robusta de LID e Telefone Real do contato (lead)
     let lid = '';
-    if (fromMe) {
-      if (body.recipientLid) {
-        lid = cleanLid(body.recipientLid);
-      } else if (String(body.chatId || '').includes('@lid')) {
-        lid = cleanLid(body.chatId);
-      } else if (String(body.to || '').includes('@lid')) {
-        lid = cleanLid(body.to);
-      } else if (String(body.key?.remoteJid || '').includes('@lid')) {
-        lid = cleanLid(body.key.remoteJid);
-      } else if (String(body.data?.key?.remoteJid || '').includes('@lid')) {
-        lid = cleanLid(body.data.key.remoteJid);
-      }
-    } else {
-      if (body.lid) {
-        lid = cleanLid(body.lid);
-      } else if (String(body.phone || '').includes('@lid')) {
-        lid = cleanLid(body.phone);
-      } else if (String(body.chatId || '').includes('@lid')) {
-        lid = cleanLid(body.chatId);
-      } else if (String(body.key?.remoteJid || '').includes('@lid')) {
-        lid = cleanLid(body.key.remoteJid);
-      } else if (String(body.data?.key?.remoteJid || '').includes('@lid')) {
-        lid = cleanLid(body.data.key.remoteJid);
+    const lidCandidates = [
+      body.recipientLid,
+      body.lid,
+      body.chatId,
+      body.to,
+      body.key?.remoteJid,
+      body.data?.key?.remoteJid,
+      body.phone,
+      body.recipientPhone
+    ];
+
+    for (const cand of lidCandidates) {
+      if (cand && isLidIdentifier(cand)) {
+        lid = cleanLid(cand);
+        break;
       }
     }
 
@@ -219,7 +211,14 @@ export async function processZapiWebhookRequest(
 
       for (const cand of candidateList) {
         if (!cand) continue;
-        if (isLidIdentifier(cand)) continue;
+        if (isLidIdentifier(cand)) {
+          const known = resolveKnownPhone(cand);
+          if (known) {
+            realPhoneCandidate = known;
+            break;
+          }
+          continue;
+        }
         const cleaned = String(cand).replace(/@.*$/, '').replace(/\D/g, '');
         if (cleaned && !isConnectedPhone(cleaned)) {
           realPhoneCandidate = cand;
@@ -236,6 +235,11 @@ export async function processZapiWebhookRequest(
         || (!isLidIdentifier(body.chatId) ? body.chatId : '')
         || (body.data && (body.data.chatPhone || (!isLidIdentifier(body.data.phone) ? body.data.phone : '') || body.data.senderPhone))
         || '';
+    }
+
+    if (!realPhoneCandidate && lid) {
+      const known = resolveKnownPhone(lid);
+      if (known) realPhoneCandidate = known;
     }
 
     let cleanPhone = String(realPhoneCandidate).replace(/@.*$/, '').replace(/\D/g, '');
@@ -276,7 +280,7 @@ export async function processZapiWebhookRequest(
 
     // Se o telefone estiver vazio ou for um LID, resolve para o telefone canônico
     if ((!cleanPhone || isLidIdentifier(cleanPhone)) && lid) {
-      let resolved = serverCRMStore.resolvePhoneFromLid(lid);
+      let resolved = resolveKnownPhone(lid) || serverCRMStore.resolvePhoneFromLid(lid);
       if (!resolved) {
         resolved = await serverCRMStore.resolvePhoneFromLidAsync(lid, routeParams?.instanceId);
       }
@@ -285,11 +289,11 @@ export async function processZapiWebhookRequest(
       } else {
         // Tenta localizar contato por pushName/chatName se não tiver mapeamento
         const serverState = serverCRMStore.getState();
+        const targetName = (body.chatName || body.senderName || '').toLowerCase().trim();
         const contactByName = serverState.contacts.find(c => 
-          c.name && body.senderName && 
+          c.name && targetName && 
           !c.name.startsWith('+') && 
-          !body.senderName.startsWith('+') &&
-          c.name.toLowerCase().trim() === body.senderName.toLowerCase().trim() &&
+          (c.name.toLowerCase().trim() === targetName || c.name.toLowerCase().includes(targetName) || targetName.includes(c.name.toLowerCase())) &&
           c.phone && !isLidIdentifier(c.phone)
         );
         if (contactByName && contactByName.phone) {

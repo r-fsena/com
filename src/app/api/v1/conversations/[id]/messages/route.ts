@@ -86,6 +86,23 @@ export async function POST(
       if (extracted.length >= 8) targetPhone = extracted;
     }
 
+    if (!targetPhone) {
+      const serverState = serverCRMStore.getState();
+      const conv = serverState.conversations.find(c => c.id === conversationId);
+      const contact = serverState.contacts.find(c => c.id === conv?.contactId);
+      if (contact?.phone) {
+        targetPhone = contact.phone.replace(/\D/g, '');
+      } else if (contact?.lid) {
+        targetPhone = cleanLid(contact.lid);
+      }
+    }
+
+    if (!isInternalNote && !targetPhone) {
+      return NextResponse.json({
+        error: 'Número de telefone de destino não encontrado para esta conversa. Verifique se o contato possui telefone cadastrado.',
+      }, { status: 400 });
+    }
+
     let instanceId = validated.data.instanceId;
     if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
       instanceId = process.env.ZAPI_INSTANCE_ID || DEFAULT_ZAPI_INSTANCE_ID;
@@ -142,6 +159,20 @@ export async function POST(
           details: sendResult.error,
         }, { status: 400 });
       }
+
+      // Adiciona imediatamente ao webhookStore para reflexo instantâneo no polling do CRM
+      webhookStore.addMessage({
+        id: externalMessageId,
+        tenantId: session?.tenantId || request.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti',
+        instanceId,
+        phone: cleanPhone,
+        senderName: session?.userName || 'Corretor',
+        content,
+        mediaType: (messageType === 'AUDIO' ? 'audio' : messageType === 'IMAGE' ? 'image' : messageType === 'DOCUMENT' ? 'document' : 'text') as any,
+        mediaUrl: mediaUrl || '',
+        fromMe: true,
+        timestamp: new Date().toISOString(),
+      });
 
       // Registra mensagem enviada também no store para manter o histórico alinhado
       const serverState = serverCRMStore.getState();

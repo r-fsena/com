@@ -150,7 +150,8 @@ interface CRMContextType {
     isInternalNote?: boolean, 
     aiSuggested?: boolean, 
     attachments?: Attachment[], 
-    messageType?: MessageType
+    messageType?: MessageType,
+    explicitPhone?: string
   ) => void;
   markConversationAsRead: (conversationId: string) => void;
   clearChatMessages: (conversationId: string) => Promise<void>;
@@ -3082,7 +3083,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     isInternalNote = false, 
     aiSuggested = false,
     attachments?: Attachment[],
-    messageType: MessageType = 'TEXT'
+    messageType: MessageType = 'TEXT',
+    explicitPhone?: string
   ) => {
     const cleanContent = (content || '').trim();
     if (!cleanContent && (!attachments || attachments.length === 0)) return;
@@ -3095,15 +3097,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     const newMessage: Message = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      tenantId: currentTenant.id,
+      tenantId: currentTenant?.id || 'tenant-amabile-barbarotti',
       conversationId,
       senderType: 'USER',
-      senderUserId: currentUser.id,
-      senderName: currentUser.name,
+      senderUserId: currentUser?.id,
+      senderName: currentUser?.name || 'Corretor',
       messageType: actualType,
       content: cleanContent || previewText,
       attachments,
-      status: isInternalNote ? 'SENT' : 'DELIVERED',
+      status: isInternalNote ? 'SENT' : 'SENT',
       isInternalNote,
       timestamp: new Date().toISOString(),
       aiSuggested,
@@ -3135,11 +3137,28 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
 
-      // Envia diretamente para a Z-API se for um contato real do WhatsApp
-      const conv = conversations.find(c => c.id === conversationId);
-      const contact = contacts.find(cnt => cnt.id === conv?.contactId);
+      // 1. Resolução robusta de telefone para envio
+      let targetPhone = (explicitPhone || '').replace(/\D/g, '');
 
-      let targetPhone = contact?.phone ? contact.phone.replace(/\D/g, '') : '';
+      const conv = conversations.find(c => c.id === conversationId);
+      let contact = contacts.find(cnt => cnt.id === conv?.contactId);
+
+      // Se não encontrou por contactId direto, busca por equivalência profunda
+      if (!contact && conv) {
+        contact = contacts.find(c => c.id === conv.id) ||
+                  contacts.find(c => c.lid && (conv.id.includes(c.lid) || (conv.contactId && conv.contactId.includes(c.lid)))) ||
+                  contacts.find(c => {
+                    const cDigits = (conv.id + (conv.contactId || '')).replace(/\D/g, '');
+                    return cDigits && cDigits.length >= 8 && c.phone && arePhonesEquivalent(c.phone, cDigits);
+                  });
+      }
+
+      if (!targetPhone && contact?.phone) {
+        targetPhone = contact.phone.replace(/\D/g, '');
+      }
+      if (!targetPhone && contact?.lid) {
+        targetPhone = cleanLid(contact.lid);
+      }
       if (!targetPhone && conversationId.includes('zapi-')) {
         targetPhone = conversationId.split('zapi-')[1]?.replace(/\D/g, '') || '';
       }
@@ -3150,45 +3169,42 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const rawDigits = conversationId.replace(/\D/g, '');
         if (rawDigits.length >= 8) targetPhone = rawDigits;
       }
+
+      // Resolução de LID para telefone canônico se necessário
+      if (targetPhone && isLidIdentifier(targetPhone)) {
+        const lidClean = cleanLid(targetPhone);
+        let mapped = '';
+        if (typeof window !== 'undefined') {
+          try {
+            const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+            if (stored[lidClean]) mapped = stored[lidClean];
+          } catch {}
+        }
+        if (!mapped) {
+          const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && c.avatarUrl === contact?.avatarUrl));
+          if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
+            mapped = matchCnt.phone.replace(/\D/g, '');
+          }
+        }
+        if (mapped) targetPhone = mapped;
+      }
+
       if (targetPhone && !targetPhone.startsWith('55') && (targetPhone.length === 10 || targetPhone.length === 11)) {
         targetPhone = `55${targetPhone}`;
       }
 
       if (targetPhone) {
-        // Resolução de LID para telefone canônico antes do disparo
-        if (isLidIdentifier(targetPhone)) {
-          const lidClean = cleanLid(targetPhone);
-          let mapped = '';
-          if (typeof window !== 'undefined') {
-            try {
-              const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-              if (stored[lidClean]) mapped = stored[lidClean];
-            } catch {}
-          }
-          if (!mapped) {
-            const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && c.avatarUrl === contact?.avatarUrl));
-            if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
-              mapped = matchCnt.phone.replace(/\D/g, '');
-            }
-          }
-          if (mapped) targetPhone = mapped;
-        }
-
-        if (!targetPhone.startsWith('55') && (targetPhone.length === 10 || targetPhone.length === 11)) {
-          targetPhone = `55${targetPhone}`;
-        }
-
         // Procura a linha individual do corretor logado ou a da conversa
-        const brokerInstance = instances.find(i => i.assignedUserId === currentUser.id) || instances.find(i => i.id === conv?.instanceId) || instances[0];
+        const brokerInstance = instances.find(i => i.assignedUserId === currentUser?.id) || instances.find(i => i.id === conv?.instanceId) || instances[0];
 
         fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
           method: 'POST',
           credentials: 'include',
           headers: { 
             'Content-Type': 'application/json',
-            'x-tenant-id': currentTenant.id,
-            'x-user-id': currentUser.id,
-            'x-user-email': currentUser.email,
+            'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
+            'x-user-id': currentUser?.id || 'user-1',
+            'x-user-email': currentUser?.email || 'admin@amabile.com',
           },
           body: JSON.stringify({
             content: cleanContent || previewText,
@@ -3196,7 +3212,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             mediaUrl: attachments?.[0]?.url,
             fileName: attachments?.[0]?.fileName,
             phone: targetPhone,
-            senderUserId: currentUser.id,
+            senderUserId: currentUser?.id,
             instanceId: brokerInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC',
             instanceToken: (brokerInstance as any)?.token || '550DBC07B2F984AB74E4BCE5',
             clientToken: (brokerInstance as any)?.clientToken || 'Fc78d61c833db4b50864816b70766aee8S',
@@ -3204,15 +3220,23 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }).then(async res => {
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
-            console.error('Falha ao enviar mensagem:', errData);
+            console.error('[CRM] Falha ao enviar mensagem:', errData);
             setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'FAILED' } : m));
           } else {
-            setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'DELIVERED' } : m));
+            const resJson = await res.json().catch(() => ({}));
+            const extId = resJson?.externalId || resJson?.id;
+            setMessages(prev => prev.map(m => m.id === newMessage.id ? { 
+              ...m, 
+              status: 'DELIVERED',
+              externalId: extId || m.externalId,
+            } : m));
           }
         }).catch(err => {
-          console.error('Erro ao enviar mensagem via Z-API:', err);
+          console.error('[CRM] Erro ao enviar mensagem via Z-API:', err);
           setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'FAILED' } : m));
         });
+      } else {
+        console.warn('[CRM] Telefone de destino não encontrado para enviar mensagem no WhatsApp para:', conversationId);
       }
     }
   };

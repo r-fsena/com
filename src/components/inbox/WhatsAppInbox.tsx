@@ -1391,11 +1391,12 @@ export function WhatsAppInbox() {
           fileSize: attachedMedia.fileSize,
           mimeType: attachedMedia.mimeType,
         }],
-        attachedMedia.type
+        attachedMedia.type,
+        activeContact?.phone
       );
       setAttachedMedia(null);
     } else {
-      sendMessage(activeConversation.id, messageInput.trim(), isInternalNote);
+      sendMessage(activeConversation.id, messageInput.trim(), isInternalNote, false, undefined, 'TEXT', activeContact?.phone);
     }
 
     setMessageInput('');
@@ -2490,6 +2491,10 @@ export function WhatsAppInbox() {
                               <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
                             ) : msg.status === 'DELIVERED' ? (
                               <CheckCheck className="w-3.5 h-3.5 text-slate-400" />
+                            ) : msg.status === 'FAILED' ? (
+                              <span className="flex items-center text-rose-500" title="Falha ao despachar para o WhatsApp">
+                                <AlertCircle className="w-3.5 h-3.5" />
+                              </span>
                             ) : (
                               <Check className="w-3.5 h-3.5 text-slate-400" />
                             )}
@@ -2673,7 +2678,7 @@ export function WhatsAppInbox() {
                           onClick={() => {
                             const text = activeInsight.responseOptions?.[selectedAIResponseIdx]?.text || activeInsight.suggestedResponse;
                             if (text && activeConversation) {
-                              sendMessage(activeConversation.id, text, false, true);
+                              sendMessage(activeConversation.id, text, false, true, undefined, 'TEXT', activeContact?.phone);
                               recordAIFeedback(activeConversation.id, 'ACCEPTED');
                             }
                           }}
@@ -2973,7 +2978,8 @@ export function WhatsAppInbox() {
                           isInternalNote,
                           false,
                           undefined,
-                          'AUDIO'
+                          'AUDIO',
+                          activeContact?.phone
                         );
                       }
                     }

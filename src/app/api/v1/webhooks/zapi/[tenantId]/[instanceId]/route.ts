@@ -10,6 +10,13 @@ export async function POST(
   return processZapiWebhookRequest(request, params);
 }
 
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { tenantId: string; instanceId: string } }
+) {
+  return processZapiWebhookRequest(request, params);
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { tenantId: string; instanceId: string } }

@@ -346,7 +346,7 @@ export const MOCK_MASTER_USERS: MasterUser[] = [
 // -------------------------------------------------------------
 export const MOCK_SAAS_API_CONFIG: SaaSApiConfig = {
   zapiMasterKey: 'zapi_integrator_key_master_faithhubs_live',
-  zapiGlobalWebhook: 'https://crm.faithhubs.com/api/v1/webhooks/zapi/events',
+  zapiGlobalWebhook: 'https://crm.faithhubs.com/api/v1/webhooks/zapi',
   asaasMasterApiKey: 'asaas_secret_key_master_faithhubs_production',
   asaasMasterWalletId: 'wal_master_faithhubs_saas_01',
   asaasWebhookUrl: 'https://crm.faithhubs.com/api/v1/asaas/webhook',

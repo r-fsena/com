@@ -20,12 +20,23 @@ export async function processZapiWebhookRequest(
   }
 
   const isTokenValid = Boolean(clientToken && clientToken === expectedToken);
-  const configuredInstanceId = process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
   const isKnownInstance = Boolean(
     body && (
-      body.instanceId === configuredInstanceId ||
+      body.instanceId ||
       body.zaapId ||
-      (body.phone && (body.messageId || body.id || body.text || body.type))
+      body.phone ||
+      body.chatPhone ||
+      body.chatId ||
+      body.senderPhone ||
+      body.recipientPhone ||
+      body.data ||
+      body.message ||
+      body.messageId ||
+      body.id ||
+      body.text ||
+      body.type ||
+      body.event ||
+      body.ids
     )
   );
 
@@ -115,7 +126,11 @@ export async function processZapiWebhookRequest(
       body.type === 'MessageSend' ||
       body.type === 'SentMessage' ||
       body.type === 'SentCallback' ||
+      body.type === 'ReceivedCallbackSentByMe' ||
+      body.type === 'SentByMe' ||
       body.event === 'on-message-send' ||
+      body.event === 'on-message-sent' ||
+      body.event === 'sent-by-me' ||
       false
     );
 
@@ -161,6 +176,10 @@ export async function processZapiWebhookRequest(
         lid = cleanLid(body.chatId);
       } else if (String(body.to || '').includes('@lid')) {
         lid = cleanLid(body.to);
+      } else if (String(body.key?.remoteJid || '').includes('@lid')) {
+        lid = cleanLid(body.key.remoteJid);
+      } else if (String(body.data?.key?.remoteJid || '').includes('@lid')) {
+        lid = cleanLid(body.data.key.remoteJid);
       }
     } else {
       if (body.lid) {
@@ -169,6 +188,10 @@ export async function processZapiWebhookRequest(
         lid = cleanLid(body.phone);
       } else if (String(body.chatId || '').includes('@lid')) {
         lid = cleanLid(body.chatId);
+      } else if (String(body.key?.remoteJid || '').includes('@lid')) {
+        lid = cleanLid(body.key.remoteJid);
+      } else if (String(body.data?.key?.remoteJid || '').includes('@lid')) {
+        lid = cleanLid(body.data.key.remoteJid);
       }
     }
 
@@ -181,6 +204,10 @@ export async function processZapiWebhookRequest(
         body.chatPhone,
         body.chatId,
         body.message?.key?.remoteJid,
+        body.key?.remoteJid,
+        body.data?.key?.remoteJid,
+        body.data?.remoteJid,
+        body.remoteJid,
         body.phone,
         body.data?.recipientPhone,
         body.data?.to,
@@ -291,7 +318,7 @@ export async function processZapiWebhookRequest(
       || (fromMe ? 'Corretor' : `WhatsApp ${cleanPhone ? cleanPhone.slice(-4) : 'Cliente'}`);
     
     const senderPhoto = body.photo || body.senderPhoto || body.avatar || '';
-    const messageId = body.messageId || body.id || body.zaapId || `zmsg-${Date.now()}`;
+    const messageId = body.messageId || body.id || body.zaapId || body.data?.key?.id || body.key?.id || body.message?.key?.id || `zmsg-${Date.now()}`;
 
     // 2. Detecção de Visualização Única (View-Once)
     const isViewOnce = Boolean(
@@ -311,6 +338,24 @@ export async function processZapiWebhookRequest(
       content = body.text.message;
     } else if (typeof body.text === 'string') {
       content = body.text;
+    } else if (body.conversation) {
+      content = typeof body.conversation === 'string' ? body.conversation : String(body.conversation);
+    } else if (body.message?.conversation) {
+      content = body.message.conversation;
+    } else if (body.message?.message?.conversation) {
+      content = body.message.message.conversation;
+    } else if (body.message?.extendedTextMessage?.text) {
+      content = body.message.extendedTextMessage.text;
+    } else if (body.extendedTextMessage?.text) {
+      content = body.extendedTextMessage.text;
+    } else if (body.data?.message?.extendedTextMessage?.text) {
+      content = body.data.message.extendedTextMessage.text;
+    } else if (body.data?.message?.conversation) {
+      content = body.data.message.conversation;
+    } else if (body.data?.message) {
+      content = typeof body.data.message === 'string' ? body.data.message : (body.data.message.message || body.data.message.conversation || body.data.message.text || '');
+    } else if (body.data?.text) {
+      content = typeof body.data.text === 'string' ? body.data.text : (body.data.text.message || '');
     } else if (body.image || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image)) {
       const imgObj = body.image || body.viewOnceImage || (body.viewOnceMessage && body.viewOnceMessage.image);
       mediaType = 'image';
@@ -342,7 +387,7 @@ export async function processZapiWebhookRequest(
       mediaUrl = typeof body.sticker === 'string' ? body.sticker : (body.sticker.stickerUrl || body.sticker.url || '');
       content = '🌟 Figurinha';
     } else if (body.message) {
-      content = typeof body.message === 'string' ? body.message : JSON.stringify(body.message);
+      content = typeof body.message === 'string' ? body.message : (body.message.text || body.message.caption || JSON.stringify(body.message));
     } else if (body.body) {
       content = String(body.body);
     } else if (isViewOnce) {

@@ -58,3 +58,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return processZapiWebhookRequest(request);
 }
+
+export async function PUT(request: NextRequest) {
+  return processZapiWebhookRequest(request);
+}

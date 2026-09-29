@@ -152,7 +152,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [testPhone, setTestPhone] = useState('+55 11 99123-4567');
   const [testSent, setTestSent] = useState(false);
 
-  const webhookUrl = `https://crm.faithhubs.com/api/v1/webhooks/zapi/${currentTenant.id}/${instances[0]?.zapiInstanceId || 'instance-01'}`;
+  const webhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
   // Gerador de senhas aleatórias seguras
   const generateRandomPassword = () => {

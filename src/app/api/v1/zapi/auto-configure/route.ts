@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const currentToken = token || process.env.ZAPI_INSTANCE_TOKEN || '';
     const securityToken = clientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
 
-    const webhookUrl = `https://crm.faithhubs.com/api/v1/webhooks/zapi/${currentTenantId}/${currentInstanceId}`;
+    const webhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
     const client = new ZApiClient({
       instanceId: currentInstanceId,

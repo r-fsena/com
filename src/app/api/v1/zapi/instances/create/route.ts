@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     const instanceName = name || `Tenant-${tenantId || 'Default'}`;
-    const webhookUrl = `https://crm.faithhubs.com/api/v1/webhooks/zapi/${tenantId || 'default'}`;
+    const webhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
     const zapiRes = await fetch('https://api.z-api.io/instances/integrator/on-demand', {
       method: 'POST',
@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
         deliveryCallbackUrl: webhookUrl,
         disconnectedCallbackUrl: webhookUrl,
         connectedCallbackUrl: webhookUrl,
+        messageStatusCallbackUrl: webhookUrl,
+        receivedStatusCallbackUrl: webhookUrl,
+        receiveCallbackSentByMe: true,
       }),
     });
 

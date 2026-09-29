@@ -1802,10 +1802,22 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
 
       const normalizedMsg: Message = convId !== m.conversationId ? { ...m, conversationId: convId } : m;
-      const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
+      const isNativeWppId = Boolean(
+        m.id && (
+          m.id.startsWith('true_') || 
+          m.id.startsWith('false_') || 
+          m.id.startsWith('3A') || 
+          m.id.startsWith('3E') || 
+          m.id.startsWith('zmsg-') ||
+          m.id.length >= 16 ||
+          (m.externalId && m.externalId.length >= 16)
+        )
+      );
+      const effectiveId = m.externalId || (isNativeWppId ? m.id : null);
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
 
-      const key = isNativeWppId ? m.id! : `${convId}-${content}-${timeKey}-${m.senderType}`;
+      // Não inclui senderType na chave para que mensagens possam ser reclassificadas de CONTACT para USER
+      const key = effectiveId ? `${convId}-${effectiveId}` : `${convId}-${content}-${timeKey}`;
       const existing = map.get(key);
 
       if (!existing) {
@@ -1814,6 +1826,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // Se a mensagem já existia marcada erroneamente como CONTACT e agora veio como USER, corrige para USER!
         if (existing.senderType === 'CONTACT' && normalizedMsg.senderType === 'USER') {
           map.set(key, normalizedMsg);
+        } else if (normalizedMsg.senderType === 'USER') {
+          map.set(key, { ...existing, ...normalizedMsg, senderType: 'USER' });
         }
       }
     });
@@ -4520,8 +4534,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       try {
-        const sinceParam = lastPollTimeRef.current ? `&since=${lastPollTimeRef.current}` : '';
-        const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}${sinceParam}`, {
+        // Janela móvel de 5 minutos: evita perder mensagens quando requisições alternam entre diferentes instâncias Lambda no Amplify
+        const lookbackTime = Math.max(0, Date.now() - 300000);
+        const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}&since=${lookbackTime}`, {
           credentials: 'include',
           headers: {
             'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
@@ -4531,9 +4546,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.serverTime) {
-          lastPollTimeRef.current = data.serverTime;
-        }
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
           // Filtra mensagens novas ou mensagens enviadas pelo corretor para reclassificação
@@ -4767,8 +4779,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 }
               }
 
-              // Evita duplicatas de mesmo conteúdo e remetente em menos de 60s
+              // Evita duplicatas de mesmo conteúdo e remetente na mesma conversa em menos de 60s
               const isDuplicateContent = rekeyed.some(m =>
+                m.conversationId === newMsg.conversationId &&
                 m.senderType === newMsg.senderType &&
                 (m.content || '').trim() === (newMsg.content || '').trim() &&
                 Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000

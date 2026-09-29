@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent, canonicalPhoneKey, isTrivialAcknowledgment } from '@/lib/whatsapp-filter';
+import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, arePhonesEquivalent, canonicalPhoneKey, isTrivialAcknowledgment, KNOWN_LID_PHONE_MAP } from '@/lib/whatsapp-filter';
 import { 
   Search, 
   Send, 
@@ -418,7 +418,19 @@ export function WhatsAppInbox() {
 
     // 6. Fallback inteligente: constrói perfil sintetizado do lead da conversa com timestamps estáveis
     const fallbackName = (activeConversation as any).name || (convDigits ? `Contato ${convDigits.slice(-4)}` : 'Lead WhatsApp');
-    const fullPhone = convDigits ? (convDigits.startsWith('55') ? `+${convDigits}` : `+55${convDigits}`) : '';
+    const isConvLid = isLidIdentifier(rawConvId) || isLidIdentifier(rawContactId) || isLidIdentifier(convDigits);
+    let fullPhone = '';
+    if (isConvLid) {
+      const lidClean = cleanLid(rawConvId) || cleanLid(rawContactId) || cleanLid(convDigits);
+      const known = KNOWN_LID_PHONE_MAP[lidClean];
+      if (known) {
+        fullPhone = known.startsWith('+') ? known : `+${known}`;
+      } else {
+        fullPhone = lidClean;
+      }
+    } else if (convDigits) {
+      fullPhone = convDigits.startsWith('55') ? `+${convDigits}` : `+55${convDigits}`;
+    }
     const stableTimestamp = activeConversation.lastMessageAt || '2026-01-01T00:00:00.000Z';
     const fallbackContact: Contact = {
       id: activeConversation.contactId || (convDigits ? `contact-zapi-${convDigits}` : `contact-zapi-${activeConversation.id}`),
@@ -2494,6 +2506,10 @@ export function WhatsAppInbox() {
                             ) : msg.status === 'FAILED' ? (
                               <span className="flex items-center text-rose-500" title="Falha ao despachar para o WhatsApp">
                                 <AlertCircle className="w-3.5 h-3.5" />
+                              </span>
+                            ) : (msg.status as any) === 'PENDING' || (msg.status as any) === 'SENDING' ? (
+                              <span title="Enviando para o WhatsApp...">
+                                <Clock className="w-3.5 h-3.5 text-slate-400 animate-pulse" />
                               </span>
                             ) : (
                               <Check className="w-3.5 h-3.5 text-slate-400" />

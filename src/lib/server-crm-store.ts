@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Contact, Deal, Conversation, Message, AIInsight, User, QuickReplyTemplate, PipelineStage } from '@/types/crm';
 import { MOCK_USERS, MOCK_PIPELINES } from '@/lib/mock-data';
-import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, arePhonesEquivalent, KNOWN_LID_PHONE_MAP } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export interface ServerCRMState {
@@ -266,11 +266,18 @@ if (!global.__SERVER_CRM_STATE__) {
 }
 
 if (!global.__GLOBAL_LID_PHONE_MAP__) {
-  global.__GLOBAL_LID_PHONE_MAP__ = {};
+  global.__GLOBAL_LID_PHONE_MAP__ = { ...KNOWN_LID_PHONE_MAP };
+} else {
+  global.__GLOBAL_LID_PHONE_MAP__ = { ...KNOWN_LID_PHONE_MAP, ...global.__GLOBAL_LID_PHONE_MAP__ };
 }
 
 if (!global.__GLOBAL_PHONE_LID_MAP__) {
   global.__GLOBAL_PHONE_LID_MAP__ = {};
+  for (const [l, p] of Object.entries(KNOWN_LID_PHONE_MAP)) {
+    const pKey = canonicalPhoneKey(p);
+    if (pKey) global.__GLOBAL_PHONE_LID_MAP__[pKey] = l;
+    global.__GLOBAL_PHONE_LID_MAP__[p] = l;
+  }
 }
 
 if (!global.__GLOBAL_DELETED_CHAT_KEYS__) {

@@ -65,7 +65,9 @@ import {
   isWhatsAppSystemMessage,
   isLidIdentifier,
   cleanLid,
-  formatCanonicalPhone
+  formatCanonicalPhone,
+  KNOWN_LID_PHONE_MAP,
+  resolveKnownPhone
 } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
@@ -286,9 +288,9 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       ? contact.name.toLowerCase().trim()
       : '';
 
-    // Tenta resolver se esse LID já foi mapeado para um telefone conhecido no navegador
-    let mappedPhone = '';
-    if (pureLid && typeof window !== 'undefined') {
+    // Tenta resolver se esse LID já foi mapeado para um telefone conhecido no navegador ou catálogo canônico
+    let mappedPhone = (pureLid && KNOWN_LID_PHONE_MAP[pureLid]) || '';
+    if (!mappedPhone && pureLid && typeof window !== 'undefined') {
       try {
         const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
         if (storedMap[pureLid]) mappedPhone = storedMap[pureLid];
@@ -3105,7 +3107,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       messageType: actualType,
       content: cleanContent || previewText,
       attachments,
-      status: isInternalNote ? 'SENT' : 'SENT',
+      status: isInternalNote ? 'SENT' : 'PENDING',
       isInternalNote,
       timestamp: new Date().toISOString(),
       aiSuggested,
@@ -3140,6 +3142,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       // 1. Resolução robusta de telefone para envio
       let targetPhone = (explicitPhone || '').replace(/\D/g, '');
 
+      // Se explicitPhone tiver resolução canônica direta (LID ou telefone)
+      if (explicitPhone) {
+        const known = resolveKnownPhone(explicitPhone);
+        if (known) targetPhone = known;
+      }
+
       const conv = conversations.find(c => c.id === conversationId);
       let contact = contacts.find(cnt => cnt.id === conv?.contactId);
 
@@ -3154,39 +3162,53 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!targetPhone && contact?.phone) {
-        targetPhone = contact.phone.replace(/\D/g, '');
+        const known = resolveKnownPhone(contact.phone);
+        targetPhone = known || contact.phone.replace(/\D/g, '');
       }
       if (!targetPhone && contact?.lid) {
-        targetPhone = cleanLid(contact.lid);
+        const known = resolveKnownPhone(contact.lid);
+        targetPhone = known || cleanLid(contact.lid);
       }
       if (!targetPhone && conversationId.includes('zapi-')) {
-        targetPhone = conversationId.split('zapi-')[1]?.replace(/\D/g, '') || '';
+        const extracted = conversationId.split('zapi-')[1]?.replace(/\D/g, '') || '';
+        const known = resolveKnownPhone(extracted);
+        targetPhone = known || extracted;
       }
       if (!targetPhone && conv?.contactId?.includes('zapi-')) {
-        targetPhone = conv.contactId.split('zapi-')[1]?.replace(/\D/g, '') || '';
+        const extracted = conv.contactId.split('zapi-')[1]?.replace(/\D/g, '') || '';
+        const known = resolveKnownPhone(extracted);
+        targetPhone = known || extracted;
       }
       if (!targetPhone) {
         const rawDigits = conversationId.replace(/\D/g, '');
-        if (rawDigits.length >= 8) targetPhone = rawDigits;
+        if (rawDigits.length >= 8) {
+          const known = resolveKnownPhone(rawDigits);
+          targetPhone = known || rawDigits;
+        }
       }
 
       // Resolução de LID para telefone canônico se necessário
       if (targetPhone && isLidIdentifier(targetPhone)) {
         const lidClean = cleanLid(targetPhone);
-        let mapped = '';
-        if (typeof window !== 'undefined') {
-          try {
-            const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-            if (stored[lidClean]) mapped = stored[lidClean];
-          } catch {}
-        }
-        if (!mapped) {
-          const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && c.avatarUrl === contact?.avatarUrl));
-          if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
-            mapped = matchCnt.phone.replace(/\D/g, '');
+        const known = resolveKnownPhone(lidClean);
+        if (known) {
+          targetPhone = known;
+        } else {
+          let mapped = '';
+          if (typeof window !== 'undefined') {
+            try {
+              const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
+              if (stored[lidClean]) mapped = stored[lidClean];
+            } catch {}
           }
+          if (!mapped) {
+            const matchCnt = contacts.find(c => (c.lid && cleanLid(c.lid) === lidClean) || (c.phone && !isLidIdentifier(c.phone) && c.avatarUrl === contact?.avatarUrl));
+            if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
+              mapped = matchCnt.phone.replace(/\D/g, '');
+            }
+          }
+          if (mapped) targetPhone = mapped;
         }
-        if (mapped) targetPhone = mapped;
       }
 
       if (targetPhone && !targetPhone.startsWith('55') && (targetPhone.length === 10 || targetPhone.length === 11)) {
@@ -3236,7 +3258,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'FAILED' } : m));
         });
       } else {
-        console.warn('[CRM] Telefone de destino não encontrado para enviar mensagem no WhatsApp para:', conversationId);
+        console.error('[CRM] Telefone de destino não encontrado para enviar mensagem no WhatsApp para:', conversationId);
+        setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'FAILED' } : m));
       }
     }
   };
@@ -4594,7 +4617,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             const lidClean = cleanLid(incoming.lid || (isLidIdentifier(incoming.phone) ? incoming.phone : ''));
 
             if (isLid && lidClean) {
-              if (typeof window !== 'undefined') {
+              if (KNOWN_LID_PHONE_MAP[lidClean]) {
+                resolvedPhone = KNOWN_LID_PHONE_MAP[lidClean];
+              } else if (typeof window !== 'undefined') {
                 try {
                   const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
                   if (storedMap[lidClean]) resolvedPhone = storedMap[lidClean];

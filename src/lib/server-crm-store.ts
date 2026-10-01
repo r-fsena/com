@@ -1151,10 +1151,11 @@ export const serverCRMStore = {
 
       const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
       const externalIdKey = m.externalId || (isNativeWppId ? m.id : null);
-      const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
+      const timeMinuteKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
+      const safeContentKey = content.slice(0, 60).replace(/\s+/g, ' ');
       const key = externalIdKey 
         ? `${tenantKey}::${convId}-${externalIdKey}` 
-        : `${tenantKey}::${convId}-${content}-${timeKey}-${m.senderType}`;
+        : `${tenantKey}::${convId}-${m.senderType}-${timeMinuteKey}-${safeContentKey}`;
       
       const existing = map.get(key);
       if (!existing) {
@@ -1172,7 +1173,8 @@ export const serverCRMStore = {
     return Array.from(map.values()).sort((a, b) => {
       const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
       const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return timeA - timeB;
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.id || '').localeCompare(b.id || '');
     });
   },
 

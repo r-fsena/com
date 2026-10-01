@@ -591,8 +591,22 @@ export function WhatsAppInbox() {
       if (candidateIndices) {
         for (const idx of candidateIndices) {
           const existing = deduped[idx];
+
+          // 1. Se ambos tiverem IDs reais explícitos do WhatsApp e forem diferentes, NUNCA são duplicatas!
+          const isRealWppMsg = (id?: string) => Boolean(id && (id.startsWith('true_') || id.startsWith('false_')));
+          if (isRealWppMsg(existing.id) && isRealWppMsg(msg.id) && existing.id !== msg.id) {
+            continue;
+          }
+
+          // 2. Se os IDs forem idênticos, é a mesma mensagem
+          if (existing.id && msg.id && existing.id === msg.id) {
+            existingIdx = idx;
+            break;
+          }
+
+          // 3. Para mensagens sem ID nativo (ex: ecos de webhook / sync), deduplica apenas se a diferença for <= 4 segundos
           const exTime = new Date(existing.timestamp || 0).getTime();
-          if (Math.abs(exTime - msgTime) < 60000) {
+          if (Math.abs(exTime - msgTime) <= 4000) {
             existingIdx = idx;
             break;
           }
@@ -615,7 +629,7 @@ export function WhatsAppInbox() {
       }
     }
 
-    return deduped;
+    return deduped.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
   }, [messages, activeConversation, activeContact]);
 
   // Reseta a paginação de mensagens visíveis ao trocar de conversa para renderização instantânea (0ms freeze)

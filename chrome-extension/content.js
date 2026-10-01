@@ -1042,7 +1042,7 @@ ${isDeveloperMode ? `
     const validContentMsgs = Array.from(messagesMap.values())
       .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
 
-    // Ordenação estritamente cronológica (do mais antigo para o mais recente)
+    // 1. Ordenação estritamente cronológica por timestamp
     validContentMsgs.sort((a, b) => {
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
@@ -1051,6 +1051,22 @@ ${isDeveloperMode ? `
       }
       return (a.domOrder || 0) - (b.domOrder || 0);
     });
+
+    // 2. Garantia de Monotonicidade Rigorosa (Offset de segundos):
+    // Como balões do mesmo minuto recebem o mesmo minuto base (ex: 14:32:00.000Z),
+    // garantimos que cada mensagem subsequente tenha timestamp estritamente crescente (>= anterior + 1000ms).
+    // Isso impede qualquer embaralhamento visual no CRM!
+    let lastSeqMs = 0;
+    for (let i = 0; i < validContentMsgs.length; i++) {
+      const m = validContentMsgs[i];
+      let currMs = new Date(m.timestamp).getTime();
+      if (isNaN(currMs)) currMs = Date.now();
+      if (currMs <= lastSeqMs) {
+        currMs = lastSeqMs + 1000;
+        m.timestamp = new Date(currMs).toISOString();
+      }
+      lastSeqMs = currMs;
+    }
 
     const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
 
@@ -1115,7 +1131,7 @@ ${isDeveloperMode ? `
   function parsePortugueseWhatsAppDate(text, fallbackYear = new Date().getFullYear()) {
     if (!text || typeof text !== 'string') return null;
     const clean = text.trim().toUpperCase();
-    if (!clean || clean.length > 40) return null;
+    if (!clean || clean.length > 25) return null;
 
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -1138,7 +1154,7 @@ ${isDeveloperMode ? `
       'SEGUNDA': 1, 'TERCA': 2, 'TERÇA': 2, 'QUARTA': 3, 'QUINTA': 4, 'SEXTA': 5, 'SABADO': 6
     };
     for (const [wName, wDay] of Object.entries(weekdays)) {
-      if (clean === wName || clean.startsWith(wName)) {
+      if (clean === wName) {
         const d = new Date(now);
         const currentDay = d.getDay();
         let diff = currentDay - wDay;
@@ -1339,12 +1355,14 @@ ${isDeveloperMode ? `
     // Helper: verifica se um nó é um divisor legítimo de data do sistema (e não um balão de conversa de cliente)
     function isGenuinSystemDateDivider(el) {
       if (!el) return false;
-      const isSystem = Boolean(
-        el.getAttribute?.('data-testid')?.includes('system') ||
-        el.classList?.contains('system-message') ||
-        (!el.classList?.contains('message-in') && !el.classList?.contains('message-out') && !el.querySelector('.message-in, .message-out') && !el.hasAttribute?.('data-id'))
-      );
-      return isSystem;
+      if (el.classList?.contains('message-in') || el.classList?.contains('message-out')) return false;
+      if (el.querySelector?.('.message-in, .message-out')) return false;
+      if (el.hasAttribute?.('data-id') || el.querySelector?.('[data-id]')) return false;
+      if (el.querySelector?.('[data-pre-plain-text]')) return false;
+
+      const txt = (el.innerText || '').trim();
+      if (!txt || txt.length > 25) return false;
+      return parsePortugueseWhatsAppDate(txt) !== null;
     }
 
     // 1. Procura para trás por divisores de data do sistema ou data-pre-plain-text válidos
@@ -1361,10 +1379,8 @@ ${isDeveloperMode ? `
       // Só lê innerText se for comprovadamente um divisor do sistema (nunca balões de mensagem!)
       if (isGenuinSystemDateDivider(curr)) {
         const text = (curr.innerText || '').trim();
-        if (text && text.length < 35) {
-          const parsed = parsePortugueseWhatsAppDate(text);
-          if (parsed) return parsed;
-        }
+        const parsed = parsePortugueseWhatsAppDate(text);
+        if (parsed) return parsed;
       }
 
       curr = curr.previousElementSibling;
@@ -1384,10 +1400,8 @@ ${isDeveloperMode ? `
 
       if (isGenuinSystemDateDivider(curr)) {
         const text = (curr.innerText || '').trim();
-        if (text && text.length < 35) {
-          const parsed = parsePortugueseWhatsAppDate(text);
-          if (parsed) return parsed;
-        }
+        const parsed = parsePortugueseWhatsAppDate(text);
+        if (parsed) return parsed;
       }
 
       curr = curr.nextElementSibling;
@@ -1433,26 +1447,33 @@ ${isDeveloperMode ? `
     let lastSeenValidTimeMs = 0;
     let lastDeterminedFromMe = null;
 
-    // Pré-carrega uma data inicial do topo se houver
-    const initialDateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[role="row"] span[dir="auto"]'));
+    // Pré-carrega uma data inicial do topo se houver divisor de data legítimo (NUNCA busca spans genéricos de balão de mensagem)
+    const initialDateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[data-testid*="date"] span'));
     for (const sp of initialDateSpans) {
-      const parsed = parsePortugueseWhatsAppDate(sp.innerText || '');
-      if (parsed) {
-        currentWalkingDateIso = parsed.toISOString();
-        break;
+      const txt = (sp.innerText || '').trim();
+      if (txt && txt.length <= 25) {
+        const parsed = parsePortugueseWhatsAppDate(txt);
+        if (parsed) {
+          currentWalkingDateIso = parsed.toISOString();
+          break;
+        }
       }
     }
 
     uniqueElements.forEach((element, index) => {
       // 1. Verifica se este elemento é um divisor de data do sistema no fluxo do chat
       const isSystemDateContainer = Boolean(
-        element.getAttribute?.('data-testid')?.includes('system') ||
-        (!element.classList?.contains('message-in') && !element.classList?.contains('message-out') && !element.querySelector('.message-in, .message-out'))
+        !element.classList?.contains('message-in') &&
+        !element.classList?.contains('message-out') &&
+        !element.querySelector?.('.message-in, .message-out') &&
+        !element.hasAttribute?.('data-id') &&
+        !element.querySelector?.('[data-id]') &&
+        (element.getAttribute?.('data-testid')?.includes('system') || element.getAttribute?.('data-testid')?.includes('date') || !element.querySelector?.('[data-pre-plain-text]'))
       );
 
       if (isSystemDateContainer) {
         const text = (element.innerText || '').trim();
-        if (text && text.length < 50) {
+        if (text && text.length <= 25) {
           const parsed = parsePortugueseWhatsAppDate(text);
           if (parsed) {
             currentWalkingDateIso = parsed.toISOString();
@@ -1469,15 +1490,11 @@ ${isDeveloperMode ? `
 
       // Localiza nó com data-id associado à mensagem
       let actualDataId = '';
-      if (container.hasAttribute?.('data-id')) {
-        actualDataId = container.getAttribute('data-id') || '';
-      } else {
-        const childWithId = container.querySelector?.('[data-id]');
-        if (childWithId) {
-          actualDataId = childWithId.getAttribute('data-id') || '';
-        } else if (parentRow && parentRow.hasAttribute?.('data-id')) {
-          actualDataId = parentRow.getAttribute('data-id') || '';
-        }
+      const idEl = container.hasAttribute?.('data-id')
+        ? container
+        : (container.closest?.('[data-id]') || container.querySelector?.('[data-id]') || (parentRow && parentRow.hasAttribute?.('data-id') ? parentRow : parentRow?.querySelector?.('[data-id]')));
+      if (idEl?.getAttribute) {
+        actualDataId = (idEl.getAttribute('data-id') || '').trim();
       }
 
       if (actualDataId.includes('@g.us') || actualDataId.includes('@newsletter') || actualDataId.includes('@broadcast')) {
@@ -1485,8 +1502,8 @@ ${isDeveloperMode ? `
       }
 
       // Validação resiliente de ID de mensagem do WhatsApp
-      const isDataIdFromMe = actualDataId.startsWith('true_') || Boolean(container.closest?.('[data-id^="true_"]'));
-      const isDataIdFromContact = actualDataId.startsWith('false_') || Boolean(container.closest?.('[data-id^="false_"]'));
+      const isDataIdFromMe = actualDataId.startsWith('true_');
+      const isDataIdFromContact = actualDataId.startsWith('false_');
       const isRealMsgKey = isDataIdFromMe || isDataIdFromContact;
       const rawDataId = isRealMsgKey ? actualDataId : '';
 
@@ -1865,7 +1882,11 @@ ${isDeveloperMode ? `
 
       // 9. Deduplicação e armazenamento no Map
       const effectiveDataId = isRealMsgKey ? rawDataId : '';
-      const uniqueMsgKey = effectiveDataId || `${content}_${msgTime.slice(0, 19)}_${isFromMe ? '1' : '0'}_${index}`;
+      const timeMinuteKey = msgTime ? msgTime.slice(0, 16) : '';
+      const safeSnippet = (content || '').trim().slice(0, 80).replace(/\s+/g, ' ');
+      // CHAVE 100% DETERMINÍSTICA ENTRE ROLAGENS: NUNCA USAR ${index} DO LOOP!
+      const uniqueMsgKey = effectiveDataId || `${isFromMe ? 'OUT' : 'IN'}::${timeMinuteKey}::${safeSnippet}`;
+
       if (!messagesMap.has(uniqueMsgKey)) {
         const p = fallbackPhone || currentActivePhone || 'chat';
         messagesMap.set(uniqueMsgKey, {
@@ -2177,16 +2198,16 @@ ${isDeveloperMode ? `
     }
 
     // Retorna a rolagem para o final com passagens progressivas para re-renderizar nós intermediários e de hoje
-    for (let s = 0; s < 3; s++) {
+    for (let s = 0; s < 4; s++) {
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
       scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: 1500, bubbles: true, view: window }));
+      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: 2500, bubbles: true, view: window }));
       const allRows = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
       const lastRow = allRows.length > 0 ? allRows[allRows.length - 1] : null;
       if (lastRow) {
         try { lastRow.scrollIntoView({ block: 'end', behavior: 'instant' }); } catch (e) {}
       }
-      await new Promise(r => setTimeout(r, 700));
+      await new Promise(r => setTimeout(r, 600));
       harvestDomMessages(accumulatedMessages);
     }
 

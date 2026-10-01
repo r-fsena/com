@@ -147,7 +147,80 @@
       setTimeout(() => window.dispatchEvent(new Event('resize')), 350);
     }
 
-    toggleBtn?.addEventListener('click', () => {
+    // Persistência e Arraste Vertical do Botão Toggle (Memória de Sessão)
+    let savedTop = localStorage.getItem('brokiva_toggle_btn_top');
+    if (savedTop && toggleBtn) {
+      const topNum = parseFloat(savedTop);
+      if (!isNaN(topNum)) {
+        const maxTop = Math.max(10, window.innerHeight - 60);
+        const clampedTop = Math.min(Math.max(10, topNum), maxTop);
+        toggleBtn.style.top = clampedTop + 'px';
+      }
+    }
+
+    let isDragging = false;
+    let hasDragged = false;
+    let startClientY = 0;
+    let startTopPx = 24;
+
+    toggleBtn?.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      isDragging = true;
+      hasDragged = false;
+      startClientY = e.clientY;
+      startTopPx = parseFloat(toggleBtn.style.top || '24') || toggleBtn.offsetTop || 24;
+      toggleBtn.style.cursor = 'grabbing';
+      try { toggleBtn.setPointerCapture?.(e.pointerId); } catch (_) {}
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!isDragging || !toggleBtn) return;
+      const deltaY = e.clientY - startClientY;
+      if (Math.abs(deltaY) > 5) {
+        hasDragged = true;
+      }
+      if (hasDragged) {
+        const maxTop = Math.max(10, window.innerHeight - 56);
+        const newTop = Math.min(Math.max(10, startTopPx + deltaY), maxTop);
+        toggleBtn.style.top = newTop + 'px';
+      }
+    });
+
+    function finishDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+      if (toggleBtn) toggleBtn.style.cursor = 'grab';
+      if (hasDragged && toggleBtn) {
+        const finalTop = Math.round(parseFloat(toggleBtn.style.top || '24'));
+        localStorage.setItem('brokiva_toggle_btn_top', String(finalTop));
+        try {
+          if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+            chrome.storage.local.set({ brokiva_toggle_btn_top: finalTop });
+          }
+        } catch (_) {}
+      }
+    }
+
+    window.addEventListener('pointerup', finishDrag);
+    window.addEventListener('pointercancel', finishDrag);
+
+    // Redimensionamento de tela mantém o botão sempre visível dentro da janela
+    window.addEventListener('resize', () => {
+      if (!toggleBtn) return;
+      const currentTop = parseFloat(toggleBtn.style.top || '24');
+      const maxTop = Math.max(10, window.innerHeight - 60);
+      if (currentTop > maxTop) {
+        toggleBtn.style.top = maxTop + 'px';
+        localStorage.setItem('brokiva_toggle_btn_top', String(maxTop));
+      }
+    });
+
+    toggleBtn?.addEventListener('click', (e) => {
+      if (hasDragged) {
+        e.stopImmediatePropagation();
+        hasDragged = false;
+        return;
+      }
       const isCurrentlyOpen = root.classList.contains('open');
       setSidebarState(!isCurrentlyOpen);
     });

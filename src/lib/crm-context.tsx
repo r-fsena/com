@@ -2308,10 +2308,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (sanitizedMsgs.length > 0) {
-          const syncedConvIds = new Set(sanitizedMsgs.map((m: Message) => m.conversationId));
           setMessages(prev => {
-            const otherMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
-            const next = deduplicateMessages([...otherMessages, ...sanitizedMsgs], updatedContactsList.length > 0 ? updatedContactsList : contacts);
+            const next = deduplicateMessages([...prev, ...sanitizedMsgs], updatedContactsList.length > 0 ? updatedContactsList : contacts);
             saveToStorageDebounced('vanguard_crm_messages', next, 200);
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(next)); } catch {}
             return next;
@@ -4326,11 +4324,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // 3. Merge de Mensagens (Substitui histórico da conversa sincronizada pelo lote limpo)
         let finalMessages: Message[] = [];
         if (data.messages && data.messages.length > 0) {
-          const syncedConvIds = new Set(data.messages.map((m: Message) => m.conversationId));
           setMessages(prev => {
-            const otherConvsMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
             const validIncoming = data.messages.filter((m: Message) => !isChatKeyDeleted(m.conversationId, deletedChatKeys));
-            const merged = deduplicateMessages([...otherConvsMessages, ...validIncoming]);
+            const merged = deduplicateMessages([...prev, ...validIncoming]);
             finalMessages = merged;
             try {
               localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged));

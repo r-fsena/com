@@ -504,15 +504,24 @@ export function WhatsAppInbox() {
     if (cleanPhone && cleanPhone.length >= 8 && !isLidIdentifier(cleanPhone)) {
       allowedConvIds.add(`conv-zapi-${cleanPhone}`);
       allowedConvIds.add(`contact-zapi-${cleanPhone}`);
+      allowedConvIds.add(`conv-default-tenant-${cleanPhone}`);
+      allowedConvIds.add(`conv-tenant-1790857269847-${cleanPhone}`);
+      if (activeConversation.tenantId) {
+        allowedConvIds.add(`conv-${activeConversation.tenantId}-${cleanPhone}`);
+        allowedConvIds.add(`contact-${activeConversation.tenantId}-${cleanPhone}`);
+      }
       if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
         allowedConvIds.add(`conv-zapi-55${cleanPhone}`);
+        allowedConvIds.add(`conv-default-tenant-55${cleanPhone}`);
       }
       if (cleanPhone.startsWith('55') && cleanPhone.length >= 12) {
         allowedConvIds.add(`conv-zapi-${cleanPhone.slice(2)}`);
+        allowedConvIds.add(`conv-default-tenant-${cleanPhone.slice(2)}`);
       }
     }
     if (cleanLid && cleanLid.length >= 8) {
       allowedConvIds.add(`conv-zapi-${cleanLid}`);
+      allowedConvIds.add(`conv-default-tenant-${cleanLid}`);
       allowedConvIds.add(cleanLid);
       allowedConvIds.add(`contact-zapi-${cleanLid}`);
     }

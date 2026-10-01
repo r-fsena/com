@@ -107,6 +107,16 @@ export async function POST(req: NextRequest) {
         effectiveTenantId = session.tenantId;
       } else if (brokerUserId === 'user-rafael-admin' || session?.userEmail === 'rafael@faithhubs.com') {
         effectiveTenantId = 'tenant-1790857269847';
+      } else {
+        // Checa se algum chat pertence a um contato conhecido no tenant de Rafael
+        const rafaelContacts = serverCRMStore.getState().contacts.filter(c => c.tenantId === 'tenant-1790857269847');
+        const matchesRafael = chats.some(ch => {
+          const d = (ch.phone || '').replace(/\D/g, '');
+          return rafaelContacts.some(rc => arePhonesEquivalent(rc.phone, d) || (rc.name && ch.name && rc.name.toLowerCase() === ch.name.toLowerCase()));
+        });
+        if (matchesRafael) {
+          effectiveTenantId = 'tenant-1790857269847';
+        }
       }
     }
 
@@ -189,8 +199,9 @@ export async function POST(req: NextRequest) {
         serverCRMStore.registerLidPhone(incomingLid, cleanPhone);
       }
 
-      const defaultContactId = `contact-${effectiveTenantId}-${cleanPhone}`;
-      const defaultConversationId = `conv-${effectiveTenantId}-${cleanPhone}`;
+      // ID canônico padronizado para conv-zapi- e contact-zapi- (unificado com Inbox e Webhooks)
+      const defaultContactId = `contact-zapi-${cleanPhone}`;
+      const defaultConversationId = `conv-zapi-${cleanPhone}`;
 
       const existingConv = currentState.conversations.find(cv => {
         if (cv.tenantId !== effectiveTenantId) return false;
@@ -290,7 +301,8 @@ export async function POST(req: NextRequest) {
             status: 'DELIVERED',
             isInternalNote: false,
             timestamp: mTimestamp,
-          });
+            phone: cleanPhone,
+          } as any);
 
           importedMessagesCount++;
           lastMsgText = cleanContent;

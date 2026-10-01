@@ -1824,9 +1824,13 @@ ${isDeveloperMode ? `
           const d = new Date(contextualDate.getTime());
           d.setHours(foundHour, foundMin, 0, 0);
 
-          // PROTEÇÃO CONTRA MENSAGENS NO FUTURO
-          if (d.getTime() > Date.now() + 60000) {
-            d.setDate(d.getDate() - 1);
+          // PROTEÇÃO CONTRA MENSAGENS NO FUTURO (Tolerância para pequenos desvios de relógio)
+          if (d.getTime() > Date.now() + 300000) {
+            if (d.getTime() > Date.now() + 43200000) {
+              d.setDate(d.getDate() - 1);
+            } else {
+              d.setTime(Date.now());
+            }
           }
           msgTime = d.toISOString();
         } else if (lastSeenValidTimeMs > 0) {
@@ -2164,20 +2168,19 @@ ${isDeveloperMode ? `
       }
     }
 
-    // Retorna a rolagem para o final para restaurar a visualização natural e capturar mensagens de hoje
-    scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-
-    const allRows = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
-    const lastRow = allRows.length > 0 ? allRows[allRows.length - 1] : null;
-    if (lastRow) {
-      try {
-        lastRow.scrollIntoView({ block: 'end', behavior: 'instant' });
-      } catch (e) {}
+    // Retorna a rolagem para o final com passagens progressivas para re-renderizar nós intermediários e de hoje
+    for (let s = 0; s < 3; s++) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: 1500, bubbles: true, view: window }));
+      const allRows = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
+      const lastRow = allRows.length > 0 ? allRows[allRows.length - 1] : null;
+      if (lastRow) {
+        try { lastRow.scrollIntoView({ block: 'end', behavior: 'instant' }); } catch (e) {}
+      }
+      await new Promise(r => setTimeout(r, 700));
+      harvestDomMessages(accumulatedMessages);
     }
-
-    await new Promise(r => setTimeout(r, 900));
-    harvestDomMessages(accumulatedMessages);
 
     return accumulatedMessages;
   }
@@ -2407,9 +2410,9 @@ ${isDeveloperMode ? `
     // Tentativa 2: Fallback Direto e Robusto via Fetch para o CRM (sobrevive a reload de extensão sem precisar de F5)
     try {
       let crmUrl = "https://crm.faithhubs.com";
-      let tenantId = "default-tenant";
-      let brokerUserId = undefined;
-      let brokerName = "Corretor";
+      let tenantId = "tenant-1790857269847";
+      let brokerUserId = "user-rafael-admin";
+      let brokerName = "Rafael Sena";
       let sessionToken = null;
 
       try {

@@ -1095,20 +1095,8 @@ export const serverCRMStore = {
     });
 
     const filteredOldMsgs = oldMsgs.filter(m => {
-      const tKey = m.tenantId || 'default-tenant';
-      const mScopedKey = `${tKey}::${m.conversationId}`;
-      if (!freshSyncConvIds.has(mScopedKey)) return true;
+      // Descarta apenas mensagens de placeholder sintético
       if (m.content && m.content.startsWith('Conversa ativa no WhatsApp com')) return false;
-
-      const isOldExtMsg = m.id.startsWith('ext-msg-') || m.id.startsWith('wpp-ext-');
-      const isIncomingFromExt = newMsgs.some(nm => 
-        (nm.tenantId === m.tenantId) &&
-        nm.conversationId === m.conversationId && 
-        (nm.id.startsWith('ext-msg-') || nm.id.startsWith('wpp-ext-') || nm.id.startsWith('false_') || nm.id.startsWith('true_'))
-      );
-      if (isOldExtMsg && isIncomingFromExt) {
-        return false;
-      }
       return true;
     });
 
@@ -1135,8 +1123,8 @@ export const serverCRMStore = {
         return;
       }
 
-      // Descarta mensagens com timestamp no futuro em relação ao momento atual
-      if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) {
+      // Descarta mensagens com timestamp muito no futuro em relação ao momento atual (tolerância de até 12 horas para fusos)
+      if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 43200000) {
         return;
       }
 
@@ -1150,6 +1138,10 @@ export const serverCRMStore = {
         if (mappedPhone) {
           convId = `conv-zapi-${mappedPhone}`;
         }
+      } else if (convDigits && convDigits.length >= 8) {
+        // Se a conversa veio como conv-default-tenant-... ou conv-tenant-..., normaliza para conv-zapi-... para manter unificado com o Inbox
+        const cleanDigits = convDigits.startsWith('55') ? convDigits : `55${convDigits}`;
+        convId = `conv-zapi-${cleanDigits}`;
       }
 
       const normalizedMsg: Message = {

@@ -275,6 +275,7 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
 
   list.forEach(contact => {
     if (!contact) return;
+    const tenantKey = contact.tenantId || 'default-tenant';
     const isPhoneLid = isLidIdentifier(contact.phone);
     const pureLid = cleanLid(contact.lid || (isPhoneLid ? contact.phone : ''));
 
@@ -297,17 +298,17 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       } catch {}
     }
 
-    // Se o contato atual tem o mesmo avatar de outro contato com telefone real, é o mesmo cliente
+    // Se o contato atual tem o mesmo avatar de outro contato com telefone real DENTRO DO MESMO TENANT
     const avatarMatch = (contact.avatarUrl && !contact.avatarUrl.includes('ui-avatars.com')) 
-      ? result.find(c => c.avatarUrl === contact.avatarUrl && c.phone && !isLidIdentifier(c.phone))
+      ? result.find(c => c.tenantId === contact.tenantId && c.avatarUrl === contact.avatarUrl && c.phone && !isLidIdentifier(c.phone))
       : null;
 
-    const existing = (pKey ? phoneMap.get(pKey) : null) 
-      || (mappedPhone ? phoneMap.get(canonicalPhoneKey(mappedPhone)) : null)
-      || (pureLid ? lidMap.get(pureLid) : null) 
+    const existing = (pKey ? phoneMap.get(`${tenantKey}::${pKey}`) : null) 
+      || (mappedPhone ? phoneMap.get(`${tenantKey}::${canonicalPhoneKey(mappedPhone)}`) : null)
+      || (pureLid ? lidMap.get(`${tenantKey}::${pureLid}`) : null) 
       || avatarMatch
-      || idMap.get(contact.id)
-      || (normName ? nameMap.get(normName) : null);
+      || idMap.get(`${tenantKey}::${contact.id}`)
+      || (normName ? nameMap.get(`${tenantKey}::${normName}`) : null);
 
     if (existing) {
       const existingIsLid = isLidIdentifier(existing.phone);
@@ -360,14 +361,14 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       }
 
       const realPKey = canonicalPhoneKey(chosenPhone);
-      if (realPKey && !isLidIdentifier(chosenPhone)) phoneMap.set(realPKey, merged);
-      if (chosenLid) lidMap.set(chosenLid, merged);
-      if (normName) nameMap.set(normName, merged);
-      idMap.set(merged.id, merged);
-      if (existing.id) idMap.set(existing.id, merged);
-      if (contact.id) idMap.set(contact.id, merged);
+      if (realPKey && !isLidIdentifier(chosenPhone)) phoneMap.set(`${tenantKey}::${realPKey}`, merged);
+      if (chosenLid) lidMap.set(`${tenantKey}::${chosenLid}`, merged);
+      if (normName) nameMap.set(`${tenantKey}::${normName}`, merged);
+      idMap.set(`${tenantKey}::${merged.id}`, merged);
+      if (existing.id) idMap.set(`${tenantKey}::${existing.id}`, merged);
+      if (contact.id) idMap.set(`${tenantKey}::${contact.id}`, merged);
 
-      const idx = result.findIndex(c => c.id === existing.id || c.id === contact.id || c.id === merged.id);
+      const idx = result.findIndex(c => (c.tenantId === contact.tenantId) && (c.id === existing.id || c.id === contact.id || c.id === merged.id));
       if (idx >= 0) result[idx] = merged;
     } else {
       const finalLid = pureLid || (isPhoneLid ? cleanLid(contact.phone) : undefined);
@@ -387,10 +388,10 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
         } catch {}
       }
 
-      if (pKey) phoneMap.set(pKey, withTimestamps);
-      if (finalLid) lidMap.set(finalLid, withTimestamps);
-      if (normName) nameMap.set(normName, withTimestamps);
-      idMap.set(contact.id, withTimestamps);
+      if (pKey) phoneMap.set(`${tenantKey}::${pKey}`, withTimestamps);
+      if (finalLid) lidMap.set(`${tenantKey}::${finalLid}`, withTimestamps);
+      if (normName) nameMap.set(`${tenantKey}::${normName}`, withTimestamps);
+      idMap.set(`${tenantKey}::${contact.id}`, withTimestamps);
       result.push(withTimestamps);
     }
   });
@@ -1826,8 +1827,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const effectiveId = m.externalId || (isNativeWppId ? m.id : null);
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
 
+      const tenantKey = m.tenantId || 'default-tenant';
       // Não inclui senderType na chave para que mensagens possam ser reclassificadas de CONTACT para USER
-      const key = effectiveId ? `${convId}-${effectiveId}` : `${convId}-${content}-${timeKey}`;
+      const key = effectiveId ? `${tenantKey}::${convId}-${effectiveId}` : `${tenantKey}::${convId}-${content}-${timeKey}`;
       const existing = map.get(key);
 
       if (!existing) {
@@ -1845,7 +1847,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return Array.from(map.values()).sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
   };
 
-  // Função para deduplicar e fundir conversas de LID e Telefone Canônico no Feed
+  // Função para deduplicar e fundir conversas particionadas estritamente por Tenant
   const deduplicateConversations = (convList: Conversation[], contactList?: Contact[]): Conversation[] => {
     const map = new Map<string, Conversation>();
     const currentContacts = contactList || contacts || [];
@@ -1855,27 +1857,29 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const contactById = new Map<string, Contact>();
 
     currentContacts.forEach(c => {
-      contactById.set(c.id, c);
+      const tKey = c.tenantId || 'default-tenant';
+      contactById.set(`${tKey}::${c.id}`, c);
       if (c.phone && !isLidIdentifier(c.phone)) {
-        contactByPhone.set(canonicalPhoneKey(c.phone), c);
+        contactByPhone.set(`${tKey}::${canonicalPhoneKey(c.phone)}`, c);
       }
       if (c.lid) {
-        contactByLid.set(cleanLid(c.lid), c);
+        contactByLid.set(`${tKey}::${cleanLid(c.lid)}`, c);
       }
     });
 
     convList.forEach(conv => {
       if (!conv) return;
+      const tenantKey = conv.tenantId || 'default-tenant';
       const rawDigits = conv.id.replace(/\D/g, '');
       const isLid = isLidIdentifier(rawDigits);
       const lidClean = cleanLid(rawDigits);
 
-      let contact = contactById.get(conv.contactId);
+      let contact = contactById.get(`${tenantKey}::${conv.contactId}`);
       if (!contact && isLid) {
-        contact = contactByLid.get(lidClean);
+        contact = contactByLid.get(`${tenantKey}::${lidClean}`);
       }
       if (!contact && rawDigits) {
-        contact = contactByPhone.get(canonicalPhoneKey(rawDigits));
+        contact = contactByPhone.get(`${tenantKey}::${canonicalPhoneKey(rawDigits)}`);
       }
 
       // Consulta no mapa local brokiva_lid_phone_map se não achou contato direto
@@ -1883,7 +1887,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         try {
           const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
           if (stored[lidClean]) {
-            contact = contactByPhone.get(canonicalPhoneKey(stored[lidClean]));
+            contact = contactByPhone.get(`${tenantKey}::${canonicalPhoneKey(stored[lidClean])}`);
           }
         } catch {}
       }
@@ -1909,13 +1913,14 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         ? 'Conversa sincronizada via WhatsApp'
         : conv.lastMessagePreview;
 
-      const existing = map.get(canonicalConvId);
+      const scopedConvKey = `${tenantKey}::${canonicalConvId}`;
+      let existing = map.get(scopedConvKey);
       if (existing) {
         const timeA = parseWhatsAppTimestamp(existing.lastMessageAt);
         const timeB = parseWhatsAppTimestamp(conv.lastMessageAt);
         const useNewer = timeB > timeA;
 
-        map.set(canonicalConvId, {
+        map.set(scopedConvKey, {
           ...existing,
           ...conv,
           id: canonicalConvId,
@@ -1925,7 +1930,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           unreadCount: Math.max(existing.unreadCount || 0, conv.unreadCount || 0),
         });
       } else {
-        map.set(canonicalConvId, {
+        map.set(scopedConvKey, {
           ...conv,
           id: canonicalConvId,
           contactId: contact?.id || conv.contactId,

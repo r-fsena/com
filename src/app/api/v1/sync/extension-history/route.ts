@@ -149,10 +149,12 @@ export async function POST(req: NextRequest) {
         cleanPhone = `55${cleanPhone}`;
       }
 
-      // Localiza se já existe contato ou conversa prévia com esse número, LID ou Nome Exato
+      // Localiza se já existe contato ou conversa prévia DENTRO DO MESMO TENANT (Isolamento Estrito)
       const cleanIncomingName = (chat.name || '').trim().toLowerCase();
       const currentState = serverCRMStore.getState();
       const existingContact = currentState.contacts.find(c => {
+        if (c.tenantId !== effectiveTenantId) return false;
+
         const matchPhone = arePhonesEquivalent(c.phone, rawDigits) || 
                            arePhonesEquivalent(c.phone, cleanPhone) ||
                            arePhonesEquivalent(c.phone, chat.phone);
@@ -187,10 +189,11 @@ export async function POST(req: NextRequest) {
         serverCRMStore.registerLidPhone(incomingLid, cleanPhone);
       }
 
-      const defaultContactId = `contact-zapi-${cleanPhone}`;
-      const defaultConversationId = `conv-zapi-${cleanPhone}`;
+      const defaultContactId = `contact-${effectiveTenantId}-${cleanPhone}`;
+      const defaultConversationId = `conv-${effectiveTenantId}-${cleanPhone}`;
 
       const existingConv = currentState.conversations.find(cv => {
+        if (cv.tenantId !== effectiveTenantId) return false;
         const convDigits = cv.id.replace(/\D/g, '') || cv.contactId.replace(/\D/g, '');
         const matchConvPhone = arePhonesEquivalent(convDigits, cleanPhone) ||
                                arePhonesEquivalent(convDigits, rawDigits);

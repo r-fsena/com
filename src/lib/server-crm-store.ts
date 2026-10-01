@@ -830,6 +830,7 @@ export const serverCRMStore = {
   },
 
   mergeContacts(oldList: Contact[], newList: Contact[]): Contact[] {
+    // Isolamento Multi-Tenancy Estrito: todas as tabelas hash são particionadas por tenantId
     const phoneMap = new Map<string, Contact>();
     const lidMap = new Map<string, Contact>();
     const idMap = new Map<string, Contact>();
@@ -841,6 +842,7 @@ export const serverCRMStore = {
       if (!c) return;
       if (this.isChatDeleted(c.id) || this.isChatDeleted(c.phone) || this.isChatDeleted(c.lid)) return;
 
+      const tenantKey = c.tenantId || 'default-tenant';
       const isPhoneLid = isLidIdentifier(c.phone);
       const pureLid = cleanLid(c.lid || (isPhoneLid ? c.phone : ''));
       
@@ -855,10 +857,10 @@ export const serverCRMStore = {
         ? c.name.toLowerCase().trim()
         : '';
 
-      const existing = (pKey ? phoneMap.get(pKey) : null) ||
-                       (pureLid ? lidMap.get(pureLid) : null) ||
-                       idMap.get(c.id) ||
-                       (normName ? nameMap.get(normName) : null);
+      const existing = (pKey ? phoneMap.get(`${tenantKey}::${pKey}`) : null) ||
+                       (pureLid ? lidMap.get(`${tenantKey}::${pureLid}`) : null) ||
+                       idMap.get(`${tenantKey}::${c.id}`) ||
+                       (normName ? nameMap.get(`${tenantKey}::${normName}`) : null);
 
       if (existing) {
         const existingIsLid = isLidIdentifier(existing.phone);
@@ -912,14 +914,14 @@ export const serverCRMStore = {
         };
 
         const finalKey = canonicalPhoneKey(finalPhone);
-        if (finalKey) phoneMap.set(finalKey, merged);
-        if (finalLid) lidMap.set(cleanLid(finalLid), merged);
-        if (normName) nameMap.set(normName, merged);
-        idMap.set(merged.id, merged);
-        if (existing.id) idMap.set(existing.id, merged);
-        if (c.id) idMap.set(c.id, merged);
+        if (finalKey) phoneMap.set(`${tenantKey}::${finalKey}`, merged);
+        if (finalLid) lidMap.set(`${tenantKey}::${cleanLid(finalLid)}`, merged);
+        if (normName) nameMap.set(`${tenantKey}::${normName}`, merged);
+        idMap.set(`${tenantKey}::${merged.id}`, merged);
+        if (existing.id) idMap.set(`${tenantKey}::${existing.id}`, merged);
+        if (c.id) idMap.set(`${tenantKey}::${c.id}`, merged);
 
-        const idx = result.findIndex(x => x.id === existing.id || x.id === merged.id);
+        const idx = result.findIndex(x => (x.tenantId === c.tenantId) && (x.id === existing.id || x.id === merged.id));
         if (idx >= 0) result[idx] = merged;
       } else {
         const finalLid = pureLid || (isPhoneLid ? cleanLid(c.phone) : undefined);
@@ -937,10 +939,10 @@ export const serverCRMStore = {
           firstSyncedAt: c.firstSyncedAt || new Date().toISOString(),
           lastSyncedAt: c.lastSyncedAt || new Date().toISOString(),
         };
-        if (pKey) phoneMap.set(pKey, withTimestamps);
-        if (finalLid) lidMap.set(cleanLid(finalLid), withTimestamps);
-        if (normName) nameMap.set(normName, withTimestamps);
-        idMap.set(c.id, withTimestamps);
+        if (pKey) phoneMap.set(`${tenantKey}::${pKey}`, withTimestamps);
+        if (finalLid) lidMap.set(`${tenantKey}::${cleanLid(finalLid)}`, withTimestamps);
+        if (normName) nameMap.set(`${tenantKey}::${normName}`, withTimestamps);
+        idMap.set(`${tenantKey}::${c.id}`, withTimestamps);
         result.push(withTimestamps);
       }
     });
@@ -952,45 +954,49 @@ export const serverCRMStore = {
     const map = new Map<string, Conversation>();
     const all = [...oldConvs, ...newConvs];
 
-    // Cria índice de contatos para resolução de IDs canônicos
+    // Cria índice de contatos para resolução de IDs canônicos por tenant
     const contactByPhone = new Map<string, Contact>();
     const contactByLid = new Map<string, Contact>();
     const contactById = new Map<string, Contact>();
 
     contacts.forEach(c => {
-      contactById.set(c.id, c);
+      const tKey = c.tenantId || 'default-tenant';
+      contactById.set(`${tKey}::${c.id}`, c);
       if (c.phone && !isLidIdentifier(c.phone)) {
-        contactByPhone.set(canonicalPhoneKey(c.phone), c);
+        contactByPhone.set(`${tKey}::${canonicalPhoneKey(c.phone)}`, c);
       }
       if (c.lid) {
-        contactByLid.set(cleanLid(c.lid), c);
+        contactByLid.set(`${tKey}::${cleanLid(c.lid)}`, c);
       }
     });
 
     all.forEach(conv => {
       if (!conv) return;
       if (this.isChatDeleted(conv.id) || this.isChatDeleted(conv.contactId)) return;
+      const tenantKey = conv.tenantId || 'default-tenant';
       const rawDigits = conv.id.replace(/\D/g, '');
       const isLid = isLidIdentifier(rawDigits);
 
-      // Determina o contato canônico dono desta conversa
-      let contact = contactById.get(conv.contactId);
+      // Determina o contato canônico dono desta conversa dentro do mesmo tenant
+      let contact = contactById.get(`${tenantKey}::${conv.contactId}`);
       if (!contact && isLid) {
-        contact = contactByLid.get(cleanLid(rawDigits));
+        contact = contactByLid.get(`${tenantKey}::${cleanLid(rawDigits)}`);
       }
       if (!contact && rawDigits) {
-        contact = contactByPhone.get(canonicalPhoneKey(rawDigits));
+        contact = contactByPhone.get(`${tenantKey}::${canonicalPhoneKey(rawDigits)}`);
       }
 
       const canonicalPhone = contact?.phone && !isLidIdentifier(contact.phone)
         ? contact.phone.replace(/\D/g, '')
         : (isLid ? (this.resolvePhoneFromLid(rawDigits) || rawDigits) : rawDigits);
 
-      // Preserva o ID original se a conversa já existia (ex: conv-custom-xxx ou conv-1)
+      // Preserva o ID original se a conversa já existia dentro do mesmo tenant
       const existingInOld = oldConvs.find(c => 
-        c.id === conv.id || 
-        (contact && c.contactId === contact.id) ||
-        (conv.contactId && c.contactId === conv.contactId)
+        (c.tenantId === conv.tenantId) && (
+          c.id === conv.id || 
+          (contact && c.contactId === contact.id) ||
+          (conv.contactId && c.contactId === conv.contactId)
+        )
       );
 
       const canonicalConvId = existingInOld ? existingInOld.id : (conv.id || (canonicalPhone ? `conv-zapi-${canonicalPhone}` : `conv-${Date.now()}`));
@@ -999,11 +1005,12 @@ export const serverCRMStore = {
         ? 'Conversa sincronizada via WhatsApp'
         : conv.lastMessagePreview;
 
-      // Procura no mapa por canonicalConvId ou por contactId
-      let existing = map.get(canonicalConvId);
+      // Procura no mapa pelo identificador particionado por tenant
+      const scopedConvKey = `${tenantKey}::${canonicalConvId}`;
+      let existing = map.get(scopedConvKey);
       if (!existing && contact) {
         for (const c of Array.from(map.values())) {
-          if (c.contactId === contact.id) {
+          if (c.tenantId === conv.tenantId && c.contactId === contact.id) {
             existing = c;
             break;
           }
@@ -1015,7 +1022,7 @@ export const serverCRMStore = {
         const timeB = parseWhatsAppTimestamp(conv.lastMessageAt);
         const useNewer = timeB > timeA;
 
-        map.set(canonicalConvId, {
+        map.set(scopedConvKey, {
           ...existing,
           ...conv,
           id: canonicalConvId,
@@ -1029,7 +1036,7 @@ export const serverCRMStore = {
           autoFollowupCount: conv.autoFollowupCount !== undefined ? conv.autoFollowupCount : (existing.autoFollowupCount || 0),
         });
       } else {
-        map.set(canonicalConvId, {
+        map.set(scopedConvKey, {
           ...conv,
           id: canonicalConvId,
           contactId: contact?.id || conv.contactId,
@@ -1052,30 +1059,36 @@ export const serverCRMStore = {
   mergeMessages(oldMsgs: Message[], newMsgs: Message[], contacts: Contact[]): Message[] {
     const map = new Map<string, Message>();
 
-    // Índice de remapeamento de LID -> Telefone Canônico para unificação de conversa
+    // Índice de remapeamento de LID -> Telefone Canônico por tenant
     const lidToPhone = new Map<string, string>();
     contacts.forEach(c => {
+      const tKey = c.tenantId || 'default-tenant';
       if (c.lid && c.phone && !isLidIdentifier(c.phone)) {
         const clean = c.phone.replace(/\D/g, '');
         const p = clean.startsWith('55') ? clean : `55${clean}`;
-        lidToPhone.set(cleanLid(c.lid), p);
+        lidToPhone.set(`${tKey}::${cleanLid(c.lid)}`, p);
       }
     });
 
-    // Identifica conversas para as quais um lote novo de mensagens está sendo ingerido
+    // Identifica conversas para as quais um lote novo de mensagens está sendo ingerido por tenant
     const freshSyncConvIds = new Set<string>();
     newMsgs.forEach(m => {
-      if (m.conversationId) freshSyncConvIds.add(m.conversationId);
+      const tKey = m.tenantId || 'default-tenant';
+      if (m.conversationId) freshSyncConvIds.add(`${tKey}::${m.conversationId}`);
     });
 
-    // Se temos um novo lote estruturado da extensão para uma conversa, descarta placeholders sintéticos
-    // e mensagens temporárias anteriores da extensão que possam conter carimbos de hora desatualizados
     const filteredOldMsgs = oldMsgs.filter(m => {
-      if (!freshSyncConvIds.has(m.conversationId)) return true;
+      const tKey = m.tenantId || 'default-tenant';
+      const mScopedKey = `${tKey}::${m.conversationId}`;
+      if (!freshSyncConvIds.has(mScopedKey)) return true;
       if (m.content && m.content.startsWith('Conversa ativa no WhatsApp com')) return false;
 
       const isOldExtMsg = m.id.startsWith('ext-msg-') || m.id.startsWith('wpp-ext-');
-      const isIncomingFromExt = newMsgs.some(nm => nm.conversationId === m.conversationId && (nm.id.startsWith('ext-msg-') || nm.id.startsWith('wpp-ext-') || nm.id.startsWith('false_') || nm.id.startsWith('true_')));
+      const isIncomingFromExt = newMsgs.some(nm => 
+        (nm.tenantId === m.tenantId) &&
+        nm.conversationId === m.conversationId && 
+        (nm.id.startsWith('ext-msg-') || nm.id.startsWith('wpp-ext-') || nm.id.startsWith('false_') || nm.id.startsWith('true_'))
+      );
       if (isOldExtMsg && isIncomingFromExt) {
         return false;
       }
@@ -1105,17 +1118,18 @@ export const serverCRMStore = {
         return;
       }
 
-      // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
+      // Descarta mensagens com timestamp no futuro em relação ao momento atual
       if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) {
         return;
       }
 
+      const tenantKey = m.tenantId || 'default-tenant';
       let convId = m.conversationId;
       const convDigits = convId.replace(/\D/g, '');
 
-      // Normaliza conversationId: se for um LID conhecido, reatribui para o telefone canônico!
+      // Normaliza conversationId: se for um LID conhecido no tenant, reatribui para o telefone canônico!
       if (isLidIdentifier(convDigits)) {
-        const mappedPhone = lidToPhone.get(cleanLid(convDigits)) || this.resolvePhoneFromLid(convDigits);
+        const mappedPhone = lidToPhone.get(`${tenantKey}::${cleanLid(convDigits)}`) || this.resolvePhoneFromLid(convDigits);
         if (mappedPhone) {
           convId = `conv-zapi-${mappedPhone}`;
         }
@@ -1129,7 +1143,10 @@ export const serverCRMStore = {
       const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
       const externalIdKey = m.externalId || (isNativeWppId ? m.id : null);
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
-      const key = externalIdKey ? `${convId}-${externalIdKey}` : `${convId}-${content}-${timeKey}-${m.senderType}`;
+      const key = externalIdKey 
+        ? `${tenantKey}::${convId}-${externalIdKey}` 
+        : `${tenantKey}::${convId}-${content}-${timeKey}-${m.senderType}`;
+      
       const existing = map.get(key);
       if (!existing) {
         map.set(key, normalizedMsg);

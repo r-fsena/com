@@ -69,7 +69,15 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    const extVersion = chrome?.runtime?.getManifest?.()?.version || '1.0.41';
+    let extVersion = '1.0.43';
+    try {
+      if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.43';
+      }
+    } catch (_) {
+      // Contexto da extensão anterior invalidado após reload no Chrome
+      return;
+    }
     const root = document.createElement('div');
     root.id = 'sovereign-crm-root';
     root.innerHTML = `

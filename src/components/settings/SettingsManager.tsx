@@ -1415,7 +1415,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-slate-900">Extensão Brokiva para Google Chrome</h3>
                     <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                      v1.0.40 Oficial
+                      v1.0.41 Oficial
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5 max-w-xl leading-relaxed">

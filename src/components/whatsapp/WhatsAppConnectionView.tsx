@@ -601,7 +601,7 @@ export function WhatsAppConnectionView() {
                   </span>
                   <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    v1.0.40 Oficial
+                    v1.0.41 Oficial
                   </span>
                 </div>
                 <h2 className="text-lg sm:text-xl font-extrabold text-white">

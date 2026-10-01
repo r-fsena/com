@@ -52,12 +52,12 @@ export const DEFAULT_FEATURE_FLAGS = {
 // -------------------------------------------------------------
 export const MOCK_TENANTS: Tenant[] = [
   {
-    id: 'tenant-rafael-teste',
+    id: 'tenant-1790857269847',
     name: 'Ambiente Teste Rafael Sena',
     slug: 'ambiente-teste-rafael-sena',
-    documentCnpj: '00.000.000/0001-00',
+    documentCnpj: '21585562000114',
     logoUrl: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=128&auto=format&fit=crop&q=60',
-    primaryColor: '#3742AC',
+    primaryColor: '#000000',
     timezone: 'America/Sao_Paulo',
     status: 'ACTIVE',
     plan: 'ENTERPRISE',
@@ -126,7 +126,7 @@ export const MOCK_TENANTS: Tenant[] = [
 export const MOCK_USERS: User[] = [
   {
     id: 'user-rafael-admin',
-    tenantId: 'tenant-rafael-teste',
+    tenantId: 'tenant-1790857269847',
     name: 'Rafael Sena',
     email: 'rafael@faithhubs.com',
     phone: '+55 11 98877-6655',
@@ -172,7 +172,7 @@ export const MOCK_USERS: User[] = [
 export const MOCK_INSTANCES: WhatsAppInstance[] = [
   {
     id: 'inst-rafael-individual',
-    tenantId: 'tenant-rafael-teste',
+    tenantId: 'tenant-1790857269847',
     name: 'WhatsApp Individual • Rafael Sena',
     phoneNumber: 'Aguardando pareamento',
     zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C',

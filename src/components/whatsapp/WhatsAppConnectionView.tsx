@@ -131,7 +131,7 @@ export function WhatsAppConnectionView() {
     params.set('instanceId', instId);
     params.set('token', tok);
     params.set('clientToken', cTok);
-    params.set('tenantId', currentTenant?.id || 'tenant-rafael-teste');
+    params.set('tenantId', currentTenant?.id || 'tenant-1790857269847');
     return params;
   };
 

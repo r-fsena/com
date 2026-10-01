@@ -422,11 +422,11 @@ export async function processZapiWebhookRequest(
     let tenantId = routeParams?.tenantId;
     if (!tenantId) {
       if (instanceId === '3F1B67FC8139425171C79ED390C0144C') {
-        tenantId = 'tenant-rafael-teste';
+        tenantId = 'tenant-1790857269847';
       } else if (instanceId === '3F8144490C66805B4E3FD64A35E2F2DC') {
         tenantId = 'tenant-amabile-barbarotti';
       } else {
-        tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-rafael-teste';
+        tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-1790857269847';
       }
     }
 

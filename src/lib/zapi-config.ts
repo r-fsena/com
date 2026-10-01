@@ -14,7 +14,7 @@ export const KNOWN_ZAPI_INSTANCES: Record<string, ZapiInstanceCredentials> = {
     token: '7A18BD2BADA4840FB0374499',
     clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
     name: 'WhatsApp Individual • Rafael Sena',
-    tenantId: 'tenant-rafael-teste',
+    tenantId: 'tenant-1790857269847',
     assignedUserId: 'user-rafael-admin',
   },
   // Central WhatsApp - Amábile Barbarotti

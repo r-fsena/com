@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
 import { validateApiSession } from '@/lib/api-auth';
+import { resolveZapiCredentials } from '@/lib/zapi-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,17 +41,11 @@ export async function GET(req: NextRequest) {
   const rawToken = searchParams.get('token');
   const rawClientToken = searchParams.get('clientToken');
 
-  const instanceId = (rawInstanceId && rawInstanceId !== 'undefined' && rawInstanceId !== 'null' && rawInstanceId.trim() !== '')
-    ? rawInstanceId.trim()
-    : (process.env.ZAPI_INSTANCE_ID || DEFAULT_INSTANCE_ID);
-
-  const instanceToken = (rawToken && rawToken !== 'undefined' && rawToken !== 'null' && rawToken.trim() !== '')
-    ? rawToken.trim()
-    : (process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_INSTANCE_TOKEN);
-
-  const securityToken = (rawClientToken && rawClientToken !== 'undefined' && rawClientToken !== 'null' && rawClientToken.trim() !== '')
-    ? rawClientToken.trim()
-    : (process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || DEFAULT_CLIENT_TOKEN);
+  const { instanceId, instanceToken, securityToken } = resolveZapiCredentials(
+    rawInstanceId,
+    rawToken,
+    rawClientToken
+  );
 
   try {
     const client = new ZApiClient({

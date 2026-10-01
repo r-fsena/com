@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
+import { KNOWN_ZAPI_INSTANCES, DEFAULT_ZAPI_INSTANCE_ID } from '@/lib/zapi-config';
 import { 
   Smartphone,
   QrCode,
@@ -118,13 +119,18 @@ export function WhatsAppConnectionView() {
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
   const getZapiQueryParams = () => {
-    const instId = activeInstance?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C';
-    const tok = (activeInstance as any)?.token || '';
-    const cTok = (activeInstance as any)?.clientToken || '';
+    let instId = activeInstance?.zapiInstanceId || DEFAULT_ZAPI_INSTANCE_ID;
+    if (instId.startsWith('inst-') || instId.length < 20) {
+      instId = DEFAULT_ZAPI_INSTANCE_ID;
+    }
+    const known = KNOWN_ZAPI_INSTANCES[instId];
+    const tok = (activeInstance as any)?.token || known?.token || '7A18BD2BADA4840FB0374499';
+    const cTok = (activeInstance as any)?.clientToken || known?.clientToken || 'Fc78d61c833db4b50864816b70766aee8S';
+
     const params = new URLSearchParams();
-    if (instId) params.set('instanceId', instId);
-    if (tok) params.set('token', tok);
-    if (cTok) params.set('clientToken', cTok);
+    params.set('instanceId', instId);
+    params.set('token', tok);
+    params.set('clientToken', cTok);
     params.set('tenantId', currentTenant?.id || 'tenant-rafael-teste');
     return params;
   };
@@ -555,6 +561,8 @@ export function WhatsAppConnectionView() {
                       setSelectedInstanceId(inst.id);
                       setIsQrConnected(inst.status === 'CONNECTED');
                       setQrCodeData(null);
+                      setQrError(null);
+                      setTimeout(() => fetchFreshQrCode(), 50);
                     }}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
                       isSelected 

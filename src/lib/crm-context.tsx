@@ -548,7 +548,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             return parsed.map((p: Pipeline) => {
-              const isAmabilePipe = !p.tenantId || p.tenantId === 'tenant-amabile-barbarotti' || p.tenantId.includes('amabile') || p.tenantId.startsWith('tenant-17');
+              const isAmabilePipe = !p.tenantId || p.tenantId === 'tenant-amabile-barbarotti' || p.tenantId.includes('amabile');
               return {
                 ...p,
                 tenantId: isAmabilePipe ? 'tenant-amabile-barbarotti' : p.tenantId,
@@ -1506,7 +1506,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             parsed = parsed
               .filter((c: Contact) => !isChatKeyDeleted(c.id, initialDel) && !isChatKeyDeleted(c.phone, initialDel) && !isChatKeyDeleted(c.lid, initialDel) && isRealWhatsAppConversation({ id: c.id, phone: c.phone, lastMessageTime: c.lastClientInteractionAt || c.updatedAt }))
               .map((c: Contact) => {
-                const isAmabileContact = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
+                const isAmabileContact = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile');
                 return {
                   ...c,
                   tenantId: isAmabileContact ? 'tenant-amabile-barbarotti' : c.tenantId,
@@ -1531,7 +1531,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed = parsed
               .map((d: Deal) => {
-                const isAmabileDeal = !d.tenantId || d.tenantId === 'tenant-amabile-barbarotti' || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile') || d.tenantId.startsWith('tenant-17');
+                const isAmabileDeal = !d.tenantId || d.tenantId === 'tenant-amabile-barbarotti' || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile');
                 return {
                   ...d,
                   tenantId: isAmabileDeal ? 'tenant-amabile-barbarotti' : d.tenantId,
@@ -1554,7 +1554,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const list = parsed.map((inst: WhatsAppInstance) => {
-              const isAmabileInst = !inst.tenantId || inst.tenantId === 'tenant-amabile-barbarotti' || inst.tenantId.includes('amabile') || inst.tenantId.startsWith('tenant-17');
+              const isAmabileInst = !inst.tenantId || inst.tenantId === 'tenant-amabile-barbarotti' || inst.tenantId.includes('amabile');
               return {
                 ...inst,
                 tenantId: isAmabileInst ? 'tenant-amabile-barbarotti' : inst.tenantId,
@@ -1676,7 +1676,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 return isRealWhatsAppConversation({ id: c.id, phone: c.contactId, lastMessageTime: c.lastMessageAt }) || Boolean(c.lastMessagePreview && c.lastMessagePreview.length > 0);
               })
               .map((c: Conversation) => {
-                const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile') || c.tenantId.startsWith('tenant-17');
+                const isAmabileConv = !c.tenantId || c.tenantId === 'tenant-amabile-barbarotti' || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile');
                 const cleanPreview = (c.lastMessagePreview && isWhatsAppSystemMessage(c.lastMessagePreview)) ? 'Conversa sincronizada via WhatsApp' : c.lastMessagePreview;
                 return {
                   ...c,
@@ -1715,7 +1715,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) return false;
               return true;
             }).map((m: Message) => {
-              const isAmabileMsg = !m.tenantId || m.tenantId === 'tenant-amabile-barbarotti' || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile') || m.tenantId.startsWith('tenant-17');
+              const isAmabileMsg = !m.tenantId || m.tenantId === 'tenant-amabile-barbarotti' || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile');
               let senderType = m.senderType;
               let senderName = m.senderName;
               // Auto-correção para mensagens enviadas pelo corretor via celular em conversas ativas
@@ -1975,6 +1975,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   // Hidrata dados salvos no servidor e no localStorage (funciona 100% em aba anônima, Safari e novos dispositivos)
   const isHydratedRef = useRef(false);
+  const currentTenantRef = useRef(currentTenant);
+  const currentUserRef = useRef(currentUser);
+  const activeInstanceIdRef = useRef(activeInstanceId);
+
+  useEffect(() => {
+    currentTenantRef.current = currentTenant;
+  }, [currentTenant]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    activeInstanceIdRef.current = activeInstanceId;
+  }, [activeInstanceId]);
 
   useEffect(() => {
     const initializeCRMState = async () => {
@@ -2055,6 +2070,25 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const serverTenantContacts = Array.isArray(serverData?.contacts) ? serverData.contacts : [];
         const localTenantContacts = (Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []).filter(c => !c.tenantId || c.tenantId === currentTenant.id);
 
+        // Auto-reconciliação: Se estiver no Ambiente Teste Rafael Sena e não houver contatos desse tenant,
+        // mas existirem contatos locais sincronizados via WhatsApp Web salvos anteriormente:
+        if (currentTenant.id === 'tenant-1790857269847') {
+          const hasTenantWpp = localTenantContacts.some(c => c.source === 'WHATSAPP' || c.tags?.includes('WhatsApp Web Sincronizado'));
+          if (!hasTenantWpp) {
+            const orphanedWpp = otherTenantContacts.filter(c => c.source === 'WHATSAPP' || c.tags?.includes('WhatsApp Web Sincronizado'));
+            if (orphanedWpp.length > 0) {
+              console.log(`[CRM Context] Reconciliando ${orphanedWpp.length} contatos sincronizados via WhatsApp Web para o Ambiente Teste...`);
+              orphanedWpp.forEach(c => {
+                localTenantContacts.push({
+                  ...c,
+                  tenantId: 'tenant-1790857269847',
+                  assignedUserId: 'user-rafael-admin',
+                });
+              });
+            }
+          }
+        }
+
         const combinedContacts = [
           ...serverTenantContacts,
           ...localTenantContacts,
@@ -2073,6 +2107,27 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const serverTenantConvs = Array.isArray(serverData?.conversations) ? serverData.conversations : [];
         const localTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => !cv.tenantId || cv.tenantId === currentTenant.id);
 
+        if (currentTenant.id === 'tenant-1790857269847') {
+          const activeContactIds = new Set(localTenantContacts.map(c => c.id));
+          const activePhones = new Set(localTenantContacts.map(c => c.phone?.replace(/\D/g, '')).filter(Boolean));
+          const orphanedConvs = otherTenantConvs.filter(cv => {
+            const digits = cv.id.replace(/\D/g, '') || cv.contactId.replace(/\D/g, '');
+            return activeContactIds.has(cv.contactId) || (digits && activePhones.has(digits));
+          });
+          if (orphanedConvs.length > 0) {
+            orphanedConvs.forEach(cv => {
+              if (!localTenantConvs.some(existing => existing.id === cv.id || existing.contactId === cv.contactId)) {
+                localTenantConvs.push({
+                  ...cv,
+                  tenantId: 'tenant-1790857269847',
+                  assignedUserId: 'user-rafael-admin',
+                  instanceId: '3F1B67FC8139425171C79ED390C0144C',
+                });
+              }
+            });
+          }
+        }
+
         const combinedConvs = [
           ...serverTenantConvs,
           ...localTenantConvs,
@@ -2087,10 +2142,17 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         saveToStorageDebounced('vanguard_crm_conversations', finalConvs, 1000);
 
         // 6. Mescla mensagens
+        const activeConvIds = new Set(localTenantConvs.map(cv => cv.id));
         const combinedMsgs = [
           ...(Array.isArray(serverData?.messages) ? serverData.messages : []),
           ...(Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : []),
-        ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content));
+        ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content))
+         .map(m => {
+           if (currentTenant.id === 'tenant-1790857269847' && activeConvIds.has(m.conversationId)) {
+             return { ...m, tenantId: 'tenant-1790857269847' };
+           }
+           return m;
+         });
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
         setMessages(finalMsgs);
@@ -2188,34 +2250,84 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         console.log('[Brokiva CRM] Mensagens sincronizadas recebidas da extensão:', event.data.data);
         const { messages: incomingMsgs, contacts: incomingContacts, conversations: incomingConvs } = event.data.data;
 
-        let currentContactsList = contacts;
-        if (Array.isArray(incomingContacts) && incomingContacts.length > 0) {
+        const effectiveTenantId = currentTenantRef.current?.id || 'tenant-1790857269847';
+        const effectiveUserId = currentUserRef.current?.id || 'user-rafael-admin';
+        const effectiveInstanceId = activeInstanceIdRef.current || '3F1B67FC8139425171C79ED390C0144C';
+
+        // Garante que contatos sincronizados pelo usuário pertençam ao tenant ativo
+        const sanitizedContacts = (incomingContacts || []).map((c: Contact) => ({
+          ...c,
+          tenantId: effectiveTenantId,
+          assignedUserId: c.assignedUserId || effectiveUserId,
+        }));
+
+        const sanitizedConvs = (incomingConvs || []).map((cv: Conversation) => ({
+          ...cv,
+          tenantId: effectiveTenantId,
+          assignedUserId: cv.assignedUserId || effectiveUserId,
+          instanceId: cv.instanceId || effectiveInstanceId,
+        }));
+
+        const sanitizedMsgs = (incomingMsgs || []).map((m: Message) => ({
+          ...m,
+          tenantId: effectiveTenantId,
+        }));
+
+        let updatedContactsList: Contact[] = [];
+        if (sanitizedContacts.length > 0) {
           setContacts(prev => {
-            const next = deduplicateContactList([...prev, ...incomingContacts]);
-            currentContactsList = next;
+            const next = deduplicateContactList([...prev, ...sanitizedContacts]);
+            updatedContactsList = next;
+            saveToStorageDebounced('vanguard_crm_contacts', next, 200);
+            try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(next)); } catch {}
             return next;
           });
         }
 
-        if (Array.isArray(incomingMsgs) && incomingMsgs.length > 0) {
-          const syncedConvIds = new Set(incomingMsgs.map((m: Message) => m.conversationId));
+        if (sanitizedConvs.length > 0) {
+          setConversations(prev => {
+            const next = deduplicateConversations([...prev, ...sanitizedConvs], updatedContactsList.length > 0 ? updatedContactsList : contacts);
+            saveToStorageDebounced('vanguard_crm_conversations', next, 200);
+            try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(next)); } catch {}
+            return next;
+          });
+          // Se nenhuma conversa estiver ativa, foca na primeira do lote recebido
+          setActiveConversationId(prev => prev || sanitizedConvs[0]?.id || null);
+        }
+
+        if (sanitizedMsgs.length > 0) {
+          const syncedConvIds = new Set(sanitizedMsgs.map((m: Message) => m.conversationId));
           setMessages(prev => {
             const otherMessages = prev.filter(m => !syncedConvIds.has(m.conversationId));
-            return deduplicateMessages([...otherMessages, ...incomingMsgs], currentContactsList);
+            const next = deduplicateMessages([...otherMessages, ...sanitizedMsgs], updatedContactsList.length > 0 ? updatedContactsList : contacts);
+            saveToStorageDebounced('vanguard_crm_messages', next, 200);
+            try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(next)); } catch {}
+            return next;
           });
         }
 
-        if (Array.isArray(incomingConvs) && incomingConvs.length > 0) {
-          setConversations(prev => {
-            return deduplicateConversations([...prev, ...incomingConvs], currentContactsList);
-          });
-        }
+        // Persiste imediatamente no servidor central
+        fetch('/api/v1/crm/state', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': effectiveTenantId,
+            'x-user-id': effectiveUserId,
+            'x-user-email': currentUserRef.current?.email || 'rafael@faithhubs.com',
+          },
+          body: JSON.stringify({
+            contacts: sanitizedContacts,
+            conversations: sanitizedConvs,
+            messages: sanitizedMsgs,
+          }),
+        }).catch(() => {});
       }
     };
 
     window.addEventListener('message', handleExtensionDirectSync);
     return () => window.removeEventListener('message', handleExtensionDirectSync);
-  }, []);
+  }, [contacts, saveToStorageDebounced]);
 
 
 

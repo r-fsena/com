@@ -113,16 +113,21 @@ async function handleForwardLog(logData) {
 }
 
 async function handleBatchSync(data) {
-  const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerUserId', 'brokerName', 'extensionSessionToken']);
-  const crmUrl = config.crmUrl || DEFAULT_CRM_URL;
-  const tenantId = config.tenantId || DEFAULT_TENANT_ID;
+  const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerUserId', 'brokerName', 'brokerEmail', 'extensionSessionToken']);
+  const crmUrl = (config.crmUrl || DEFAULT_CRM_URL).replace(/\/+$/, '');
+  
+  // Resolução inteligente do tenantId
+  let tenantId = config.tenantId || DEFAULT_TENANT_ID;
+  if (config.brokerEmail === 'rafael@faithhubs.com' && (!tenantId || tenantId === 'default-tenant' || tenantId === 'tenant-amabile-barbarotti')) {
+    tenantId = 'tenant-1790857269847';
+  }
 
   const endpoint = `${crmUrl}/api/v1/sync/extension-history`;
 
   const payload = {
     tenantId,
-    brokerUserId: config.brokerUserId || undefined,
-    brokerName: config.brokerName || 'Corretor',
+    brokerUserId: config.brokerUserId || (config.brokerEmail === 'rafael@faithhubs.com' ? 'user-rafael-admin' : undefined),
+    brokerName: config.brokerName || (config.brokerEmail === 'rafael@faithhubs.com' ? 'Rafael Sena' : 'Corretor'),
     chats: data.chats || [],
   };
 
@@ -130,6 +135,7 @@ async function handleBatchSync(data) {
     level: 'INFO',
     event: 'DISPATCHING_BATCH_SYNC',
     details: {
+      tenantId,
       chatsCount: (data.chats || []).length,
       samplePhone: data.chats?.[0]?.phone,
       sampleName: data.chats?.[0]?.name,
@@ -140,6 +146,7 @@ async function handleBatchSync(data) {
   const headers = {
     'Content-Type': 'application/json',
     'x-extension-token': EXTENSION_TOKEN,
+    'x-tenant-id': tenantId,
   };
   if (config.extensionSessionToken) {
     headers['Authorization'] = `Bearer ${config.extensionSessionToken}`;
@@ -168,20 +175,37 @@ async function handleBatchSync(data) {
     details: result
   });
 
+  // Salva no storage local da extensão como lote recente para entrega resiliente ao CRM
+  try {
+    await chrome.storage.local.set({
+      brokivaPendingCrmSync: {
+        timestamp: Date.now(),
+        tenantId,
+        messages: result.resultMessages || [],
+        contacts: result.resultContacts || [],
+        conversations: result.resultConversations || [],
+      }
+    });
+  } catch (err) {}
+
   // Notifica abas do CRM abertas para injetar as mensagens instantaneamente na tela
   try {
     chrome.tabs.query({}, (tabs) => {
+      if (!Array.isArray(tabs)) return;
       tabs.forEach(tab => {
-        if (tab.url && (tab.url.includes('faithhubs.com') || tab.url.includes('localhost'))) {
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'BROKIVA_NEW_SYNCED_MESSAGES',
-            data: {
-              messages: result.resultMessages || [],
-              contacts: result.resultContacts || [],
-              conversations: result.resultConversations || [],
-            }
-          }).catch(() => {});
-        }
+        try {
+          if (tab.url && (tab.url.includes('faithhubs.com') || tab.url.includes('amplifyapp.com') || tab.url.includes('localhost'))) {
+            chrome.tabs.sendMessage(tab.id, {
+              action: 'BROKIVA_NEW_SYNCED_MESSAGES',
+              data: {
+                tenantId,
+                messages: result.resultMessages || [],
+                contacts: result.resultContacts || [],
+                conversations: result.resultConversations || [],
+              }
+            }).catch(() => {});
+          }
+        } catch (_) {}
       });
     });
   } catch (err) {}
@@ -262,7 +286,7 @@ async function handleResolveContact({ name, lid }) {
   try {
     const tabs = await new Promise(r => chrome.tabs.query({}, r));
     for (const tab of tabs) {
-      if (tab.url && (tab.url.includes('faithhubs.com') || tab.url.includes('localhost'))) {
+      if (tab.url && (tab.url.includes('faithhubs.com') || tab.url.includes('amplifyapp.com') || tab.url.includes('localhost'))) {
         try {
           const res = await new Promise(r => {
             chrome.tabs.sendMessage(tab.id, { action: 'GET_CRM_CONTACTS' }, resp => {
@@ -309,4 +333,3 @@ async function handleExtensionLogin(data) {
   });
   return await res.json();
 }
-

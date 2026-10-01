@@ -97,6 +97,28 @@ export async function POST(req: NextRequest) {
 
     const { tenantId, brokerUserId, brokerName, chats } = parsed.data;
 
+    // Resolução inteligente e ultra-resiliente de tenantId
+    const headerTenant = req.headers.get('x-tenant-id');
+    let effectiveTenantId = tenantId;
+    if (!effectiveTenantId || effectiveTenantId === 'default-tenant' || effectiveTenantId === 'tenant-amabile-barbarotti') {
+      if (headerTenant && headerTenant !== 'default-tenant' && headerTenant !== 'tenant-amabile-barbarotti') {
+        effectiveTenantId = headerTenant;
+      } else if (session?.tenantId && session.tenantId !== 'tenant-amabile-barbarotti') {
+        effectiveTenantId = session.tenantId;
+      } else if (brokerUserId === 'user-rafael-admin' || session?.userEmail === 'rafael@faithhubs.com') {
+        effectiveTenantId = 'tenant-1790857269847';
+      }
+    }
+
+    const effectiveBrokerUserId = brokerUserId || session?.userId || (effectiveTenantId === 'tenant-1790857269847' ? 'user-rafael-admin' : undefined);
+    const effectiveBrokerName = brokerName || session?.userName || (effectiveTenantId === 'tenant-1790857269847' ? 'Rafael Sena' : 'Corretor');
+
+    // Resolução dinâmica de instância WhatsApp correspondente
+    let targetInstanceId = '3F1B67FC8139425171C79ED390C0144C'; // Rafael Sena
+    if (effectiveTenantId === 'tenant-amabile-barbarotti') {
+      targetInstanceId = '3F8144490C66805B4E3FD64A35E2F2DC'; // Amábile Barbarotti
+    }
+
     let importedContactsCount = 0;
     let importedMessagesCount = 0;
 
@@ -248,11 +270,11 @@ export async function POST(req: NextRequest) {
           newMessages.push({
             id: mId,
             externalId: m.id || mId,
-            tenantId,
+            tenantId: effectiveTenantId,
             conversationId,
             senderType: isFromMe ? 'USER' : 'CONTACT',
-            senderUserId: isFromMe ? brokerUserId : undefined,
-            senderName: isFromMe ? (brokerName || 'Corretor') : contactName,
+            senderUserId: isFromMe ? effectiveBrokerUserId : undefined,
+            senderName: isFromMe ? (effectiveBrokerName || 'Corretor') : contactName,
             messageType: (m.messageType || 'TEXT') as MessageType,
             content: cleanContent || (m.messageType === 'AUDIO' ? '🎵 Mensagem de Voz' : m.messageType === 'IMAGE' ? '📷 Foto' : m.messageType === 'VIDEO' ? '🎥 Vídeo' : 'Mensagem'),
             attachments: m.mediaUrl ? [{
@@ -281,7 +303,7 @@ export async function POST(req: NextRequest) {
 
         newMessages.push({
           id: `ext-msg-initial-${cleanPhone}-${Date.now()}`,
-          tenantId,
+          tenantId: effectiveTenantId,
           conversationId,
           senderType: 'CONTACT',
           senderName: contactName,
@@ -313,12 +335,12 @@ export async function POST(req: NextRequest) {
 
       newContacts.push({
         id: contactId,
-        tenantId,
+        tenantId: effectiveTenantId,
         name: contactName,
         phone: resolvedPhone,
         lid: resolvedLid,
         avatarUrl: finalAvatar,
-        assignedUserId: brokerUserId || undefined,
+        assignedUserId: effectiveBrokerUserId || undefined,
         source: 'WHATSAPP',
         temperature: existingContact?.temperature || 'COLD',
         aiPriorityScore: existingContact?.aiPriorityScore !== undefined ? existingContact.aiPriorityScore : 0,
@@ -354,10 +376,10 @@ export async function POST(req: NextRequest) {
 
       newConversations.push({
         id: conversationId,
-        tenantId,
-        instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
+        tenantId: effectiveTenantId,
+        instanceId: targetInstanceId,
         contactId,
-        assignedUserId: brokerUserId || undefined,
+        assignedUserId: effectiveBrokerUserId || undefined,
         status: lastIsFromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
         unreadCount: 0,
         lastMessagePreview: cleanPreview,
@@ -384,7 +406,7 @@ export async function POST(req: NextRequest) {
         for (const c of newContacts) {
           if (c && (c.phone || c.id)) {
             try {
-              await ContactsDBService.upsertContact(tenantId, c);
+              await ContactsDBService.upsertContact(effectiveTenantId, c);
             } catch (err) {
               console.warn('[ExtensionSync] Erro ao persistir contato no banco:', err);
             }
@@ -398,8 +420,8 @@ export async function POST(req: NextRequest) {
       timestamp: Date.now(),
       level: 'INFO',
       event: 'BATCH_SYNC_INGESTED',
-      tenantId,
-      brokerName,
+      tenantId: effectiveTenantId,
+      brokerName: effectiveBrokerName,
       messagesCount: importedMessagesCount,
       details: {
         contactsCount: importedContactsCount,

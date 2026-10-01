@@ -52,7 +52,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [instanceToken, setInstanceToken] = useState((instances[0] as any)?.token || '');
   const [clientToken, setClientToken] = useState((instances[0] as any)?.clientToken || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [syncHistoryDays, setSyncHistoryDays] = useState<number>(15);
+  const [syncHistoryDays, setSyncHistoryDays] = useState<number>(0);
 
   const isCheckingRef = useRef(false);
   const isFetchingQrRef = useRef(false);
@@ -164,7 +164,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         }).catch(() => {});
 
         // Auto-sincronização de leads, fotos e conversas
-        syncWhatsAppChats(id).then(syncRes => {
+        syncWhatsAppChats(id, 0).then(syncRes => {
           if (syncRes?.count) {
             setSyncSuccessMessage(`🎉 Conexão ativa! ${syncRes.count} Leads e conversas do WhatsApp sincronizados.`);
             setTimeout(() => setSyncSuccessMessage(null), 5000);

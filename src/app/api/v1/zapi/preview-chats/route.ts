@@ -33,17 +33,18 @@ export async function POST(req: NextRequest) {
       'Client-Token': securityToken,
     };
 
-    // Busca chats (páginas 1 a 3 = até 300 conversas), agenda de contatos e etiquetas do WhatsApp Business em paralelo
+    // Busca chats (páginas 1 a 10 = até 1.000 conversas), agenda de contatos e etiquetas do WhatsApp Business em paralelo
+    const pages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const [chatResults, contactResults, labelsRes] = await Promise.all([
       Promise.allSettled(
-        [1, 2, 3].map(page =>
+        pages.map(page =>
           fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=${page}&pageSize=100`, { headers })
             .then(r => r.ok ? r.json() : [])
             .catch(() => [])
         )
       ),
       Promise.allSettled(
-        [1, 2, 3].map(page =>
+        pages.map(page =>
           fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=${page}&pageSize=100`, { headers })
             .then(r => r.ok ? r.json() : [])
             .catch(() => [])

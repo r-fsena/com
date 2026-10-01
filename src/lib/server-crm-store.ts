@@ -62,22 +62,7 @@ export function sanitizeUser(u: User): User {
   return safe as User;
 }
 
-const DEFAULT_DELETED_CHAT_KEYS = [
-  '5511915361868',
-  '11915361868',
-  'contact-zapi-5511915361868',
-  'conv-zapi-5511915361868',
-  '554896290235',
-  '4896290235',
-  '5548996290235',
-  'contact-zapi-554896290235',
-  'conv-zapi-554896290235',
-  '554899797603',
-  '4899797603',
-  '55489797603',
-  'contact-zapi-554899797603',
-  'conv-zapi-554899797603',
-];
+const DEFAULT_DELETED_CHAT_KEYS: string[] = [];
 
 declare global {
   var __SERVER_CRM_STATE__: ServerCRMState | undefined;
@@ -199,8 +184,15 @@ export function loadStateFromDisk(): boolean {
             global.__GLOBAL_PHONE_LID_MAP__ = { ...(global.__GLOBAL_PHONE_LID_MAP__ || {}), ...parsed.phoneLidMap };
           }
 
-          const existingDel = global.__GLOBAL_DELETED_CHAT_KEYS__ ? Array.from(global.__GLOBAL_DELETED_CHAT_KEYS__) : DEFAULT_DELETED_CHAT_KEYS;
-          const restoredDel = Array.isArray(parsed.deletedChatKeys) ? parsed.deletedChatKeys : [];
+          const LEGACY_IGNORED_KEYS = new Set([
+            '554899797603', '4899797603', '55489797603', 'contact-zapi-554899797603', 'conv-zapi-554899797603',
+            '5511915361868', '11915361868', 'contact-zapi-5511915361868', 'conv-zapi-5511915361868',
+            '554896290235', '4896290235', '5548996290235', 'contact-zapi-554896290235', 'conv-zapi-554896290235',
+          ]);
+          const existingDel = (global.__GLOBAL_DELETED_CHAT_KEYS__ ? Array.from(global.__GLOBAL_DELETED_CHAT_KEYS__) : DEFAULT_DELETED_CHAT_KEYS)
+            .filter((k: string) => !LEGACY_IGNORED_KEYS.has(k));
+          const restoredDel = (Array.isArray(parsed.deletedChatKeys) ? (parsed.deletedChatKeys as string[]) : [])
+            .filter((k: string) => !LEGACY_IGNORED_KEYS.has(k));
           global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set([...DEFAULT_DELETED_CHAT_KEYS, ...existingDel, ...restoredDel]);
 
           console.log(`[serverCRMStore] Estado restaurado de ${filePath}: ${global.__SERVER_CRM_STATE__.conversations.length} conversas, ${global.__SERVER_CRM_STATE__.contacts.length} contatos, ${global.__SERVER_CRM_STATE__.messages.length} mensagens.`);
@@ -461,6 +453,27 @@ export const serverCRMStore = {
     state.messages = state.messages.filter(m => !this.isChatDeleted(m.conversationId));
     state.deals = state.deals.filter(d => !this.isChatDeleted(d.contactId));
 
+    saveStateToDisk();
+    return Array.from(set);
+  },
+
+  undeleteChat(phoneOrKey: string): string[] {
+    if (!global.__GLOBAL_DELETED_CHAT_KEYS__) return [];
+    const clean = phoneOrKey.replace(/\D/g, '');
+    const set = global.__GLOBAL_DELETED_CHAT_KEYS__;
+    set.delete(phoneOrKey);
+    if (clean) {
+      set.delete(clean);
+      set.delete(`55${clean}`);
+      set.delete(`conv-zapi-${clean}`);
+      set.delete(`contact-zapi-${clean}`);
+      if (clean.startsWith('55')) {
+        const without55 = clean.slice(2);
+        set.delete(without55);
+        set.delete(`conv-zapi-${without55}`);
+        set.delete(`contact-zapi-${without55}`);
+      }
+    }
     saveStateToDisk();
     return Array.from(set);
   },

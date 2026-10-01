@@ -426,30 +426,33 @@ export function getDefaultGoalsConfig(tenantId: string = 'tenant-amabile-barbaro
   };
 }
 
-export const INITIAL_DELETED_CHAT_KEYS = [
-  '5511915361868',
-  '11915361868',
-  'contact-zapi-5511915361868',
-  'conv-zapi-5511915361868',
-  '554896290235',
-  '4896290235',
-  '5548996290235',
-  'contact-zapi-554896290235',
-  'conv-zapi-554896290235',
-];
+export const INITIAL_DELETED_CHAT_KEYS: string[] = [];
 
 export function getStoredDeletedChatKeys(): Set<string> {
   const set = new Set<string>(INITIAL_DELETED_CHAT_KEYS);
+  const LEGACY_IGNORED_KEYS = new Set([
+    '554899797603', '4899797603', '55489797603', 'contact-zapi-554899797603', 'conv-zapi-554899797603',
+    '5511915361868', '11915361868', 'contact-zapi-5511915361868', 'conv-zapi-5511915361868',
+    '554896290235', '4896290235', '5548996290235', 'contact-zapi-554896290235', 'conv-zapi-554896290235',
+  ]);
   if (typeof window !== 'undefined') {
     try {
       const saved = localStorage.getItem('vanguard_crm_deleted_chats');
       if (saved) {
         const arr = JSON.parse(saved);
         if (Array.isArray(arr)) {
+          let cleanedAny = false;
           arr.forEach((k: any) => {
             const clean = String(k).trim();
-            if (clean) set.add(clean);
+            if (clean && !LEGACY_IGNORED_KEYS.has(clean) && !clean.includes('554899797603')) {
+              set.add(clean);
+            } else {
+              cleanedAny = true;
+            }
           });
+          if (cleanedAny) {
+            localStorage.setItem('vanguard_crm_deleted_chats', JSON.stringify(Array.from(set)));
+          }
         }
       }
     } catch {}
@@ -4233,7 +4236,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [activeSyncJob?.id, activeSyncJob?.status]);
 
-  const syncWhatsAppChats = async (targetInstanceId?: string, historyDays = 15): Promise<{ success: boolean; count: number }> => {
+  const syncWhatsAppChats = async (targetInstanceId?: string, historyDays = 0): Promise<{ success: boolean; count: number }> => {
     try {
       setIsSyncingWhatsApp(true);
       const chosenInst = targetInstanceId 
@@ -4763,7 +4766,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
             const rawPhone = resolvedPhone;
             if (!rawPhone || rawPhone === '0') return;
-            const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
+            const KNOWN_CONNECTED_PHONES = ['554888774408', '4888774408'];
             if (KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, rawPhone))) return;
             if (isChatKeyDeleted(rawPhone, deletedChatKeys) || (lidClean && isChatKeyDeleted(lidClean, deletedChatKeys))) return;
 

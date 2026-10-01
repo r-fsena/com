@@ -82,9 +82,9 @@ async function handleSyncChats(req: NextRequest) {
       'Client-Token': securityToken,
     };
 
-    // 1. Busca lista de chats (Páginas 1 a 5, até 500 chats), agenda de contatos (Páginas 1 a 5, até 1000 contatos) e etiquetas em paralelo
-    const chatPages = [1, 2, 3, 4, 5];
-    const contactPages = [1, 2, 3, 4, 5];
+    // 1. Busca lista de chats (Páginas 1 a 10, até 1.000 chats), agenda de contatos (Páginas 1 a 10, até 2.000 contatos) e etiquetas em paralelo
+    const chatPages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const contactPages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     const [chatResults, contactResults, labelsRes] = await Promise.all([
       Promise.allSettled(

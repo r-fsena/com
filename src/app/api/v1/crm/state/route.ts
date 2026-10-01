@@ -56,13 +56,23 @@ export async function POST(req: NextRequest) {
     if (body.user && !body.users) {
       payload.users = [body.user];
     }
-    serverCRMStore.updateState(payload);
-    const deletedKeys = serverCRMStore.getDeletedChatKeys();
-
     const clientTenantHeader = req.headers.get('x-tenant-id');
     const targetTenantId = (session && !session.isSuperAdmin && session.tenantId) 
       ? session.tenantId 
       : (session?.tenantId || clientTenantHeader || 'tenant-amabile-barbarotti');
+
+    if (body.action === 'undelete' && (body.phone || body.conversationId)) {
+      const remainingDeleted = serverCRMStore.undeleteChat(body.phone || body.conversationId);
+      return NextResponse.json({
+        success: true,
+        tenantId: targetTenantId,
+        deletedKeys: remainingDeleted,
+        ...serverCRMStore.getScopedState(targetTenantId),
+      });
+    }
+
+    serverCRMStore.updateState(payload);
+    const deletedKeys = serverCRMStore.getDeletedChatKeys();
 
     // Se houver DATABASE_URL (PostgreSQL), persiste os contatos qualificados em segundo plano
     if (process.env.DATABASE_URL && Array.isArray(payload.contacts) && payload.contacts.length > 0) {

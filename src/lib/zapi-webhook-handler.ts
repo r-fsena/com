@@ -100,7 +100,7 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    const KNOWN_CONNECTED_PHONES = ['554899797603', '4899797603', '55489797603'];
+    const KNOWN_CONNECTED_PHONES = ['554888774408', '4888774408'];
     const connectedPhoneInBody = body.connectedPhone ? String(body.connectedPhone).replace(/\D/g, '') : '';
 
     const isConnectedPhone = (phoneCandidate: any) => {

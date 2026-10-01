@@ -42,7 +42,12 @@ export function WhatsAppConnectionView() {
     isSyncingWhatsApp 
   } = useCRM();
 
-  const activeInstance = instances[0];
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string>(() => {
+    const defaultInst = instances.find(i => i.assignedUserId === currentUser?.id) || instances.find(i => i.tenantId === currentTenant?.id) || instances[0];
+    return defaultInst?.id || 'inst-rafael-individual';
+  });
+
+  const activeInstance = instances.find(i => i.id === selectedInstanceId) || instances.find(i => i.assignedUserId === currentUser?.id) || instances[0];
   const [instanceIdInput, setInstanceIdInput] = useState('');
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -113,14 +118,14 @@ export function WhatsAppConnectionView() {
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
   const getZapiQueryParams = () => {
-    const instId = activeInstance?.zapiInstanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const instId = activeInstance?.zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C';
     const tok = (activeInstance as any)?.token || '';
     const cTok = (activeInstance as any)?.clientToken || '';
     const params = new URLSearchParams();
     if (instId) params.set('instanceId', instId);
     if (tok) params.set('token', tok);
     if (cTok) params.set('clientToken', cTok);
-    params.set('tenantId', currentTenant?.id || 'tenant-amabile-barbarotti');
+    params.set('tenantId', currentTenant?.id || 'tenant-rafael-teste');
     return params;
   };
 
@@ -531,6 +536,48 @@ export function WhatsAppConnectionView() {
       {/* Conteúdo com Grid Responsivo */}
       <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
         
+        {/* Seletor de Sessão / Linha WhatsApp (Sessões Individuais) */}
+        {instances.length > 1 && (
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Sessão Ativa Selecionada</span>
+              <h3 className="text-sm font-bold text-slate-900">Alternar Linha / Instância WhatsApp</h3>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {instances.map(inst => {
+                const isSelected = inst.id === activeInstance?.id;
+                const isMine = inst.assignedUserId === currentUser?.id;
+                return (
+                  <button
+                    key={inst.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedInstanceId(inst.id);
+                      setIsQrConnected(inst.status === 'CONNECTED');
+                      setQrCodeData(null);
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                      isSelected 
+                        ? 'bg-[#3742AC] text-white shadow-sm shadow-indigo-900/20' 
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>{inst.name}</span>
+                    {isMine && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'
+                      }`}>
+                        Sua Sessão
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Banner de Download da Extensão Oficial Brokiva Chrome */}
         <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950 to-[#2A338F] rounded-3xl p-6 sm:p-7 text-white shadow-lg border border-indigo-500/20 animate-in fade-in">
           <div className="absolute -right-8 -bottom-8 w-60 h-60 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />

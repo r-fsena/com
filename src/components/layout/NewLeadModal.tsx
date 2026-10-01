@@ -21,14 +21,14 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
   const [temperature, setTemperature] = useState<LeadTemperature>('WARM');
   const [source, setSource] = useState('WHATSAPP');
   const [propertyType, setPropertyType] = useState<PropertyType>('APARTMENT');
-  const [targetBedrooms, setTargetBedrooms] = useState('2');
+  const [targetBedrooms, setTargetBedrooms] = useState('');
   const [purchasePurpose, setPurchasePurpose] = useState<'LIVING' | 'INVESTMENT'>('LIVING');
-  const [region, setRegion] = useState('Jardins');
+  const [region, setRegion] = useState('');
   const [monthlyIncome, setMonthlyIncome] = useState('');
-  const [downPayment, setDownPayment] = useState('500.000');
-  const [maxBudget, setMaxBudget] = useState('1.800.000');
+  const [downPayment, setDownPayment] = useState('');
+  const [maxBudget, setMaxBudget] = useState('');
   const [assignedUserId, setAssignedUserId] = useState(currentUser.id);
-  const [tags, setTags] = useState('Novo Cadastro, Alto Padrão');
+  const [tags, setTags] = useState('');
 
   if (!isOpen) return null;
 
@@ -51,22 +51,27 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
       preferredPropertyType: propertyType,
       targetBedrooms: targetBedrooms ? Number(targetBedrooms) : undefined,
       purchasePurpose,
-      targetRegions: [region],
+      targetRegions: region.trim() ? [region.trim()] : [],
       monthlyIncome: cleanMonthly > 0 ? cleanMonthly : undefined,
-      downPaymentAvailable: cleanDown,
-      maxPropertyValue: cleanMax,
+      downPaymentAvailable: cleanDown > 0 ? cleanDown : undefined,
+      maxPropertyValue: cleanMax > 0 ? cleanMax : undefined,
       assignedUserId,
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
     });
 
-    // 2. Cria negócio no primeiro estágio do funil
+    // 2. Cria negócio no primeiro estágio do funil com dados reais
+    const propName = propertyType === 'PENTHOUSE' ? 'Cobertura' : propertyType === 'HOUSE' ? 'Casa' : propertyType === 'STUDIO' ? 'Studio' : propertyType === 'LAND' ? 'Terreno' : propertyType === 'COMMERCIAL' ? 'Comercial' : 'Apartamento';
+    const bedroomsStr = targetBedrooms ? `${targetBedrooms}D ` : '';
+    const regionStr = region.trim() ? ` em ${region.trim()}` : '';
+    const dealTitle = `${propName} ${bedroomsStr}${regionStr} - ${name.trim()}`.replace(/\s+/g, ' ');
+
     createDeal({
       contactId: contact.id,
       assignedUserId,
-      title: `${propertyType === 'PENTHOUSE' ? 'Cobertura' : propertyType === 'HOUSE' ? 'Casa' : 'Apartamento'} ${targetBedrooms ? `${targetBedrooms}D ` : ''}em ${region} - ${name}`,
-      expectedValue: cleanMax || 1200000,
-      stageId: currentPipeline.stages[0].id,
-      manualProbability: 60,
+      title: dealTitle,
+      expectedValue: cleanMax > 0 ? cleanMax : 0,
+      stageId: currentPipeline.stages[0]?.id,
+      manualProbability: 0,
     });
 
     onClose();

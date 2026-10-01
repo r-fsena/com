@@ -52,6 +52,39 @@ export const DEFAULT_FEATURE_FLAGS = {
 // -------------------------------------------------------------
 export const MOCK_TENANTS: Tenant[] = [
   {
+    id: 'tenant-rafael-teste',
+    name: 'Ambiente Teste Rafael Sena',
+    slug: 'ambiente-teste-rafael-sena',
+    documentCnpj: '00.000.000/0001-00',
+    logoUrl: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=128&auto=format&fit=crop&q=60',
+    primaryColor: '#3742AC',
+    timezone: 'America/Sao_Paulo',
+    status: 'ACTIVE',
+    plan: 'ENTERPRISE',
+    monthlyFee: 0.00,
+    maxBrokers: 50,
+    maxInstances: 10,
+    featureFlags: { 
+      ...DEFAULT_FEATURE_FLAGS,
+      proposals: true,
+      asaasBilling: true,
+      campaigns: true,
+      automations: true,
+    },
+    businessHours: {
+      start: '08:00',
+      end: '20:00',
+      workDays: [1, 2, 3, 4, 5, 6, 0],
+    },
+    settings: {
+      slaFirstResponseMinutes: 5,
+      slaInactivityHours: 12,
+      autoAssignRule: 'ROUND_ROBIN',
+      aiCopilotEnabled: true,
+      requireHumanApprovalForAI: false,
+    }
+  },
+  {
     id: 'tenant-amabile-barbarotti',
     name: 'Amábile Barbarotti Imóveis',
     slug: 'amabile-barbarotti',
@@ -93,6 +126,7 @@ export const MOCK_TENANTS: Tenant[] = [
 export const MOCK_USERS: User[] = [
   {
     id: 'user-rafael-admin',
+    tenantId: 'tenant-rafael-teste',
     name: 'Rafael Sena',
     email: 'rafael@faithhubs.com',
     phone: '+55 11 98877-6655',
@@ -137,14 +171,31 @@ export const MOCK_USERS: User[] = [
 // -------------------------------------------------------------
 export const MOCK_INSTANCES: WhatsAppInstance[] = [
   {
+    id: 'inst-rafael-individual',
+    tenantId: 'tenant-rafael-teste',
+    name: 'WhatsApp Individual • Rafael Sena',
+    phoneNumber: 'Aguardando pareamento',
+    zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C',
+    token: '7A18BD2BADA4840FB0374499',
+    clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
+    status: 'DISCONNECTED',
+    type: 'BROKER_DIRECT',
+    assignedUserId: 'user-rafael-admin',
+    isDefault: true,
+    batteryLevel: 100,
+    lastSyncAt: new Date().toISOString(),
+  },
+  {
     id: 'inst-amabile-central',
     tenantId: 'tenant-amabile-barbarotti',
     name: 'Central WhatsApp • Amábile Barbarotti',
     phoneNumber: '+55 (48) 9979-7603',
     zapiInstanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
+    token: '550DBC07B2F984AB74E4BCE5',
+    clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
     status: 'CONNECTED',
     type: 'COMPANY_CENTRAL',
-    isDefault: true,
+    isDefault: false,
     batteryLevel: 100,
     lastSyncAt: new Date().toISOString(),
   }

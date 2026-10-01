@@ -332,10 +332,10 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const handleOpenDealModal = (deal: Deal) => {
     setSelectedDealForModal(deal);
     setEditTitle(deal.title);
-    setEditValue(maskCurrencyInput(deal.expectedValue));
+    setEditValue(deal.expectedValue ? maskCurrencyInput(deal.expectedValue) : '');
     setEditStageId(deal.stageId);
     setEditBrokerId(deal.assignedUserId);
-    setEditProbability(String(deal.manualProbability || 50));
+    setEditProbability(deal.manualProbability !== undefined && deal.manualProbability !== null ? String(deal.manualProbability) : '0');
     setEditLossReason(deal.lossReason || '');
     setShowLossReasonInput(deal.status === 'LOST');
     setHoveredDealId(null);
@@ -351,7 +351,8 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     e.preventDefault();
     if (!selectedDealForModal) return;
 
-    const numValue = parseBRLInputToNumber(editValue) || selectedDealForModal.expectedValue;
+    const parsed = parseBRLInputToNumber(editValue);
+    const numValue = !isNaN(parsed) && parsed >= 0 ? parsed : (selectedDealForModal.expectedValue || 0);
     const cleanMonthly = parseBRLInputToNumber(editMonthlyIncome);
     const cleanDown = parseBRLInputToNumber(editDownPayment);
     const stage = currentPipeline.stages.find(s => s.id === editStageId);
@@ -364,7 +365,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
       expectedValue: numValue,
       stageId: editStageId,
       assignedUserId: editBrokerId,
-      manualProbability: Number(editProbability) || 50,
+      manualProbability: !isNaN(Number(editProbability)) ? Number(editProbability) : 0,
       status: (stage?.isWon ? 'WON' : showLossReasonInput ? 'LOST' : 'OPEN') as any,
       lossReason: showLossReasonInput ? editLossReason : undefined,
       contactId: targetContactId,
@@ -712,9 +713,15 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                       >
                         {/* Header do Card */}
                         <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <span className="text-xs font-bold text-emerald-700 font-mono">
-                            R$ {deal.expectedValue.toLocaleString('pt-BR')}
-                          </span>
+                          {deal.expectedValue > 0 ? (
+                            <span className="text-xs font-bold text-emerald-700 font-mono">
+                              R$ {deal.expectedValue.toLocaleString('pt-BR')}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-slate-400 italic">
+                              Valor a definir
+                            </span>
+                          )}
 
                           <div className="flex items-center gap-1 flex-wrap justify-end">
                             {/* Alertas Inteligentes do Radar de Inatividade */}
@@ -1018,7 +1025,11 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
             <div className="flex items-center justify-between text-slate-300">
               <span className="text-slate-400 text-[10px]">💰 Orçamento:</span>
               <span className="font-bold text-emerald-400 font-mono">
-                {hoveredContact.maxPropertyValue ? `R$ ${(hoveredContact.maxPropertyValue / 1000).toFixed(0)}k` : 'R$ 1.2M'}
+                {hoveredContact.maxPropertyValue && hoveredContact.maxPropertyValue > 0
+                  ? `R$ ${(hoveredContact.maxPropertyValue / 1000).toFixed(0)}k`
+                  : hoveredDeal && hoveredDeal.expectedValue > 0
+                  ? `R$ ${(hoveredDeal.expectedValue / 1000).toFixed(0)}k`
+                  : 'A definir'}
               </span>
             </div>
 

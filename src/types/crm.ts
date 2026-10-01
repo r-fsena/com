@@ -112,6 +112,8 @@ export interface WhatsAppInstance {
   name: string;
   phoneNumber: string;
   zapiInstanceId: string;
+  token?: string;
+  clientToken?: string;
   status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'QRCODE';
   batteryLevel?: number;
   lastSyncAt: string;

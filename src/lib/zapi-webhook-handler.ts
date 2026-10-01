@@ -418,8 +418,17 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    const tenantId = routeParams?.tenantId || 'tenant-amabile-barbarotti';
-    const instanceId = routeParams?.instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const instanceId = routeParams?.instanceId || body?.instanceId || body?.zaapId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
+    let tenantId = routeParams?.tenantId;
+    if (!tenantId) {
+      if (instanceId === '3F1B67FC8139425171C79ED390C0144C') {
+        tenantId = 'tenant-rafael-teste';
+      } else if (instanceId === '3F8144490C66805B4E3FD64A35E2F2DC') {
+        tenantId = 'tenant-amabile-barbarotti';
+      } else {
+        tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-rafael-teste';
+      }
+    }
 
     // Se temos um telefone e conteúdo válido, registra no buffer global de eventos
     if (cleanPhone && cleanPhone !== '0') {

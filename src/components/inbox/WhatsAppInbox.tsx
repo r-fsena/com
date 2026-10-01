@@ -2079,8 +2079,8 @@ export function WhatsAppInbox() {
                           stageId: currentPipeline.stages[0].id,
                           assignedUserId: currentUser.id,
                           title: `Oportunidade • ${activeContact.name}`,
-                          expectedValue: activeContact.maxPropertyValue || 750000,
-                          manualProbability: 40,
+                          expectedValue: activeContact.maxPropertyValue || 0,
+                          manualProbability: 0,
                         });
                       }
                     }}
@@ -3397,7 +3397,7 @@ export function WhatsAppInbox() {
                   type="button"
                   onClick={() => {
                     if (!activeContact) return;
-                    const val = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget) || 1200000;
+                    const val = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget) || 0;
                     const currentProp = activeContact.preferredPropertyType || editedPropertyType;
                     const propTypeName = currentProp === 'PENTHOUSE' ? 'Cobertura' : currentProp === 'HOUSE' ? 'Casa em Condomínio' : currentProp === 'STUDIO' ? 'Studio' : currentProp === 'LAND' ? 'Terreno' : currentProp === 'COMMERCIAL' ? 'Comercial' : 'Apartamento';
                     createDeal({
@@ -3406,6 +3406,7 @@ export function WhatsAppInbox() {
                       expectedValue: val,
                       stageId: currentPipeline.stages[0].id,
                       assignedUserId: currentUser.id,
+                      manualProbability: 0,
                     });
                   }}
                   className={`w-full text-xs font-bold py-2 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
@@ -4521,7 +4522,7 @@ export function WhatsAppInbox() {
                     type="button"
                     onClick={() => {
                       if (!activeContact) return;
-                      const val = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget) || 1200000;
+                      const val = activeContact.maxPropertyValue || parseBRLInputToNumber(editedMaxBudget) || 0;
                       const currentProp = activeContact.preferredPropertyType || editedPropertyType;
                       const propTypeName = currentProp === 'PENTHOUSE' ? 'Cobertura' : currentProp === 'HOUSE' ? 'Casa em Condomínio' : currentProp === 'STUDIO' ? 'Studio' : currentProp === 'LAND' ? 'Terreno' : currentProp === 'COMMERCIAL' ? 'Comercial' : 'Apartamento';
                       createDeal({
@@ -4530,6 +4531,7 @@ export function WhatsAppInbox() {
                         expectedValue: val,
                         stageId: currentPipeline.stages[0].id,
                         assignedUserId: currentUser.id,
+                        manualProbability: 0,
                       });
                     }}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-xl transition shadow-2xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"

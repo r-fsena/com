@@ -1553,13 +1553,20 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.map((inst: WhatsAppInstance) => {
+            const list = parsed.map((inst: WhatsAppInstance) => {
               const isAmabileInst = !inst.tenantId || inst.tenantId === 'tenant-amabile-barbarotti' || inst.tenantId.includes('amabile') || inst.tenantId.startsWith('tenant-17');
               return {
                 ...inst,
                 tenantId: isAmabileInst ? 'tenant-amabile-barbarotti' : inst.tenantId,
               };
             });
+            for (const mockInst of MOCK_INSTANCES) {
+              const exists = list.some(i => i.id === mockInst.id || i.zapiInstanceId === mockInst.zapiInstanceId);
+              if (!exists) {
+                list.unshift(mockInst);
+              }
+            }
+            return list;
           }
         }
       } catch {}
@@ -1568,7 +1575,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [activeInstanceId, setActiveInstanceId] = useState<string>(() => {
-    return MOCK_INSTANCES[0]?.id || 'inst-amabile-central';
+    return MOCK_INSTANCES[0]?.id || 'inst-rafael-individual';
   });
 
   const [isZapiConnected, setIsZapiConnected] = useState<boolean>(() => {
@@ -1612,7 +1619,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const updateInstance = (instanceId: string, updates: Partial<WhatsAppInstance>) => {
     setInstances(prev => {
-      const updated = prev.map(inst => (inst.id === instanceId || inst.zapiInstanceId === instanceId || prev.length === 1) ? { ...inst, ...updates } : inst);
+      const updated = prev.map(inst => (inst.id === instanceId || inst.zapiInstanceId === instanceId) ? { ...inst, ...updates } : inst);
       try { localStorage.setItem('vanguard_crm_instances', JSON.stringify(updated)); } catch {}
       return updated;
     });
@@ -3005,9 +3012,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       stageId: data.stageId || effectiveCurrentPipeline.stages[0]?.id || 'stage-1',
       assignedUserId: data.assignedUserId || currentUser.id,
       title: data.title || 'Novo Negócio Imobiliário',
-      expectedValue: data.expectedValue || 1000000,
-      manualProbability: data.manualProbability || 50,
-      aiProbabilityScore: 65,
+      expectedValue: typeof data.expectedValue === 'number' ? data.expectedValue : 0,
+      manualProbability: typeof data.manualProbability === 'number' ? data.manualProbability : 0,
+      aiProbabilityScore: typeof data.aiProbabilityScore === 'number' ? data.aiProbabilityScore : 0,
       status: 'OPEN',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -4417,9 +4424,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           pipelineId: effectiveCurrentPipeline.id,
           stageId: firstStage.id,
           title: `Interesse • ${newContact.name}`,
-          expectedValue: Number(rec.maxPropertyValue) || 650000,
-          manualProbability: 40,
-          aiProbabilityScore: 50,
+          expectedValue: !isNaN(Number(rec.maxPropertyValue)) && Number(rec.maxPropertyValue) > 0 ? Number(rec.maxPropertyValue) : 0,
+          manualProbability: 0,
+          aiProbabilityScore: 0,
           status: 'OPEN',
           assignedUserId: assignedBrokerId || currentUser.id,
           createdAt: new Date().toISOString(),

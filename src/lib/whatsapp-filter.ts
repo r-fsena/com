@@ -75,6 +75,11 @@ export function isRealWhatsAppConversation(target: any): boolean {
   const rawPhone = String(target.phone || target.id || target.chatId || '').replace(/\D/g, '');
   if (!rawPhone || rawPhone === '0' || rawPhone.length < 8) return false;
 
+  // Contatos frios ou contatos sincronizados da agenda telefônica são contatos válidos no CRM
+  if (target.temperature === 'COLD' || target.isAgendaContact || (Array.isArray(target.tags) && target.tags.includes('WhatsApp Agenda'))) {
+    return true;
+  }
+
   // Checa timestamp da última mensagem
   const lastTime = target.lastMessageTime ?? target.timestamp ?? target.updatedAt;
   if (lastTime === '0' || lastTime === 0 || !lastTime) {

@@ -893,6 +893,10 @@ export const serverCRMStore = {
         const merged: Contact = {
           ...existing,
           ...c,
+          temperature: (existing.temperature === 'HOT' || existing.temperature === 'WARM')
+            ? existing.temperature
+            : (c.temperature || existing.temperature),
+          aiPriorityScore: Math.max(existing.aiPriorityScore || 0, c.aiPriorityScore || 0),
           id: finalId,
           phone: finalPhone,
           lid: finalLid,

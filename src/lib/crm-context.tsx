@@ -332,6 +332,10 @@ export function deduplicateContactList(list: Contact[]): Contact[] {
       const merged: Contact = {
         ...existing,
         ...contact,
+        temperature: (existing.temperature === 'HOT' || existing.temperature === 'WARM')
+          ? existing.temperature
+          : (contact.temperature || existing.temperature),
+        aiPriorityScore: Math.max(existing.aiPriorityScore || 0, contact.aiPriorityScore || 0),
         id: chosenId,
         phone: chosenPhone,
         lid: chosenLid,

@@ -155,47 +155,87 @@ async function handleSyncChats(req: NextRequest) {
       }
     });
 
-    // Deduplica chats por telefone (resolvendo chats que vieram apenas com LID para seu telefone canônico)
-    const chatsByPhone = new Map<string, any>();
+    // Mapeamentos para separação: Conversas Ativas vs Contatos da Agenda Telefônica
+    const activeChatsByPhone = new Map<string, any>();
+    const coldAgendaByPhone = new Map<string, any>();
+
     rawChats.forEach((c: any) => {
       if (!c) return;
+      if (isWhatsAppChannelOrGroup(c)) return;
+
       if (c.lid && (!c.phone || isLidIdentifier(c.phone))) {
         const resolved = serverCRMStore.resolvePhoneFromLid(c.lid);
         if (resolved) c.phone = resolved;
       }
-      if (!isRealWhatsAppConversation(c)) return;
       let clean = (c.phone || '').replace(/\D/g, '');
-      if (!clean) return;
+      if (!clean || clean === '0' || clean.length < 8) return;
       if (!clean.startsWith('55') && (clean.length === 10 || clean.length === 11)) {
         clean = `55${clean}`;
       }
 
-      // Ignora chats que foram explicitamente excluídos pelo usuário ou no CRM
+      // Ignora chats que foram explicitamente excluídos pelo usuário no CRM
       if (serverCRMStore.isChatDeleted(clean) || serverCRMStore.isChatDeleted(c.phone) || serverCRMStore.isChatDeleted(c.lid)) {
         return;
       }
 
-      // Se o chat não tem mensagem no WhatsApp, nem mensagens não lidas, nem histórico prévio salvo no CRM e nem data de atividade, é um chat vazio/excluído
       const unreadCount = Number(c.unread || c.messagesUnread || 0);
       const rawLastMsg = typeof c.lastMessage === 'string' ? c.lastMessage.trim() : (c.lastMessage?.message || c.lastMessage?.text || c.message || '');
       const lastMsgTime = parseWhatsAppTimestamp(c.lastMessageTime);
       const hasStoredMsgs = serverCRMStore.getState().messages.some(m => m.conversationId === `conv-zapi-${clean}` || (m as any).phone === clean);
-      if (!rawLastMsg && unreadCount === 0 && !hasStoredMsgs && (!lastMsgTime || lastMsgTime <= 0)) {
-        return;
-      }
 
-      const existing = chatsByPhone.get(clean);
-      const currentTime = parseWhatsAppTimestamp(c.lastMessageTime);
-      const existingTime = existing ? parseWhatsAppTimestamp(existing.lastMessageTime) : 0;
+      const hasActiveConversation = Boolean((rawLastMsg && rawLastMsg !== '0') || unreadCount > 0 || hasStoredMsgs || (lastMsgTime && lastMsgTime > 0));
 
-      if (!existing || currentTime > existingTime) {
-        if (!c.name && existing?.name) c.name = existing.name;
-        chatsByPhone.set(clean, c);
+      if (hasActiveConversation) {
+        const existing = activeChatsByPhone.get(clean);
+        const currentTime = parseWhatsAppTimestamp(c.lastMessageTime);
+        const existingTime = existing ? parseWhatsAppTimestamp(existing.lastMessageTime) : 0;
+        if (!existing || currentTime > existingTime) {
+          if (!c.name && existing?.name) c.name = existing.name;
+          activeChatsByPhone.set(clean, c);
+        }
+      } else {
+        if (!activeChatsByPhone.has(clean) && !coldAgendaByPhone.has(clean)) {
+          coldAgendaByPhone.set(clean, c);
+        }
       }
     });
 
-    // 2. Ordena conversas válidas estritamente pela data da mensagem mais recente (Top 1 = agora/hoje)
-    let validChats = Array.from(chatsByPhone.values())
+    // Incorpora contatos da agenda do aparelho (contactResults) que ainda não foram capturados
+    contactResults.forEach(res => {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        res.value.forEach((cnt: any) => {
+          if (!cnt) return;
+          let clean = (cnt.phone || '').replace(/\D/g, '');
+          if (!clean || clean === '0' || clean.length < 8) return;
+          if (!clean.startsWith('55') && (clean.length === 10 || clean.length === 11)) {
+            clean = `55${clean}`;
+          }
+          if (serverCRMStore.isChatDeleted(clean) || (cnt.lid && serverCRMStore.isChatDeleted(cnt.lid))) return;
+          if (activeChatsByPhone.has(clean)) return;
+
+          const existingCold = coldAgendaByPhone.get(clean);
+          const resolvedName = cnt.name || cnt.vname || cnt.short || cnt.notify;
+          if (!existingCold) {
+            coldAgendaByPhone.set(clean, {
+              phone: clean,
+              name: resolvedName || `Contato ${clean.slice(-4)}`,
+              lid: cnt.lid,
+              lastMessageTime: '0',
+            });
+          } else if (!existingCold.name && resolvedName) {
+            existingCold.name = resolvedName;
+          }
+        });
+      }
+    });
+
+    // Remove do coldAgenda qualquer contato que entrou em activeChats
+    Array.from(activeChatsByPhone.keys()).forEach(activeKey => {
+      coldAgendaByPhone.delete(activeKey);
+    });
+
+    // 2. Ordena conversas ativas estritamente pela data da mensagem mais recente (Top 1 = agora/hoje)
+    let validChats = Array.from(activeChatsByPhone.values())
       .sort((a: any, b: any) => {
         const timeA = parseWhatsAppTimestamp(a.lastMessageTime);
         const timeB = parseWhatsAppTimestamp(b.lastMessageTime);
@@ -228,12 +268,11 @@ async function handleSyncChats(req: NextRequest) {
       })
     );
 
-    // 4. Constrói contatos e conversas com etiquetas do WhatsApp Business mapeadas
-    const contacts = validChats.map((c: any) => {
+    // 4. Constrói contatos ATIVOS com etiquetas e dados de conversa
+    const activeContacts = validChats.map((c: any) => {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const formattedPhone = c.phone.startsWith('+') ? c.phone : `+${c.phone}`;
       
-      // Resolução de nome: chat name -> agenda de contatos do corretor -> formatação de telefone
       const resolvedName = c.name 
         || contactsNameMap.get(cleanPhone) 
         || (cleanPhone.length >= 10 ? `WhatsApp (${cleanPhone.slice(-4)})` : `Cliente ${cleanPhone}`);
@@ -246,7 +285,6 @@ async function handleSyncChats(req: NextRequest) {
         ? new Date(msgMs).toISOString() 
         : new Date().toISOString();
 
-      // Extração de Etiquetas do WhatsApp Business
       const rawLabels = Array.isArray(c.labels) 
         ? c.labels 
         : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
@@ -289,6 +327,65 @@ async function handleSyncChats(req: NextRequest) {
         updatedAt: lastInteraction,
       };
     });
+
+    // 4.1. Constrói contatos FRIOS da agenda telefônica (sem conversas prévias)
+    const nowIso = new Date().toISOString();
+    const coldContacts = Array.from(coldAgendaByPhone.values()).map((c: any) => {
+      const cleanPhone = (c.phone || '').replace(/\D/g, '');
+      const formattedPhone = c.phone.startsWith('+') ? c.phone : `+${c.phone}`;
+
+      const resolvedName = c.name 
+        || contactsNameMap.get(cleanPhone) 
+        || (cleanPhone.length >= 10 ? `Agenda (${cleanPhone.slice(-4)})` : `Contato ${cleanPhone}`);
+
+      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=64748b&color=fff`;
+
+      const rawLabels = Array.isArray(c.labels) 
+        ? c.labels 
+        : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
+      
+      const resolvedLabels = rawLabels.map((lbl: any) => {
+        const lblStr = String(lbl);
+        return labelsMap.get(lblStr) || lblStr;
+      }).filter(Boolean);
+
+      const generatedTags = Array.from(new Set([
+        'WhatsApp Agenda',
+        'Sem interação prévia',
+        'Lead Frio',
+        ...resolvedLabels.map((l: string) => `[Etiqueta] ${l}`)
+      ]));
+
+      return {
+        id: `contact-zapi-${cleanPhone}`,
+        tenantId,
+        name: resolvedName,
+        phone: formattedPhone,
+        lid: c.lid || undefined,
+        avatarUrl: avatar,
+        assignedUserId: assignedUserId || undefined,
+        source: 'WHATSAPP' as const,
+        temperature: 'COLD' as const,
+        aiPriorityScore: 20,
+        tags: generatedTags,
+        whatsappLabels: resolvedLabels,
+        firstSyncedAt: nowIso,
+        lastSyncedAt: nowIso,
+        targetRegions: [],
+        notesCount: 0,
+        consentGiven: true,
+        consentDate: nowIso,
+        hasOptedOut: false,
+        isPersonal: false,
+        lastClientInteractionAt: nowIso,
+        lastTeamInteractionAt: nowIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+    });
+
+    // Base completa de contatos: Ativos + Frios da Agenda
+    const contacts = [...activeContacts, ...coldContacts];
 
     const conversations = validChats.map((c: any) => {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
@@ -473,7 +570,9 @@ async function handleSyncChats(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      count: validChats.length,
+      count: contacts.length,
+      activeCount: validChats.length,
+      coldCount: coldContacts.length,
       contacts,
       conversations,
       messages: finalMessages,

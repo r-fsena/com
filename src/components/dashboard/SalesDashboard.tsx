@@ -352,6 +352,92 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
       </div>
 
       {/* ========================================================================= */}
+      {/* LINHA 2: ESTEIRA HORIZONTAL DO FUNIL DE VENDAS (DISCRETO & FUNCIONAL)     */}
+      {/* ========================================================================= */}
+      <div className="sovereign-card p-4 sm:p-5 space-y-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#3742AC]/10 text-[#3742AC] flex items-center justify-center font-bold shrink-0">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Funil de Vendas & Esteira Comercial
+                </h3>
+                <span className="text-[10px] font-bold bg-[#3742AC]/10 text-[#3742AC] px-2 py-0.5 rounded-full">
+                  {currentPipeline.name}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                {commercialDeals.length} oportunidades ativas • R$ {(totalVGV / 1000000).toFixed(1)}M VGV total em negociação
+              </p>
+            </div>
+          </div>
+
+          <button 
+            type="button" 
+            onClick={() => setIsFunnelModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-xl transition cursor-pointer shadow-2xs"
+            title="Abrir Apresentação Executiva do Funil"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Apresentação Executiva</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Etapas em Esteira Horizontal Contínua */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {funnelStages.slice(0, 5).map((item, idx) => {
+            const colors = [
+              'bg-[#3742AC]',
+              'bg-indigo-600',
+              'bg-blue-600',
+              'bg-amber-500',
+              'bg-emerald-600'
+            ];
+            const colorClass = item.stage.isWon ? 'bg-emerald-600' : item.stage.isLost ? 'bg-rose-600' : colors[idx % colors.length];
+
+            return (
+              <div
+                key={item.stage.id}
+                onClick={() => setIsFunnelModalOpen(true)}
+                className="bg-slate-50/70 hover:bg-white rounded-xl p-3 border border-slate-200/80 hover:border-[#3742AC]/60 transition-all cursor-pointer group shadow-2xs flex flex-col justify-between space-y-2 relative"
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${colorClass}`} />
+                    <span className="text-xs font-bold text-slate-800 group-hover:text-[#3742AC] transition truncate" title={item.stage.name}>
+                      {item.stage.name.replace(/^\d+\.\s*/, '')}
+                    </span>
+                  </div>
+                  <span className="font-extrabold text-slate-900 bg-white border border-slate-200/80 px-1.5 py-0.2 rounded-md text-[10.5px] shrink-0 font-mono shadow-2xs">
+                    {item.count}
+                  </span>
+                </div>
+
+                <div className="flex items-baseline justify-between text-[11px] pt-1">
+                  <span className="text-slate-400 text-[10px]">Volume</span>
+                  <span className="font-mono font-bold text-slate-700 text-xs">
+                    R$ {(item.vgv / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k
+                  </span>
+                </div>
+
+                {/* Micro barra de progresso visual */}
+                <div className="w-full bg-slate-200/60 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                    style={{ width: `${Math.max(8, item.percent)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
       {/* SEÇÃO PRINCIPAL: TABELA RECENT DEALS (ESQUERDA) + WIDGETS (DIREITA)       */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -734,206 +820,10 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
 
         </div>
 
-        {/* COLUNA DIREITA (4 COLUNAS): GAUGE DE METAS + DARK CALENDAR WIDGET */}
+        {/* COLUNA DIREITA (4 COLUNAS): CALENDÁRIO DE ATIVIDADES + METAS & PERFORMANCE */}
         <div className="lg:col-span-4 space-y-6">
           
-          {/* 1. FUNIL DE VENDAS DO CORRETOR (WIDGET COMPACTO - NO TOPO) */}
-          <div className="sovereign-card p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-[#3742AC]" />
-                  Funil de Vendas & Esteira
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {commercialDeals.length} oportunidades • R$ {(totalVGV / 1000000).toFixed(1)}M VGV
-                </p>
-              </div>
-
-              <button 
-                type="button" 
-                onClick={() => setIsFunnelModalOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
-                title="Abrir Apresentação do Funil"
-              >
-                <ArrowUpRight className="w-3.5 h-3.5" />
-                <span>Expandir</span>
-              </button>
-            </div>
-
-            {/* Mini visualizador de funil em barras decrescentes */}
-            <div className="space-y-2 pt-1">
-              {funnelStages.slice(0, 5).map((item, idx) => {
-                const colors = [
-                  'bg-[#3742AC] text-white',
-                  'bg-indigo-600 text-white',
-                  'bg-blue-600 text-white',
-                  'bg-cyan-600 text-white',
-                  'bg-emerald-600 text-white'
-                ];
-                const colorClass = item.stage.isWon ? 'bg-emerald-600 text-white' : item.stage.isLost ? 'bg-rose-600 text-white' : colors[idx % colors.length];
-
-                return (
-                  <div 
-                    key={item.stage.id} 
-                    className="space-y-1 cursor-pointer group"
-                    onClick={() => setIsFunnelModalOpen(true)}
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700 group-hover:text-[#3742AC] transition truncate max-w-[170px]">
-                        {item.stage.name}
-                      </span>
-                      <div className="flex items-center gap-2 font-mono shrink-0">
-                        <span className="text-[10px] text-slate-400">
-                          R$ {(item.vgv / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k
-                        </span>
-                        <span className="font-extrabold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded-md text-[11px]">
-                          {item.count}
-                        </span>
-                      </div>
-                    </div>
-                    {/* Barra de progresso visual */}
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
-                        style={{ width: `${Math.max(6, item.percent)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Botão de Apresentação Completa */}
-            <button
-              type="button"
-              onClick={() => setIsFunnelModalOpen(true)}
-              className="w-full py-2 px-3 bg-gradient-to-r from-indigo-50/80 to-slate-50 hover:from-indigo-100 hover:to-indigo-50 border border-indigo-100/80 rounded-xl text-xs font-bold text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer shadow-2xs"
-            >
-              <Layers className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
-              <span>Ver Apresentação Executiva do Funil</span>
-              <ChevronRight className="w-3 h-3 text-[#3742AC] group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          </div>
-
-          {/* 2. GAUGE / RADIAL TARGET WIDGET (METAS & PERFORMANCE) */}
-          <div className="sovereign-card p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Target className="w-4 h-4 text-[#3742AC]" />
-                  Metas & Performance
-                </h3>
-                <p className="text-xs text-slate-400 capitalize">
-                  {currentGoals.monthName} • Meta R$ {(currentGoals.monthlyVGV.target / 1000000).toFixed(1)}M
-                </p>
-              </div>
-              <button 
-                type="button" 
-                onClick={handleOpenGoals}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
-                title="Configurar Metas"
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>Configurar</span>
-              </button>
-            </div>
-
-            {/* Semicircular Radial Progress */}
-            <div 
-              className="relative flex flex-col items-center justify-center py-2 cursor-pointer group"
-              onClick={handleOpenGoals}
-              title="Clique para abrir o painel de metas"
-            >
-              <svg className="w-48 h-28 group-hover:scale-105 transition-transform" viewBox="0 0 100 55">
-                {/* Arco de fundo */}
-                <path
-                  d="M 10 50 A 40 40 0 0 1 90 50"
-                  fill="none"
-                  stroke="#E2E8F0"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                />
-                {/* Arco de progresso */}
-                <path
-                  d="M 10 50 A 40 40 0 0 1 90 50"
-                  fill="none"
-                  stroke={
-                    targetPercent >= 100 ? '#10B981' :
-                    targetPercent >= 70 ? '#3742AC' :
-                    targetPercent >= 40 ? '#F59E0B' : '#EF4444'
-                  }
-                  strokeWidth="8"
-                  strokeDasharray="126"
-                  strokeDashoffset={Math.max(0, 126 - (126 * Math.min(targetPercent, 100)) / 100)}
-                  strokeLinecap="round"
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-
-              {/* Porcentagem no Centro */}
-              <div className="text-center -mt-6">
-                <span className="text-3xl font-extrabold text-slate-900 tracking-tight font-mono">
-                  {targetPercent}%
-                </span>
-                <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
-                  Progresso VGV
-                </span>
-                <span className="text-[11px] font-bold text-slate-700 font-mono">
-                  R$ {(currentGoals.monthlyVGV.achieved / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k / R$ {(currentGoals.monthlyVGV.target / 1000000).toFixed(1)}M
-                </span>
-              </div>
-            </div>
-
-            {/* 3 Mini Indicadores Circulares Sovereign */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
-              <div 
-                className="p-2 rounded-2xl bg-orange-50/60 border border-orange-100/60 cursor-pointer hover:bg-orange-100/60 transition"
-                onClick={handleOpenGoals}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 mx-auto block mb-1" />
-                <span className="text-xs font-bold text-slate-900 font-mono block">
-                  {currentGoals.leads.achieved} / {currentGoals.leads.target}
-                </span>
-                <span className="text-[9px] text-slate-500 font-medium">Leads ({currentGoals.leads.percentage}%)</span>
-              </div>
-
-              <div 
-                className="p-2 rounded-2xl bg-indigo-50/60 border border-indigo-100/60 cursor-pointer hover:bg-indigo-100/60 transition"
-                onClick={handleOpenGoals}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-[#3742AC] mx-auto block mb-1" />
-                <span className="text-xs font-bold text-slate-900 font-mono block">
-                  {currentGoals.clients.achieved} / {currentGoals.clients.target}
-                </span>
-                <span className="text-[9px] text-slate-500 font-medium">Clientes ({currentGoals.clients.percentage}%)</span>
-              </div>
-
-              <div 
-                className="p-2 rounded-2xl bg-emerald-50/60 border border-emerald-100/60 cursor-pointer hover:bg-emerald-100/60 transition"
-                onClick={handleOpenGoals}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mx-auto block mb-1" />
-                <span className="text-xs font-bold text-slate-900 font-mono block">
-                  {currentGoals.wonDeals.achieved} / {currentGoals.wonDeals.target}
-                </span>
-                <span className="text-[9px] text-slate-500 font-medium">Vendas ({currentGoals.wonDeals.percentage}%)</span>
-              </div>
-            </div>
-
-            {/* Botão de Ação Direta */}
-            <button
-              type="button"
-              onClick={handleOpenGoals}
-              className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50/70 border border-slate-200/80 hover:border-indigo-200 rounded-xl text-xs font-bold text-slate-700 hover:text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer"
-            >
-              <Target className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
-              <span>Abrir Motor de Metas no Menu</span>
-              <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-[#3742AC]" />
-            </button>
-          </div>
-
-          {/* 3. AGENDA & APRESENTAÇÃO DO DIA COM NAVEGAÇÃO POR SETAS */}
+          {/* 1. AGENDA & APRESENTAÇÃO DO DIA COM NAVEGAÇÃO POR SETAS */}
           <div className="sovereign-navy-card p-6 space-y-4">
             
             {/* Header da Agenda com Navegador de Datas por Setas */}
@@ -1084,6 +974,123 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
               )}
             </div>
 
+          </div>
+
+          {/* 2. GAUGE / RADIAL TARGET WIDGET (METAS & PERFORMANCE) */}
+          <div className="sovereign-card p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Target className="w-4 h-4 text-[#3742AC]" />
+                  Metas & Performance
+                </h3>
+                <p className="text-xs text-slate-400 capitalize">
+                  {currentGoals.monthName} • Meta R$ {(currentGoals.monthlyVGV.target / 1000000).toFixed(1)}M
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={handleOpenGoals}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#3742AC] bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
+                title="Configurar Metas"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Configurar</span>
+              </button>
+            </div>
+
+            {/* Semicircular Radial Progress */}
+            <div 
+              className="relative flex flex-col items-center justify-center py-2 cursor-pointer group"
+              onClick={handleOpenGoals}
+              title="Clique para abrir o painel de metas"
+            >
+              <svg className="w-48 h-28 group-hover:scale-105 transition-transform" viewBox="0 0 100 55">
+                {/* Arco de fundo */}
+                <path
+                  d="M 10 50 A 40 40 0 0 1 90 50"
+                  fill="none"
+                  stroke="#E2E8F0"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                />
+                {/* Arco de progresso */}
+                <path
+                  d="M 10 50 A 40 40 0 0 1 90 50"
+                  fill="none"
+                  stroke={
+                    targetPercent >= 100 ? '#10B981' :
+                    targetPercent >= 70 ? '#3742AC' :
+                    targetPercent >= 40 ? '#F59E0B' : '#EF4444'
+                  }
+                  strokeWidth="8"
+                  strokeDasharray="126"
+                  strokeDashoffset={Math.max(0, 126 - (126 * Math.min(targetPercent, 100)) / 100)}
+                  strokeLinecap="round"
+                  className="transition-all duration-1000 ease-out"
+                />
+              </svg>
+
+              {/* Porcentagem no Centro */}
+              <div className="text-center -mt-6">
+                <span className="text-3xl font-extrabold text-slate-900 tracking-tight font-mono">
+                  {targetPercent}%
+                </span>
+                <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
+                  Progresso VGV
+                </span>
+                <span className="text-[11px] font-bold text-slate-700 font-mono">
+                  R$ {(currentGoals.monthlyVGV.achieved / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k / R$ {(currentGoals.monthlyVGV.target / 1000000).toFixed(1)}M
+                </span>
+              </div>
+            </div>
+
+            {/* 3 Mini Indicadores Circulares Sovereign */}
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
+              <div 
+                className="p-2 rounded-2xl bg-orange-50/60 border border-orange-100/60 cursor-pointer hover:bg-orange-100/60 transition"
+                onClick={handleOpenGoals}
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 mx-auto block mb-1" />
+                <span className="text-xs font-bold text-slate-900 font-mono block">
+                  {currentGoals.leads.achieved} / {currentGoals.leads.target}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium">Leads ({currentGoals.leads.percentage}%)</span>
+              </div>
+
+              <div 
+                className="p-2 rounded-2xl bg-indigo-50/60 border border-indigo-100/60 cursor-pointer hover:bg-indigo-100/60 transition"
+                onClick={handleOpenGoals}
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-[#3742AC] mx-auto block mb-1" />
+                <span className="text-xs font-bold text-slate-900 font-mono block">
+                  {currentGoals.clients.achieved} / {currentGoals.clients.target}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium">Clientes ({currentGoals.clients.percentage}%)</span>
+              </div>
+
+              <div 
+                className="p-2 rounded-2xl bg-emerald-50/60 border border-emerald-100/60 cursor-pointer hover:bg-emerald-100/60 transition"
+                onClick={handleOpenGoals}
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mx-auto block mb-1" />
+                <span className="text-xs font-bold text-slate-900 font-mono block">
+                  {currentGoals.wonDeals.achieved} / {currentGoals.wonDeals.target}
+                </span>
+                <span className="text-[9px] text-slate-500 font-medium">Vendas ({currentGoals.wonDeals.percentage}%)</span>
+              </div>
+            </div>
+
+            {/* Botão de Ação Direta */}
+            <button
+              type="button"
+              onClick={handleOpenGoals}
+              className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50/70 border border-slate-200/80 hover:border-indigo-200 rounded-xl text-xs font-bold text-slate-700 hover:text-[#3742AC] transition flex items-center justify-center gap-2 group cursor-pointer"
+            >
+              <Target className="w-3.5 h-3.5 text-[#3742AC] group-hover:scale-110 transition-transform" />
+              <span>Abrir Motor de Metas no Menu</span>
+              <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-[#3742AC]" />
+            </button>
           </div>
 
         </div>

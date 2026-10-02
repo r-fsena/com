@@ -96,18 +96,19 @@ export function Header({ currentTab, onOpenNewLead, onOpenZapiSimulator, onOpenA
         )}
 
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight truncate">
-              Welcome, {currentUser?.name?.split(' ')[0] || 'Corretor'}!
-            </h1>
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold bg-white text-[#3742AC] border border-indigo-100 px-2.5 py-0.5 rounded-full shadow-2xs">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight truncate">
+            Welcome, {currentUser?.name?.split(' ')[0] || 'Corretor'}!
+          </h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold bg-white text-[#3742AC] border border-indigo-100/90 px-2.5 py-0.5 rounded-full shadow-2xs">
               <Sparkles className="w-3 h-3 text-[#3742AC]" />
               <span>{currentTenant.name}</span>
             </span>
+            <span className="text-slate-300 text-xs hidden sm:inline">•</span>
+            <p className="text-xs text-slate-500 capitalize hidden sm:block font-medium">
+              {currentDateFormatted}
+            </p>
           </div>
-          <p className="text-xs text-slate-400 capitalize hidden sm:block">
-            {currentDateFormatted} • Ambiente Comercial Produtivo
-          </p>
         </div>
       </div>
 

@@ -184,7 +184,7 @@ export function LoginScreen() {
         {/* Top Header / Logo Brokiva */}
         <div className="relative z-10 pt-2">
           <img 
-            src="/brand/brokiva-logo-dark.png" 
+            src="/brand/brokiva-logo-v2.png" 
             alt="Brokiva — Relacionamentos que viram negócios" 
             className="h-28 sm:h-32 lg:h-36 w-auto object-contain object-left max-w-[420px]" 
           />
@@ -239,7 +239,7 @@ export function LoginScreen() {
           <div className="text-center space-y-2">
             <div className="lg:hidden flex flex-col items-center mb-6">
               <img 
-                src="/brand/brokiva-logo-dark.png" 
+                src="/brand/brokiva-logo-v2.png" 
                 alt="Brokiva — Relacionamentos que viram negócios" 
                 className="h-16 sm:h-20 w-auto object-contain mx-auto max-w-[280px]" 
               />

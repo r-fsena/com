@@ -154,7 +154,7 @@ export function SaaSAdminHub({ onEnterTenant }: SaaSAdminHubProps) {
             <div className="flex items-center justify-between gap-2">
               <div className="flex-1 flex items-center min-w-0">
                 <img 
-                  src="/brand/brokiva-logo-dark.png" 
+                  src="/brand/brokiva-logo-v2.png" 
                   alt="Brokiva — Relacionamentos que viram negócios" 
                   className="h-14 sm:h-16 w-auto object-contain object-left max-w-[215px] drop-shadow-2xs" 
                 />

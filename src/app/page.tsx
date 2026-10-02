@@ -131,7 +131,7 @@ export default function CRMApp() {
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-[#F0F3FA] text-slate-800 select-none">
         <div className="p-5 bg-white rounded-3xl shadow-lg border border-slate-200/80 animate-pulse">
           <img 
-            src="/brand/brokiva-logo-dark.png" 
+            src="/brand/brokiva-logo-v2.png" 
             alt="Brokiva" 
             className="h-16 w-auto object-contain" 
           />

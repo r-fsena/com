@@ -86,7 +86,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           </button>
 
           <img 
-            src="/brand/brokiva-logo-white.png" 
+            src="/brand/brokiva-logo-white-v2.png" 
             alt="Brokiva — Relacionamentos que viram negócios" 
             className="h-9 w-auto mx-auto mb-3 object-contain"
           />

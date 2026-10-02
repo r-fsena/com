@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const candidatePaths = [
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.41.zip'),
+      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.46.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-latest.zip'),
+      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.41.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.40.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.38.zip'),
       path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.37.zip'),
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename="brokiva-chrome-extension-v1.0.41.zip"',
+        'Content-Disposition': 'attachment; filename="brokiva-chrome-extension-v1.0.46.zip"',
         'Cache-Control': 'public, max-age=3600, s-maxage=3600',
       },
     });

@@ -52,8 +52,6 @@ export function SalesFunnelModal({
   const [selectedPeriod, setSelectedPeriod] = useState<'MONTH' | 'QUARTER' | 'YEAR'>('MONTH');
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   // Filtra corretores ativos
   const brokers = useMemo(() => {
     return users.filter(u => u.isActive && (u.role === 'BROKER' || u.role === 'ADMIN' || u.role === 'MANAGER'));
@@ -74,7 +72,8 @@ export function SalesFunnelModal({
 
   // Etapas ordenadas do Pipeline
   const stages = useMemo(() => {
-    return [...currentPipeline.stages].sort((a, b) => a.order - b.order);
+    if (!currentPipeline?.stages || !Array.isArray(currentPipeline.stages)) return [];
+    return [...currentPipeline.stages].sort((a, b) => (a.order || 0) - (b.order || 0));
   }, [currentPipeline]);
 
   // Métricas do Funil por Etapa
@@ -85,7 +84,7 @@ export function SalesFunnelModal({
     return stages.map((stage, index) => {
       const dealsInStage = filteredDeals.filter(d => d.stageId === stage.id);
       const count = dealsInStage.length;
-      const vgv = dealsInStage.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
+      const vgv = dealsInStage.reduce((acc, d) => acc + (d.status !== 'LOST' ? (Number(d.expectedValue) || 0) : 0), 0);
       const wonCount = dealsInStage.filter(d => d.status === 'WON').length;
       
       // Taxa de conversão para a etapa atual vs anterior
@@ -113,11 +112,11 @@ export function SalesFunnelModal({
 
   // KPIs Gerais do Funil
   const totalFunnelVGV = useMemo(() => {
-    return filteredDeals.reduce((acc, d) => acc + (d.status !== 'LOST' ? d.expectedValue : 0), 0);
+    return filteredDeals.reduce((acc, d) => acc + (d.status !== 'LOST' ? (Number(d.expectedValue) || 0) : 0), 0);
   }, [filteredDeals]);
 
   const wonDeals = useMemo(() => filteredDeals.filter(d => d.status === 'WON'), [filteredDeals]);
-  const wonVGV = useMemo(() => wonDeals.reduce((acc, d) => acc + d.expectedValue, 0), [wonDeals]);
+  const wonVGV = useMemo(() => wonDeals.reduce((acc, d) => acc + (Number(d.expectedValue) || 0), 0), [wonDeals]);
   
   const overallConversionRate = useMemo(() => {
     if (filteredDeals.length === 0) return 0;
@@ -156,11 +155,12 @@ export function SalesFunnelModal({
 
   // Negócios da etapa selecionada no drill-down
   const activeStageDetails = useMemo(() => {
+    if (!funnelStagesData || funnelStagesData.length === 0) return null;
     if (!selectedStageId) {
       // Por padrão, se nada selecionado, foca na primeira etapa com negócios ou na primeira etapa
-      return funnelStagesData.find(s => s.count > 0) || funnelStagesData[0];
+      return funnelStagesData.find(s => s.count > 0) || funnelStagesData[0] || null;
     }
-    return funnelStagesData.find(s => s.stage.id === selectedStageId) || funnelStagesData[0];
+    return funnelStagesData.find(s => s.stage.id === selectedStageId) || funnelStagesData[0] || null;
   }, [selectedStageId, funnelStagesData]);
 
   const handleGoToChat = (contactId?: string) => {
@@ -175,6 +175,8 @@ export function SalesFunnelModal({
     const b = users.find(u => u.id === selectedBrokerId);
     return b?.name || 'Corretor';
   }, [selectedBrokerId, users]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -378,7 +380,7 @@ export function SalesFunnelModal({
               {/* BARRAS DO FUNIL ESCALONADO */}
               <div className="space-y-3 pt-2">
                 {funnelStagesData.map((stageData, idx) => {
-                  const isSelected = activeStageDetails.stage.id === stageData.stage.id;
+                  const isSelected = activeStageDetails?.stage?.id === stageData.stage.id;
                   const isWon = stageData.stage.isWon;
                   const isLost = stageData.stage.isLost;
 
@@ -446,11 +448,11 @@ export function SalesFunnelModal({
                       </div>
 
                       {/* Conector e Taxa de Passagem para a Próxima Etapa */}
-                      {idx < funnelStagesData.length - 1 && (
+                      {idx < funnelStagesData.length - 1 && funnelStagesData[idx + 1] && (
                         <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-500 py-0.5">
                           <ArrowDown className="w-3 h-3 text-slate-400" />
                           <span className="bg-white px-2 py-0.5 rounded-full border border-slate-200 text-slate-600 font-mono">
-                            Conversão: {funnelStagesData[idx + 1].conversionRate}%
+                            Conversão: {funnelStagesData[idx + 1]?.conversionRate ?? 0}%
                           </span>
                         </div>
                       )}
@@ -464,90 +466,99 @@ export function SalesFunnelModal({
             {/* COLUNA DIREITA: DRILLDOWN DA ETAPA SELECIONADA (5 COLUNAS) */}
             <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               
-              {/* Header da Etapa Selecionada */}
-              <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Etapa Selecionada
-                  </span>
-                  <h4 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                    <span>{activeStageDetails.stage.name}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-[#3742AC] font-bold font-mono">
-                      {activeStageDetails.count} leads
-                    </span>
-                  </h4>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 block font-medium">VGV Acumulado</span>
-                  <span className="text-sm font-extrabold text-slate-900 font-mono">
-                    R$ {activeStageDetails.vgv.toLocaleString('pt-BR')}
-                  </span>
-                </div>
-              </div>
-
-              {/* Lista dos Negócios nesta Etapa */}
-              <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
-                {activeStageDetails.deals.length === 0 ? (
-                  <div className="py-12 text-center text-slate-400 space-y-2">
-                    <Layers className="w-8 h-8 text-slate-300 mx-auto" />
-                    <p className="text-xs font-semibold">Nenhum negócio ativo nesta etapa no momento.</p>
+              {activeStageDetails ? (
+                <>
+                  {/* Header da Etapa Selecionada */}
+                  <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Etapa Selecionada
+                      </span>
+                      <h4 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                        <span>{activeStageDetails.stage.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-[#3742AC] font-bold font-mono">
+                          {activeStageDetails.count} leads
+                        </span>
+                      </h4>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 block font-medium">VGV Acumulado</span>
+                      <span className="text-sm font-extrabold text-slate-900 font-mono">
+                        R$ {activeStageDetails.vgv.toLocaleString('pt-BR')}
+                      </span>
+                    </div>
                   </div>
-                ) : (
-                  activeStageDetails.deals.map((deal) => {
-                    const contact = contacts.find(c => c.id === deal.contactId);
-                    const broker = users.find(u => u.id === deal.assignedUserId);
 
-                    return (
-                      <div
-                        key={deal.id}
-                        onClick={() => handleGoToChat(contact?.id)}
-                        className="p-3.5 rounded-2xl bg-slate-50/70 hover:bg-indigo-50/60 border border-slate-200/70 hover:border-indigo-200 transition cursor-pointer group space-y-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="truncate">
-                            <h5 className="font-bold text-xs text-slate-900 group-hover:text-[#3742AC] transition truncate">
-                              {deal.title}
-                            </h5>
-                            <span className="text-[10.5px] text-slate-500 font-mono font-bold block">
-                              R$ {deal.expectedValue.toLocaleString('pt-BR')}
-                            </span>
-                          </div>
-                          
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleGoToChat(contact?.id);
-                            }}
-                            className="p-1.5 rounded-xl bg-white group-hover:bg-[#3742AC] text-slate-400 group-hover:text-white border border-slate-200 group-hover:border-[#3742AC] transition shrink-0 shadow-2xs"
-                            title="Conversar no WhatsApp"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Dados do Lead */}
-                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50">
-                          <div className="flex items-center gap-1.5 truncate">
-                            <img
-                              src={contact?.avatarUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente')}
-                              alt={contact?.name}
-                              className="w-5 h-5 rounded-full object-cover border border-slate-200"
-                            />
-                            <span className="font-semibold text-slate-700 truncate max-w-[140px]">
-                              {contact?.name || 'Lead'}
-                            </span>
-                          </div>
-
-                          <span className="text-[10px] font-medium text-slate-400 font-mono">
-                            {broker?.name.split(' ')[0] || 'Corretor'}
-                          </span>
-                        </div>
+                  {/* Lista dos Negócios nesta Etapa */}
+                  <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                    {activeStageDetails.deals.length === 0 ? (
+                      <div className="py-12 text-center text-slate-400 space-y-2">
+                        <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="text-xs font-semibold">Nenhum negócio ativo nesta etapa no momento.</p>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                    ) : (
+                      activeStageDetails.deals.map((deal) => {
+                        const contact = contacts.find(c => c.id === deal.contactId);
+                        const broker = users.find(u => u.id === deal.assignedUserId);
+
+                        return (
+                          <div
+                            key={deal.id}
+                            onClick={() => handleGoToChat(contact?.id)}
+                            className="p-3.5 rounded-2xl bg-slate-50/70 hover:bg-indigo-50/60 border border-slate-200/70 hover:border-indigo-200 transition cursor-pointer group space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="truncate">
+                                <h5 className="font-bold text-xs text-slate-900 group-hover:text-[#3742AC] transition truncate">
+                                  {deal.title}
+                                </h5>
+                                <span className="text-[10.5px] text-slate-500 font-mono font-bold block">
+                                  R$ {(Number(deal.expectedValue) || 0).toLocaleString('pt-BR')}
+                                </span>
+                              </div>
+                              
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleGoToChat(contact?.id);
+                                }}
+                                className="p-1.5 rounded-xl bg-white group-hover:bg-[#3742AC] text-slate-400 group-hover:text-white border border-slate-200 group-hover:border-[#3742AC] transition shrink-0 shadow-2xs"
+                                title="Conversar no WhatsApp"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Dados do Lead */}
+                            <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <img
+                                  src={contact?.avatarUrl || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(contact?.name || 'Cliente'))}
+                                  alt={contact?.name || 'Lead'}
+                                  className="w-5 h-5 rounded-full object-cover border border-slate-200"
+                                />
+                                <span className="font-semibold text-slate-700 truncate max-w-[140px]">
+                                  {contact?.name || 'Lead'}
+                                </span>
+                              </div>
+
+                              <span className="text-[10px] font-medium text-slate-400 font-mono">
+                                {broker?.name ? broker.name.split(' ')[0] : 'Corretor'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-semibold">Nenhuma etapa configurada no funil.</p>
+                </div>
+              )}
 
             </div>
 

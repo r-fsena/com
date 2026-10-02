@@ -1098,17 +1098,21 @@ export function SalesDashboard({ onOpenChat, onNavigateToGoals }: SalesDashboard
       </div>
 
       {/* Modal Motor de Metas & Performance */}
-      <GoalsEngineModal
-        isOpen={isGoalsModalOpen}
-        onClose={() => setIsGoalsModalOpen(false)}
-      />
+      {isGoalsModalOpen && (
+        <GoalsEngineModal
+          isOpen={isGoalsModalOpen}
+          onClose={() => setIsGoalsModalOpen(false)}
+        />
+      )}
 
       {/* Modal de Apresentação Executiva do Funil de Vendas */}
-      <SalesFunnelModal
-        isOpen={isFunnelModalOpen}
-        onClose={() => setIsFunnelModalOpen(false)}
-        onOpenChat={onOpenChat}
-      />
+      {isFunnelModalOpen && (
+        <SalesFunnelModal
+          isOpen={isFunnelModalOpen}
+          onClose={() => setIsFunnelModalOpen(false)}
+          onOpenChat={onOpenChat}
+        />
+      )}
 
     </div>
   );

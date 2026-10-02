@@ -1149,13 +1149,11 @@ export const serverCRMStore = {
         conversationId: convId,
       };
 
-      const isNativeWppId = Boolean(m.id && (m.id.startsWith('true_') || m.id.startsWith('false_')));
-      const externalIdKey = m.externalId || (isNativeWppId ? m.id : null);
-      const timeMinuteKey = m.timestamp ? m.timestamp.slice(0, 16) : '';
-      const safeContentKey = content.slice(0, 60).replace(/\s+/g, ' ');
-      const key = externalIdKey 
-        ? `${tenantKey}::${convId}-${externalIdKey}` 
-        : `${tenantKey}::${convId}-${m.senderType}-${timeMinuteKey}-${safeContentKey}`;
+      const isTempId = Boolean(m.id && (m.id.startsWith('temp-') || m.id.startsWith('opt-') || m.id.startsWith('synthetic-')));
+      const validIdKey = (!isTempId && m.id) ? m.id : (m.externalId || null);
+      const key = validIdKey 
+        ? `${tenantKey}::${convId}-${validIdKey}` 
+        : `${tenantKey}::${convId}-${m.senderType}-${m.timestamp || ''}-${content.slice(0, 80)}`;
       
       const existing = map.get(key);
       if (!existing) {

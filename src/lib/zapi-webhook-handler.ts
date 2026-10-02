@@ -450,6 +450,26 @@ export async function processZapiWebhookRequest(
       const targetConvId = existingConv ? existingConv.id : canonicalConvId;
       const targetContactId = existingContact ? existingContact.id : (existingConv?.contactId || `contact-zapi-${cleanPhone}`);
 
+      // Extrai o carimbo de data/hora real em milissegundos enviado pela Z-API
+      let messageTimestampIso = new Date().toISOString();
+      const rawMoment = body.momment || body.timestamp || body.messageTimestamp || body.message?.messageTimestamp || body.data?.messageTimestamp;
+      if (rawMoment) {
+        let ms = Number(rawMoment);
+        if (!isNaN(ms) && ms > 0) {
+          if (ms < 10000000000) {
+            ms = ms * 1000; // Converte segundos para milissegundos
+          }
+          if (ms > 946684800000 && ms < Date.now() + 86400000) {
+            messageTimestampIso = new Date(ms).toISOString();
+          }
+        } else if (typeof rawMoment === 'string') {
+          const parsed = new Date(rawMoment);
+          if (!isNaN(parsed.getTime())) {
+            messageTimestampIso = parsed.toISOString();
+          }
+        }
+      }
+
       const savedMsg = webhookStore.addMessage({
         id: messageId,
         tenantId,
@@ -463,7 +483,7 @@ export async function processZapiWebhookRequest(
         mediaType,
         mediaUrl,
         fromMe,
-        timestamp: new Date().toISOString(),
+        timestamp: messageTimestampIso,
       });
 
       // Atualiza também no serverCRMStore unificando conversa e mensagem
@@ -497,7 +517,7 @@ export async function processZapiWebhookRequest(
           status: fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
           unreadCount: fromMe ? 0 : ((existingConv?.unreadCount || 0) + 1),
           lastMessagePreview: content.substring(0, 100),
-          lastMessageAt: new Date().toISOString(),
+          lastMessageAt: messageTimestampIso,
           slaBreached: false,
           isPersonal: false,
           aiEnabled: fromMe ? false : undefined,
@@ -516,7 +536,7 @@ export async function processZapiWebhookRequest(
           content,
           status: 'DELIVERED',
           isInternalNote: false,
-          timestamp: new Date().toISOString(),
+          timestamp: messageTimestampIso,
         }],
       });
 

@@ -576,57 +576,44 @@ export function WhatsAppInbox() {
       return [syntheticMsg];
     }
 
-    // Deduplica mensagens idênticas enviadas pelo mesmo lado no mesmo intervalo (evita duplicatas de eco de webhook / sync) - O(N) com Map indexado
+    // Deduplica estritamente por ID real do WhatsApp e reconcilia mensagens temporárias locais (otimistas)
     const deduped: Message[] = [];
-    const contentKeyMap = new Map<string, number[]>();
+    const seenIds = new Set<string>();
 
     for (const msg of matched) {
-      const msgContent = (msg.content || '').trim();
-      const msgTime = new Date(msg.timestamp || 0).getTime();
-      const key = `${msg.senderType}__${msgContent}`;
-      
-      const candidateIndices = contentKeyMap.get(key);
-      let existingIdx = -1;
+      const msgId = msg.id || msg.externalId || '';
 
-      if (candidateIndices) {
-        for (const idx of candidateIndices) {
-          const existing = deduped[idx];
-
-          // 1. Se ambos tiverem IDs reais explícitos do WhatsApp e forem diferentes, NUNCA são duplicatas!
-          const isRealWppMsg = (id?: string) => Boolean(id && (id.startsWith('true_') || id.startsWith('false_')));
-          if (isRealWppMsg(existing.id) && isRealWppMsg(msg.id) && existing.id !== msg.id) {
-            continue;
-          }
-
-          // 2. Se os IDs forem idênticos, é a mesma mensagem
-          if (existing.id && msg.id && existing.id === msg.id) {
-            existingIdx = idx;
-            break;
-          }
-
-          // 3. Para mensagens sem ID nativo (ex: ecos de webhook / sync), deduplica apenas se a diferença for <= 4 segundos
-          const exTime = new Date(existing.timestamp || 0).getTime();
-          if (Math.abs(exTime - msgTime) <= 4000) {
-            existingIdx = idx;
-            break;
-          }
-        }
+      // 1. Se tem ID definido e já vimos esse ID exato, ignora duplicata de rede
+      if (msgId && seenIds.has(msgId)) {
+        continue;
       }
 
-      if (existingIdx === -1) {
-        const newIdx = deduped.length;
-        deduped.push(msg);
-        if (!candidateIndices) {
-          contentKeyMap.set(key, [newIdx]);
-        } else {
-          candidateIndices.push(newIdx);
-        }
+      // 2. Se for uma mensagem temporária / otimista local (gerada na tela antes da resposta da Z-API),
+      // verifica se a confirmação real da Z-API já chegou para reconciliar
+      const isTemporary = msgId.startsWith('temp-') || msgId.startsWith('synthetic-') || msgId.startsWith('opt-');
+      if (isTemporary) {
+        const alreadyHasConfirmed = deduped.some(d => 
+          !d.id?.startsWith('temp-') && 
+          !d.id?.startsWith('opt-') &&
+          d.senderType === msg.senderType && 
+          (d.content || '').trim() === (msg.content || '').trim() && 
+          Math.abs(new Date(d.timestamp || 0).getTime() - new Date(msg.timestamp || 0).getTime()) < 30000
+        );
+        if (alreadyHasConfirmed) continue;
       } else {
-        // Se já existe e a mensagem existente é genérica ("Corretor"), substitui pela que tem o nome real do corretor
-        if (deduped[existingIdx].senderName === 'Corretor' && msg.senderName && msg.senderName !== 'Corretor') {
-          deduped[existingIdx] = msg;
+        // Se a mensagem confirmada com ID real chegou, remove qualquer temporária prévia equivalente
+        const tempIdx = deduped.findIndex(d => 
+          (d.id?.startsWith('temp-') || d.id?.startsWith('opt-')) && 
+          d.senderType === msg.senderType && 
+          (d.content || '').trim() === (msg.content || '').trim()
+        );
+        if (tempIdx !== -1) {
+          deduped.splice(tempIdx, 1);
         }
       }
+
+      if (msgId) seenIds.add(msgId);
+      deduped.push(msg);
     }
 
     return deduped.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());

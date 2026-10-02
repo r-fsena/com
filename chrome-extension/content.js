@@ -1125,17 +1125,17 @@ ${isDeveloperMode ? `
       return (a.domOrder || 0) - (b.domOrder || 0);
     });
 
-    // 2. Garantia de Monotonicidade Rigorosa (Offset de segundos):
-    // Como balões do mesmo minuto recebem o mesmo minuto base (ex: 14:32:00.000Z),
-    // garantimos que cada mensagem subsequente tenha timestamp estritamente crescente (>= anterior + 1000ms).
-    // Isso impede qualquer embaralhamento visual no CRM!
+    // 2. Garantia de Monotonicidade Rigorosa (Offset sutil de milissegundos):
+    // Como balões do mesmo minuto no DOM recebem o mesmo minuto base (ex: 17:02:00.000Z),
+    // garantimos que cada mensagem subsequente tenha timestamp estritamente crescente (>= anterior + 10ms).
+    // Isso preserva os milissegundos sequenciais exatos da ordem do chat sem deslocar os segundos reais!
     let lastSeqMs = 0;
     for (let i = 0; i < validContentMsgs.length; i++) {
       const m = validContentMsgs[i];
       let currMs = new Date(m.timestamp).getTime();
       if (isNaN(currMs)) currMs = Date.now();
       if (currMs <= lastSeqMs) {
-        currMs = lastSeqMs + 1000;
+        currMs = lastSeqMs + 10;
         m.timestamp = new Date(currMs).toISOString();
       }
       lastSeqMs = currMs;

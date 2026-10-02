@@ -1109,13 +1109,24 @@ ${isDeveloperMode ? `
       : new Map();
 
     if (messagesMap.size === 0) {
-      harvestDomMessages(messagesMap, resolvedPhone);
+      const orderTracker = { orderedKeys: [], seenKeys: new Set(), knownAnchorDateIso: '' };
+      harvestDomMessages(messagesMap, resolvedPhone, orderTracker, 'INIT');
+      calibratePhysicalChatSequence(orderTracker.orderedKeys, messagesMap);
+      messagesMap._orderedKeys = orderTracker.orderedKeys;
     }
 
-    const validContentMsgs = Array.from(messagesMap.values())
-      .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
+    // Constrói array de mensagens na ordem física real calibrada
+    let validContentMsgs = [];
+    if (messagesMap._orderedKeys && messagesMap._orderedKeys.length > 0) {
+      validContentMsgs = messagesMap._orderedKeys
+        .map(k => messagesMap.get(k))
+        .filter(m => m && m.content && !isWhatsAppSystemMessage(m.content));
+    } else {
+      validContentMsgs = Array.from(messagesMap.values())
+        .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
+    }
 
-    // 1. Ordenação estritamente cronológica por timestamp
+    // 1. Ordenação estritamente cronológica por timestamp e domOrder físico
     validContentMsgs.sort((a, b) => {
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
@@ -1126,9 +1137,6 @@ ${isDeveloperMode ? `
     });
 
     // 2. Garantia de Monotonicidade Rigorosa (Offset sutil de milissegundos):
-    // Como balões do mesmo minuto no DOM recebem o mesmo minuto base (ex: 17:02:00.000Z),
-    // garantimos que cada mensagem subsequente tenha timestamp estritamente crescente (>= anterior + 10ms).
-    // Isso preserva os milissegundos sequenciais exatos da ordem do chat sem deslocar os segundos reais!
     let lastSeqMs = 0;
     for (let i = 0; i < validContentMsgs.length; i++) {
       const m = validContentMsgs[i];
@@ -1139,6 +1147,7 @@ ${isDeveloperMode ? `
         m.timestamp = new Date(currMs).toISOString();
       }
       lastSeqMs = currMs;
+      m.domOrder = i;
     }
 
     const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
@@ -1199,12 +1208,11 @@ ${isDeveloperMode ? `
     return isOld;
   }
 
-  // Utilitário para converter divisores de data do WhatsApp Web em português para objeto Date real
-  // Utilitário para converter divisores de data do WhatsApp Web em português para objeto Date real
+    // Utilitário para converter divisores de data do WhatsApp Web em português e inglês para objeto Date real
   function parsePortugueseWhatsAppDate(text, fallbackYear = new Date().getFullYear()) {
     if (!text || typeof text !== 'string') return null;
-    const clean = text.trim().toUpperCase();
-    if (!clean || clean.length > 25) return null;
+    const clean = text.trim().toUpperCase().replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!clean || clean.length > 35) return null;
 
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -1224,7 +1232,8 @@ ${isDeveloperMode ? `
     const weekdays = {
       'DOMINGO': 0, 'SEGUNDA-FEIRA': 1, 'TERÇA-FEIRA': 2, 'QUARTA-FEIRA': 3,
       'QUINTA-FEIRA': 4, 'SEXTA-FEIRA': 5, 'SÁBADO': 6,
-      'SEGUNDA': 1, 'TERCA': 2, 'TERÇA': 2, 'QUARTA': 3, 'QUINTA': 4, 'SEXTA': 5, 'SABADO': 6
+      'SEGUNDA': 1, 'TERCA': 2, 'TERÇA': 2, 'QUARTA': 3, 'QUINTA': 4, 'SEXTA': 5, 'SABADO': 6,
+      'SUNDAY': 0, 'MONDAY': 1, 'TUESDAY': 2, 'WEDNESDAY': 3, 'THURSDAY': 4, 'FRIDAY': 5, 'SATURDAY': 6
     };
     for (const [wName, wDay] of Object.entries(weekdays)) {
       if (clean === wName) {
@@ -1241,8 +1250,15 @@ ${isDeveloperMode ? `
     const months = {
       'JANEIRO': 0, 'FEVEREIRO': 1, 'MARÇO': 2, 'MARCO': 2, 'ABRIL': 3,
       'MAIO': 4, 'JUNHO': 5, 'JULHO': 6, 'AGOSTO': 7,
-      'SETEMBRO': 8, 'OUTUBRO': 9, 'NOVEMBRO': 10, 'DEZEMBRO': 11
+      'SETEMBRO': 8, 'OUTUBRO': 9, 'NOVEMBRO': 10, 'DEZEMBRO': 11,
+      'JANUARY': 0, 'FEBRUARY': 1, 'MARCH': 2, 'APRIL': 3, 'MAY': 4, 'JUNE': 5,
+      'JULY': 6, 'AUGUST': 7, 'SEPTEMBER': 8, 'OCTOBER': 9, 'NOVEMBER': 10, 'DECEMBER': 11,
+      'JAN': 0, 'FEV': 1, 'FEB': 1, 'MAR': 2, 'ABR': 3, 'APR': 3, 'MAI': 4,
+      'JUN': 5, 'JUL': 6, 'AGO': 7, 'AUG': 7, 'SET': 8, 'SEP': 8, 'OUT': 9, 'OCT': 9,
+      'NOV': 10, 'DEZ': 11, 'DEC': 11
     };
+
+    // Formato PT: 28 DE SETEMBRO [DE 2026]
     const mMatch = clean.match(/^(\d{1,2})\s+DE\s+([A-ZÇ]+)(?:\s+DE\s+(\d{2,4}))?$/);
     if (mMatch) {
       const day = Number(mMatch[1]);
@@ -1258,6 +1274,22 @@ ${isDeveloperMode ? `
         }
         if (!isNaN(dt.getTime())) return dt;
       }
+    }
+
+    // Formato EN: SEPTEMBER 28[, 2026] ou 28 SEPTEMBER 2026
+    const enMatch1 = clean.match(/^([A-Z]+)\s+(\d{1,2})(?:,?\s+(\d{2,4}))?$/);
+    if (enMatch1 && months[enMatch1[1]] !== undefined) {
+      const monthName = enMatch1[1];
+      const day = Number(enMatch1[2]);
+      let year = enMatch1[3] ? Number(enMatch1[3]) : fallbackYear;
+      if (year < 100) year += 2000;
+      if (year > currentYear) year = currentYear;
+      let dt = new Date(year, months[monthName], day, 12, 0, 0);
+      if (!enMatch1[3] && dt.getTime() > now.getTime() + 60000) {
+        year = currentYear - 1;
+        dt = new Date(year, months[monthName], day, 12, 0, 0);
+      }
+      if (!isNaN(dt.getTime())) return dt;
     }
 
     // Exige que a linha seja estritamente uma data numérica (evita casar com menções no meio de propostas comerciais)
@@ -1421,27 +1453,49 @@ ${isDeveloperMode ? `
     return null;
   }
 
-  // Resolve a data exata de um balão inspecionando EXCLUSIVAMENTE divisores de sistema legítimos no DOM
-  function getContextualDateForContainer(container, currentWalkingDateIso) {
-    const parentRow = container.closest?.('div[role="row"]') || container;
+    // Extrai data pura (Date com meio-dia) de divisor de sistema ou nó legítimo
+  function extractDateFromSystemDivider(el) {
+    if (!el) return null;
+    // Se for balão de mensagem, nunca é divisor de data
+    if (el.classList?.contains('message-in') || el.classList?.contains('message-out')) return null;
+    if (el.querySelector?.('.message-in, .message-out')) return null;
+    if (el.hasAttribute?.('data-id') || el.querySelector?.('[data-id]')) return null;
+    if (el.querySelector?.('[data-pre-plain-text]')) return null;
 
-    // Helper: verifica se um nó é um divisor legítimo de data do sistema (e não um balão de conversa de cliente)
-    function isGenuinSystemDateDivider(el) {
-      if (!el) return false;
-      if (el.classList?.contains('message-in') || el.classList?.contains('message-out')) return false;
-      if (el.querySelector?.('.message-in, .message-out')) return false;
-      if (el.hasAttribute?.('data-id') || el.querySelector?.('[data-id]')) return false;
-      if (el.querySelector?.('[data-pre-plain-text]')) return false;
-
-      const txt = (el.innerText || '').trim();
-      if (!txt || txt.length > 25) return false;
-      return parsePortugueseWhatsAppDate(txt) !== null;
+    // Busca nó folha com texto curto
+    const textDirect = (el.innerText || '').trim();
+    if (textDirect && textDirect.length <= 35) {
+      const parsed = parsePortugueseWhatsAppDate(textDirect);
+      if (parsed) return parsed;
     }
+
+    // Busca spans ou divs filhos imediatos (ex: pílulas centrais do WhatsApp Web)
+    const candidates = el.querySelectorAll('span, div');
+    for (const c of candidates) {
+      if (c.children.length === 0) {
+        const txt = (c.innerText || '').trim();
+        if (txt && txt.length <= 35) {
+          const parsed = parsePortugueseWhatsAppDate(txt);
+          if (parsed) return parsed;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Helper retrocompatível
+  function isGenuinSystemDateDivider(el) {
+    return extractDateFromSystemDivider(el) !== null;
+  }
+
+  // Resolve a data exata de um balão inspecionando EXCLUSIVAMENTE divisores de sistema legítimos no DOM
+  function getContextualDateForContainer(container, currentWalkingDateIso = '', knownAnchorDateIso = '') {
+    const parentRow = container.closest?.('div[role="row"]') || container;
 
     // 1. Procura para trás por divisores de data do sistema ou data-pre-plain-text válidos
     let curr = parentRow.previousElementSibling;
     let stepsBack = 0;
-    while (curr && stepsBack < 40) {
+    while (curr && stepsBack < 80) {
       const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
       if (preNode) {
         const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
@@ -1449,12 +1503,8 @@ ${isDeveloperMode ? `
         if (dt) return dt;
       }
 
-      // Só lê innerText se for comprovadamente um divisor do sistema (nunca balões de mensagem!)
-      if (isGenuinSystemDateDivider(curr)) {
-        const text = (curr.innerText || '').trim();
-        const parsed = parsePortugueseWhatsAppDate(text);
-        if (parsed) return parsed;
-      }
+      const divDate = extractDateFromSystemDivider(curr);
+      if (divDate) return divDate;
 
       curr = curr.previousElementSibling;
       stepsBack++;
@@ -1463,7 +1513,7 @@ ${isDeveloperMode ? `
     // 2. Procura para a frente por divisores de data do sistema ou data-pre-plain-text
     curr = parentRow.nextElementSibling;
     let stepsForward = 0;
-    while (curr && stepsForward < 40) {
+    while (curr && stepsForward < 80) {
       const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
       if (preNode) {
         const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
@@ -1471,11 +1521,8 @@ ${isDeveloperMode ? `
         if (dt) return dt;
       }
 
-      if (isGenuinSystemDateDivider(curr)) {
-        const text = (curr.innerText || '').trim();
-        const parsed = parsePortugueseWhatsAppDate(text);
-        if (parsed) return parsed;
-      }
+      const divDate = extractDateFromSystemDivider(curr);
+      if (divDate) return divDate;
 
       curr = curr.nextElementSibling;
       stepsForward++;
@@ -1490,14 +1537,186 @@ ${isDeveloperMode ? `
       }
     }
 
-    // Fallback seguro
+    if (knownAnchorDateIso) {
+      const parsed = new Date(knownAnchorDateIso);
+      if (!isNaN(parsed.getTime())) {
+        const d = new Date(parsed.getTime());
+        d.setHours(12, 0, 0, 0);
+        return d;
+      }
+    }
+
+    // Fallback provisório (será estritamente calibrado pelo Backward Sweep baseado na ordem física)
     const def = new Date();
     def.setHours(12, 0, 0, 0);
     return def;
   }
 
+  /**
+   * Mescla um lote de chaves na lista ordenada de chaves com base em sobreposição (overlap) de nós
+   * ou na direção do scroll, preservando a ordem física rigorosa de cima para baixo do WhatsApp Web.
+   */
+  function mergeBatchIntoOrderTracker(orderTracker, currentBatchKeys, scrollDirection) {
+    if (!orderTracker) return;
+    if (!orderTracker.orderedKeys) orderTracker.orderedKeys = [];
+    if (!orderTracker.seenKeys) orderTracker.seenKeys = new Set();
+
+    const { orderedKeys, seenKeys } = orderTracker;
+
+    if (orderedKeys.length === 0) {
+      for (const k of currentBatchKeys) {
+        if (!seenKeys.has(k)) {
+          orderedKeys.push(k);
+          seenKeys.add(k);
+        }
+      }
+      return;
+    }
+
+    // Procura nó coincidente (overlap) entre o lote atual e as chaves conhecidas
+    let matchIdxInBatch = -1;
+    let matchIdxInOrder = -1;
+
+    for (let b = 0; b < currentBatchKeys.length; b++) {
+      const k = currentBatchKeys[b];
+      const ordIdx = orderedKeys.indexOf(k);
+      if (ordIdx !== -1) {
+        matchIdxInBatch = b;
+        matchIdxInOrder = ordIdx;
+        break;
+      }
+    }
+
+    if (matchIdxInBatch !== -1) {
+      // Itens antes do nó de sobreposição estão fisicamente ACIMA na tela
+      const beforeItems = [];
+      for (let b = 0; b < matchIdxInBatch; b++) {
+        const k = currentBatchKeys[b];
+        if (!seenKeys.has(k)) {
+          beforeItems.push(k);
+          seenKeys.add(k);
+        }
+      }
+      if (beforeItems.length > 0) {
+        orderedKeys.splice(matchIdxInOrder, 0, ...beforeItems);
+        matchIdxInOrder += beforeItems.length;
+      }
+
+      // Itens depois do nó de sobreposição estão fisicamente ABAIXO na tela
+      let insertPos = matchIdxInOrder + 1;
+      for (let b = matchIdxInBatch + 1; b < currentBatchKeys.length; b++) {
+        const k = currentBatchKeys[b];
+        if (!seenKeys.has(k)) {
+          orderedKeys.splice(insertPos, 0, k);
+          seenKeys.add(k);
+          insertPos++;
+        } else {
+          const pos = orderedKeys.indexOf(k);
+          if (pos >= insertPos) insertPos = pos + 1;
+        }
+      }
+    } else {
+      // Sem sobreposição visível: decide pela direção do scroll
+      if (scrollDirection === 'UP') {
+        const newItems = [];
+        for (const k of currentBatchKeys) {
+          if (!seenKeys.has(k)) {
+            newItems.push(k);
+            seenKeys.add(k);
+          }
+        }
+        orderedKeys.unshift(...newItems);
+      } else {
+        for (const k of currentBatchKeys) {
+          if (!seenKeys.has(k)) {
+            orderedKeys.push(k);
+            seenKeys.add(k);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Calibra monotonicamente e cronologicamente todos os timestamps das mensagens
+   * usando a ordem física estrita do DOM do WhatsApp como fonte absoluta da verdade.
+   * 
+   * Backward Sweep: nenhuma mensagem pode ter timestamp posterior à mensagem abaixo dela.
+   * Forward Sweep: balões subsequentes no mesmo minuto recebem offsets de milissegundos estritamente crescentes.
+   */
+  function calibratePhysicalChatSequence(orderedKeys, messagesMap) {
+    if (!orderedKeys || orderedKeys.length === 0 || !messagesMap) return;
+
+    const msgs = orderedKeys.map(k => messagesMap.get(k)).filter(Boolean);
+    if (msgs.length === 0) return;
+
+    const now = Date.now();
+
+    // 0. Garante que nenhuma mensagem ultrapasse o momento presente
+    for (const m of msgs) {
+      let t = new Date(m.timestamp).getTime();
+      if (isNaN(t) || t > now + 60000) {
+        m.timestamp = new Date(now).toISOString();
+      }
+    }
+
+    // 1. BACKWARD SWEEP (Do fim para o começo):
+    // Como o chat caminha estritamente para baixo, a mensagem msgs[i] está fisicamente ACIMA de msgs[i + 1].
+    // Portanto, msgs[i] ACONTECEU ANTES de msgs[i + 1]!
+    // Se o timestamp de msgs[i] for maior ou igual ao de msgs[i + 1], significa que msgs[i]
+    // recebeu uma data futura incorreta (ex: fallback provisório para Hoje).
+    for (let i = msgs.length - 2; i >= 0; i--) {
+      const curr = msgs[i];
+      const next = msgs[i + 1];
+
+      let currTime = new Date(curr.timestamp).getTime();
+      const nextTime = new Date(next.timestamp).getTime();
+
+      if (currTime >= nextTime) {
+        const nextDate = new Date(nextTime);
+        const currDate = new Date(currTime);
+
+        const currHour = currDate.getHours();
+        const currMin = currDate.getMinutes();
+
+        // Se a hora do atual for maior que a do próximo (ex: 18:30 vs 09:15), mudou de dia!
+        if (currHour > nextDate.getHours() || (currHour === nextDate.getHours() && currMin >= nextDate.getMinutes())) {
+          const prevDay = new Date(nextDate);
+          prevDay.setDate(prevDay.getDate() - 1);
+          prevDay.setHours(currHour, currMin, 0, 0);
+          curr.timestamp = prevDay.toISOString();
+        } else {
+          // No mesmo dia, mas antes
+          const sameDay = new Date(nextDate);
+          sameDay.setHours(currHour, currMin, 0, 0);
+          if (sameDay.getTime() < nextTime) {
+            curr.timestamp = sameDay.toISOString();
+          } else {
+            curr.timestamp = new Date(nextTime - 1000).toISOString();
+          }
+        }
+      }
+    }
+
+    // 2. FORWARD SWEEP (Do começo para o fim):
+    // Garante monotonicidade rigorosa estritamente crescente (+10ms para mensagens no mesmo minuto)
+    let lastSeqMs = 0;
+    for (let i = 0; i < msgs.length; i++) {
+      const curr = msgs[i];
+      let currMs = new Date(curr.timestamp).getTime();
+      if (isNaN(currMs)) currMs = Date.now();
+
+      if (currMs <= lastSeqMs) {
+        currMs = lastSeqMs + 10;
+        curr.timestamp = new Date(currMs).toISOString();
+      }
+      lastSeqMs = currMs;
+      curr.domOrder = i;
+    }
+  }
+
   // Coleta balões de mensagem do DOM de #main e insere em um Map deduplicado
-  function harvestDomMessages(messagesMap, fallbackPhone = '') {
+  function harvestDomMessages(messagesMap, fallbackPhone = '', orderTracker = null, scrollDirection = 'INIT') {
     const main = document.querySelector('#main');
     if (!main) return;
 
@@ -1520,18 +1739,19 @@ ${isDeveloperMode ? `
     let lastSeenValidTimeMs = 0;
     let lastDeterminedFromMe = null;
 
-    // Pré-carrega uma data inicial do topo se houver divisor de data legítimo (NUNCA busca spans genéricos de balão de mensagem)
-    const initialDateSpans = Array.from(main.querySelectorAll('div[data-testid*="system"] span, div[data-testid*="date"] span'));
-    for (const sp of initialDateSpans) {
-      const txt = (sp.innerText || '').trim();
-      if (txt && txt.length <= 25) {
-        const parsed = parsePortugueseWhatsAppDate(txt);
-        if (parsed) {
-          currentWalkingDateIso = parsed.toISOString();
-          break;
+    // Pré-carrega uma data inicial do topo se houver divisor de data legítimo no DOM atual
+    for (const el of uniqueElements) {
+      const d = extractDateFromSystemDivider(el);
+      if (d) {
+        currentWalkingDateIso = d.toISOString();
+        if (orderTracker && !orderTracker.knownAnchorDateIso) {
+          orderTracker.knownAnchorDateIso = currentWalkingDateIso;
         }
+        break;
       }
     }
+
+    const currentBatchKeys = [];
 
     uniqueElements.forEach((element, index) => {
       // 1. Verifica se este elemento é um divisor de data do sistema no fluxo do chat
@@ -1953,12 +2173,13 @@ ${isDeveloperMode ? `
         currentWalkingDateIso = msgTime;
       }
 
-      // 9. Deduplicação e armazenamento no Map
+            // 9. Deduplicação e armazenamento no Map
       const effectiveDataId = isRealMsgKey ? rawDataId : '';
-      const timeMinuteKey = msgTime ? msgTime.slice(0, 16) : '';
       const safeSnippet = (content || '').trim().slice(0, 80).replace(/\s+/g, ' ');
-      // CHAVE 100% DETERMINÍSTICA ENTRE ROLAGENS: NUNCA USAR ${index} DO LOOP!
-      const uniqueMsgKey = effectiveDataId || `${isFromMe ? 'OUT' : 'IN'}::${timeMinuteKey}::${safeSnippet}`;
+      // CHAVE ESTÁVEL: NUNCA USAR ${index} NEM timeMinuteKey QUE MUDE ENTRE PASSADAS!
+      const uniqueMsgKey = effectiveDataId || `${isFromMe ? 'OUT' : 'IN'}::${safeSnippet}`;
+
+      currentBatchKeys.push(uniqueMsgKey);
 
       if (!messagesMap.has(uniqueMsgKey)) {
         const p = fallbackPhone || currentActivePhone || 'chat';
@@ -1972,8 +2193,21 @@ ${isDeveloperMode ? `
           fileName: fileName || undefined,
           domOrder: index,
         });
+      } else {
+        const existing = messagesMap.get(uniqueMsgKey);
+        if (mediaUrl && !existing.mediaUrl) existing.mediaUrl = mediaUrl;
+        if (fileName && !existing.fileName) existing.fileName = fileName;
+        if (cleanPrePlain && !existing.hasPrePlain) {
+          existing.timestamp = msgTime;
+          existing.hasPrePlain = true;
+        }
       }
     });
+
+    // 10. Atualiza o Rastreador de Ordem Física Global (orderTracker)
+    if (orderTracker && currentBatchKeys.length > 0) {
+      mergeBatchIntoOrderTracker(orderTracker, currentBatchKeys, scrollDirection);
+    }
   }
 
 
@@ -2197,15 +2431,23 @@ ${isDeveloperMode ? `
     const main = document.querySelector('#main');
     const scrollContainer = findChatScrollContainer();
     const accumulatedMessages = new Map();
+    const orderTracker = {
+      orderedKeys: [],
+      seenKeys: new Set(),
+      knownAnchorDateIso: '',
+    };
+
     if (!scrollContainer || !main) {
-      harvestDomMessages(accumulatedMessages);
+      harvestDomMessages(accumulatedMessages, '', orderTracker, 'INIT');
+      calibratePhysicalChatSequence(orderTracker.orderedKeys, accumulatedMessages);
+      accumulatedMessages._orderedKeys = orderTracker.orderedKeys;
       return accumulatedMessages;
     }
 
     const badge = document.getElementById('sovereign-sync-badge');
 
-    // 1. Coleta inicial das mensagens mais recentes visíveis agora (hoje)
-    harvestDomMessages(accumulatedMessages);
+    // 1. Coleta inicial das mensagens mais recentes visíveis agora (no fundo do chat)
+    harvestDomMessages(accumulatedMessages, '', orderTracker, 'INIT');
     let lastCount = accumulatedMessages.size;
     let unchangedAttempts = 0;
 
@@ -2252,14 +2494,13 @@ ${isDeveloperMode ? `
         await new Promise(r => setTimeout(r, 500));
       }
 
-      // Coleta mensagens da página atual no DOM e adiciona ao acumulador
-      harvestDomMessages(accumulatedMessages);
+      // Coleta mensagens subindo (direção UP)
+      harvestDomMessages(accumulatedMessages, '', orderTracker, 'UP');
 
       const currentCount = accumulatedMessages.size;
       if (currentCount === lastCount) {
         unchangedAttempts++;
-        // Só encerra precocemente se já acumulou um bom volume (>= 15 msgs) E teve 4 tentativas sem novidade,
-        // OU se já tentou pelo menos 8 rolagens
+        // Encerra precocemente se já acumulou mensagens suficientes e não surgem novas
         if (unchangedAttempts >= 4 && (currentCount >= 15 || i >= 8)) {
           console.log(`[Brokiva] Início da conversa atingido após ${i + 1} rolagens (${currentCount} msgs).`);
           break;
@@ -2281,11 +2522,17 @@ ${isDeveloperMode ? `
         try { lastRow.scrollIntoView({ block: 'end', behavior: 'instant' }); } catch (e) {}
       }
       await new Promise(r => setTimeout(r, 600));
-      harvestDomMessages(accumulatedMessages);
+      harvestDomMessages(accumulatedMessages, '', orderTracker, 'DOWN');
     }
+
+    // Calibra monotonicamente todos os timestamps com base na ordem física estrita
+    calibratePhysicalChatSequence(orderTracker.orderedKeys, accumulatedMessages);
+    accumulatedMessages._orderedKeys = orderTracker.orderedKeys;
 
     return accumulatedMessages;
   }
+
+  
 
   async function extractContactDetailsFromDrawer() {
     try {

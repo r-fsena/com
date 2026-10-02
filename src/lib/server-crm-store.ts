@@ -1153,18 +1153,42 @@ export const serverCRMStore = {
       const validIdKey = (!isTempId && m.id) ? m.id : (m.externalId || null);
       const key = validIdKey 
         ? `${tenantKey}::${convId}-${validIdKey}` 
-        : `${tenantKey}::${convId}-${m.senderType}-${m.timestamp || ''}-${content.slice(0, 80)}`;
-      
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, normalizedMsg);
-      } else {
+        : `${tenantKey}::${convId}-${m.senderType}-${content.slice(0, 80)}`;
+
+      // Reconciliação inteligente: se já existir mensagem da mesma conversa com mesmo senderType e conteúdo idêntico
+      let matchedOldKey: string | null = null;
+      for (const [k, v] of Array.from(map.entries())) {
+        if (
+          k.startsWith(`${tenantKey}::${convId}-`) &&
+          v.senderType === m.senderType &&
+          (v.content || '').trim() === content
+        ) {
+          matchedOldKey = k;
+          break;
+        }
+      }
+
+      if (matchedOldKey && matchedOldKey !== key) {
+        // Substitui a versão prévia pelo registro atualizado com timestamp calibrado
+        const oldMsg = map.get(matchedOldKey);
+        map.delete(matchedOldKey);
         map.set(key, {
-          ...existing,
+          ...(oldMsg || {}),
           ...normalizedMsg,
-          attachments: normalizedMsg.attachments || existing.attachments,
-          timestamp: normalizedMsg.timestamp || existing.timestamp,
+          timestamp: normalizedMsg.timestamp || oldMsg?.timestamp || new Date().toISOString(),
         });
+      } else {
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, normalizedMsg);
+        } else {
+          map.set(key, {
+            ...existing,
+            ...normalizedMsg,
+            attachments: normalizedMsg.attachments || existing.attachments,
+            timestamp: normalizedMsg.timestamp || existing.timestamp,
+          });
+        }
       }
     });
 

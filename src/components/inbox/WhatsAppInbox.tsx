@@ -2350,32 +2350,73 @@ export function WhatsAppInbox() {
                 </div>
               )}
 
-              {renderedMessages.map((msg) => {
+              {renderedMessages.map((msg, idx) => {
                 const isMe = msg.senderType === 'USER';
                 const isNote = msg.isInternalNote;
 
+                // Divisor de data amigável idêntico ao WhatsApp oficial
+                const prevMsg = idx > 0 ? renderedMessages[idx - 1] : null;
+                const msgDateStr = msg.timestamp ? new Date(msg.timestamp).toDateString() : '';
+                const prevDateStr = prevMsg?.timestamp ? new Date(prevMsg.timestamp).toDateString() : '';
+                const showDateDivider = Boolean(msgDateStr && msgDateStr !== prevDateStr);
+
+                let dateDividerLabel = '';
+                if (showDateDivider && msg.timestamp) {
+                  try {
+                    const d = new Date(msg.timestamp);
+                    const now = new Date();
+                    const dMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                    const diffDays = Math.round((nowMidnight - dMidnight) / (1000 * 60 * 60 * 24));
+                    if (diffDays === 0) dateDividerLabel = 'Hoje';
+                    else if (diffDays === 1) dateDividerLabel = 'Ontem';
+                    else if (diffDays > 1 && diffDays < 7) {
+                      const weekdays = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+                      dateDividerLabel = weekdays[d.getDay()];
+                    } else {
+                      dateDividerLabel = safeFormatDate(msg.timestamp, 'dd/MM/yyyy');
+                    }
+                  } catch (e) {}
+                }
+
                 if (isNote) {
                   return (
-                    <div key={msg.id} className="flex justify-center my-2">
-                      <div className="bg-amber-50 border border-amber-300/80 rounded-2xl p-3 max-w-md shadow-xs text-xs text-amber-900">
-                        <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-1">
-                          <Lock className="w-3.5 h-3.5 text-amber-600" />
-                          <span>Nota Interna da Equipe (Invisível para o cliente)</span>
+                    <React.Fragment key={msg.id}>
+                      {showDateDivider && dateDividerLabel && (
+                        <div className="flex justify-center my-3 select-none">
+                          <span className="bg-slate-200/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 text-[11px] font-medium px-3.5 py-1 rounded-full shadow-2xs border border-slate-300/40 dark:border-slate-700/50 backdrop-blur-xs">
+                            {dateDividerLabel}
+                          </span>
                         </div>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                        <span className="block text-[10px] text-amber-600/80 text-right mt-1">
-                          {msg.senderName} • {safeFormatDate(msg.timestamp, 'HH:mm')}
-                        </span>
+                      )}
+                      <div className="flex justify-center my-2">
+                        <div className="bg-amber-50 border border-amber-300/80 rounded-2xl p-3 max-w-md shadow-xs text-xs text-amber-900">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-1">
+                            <Lock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Nota Interna da Equipe (Invisível para o cliente)</span>
+                          </div>
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          <span className="block text-[10px] text-amber-600/80 text-right mt-1">
+                            {msg.senderName} • {safeFormatDate(msg.timestamp, 'HH:mm')}
+                          </span>
+                        </div>
                       </div>
-                    </div>
+                    </React.Fragment>
                   );
                 }
 
                 return (
-                  <div
-                    key={msg.id}
-                    className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                  >
+                  <React.Fragment key={msg.id}>
+                    {showDateDivider && dateDividerLabel && (
+                      <div className="flex justify-center my-3 select-none">
+                        <span className="bg-slate-200/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 text-[11px] font-medium px-3.5 py-1 rounded-full shadow-2xs border border-slate-300/40 dark:border-slate-700/50 backdrop-blur-xs">
+                          {dateDividerLabel}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                    >
                     <div
                       className={`max-w-md rounded-2xl px-4 py-2.5 shadow-sm text-xs relative ${
                         isMe
@@ -2529,6 +2570,7 @@ export function WhatsAppInbox() {
                       </div>
                     </div>
                   </div>
+                </React.Fragment>
                 );
               })}
               <div ref={messagesEndRef} className="h-1" />

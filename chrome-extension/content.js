@@ -1512,23 +1512,8 @@ ${isDeveloperMode ? `
       stepsBack++;
     }
 
-    // 2. Procura para a frente por divisores de data do sistema ou data-pre-plain-text
-    curr = parentRow.nextElementSibling;
-    let stepsForward = 0;
-    while (curr && stepsForward < 80) {
-      const preNode = curr.querySelector?.('[data-pre-plain-text]') || (curr.hasAttribute?.('data-pre-plain-text') ? curr : null);
-      if (preNode) {
-        const rawPre = preNode.getAttribute('data-pre-plain-text') || '';
-        const dt = extractDateFromPrePlain(rawPre);
-        if (dt) return dt;
-      }
-
-      const divDate = extractDateFromSystemDivider(curr);
-      if (divDate) return divDate;
-
-      curr = curr.nextElementSibling;
-      stepsForward++;
-    }
+    // NOTA CRÍTICA: NUNCA procura para a frente (para baixo no chat) por divisores de data,
+    // pois isso atribuiria datas do futuro a mensagens anteriores!
 
     if (currentWalkingDateIso) {
       const parsed = new Date(currentWalkingDateIso);
@@ -2067,11 +2052,14 @@ ${isDeveloperMode ? `
 
       // 8. Extração e Resolução Robusta de Data e Hora com Garantia de Ordem Monotônica
       let msgTime = '';
+      let isHardPrePlainDate = false;
       if (cleanPrePlain) {
         const dt = parseWhatsAppTimestamp(cleanPrePlain);
         if (dt) {
           msgTime = dt.toISOString();
           currentWalkingDateIso = msgTime;
+          lastSeenValidTimeMs = dt.getTime();
+          isHardPrePlainDate = true;
         }
       }
 
@@ -2127,14 +2115,13 @@ ${isDeveloperMode ? `
       }
 
       // GARANTIA DE MONOTONICIDADE CRONOLÓGICA:
-      // O DOM do WhatsApp caminha estritamente para a frente.
-      // Se o horário calculado cair antes da mensagem anterior no mesmo bloco de chat,
-      // herda o timestamp imediatamente posterior para preservar a ordem física perfeita no CRM!
+      // Se não for uma data explícita de data-pre-plain-text e o horário cair antes da mensagem anterior,
+      // herda o timestamp imediatamente posterior (+10ms) para manter a ordem física estrita.
       const currentParsedMs = new Date(msgTime).getTime();
       if (!isNaN(currentParsedMs)) {
-        if (lastSeenValidTimeMs > 0 && currentParsedMs < lastSeenValidTimeMs) {
-          msgTime = new Date(lastSeenValidTimeMs + 1000).toISOString();
-          lastSeenValidTimeMs = lastSeenValidTimeMs + 1000;
+        if (!isHardPrePlainDate && lastSeenValidTimeMs > 0 && currentParsedMs < lastSeenValidTimeMs) {
+          msgTime = new Date(lastSeenValidTimeMs + 10).toISOString();
+          lastSeenValidTimeMs = lastSeenValidTimeMs + 10;
         } else {
           lastSeenValidTimeMs = Math.max(lastSeenValidTimeMs, currentParsedMs);
         }

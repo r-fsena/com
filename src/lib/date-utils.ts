@@ -42,9 +42,12 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
     }
   }
 
+  // Remove colchetes envolventes se presentes: "[16:50, quarta-feira]" -> "16:50, quarta-feira"
+  const unbracketed = trimmed.replace(/^\[(.*?)\]$/, '$1').trim();
+
   // 2. Formatos relativos: "Hoje, 14:32", "14:32, Hoje", "Ontem, 14:32", "14:32, Ontem" ou apenas "Hoje"/"Ontem"
-  const relMatch = trimmed.match(/^(ontem|yesterday|hoje|today)(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/i) ||
-                   trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(ontem|yesterday|hoje|today)$/i);
+  const relMatch = unbracketed.match(/^(ontem|yesterday|hoje|today)(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/i) ||
+                   unbracketed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(ontem|yesterday|hoje|today)$/i);
   if (relMatch) {
     const isFirstWord = isNaN(Number(relMatch[1]));
     const word = (isFirstWord ? relMatch[1] : relMatch[4]).toLowerCase();
@@ -58,6 +61,35 @@ export function parseWhatsAppTimestamp(raw: any, fallbackMs: number = 0): number
     }
     d.setHours(h, m, s, 0);
     return d.getTime();
+  }
+
+  // 2.1 Dias da semana (ex: "quarta-feira, 16:50", "16:50, quarta-feira", "quarta-feira", "terça", "wednesday", etc.)
+  const upper = unbracketed.toUpperCase();
+  const weekdays = [
+    { name: 'DOMINGO', day: 0 }, { name: 'SUNDAY', day: 0 },
+    { name: 'SEGUNDA-FEIRA', day: 1 }, { name: 'SEGUNDA', day: 1 }, { name: 'MONDAY', day: 1 },
+    { name: 'TERÇA-FEIRA', day: 2 }, { name: 'TERCA-FEIRA', day: 2 }, { name: 'TERÇA', day: 2 }, { name: 'TERCA', day: 2 }, { name: 'TUESDAY', day: 2 },
+    { name: 'QUARTA-FEIRA', day: 3 }, { name: 'QUARTA', day: 3 }, { name: 'WEDNESDAY', day: 3 },
+    { name: 'QUINTA-FEIRA', day: 4 }, { name: 'QUINTA', day: 4 }, { name: 'THURSDAY', day: 4 },
+    { name: 'SEXTA-FEIRA', day: 5 }, { name: 'SEXTA', day: 5 }, { name: 'FRIDAY', day: 5 },
+    { name: 'SÁBADO', day: 6 }, { name: 'SABADO', day: 6 }, { name: 'SATURDAY', day: 6 }
+  ];
+
+  for (const w of weekdays) {
+    if (upper.includes(w.name)) {
+      const timePartMatch = unbracketed.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b/);
+      const h = timePartMatch ? Number(timePartMatch[1]) : 12;
+      const m = timePartMatch ? Number(timePartMatch[2]) : 0;
+      const s = timePartMatch && timePartMatch[3] ? Number(timePartMatch[3]) : 0;
+
+      const dt = new Date(now);
+      const currentDay = dt.getDay();
+      let diff = currentDay - w.day;
+      if (diff <= 0) diff += 7;
+      dt.setDate(dt.getDate() - diff);
+      dt.setHours(h, m, s, 0);
+      return dt.getTime();
+    }
   }
 
   // 3. Formato BR com DATA PRIMEIRO: "13/01/2024, 14:32", "13/01/24 14:32", "13/01/2024", "13/01/24", "13/01"

@@ -534,6 +534,13 @@ export async function processZapiWebhookRequest(
           senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
           messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
           content,
+          attachments: mediaUrl ? [{
+            id: `att-${messageId}`,
+            url: mediaUrl,
+            fileName: mediaType === 'audio' ? 'Audio.mp3' : mediaType === 'image' ? 'Foto.jpg' : (content.replace(/^📄\s*/, '') || 'Documento.pdf'),
+            fileSize: 1024,
+            mimeType: mediaType === 'audio' ? 'audio/mpeg' : mediaType === 'image' ? 'image/jpeg' : 'application/pdf',
+          }] : undefined,
           status: 'DELIVERED',
           isInternalNote: false,
           timestamp: messageTimestampIso,

@@ -2479,32 +2479,49 @@ export function WhatsAppInbox() {
                       )}
 
                       {/* Documento / PDF / Proposta Anexa */}
-                      {(msg.messageType === 'DOCUMENT' || (msg.attachments?.[0] && !msg.attachments[0].mimeType?.startsWith('image') && !msg.attachments[0].mimeType?.startsWith('audio'))) && (
-                        <div className="mb-2 p-3 bg-slate-900/5 dark:bg-black/20 border border-slate-300/40 rounded-xl flex items-center justify-between gap-3 max-w-sm">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center font-bold text-xs shrink-0">
-                              <FileText className="w-5 h-5" />
+                      {(msg.messageType === 'DOCUMENT' || (msg.attachments?.[0] && !msg.attachments[0].mimeType?.startsWith('image') && !msg.attachments[0].mimeType?.startsWith('audio'))) && (() => {
+                        const docUrl = msg.attachments?.[0]?.url;
+                        const hasDownloadUrl = Boolean(docUrl && docUrl.startsWith('http') && docUrl !== '#' && !docUrl.startsWith('blob:'));
+                        const docName = msg.attachments?.[0]?.fileName || (msg.content.startsWith('📄') ? msg.content.replace(/^📄\s*/, '') : msg.content) || 'Documento.pdf';
+                        const docSize = msg.attachments?.[0]?.fileSize;
+
+                        return (
+                          <div className="mb-2 p-3 bg-slate-900/5 dark:bg-black/20 border border-slate-300/40 rounded-xl flex items-center justify-between gap-3 max-w-sm">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center font-bold text-xs shrink-0">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate" title={docName}>
+                                  {docName}
+                                </p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                  {docSize ? `${(docSize / 1024).toFixed(0)} KB • ` : ''}Documento
+                                </p>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-xs text-slate-900 truncate">
-                                {msg.attachments?.[0]?.fileName || msg.content || 'Documento.pdf'}
-                              </p>
-                              <p className="text-[10px] text-slate-500">
-                                {msg.attachments?.[0]?.fileSize ? `${(msg.attachments[0].fileSize / 1024).toFixed(0)} KB` : 'Documento anexo'} • PDF
-                              </p>
-                            </div>
+                            {hasDownloadUrl ? (
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                download={docName}
+                                className="p-2 rounded-lg bg-white dark:bg-slate-800 shadow-2xs border border-slate-200 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200 transition shrink-0 cursor-pointer"
+                                title="Baixar / Abrir Documento"
+                              >
+                                <Download className="w-4 h-4 text-[#3742AC]" />
+                              </a>
+                            ) : (
+                              <span 
+                                className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-200/80 dark:bg-slate-800/80 px-2 py-1 rounded-md shrink-0 border border-slate-300/40 flex items-center gap-1 select-none"
+                                title="Arquivo do histórico do WhatsApp. Visualize ou baixe diretamente no seu celular."
+                              >
+                                <span>📱 No celular</span>
+                              </span>
+                            )}
                           </div>
-                          <a
-                            href={msg.attachments?.[0]?.url || '#'}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2 rounded-lg bg-white shadow-2xs border border-slate-200 hover:bg-slate-50 text-slate-700 transition shrink-0"
-                            title="Baixar / Abrir Documento"
-                          >
-                            <Download className="w-4 h-4" />
-                          </a>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Badge para Foto ou Vídeo de Visualização Única */}
                       {(msg.content.includes('Visualização Única') || msg.content.includes('Foto (Visualização Única)')) && (
@@ -2520,60 +2537,80 @@ export function WhatsAppInbox() {
                       )}
 
                       {/* Player de Áudio / Mensagem de Voz Avançado */}
-                      {(msg.messageType === 'AUDIO' || (msg.attachments?.[0] && msg.attachments[0].mimeType?.startsWith('audio'))) && (
-                        <div className="mb-2 pt-1 pb-1 space-y-2">
-                          <div className="flex items-center gap-2 bg-slate-100/90 px-3 py-2 rounded-2xl border border-slate-200/80 max-w-xs shadow-2xs">
-                            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                              <Mic className="w-4 h-4" />
+                      {(msg.messageType === 'AUDIO' || (msg.attachments?.[0] && msg.attachments[0].mimeType?.startsWith('audio'))) && (() => {
+                        const audioUrl = msg.attachments?.[0]?.url;
+                        const hasPlayableAudio = Boolean(audioUrl && audioUrl.startsWith('http') && !audioUrl.includes('soundhelix') && !audioUrl.startsWith('blob:'));
+
+                        return (
+                          <div className="mb-2 pt-1 pb-1 space-y-2">
+                            <div className="flex items-center gap-2.5 bg-slate-100/90 dark:bg-slate-800/80 px-3.5 py-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 max-w-xs shadow-2xs">
+                              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                                <Mic className="w-4 h-4" />
+                              </div>
+                              {hasPlayableAudio ? (
+                                <>
+                                  <audio 
+                                    controls 
+                                    className="w-44 h-7"
+                                  >
+                                    <source src={audioUrl} />
+                                  </audio>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTogglePlaybackSpeed(msg.id)}
+                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
+                                    title="Velocidade de Reprodução"
+                                  >
+                                    {playbackSpeeds[msg.id] || 1}x
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="flex flex-col min-w-0 pr-1 select-none">
+                                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                    <span>Mensagem de Voz</span>
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                                    📱 Ouça no WhatsApp do celular
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                            {msg.attachments?.[0]?.url && !msg.attachments[0].url.includes('soundhelix') ? (
-                              <>
-                                <audio 
-                                  controls 
-                                  className="w-44 h-7"
-                                >
-                                  <source src={msg.attachments[0].url} />
-                                </audio>
+
+                            {/* Botão e Box de Transcrição por IA apenas se tiver áudio real */}
+                            {hasPlayableAudio && (
+                              transcriptions[msg.id] ? (
+                                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-[11px] leading-relaxed animate-fadeIn shadow-2xs">
+                                  <div className="flex items-center gap-1 font-bold text-emerald-800 text-[10px] mb-1">
+                                    <Sparkles className="w-3 h-3 text-emerald-600" />
+                                    <span>Transcrição Automática (IA):</span>
+                                  </div>
+                                  <p className="italic">{transcriptions[msg.id]}</p>
+                                </div>
+                              ) : isFeatureEnabled('whatsappVoiceTranscription') ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleTogglePlaybackSpeed(msg.id)}
-                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
-                                  title="Velocidade de Reprodução"
+                                  disabled={isTranscribing[msg.id]}
+                                  onClick={() => handleTranscribeAudio(msg.id)}
+                                  className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200 transition flex items-center gap-1 cursor-pointer"
                                 >
-                                  {playbackSpeeds[msg.id] || 1}x
+                                  <Sparkles className={`w-3 h-3 text-emerald-600 ${isTranscribing[msg.id] ? 'animate-spin' : ''}`} />
+                                  <span>{isTranscribing[msg.id] ? 'Transcrevendo Áudio...' : '✨ Transcrever Áudio com IA'}</span>
                                 </button>
-                              </>
-                            ) : (
-                              <span className="text-[11px] text-slate-600 font-medium">
-                                Mensagem de Voz
-                              </span>
+                              ) : null
                             )}
                           </div>
+                        );
+                      })()}
 
-                          {/* Botão e Box de Transcrição por IA */}
-                          {transcriptions[msg.id] ? (
-                            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-[11px] leading-relaxed animate-fadeIn shadow-2xs">
-                              <div className="flex items-center gap-1 font-bold text-emerald-800 text-[10px] mb-1">
-                                <Sparkles className="w-3 h-3 text-emerald-600" />
-                                <span>Transcrição Automática (IA):</span>
-                              </div>
-                              <p className="italic">{transcriptions[msg.id]}</p>
-                            </div>
-                          ) : isFeatureEnabled('whatsappVoiceTranscription') ? (
-                            <button
-                              type="button"
-                              disabled={isTranscribing[msg.id]}
-                              onClick={() => handleTranscribeAudio(msg.id)}
-                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200 transition flex items-center gap-1 cursor-pointer"
-                            >
-                              <Sparkles className={`w-3 h-3 text-emerald-600 ${isTranscribing[msg.id] ? 'animate-spin' : ''}`} />
-                              <span>{isTranscribing[msg.id] ? 'Transcrevendo Áudio...' : '✨ Transcrever Áudio com IA'}</span>
-                            </button>
-                          ) : null}
-                        </div>
+                      {Boolean(
+                        msg.content &&
+                        !msg.content.startsWith('🎵 Mensagem de Voz') &&
+                        !msg.content.startsWith('🎵 Mensagem de voz') &&
+                        !(msg.messageType === 'DOCUMENT' && (msg.content.startsWith('📄') || msg.content === msg.attachments?.[0]?.fileName)) &&
+                        !(msg.messageType === 'IMAGE' && (msg.content === '📷 Foto' || msg.content === 'Foto'))
+                      ) && (
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                       )}
-
-                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
 
                       <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500">
                         <span title={msg.timestamp ? safeFormatDate(msg.timestamp, 'dd/MM/yyyy às HH:mm') : ''}>

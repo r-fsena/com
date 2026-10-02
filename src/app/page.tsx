@@ -129,11 +129,11 @@ export default function CRMApp() {
   if (!isAuthReady) {
     return (
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-[#F0F3FA] text-slate-800 select-none">
-        <div className="p-4 bg-white rounded-2xl shadow-md border border-slate-200/80 animate-pulse">
+        <div className="p-5 bg-white rounded-3xl shadow-lg border border-slate-200/80 animate-pulse">
           <img 
             src="/brand/brokiva-logo-dark.png" 
             alt="Brokiva" 
-            className="h-10 w-auto object-contain" 
+            className="h-16 w-auto object-contain" 
           />
         </div>
         <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-slate-500 tracking-wider">

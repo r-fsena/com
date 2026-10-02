@@ -181,20 +181,17 @@ export function LoginScreen() {
       {/* ------------------------------------------------------------- */}
       <div className="relative hidden lg:flex flex-col justify-between w-1/2 p-12 lg:p-16 bg-white border-r border-slate-200/80 shadow-xs">
         
-        {/* Top Header / Logo Brokiva & Tagline */}
-        <div className="space-y-2 relative z-10">
+        {/* Top Header / Logo Brokiva */}
+        <div className="relative z-10 pt-2">
           <img 
             src="/brand/brokiva-logo-dark.png" 
-            alt="Brokiva" 
-            className="h-12 w-auto object-contain object-left drop-shadow-2xs" 
+            alt="Brokiva — Relacionamentos que viram negócios" 
+            className="h-28 sm:h-32 lg:h-36 w-auto object-contain object-left max-w-[420px]" 
           />
-          <p className="text-xs font-medium text-slate-500 tracking-wide">
-            Brokiva - Relacionamentos que viram negócios
-          </p>
         </div>
 
         {/* Middle Value Proposition */}
-        <div className="space-y-6 max-w-lg relative z-10 py-8">
+        <div className="space-y-6 max-w-lg relative z-10 py-6">
           <h2 className="text-3xl lg:text-4xl font-extrabold text-slate-900 leading-tight tracking-tight">
             Gestão Comercial, WhatsApp Z-API e Brok.ia com Segregação Total.
           </h2>
@@ -240,15 +237,12 @@ export function LoginScreen() {
           
           {/* Header Mobile com Logo */}
           <div className="text-center space-y-2">
-            <div className="lg:hidden flex flex-col items-center gap-1.5 mb-4">
+            <div className="lg:hidden flex flex-col items-center mb-6">
               <img 
                 src="/brand/brokiva-logo-dark.png" 
-                alt="Brokiva" 
-                className="h-10 w-auto object-contain mx-auto" 
+                alt="Brokiva — Relacionamentos que viram negócios" 
+                className="h-16 sm:h-20 w-auto object-contain mx-auto max-w-[280px]" 
               />
-              <p className="text-[11px] text-slate-500 font-medium">
-                Brokiva - Relacionamentos que viram negócios
-              </p>
             </div>
 
             <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">

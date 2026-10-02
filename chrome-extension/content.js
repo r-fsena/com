@@ -1126,14 +1126,15 @@ ${isDeveloperMode ? `
         .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
     }
 
-    // 1. Ordenação estritamente cronológica por timestamp e domOrder físico
+    // 1. Ordenação estritamente cronológica preservando a ordem física rigorosa do chat
     validContentMsgs.sort((a, b) => {
+      const ordA = a.domOrder !== undefined ? a.domOrder : 0;
+      const ordB = b.domOrder !== undefined ? b.domOrder : 0;
+      if (ordA !== ordB) return ordA - ordB;
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
-      if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
-        return tA - tB;
-      }
-      return (a.domOrder || 0) - (b.domOrder || 0);
+      if (!isNaN(tA) && !isNaN(tB)) return tA - tB;
+      return 0;
     });
 
     // 2. Garantia de Monotonicidade Rigorosa (Offset sutil de milissegundos):
@@ -1318,122 +1319,124 @@ ${isDeveloperMode ? `
     'OUT': 9, 'OUTUBRO': 9, 'NOV': 10, 'NOVEMBRO': 10, 'DEZ': 11, 'DEZEMBRO': 11
   };
 
-  // Parser Universal de Timestamps do WhatsApp Web (suporta datas com ano, sem ano, por extenso, relativos como 'ontem', US, etc.)
+    // Parser Universal de Timestamps do WhatsApp Web (suporta dias da semana em PT e EN, datas com/sem ano, por extenso, relativos como 'ontem', US, etc.)
   function parseWhatsAppTimestamp(rawPre, fallbackDate = null) {
     if (!rawPre) return null;
     const clean = rawPre.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
     const timeMatch = clean.match(/\[(.*?)\]/);
     if (!timeMatch || !timeMatch[1]) return null;
     const rawTime = timeMatch[1].trim();
+    const upper = rawTime.toUpperCase();
 
-    const currentYear = new Date().getFullYear();
+    const now = new Date();
+    const currentYear = now.getFullYear();
 
-    // 1. Formatos relativos comuns no WhatsApp Web: [13:42, ontem], [13:42, Ontem], [13:42, hoje], [13:42, Hoje] ou [Ontem, 13:42]
-    const relMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(ontem|yesterday|hoje|today)/i) ||
-                     rawTime.match(/^(ontem|yesterday|hoje|today)[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
-    if (relMatch) {
-      const isWordFirst = isNaN(Number(relMatch[1]));
-      const word = (isWordFirst ? relMatch[1] : relMatch[4]).toLowerCase();
-      let h = isWordFirst ? Number(relMatch[2]) : Number(relMatch[1]);
-      let m = isWordFirst ? Number(relMatch[3]) : Number(relMatch[2]);
-      let s = 0;
-      const dt = new Date();
-      if (word === 'ontem' || word === 'yesterday') {
-        dt.setDate(dt.getDate() - 1);
+    // 1. Extração rigorosa de horas e minutos
+    const timePartMatch = rawTime.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?(?:\s*(AM|PM))?\b/i);
+    let h = 12, m = 0, s = 0;
+    let hasExplicitHour = false;
+    if (timePartMatch) {
+      hasExplicitHour = true;
+      h = Number(timePartMatch[1]);
+      m = Number(timePartMatch[2]);
+      s = timePartMatch[3] ? Number(timePartMatch[3]) : 0;
+      if (timePartMatch[4]) {
+        const isPm = timePartMatch[4].toUpperCase() === 'PM';
+        if (isPm && h < 12) h += 12;
+        if (!isPm && h === 12) h = 0;
       }
+    }
+
+    // 2. Relativos diretos: hoje / ontem
+    if (/\b(HOJE|TODAY)\b/i.test(upper)) {
+      const dt = new Date(now);
+      dt.setHours(h, m, s, 0);
+      return dt;
+    }
+    if (/\b(ONTEM|YESTERDAY)\b/i.test(upper)) {
+      const dt = new Date(now);
+      dt.setDate(dt.getDate() - 1);
       dt.setHours(h, m, s, 0);
       return dt;
     }
 
-    // 2. Formato BR com DATA PRIMEIRO: [13/01/2024, 18:36] ou [13/01/24, 18:36] ou [13/01, 18:36]
-    const brDateFirst = rawTime.match(/^(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if (brDateFirst) {
-      const d = Number(brDateFirst[1]);
-      const mo = Number(brDateFirst[2]) - 1;
-      let y = brDateFirst[3] ? Number(brDateFirst[3]) : currentYear;
+    // 3. Dias da semana (ex: [16:50, quarta-feira], [17:02, terça-feira], [quarta, 16:50])
+    const weekdays = [
+      { name: 'DOMINGO', day: 0 }, { name: 'SUNDAY', day: 0 },
+      { name: 'SEGUNDA-FEIRA', day: 1 }, { name: 'SEGUNDA', day: 1 }, { name: 'MONDAY', day: 1 },
+      { name: 'TERÇA-FEIRA', day: 2 }, { name: 'TERCA-FEIRA', day: 2 }, { name: 'TERÇA', day: 2 }, { name: 'TERCA', day: 2 }, { name: 'TUESDAY', day: 2 },
+      { name: 'QUARTA-FEIRA', day: 3 }, { name: 'QUARTA', day: 3 }, { name: 'WEDNESDAY', day: 3 },
+      { name: 'QUINTA-FEIRA', day: 4 }, { name: 'QUINTA', day: 4 }, { name: 'THURSDAY', day: 4 },
+      { name: 'SEXTA-FEIRA', day: 5 }, { name: 'SEXTA', day: 5 }, { name: 'FRIDAY', day: 5 },
+      { name: 'SÁBADO', day: 6 }, { name: 'SABADO', day: 6 }, { name: 'SATURDAY', day: 6 }
+    ];
+
+    for (const w of weekdays) {
+      if (upper.includes(w.name)) {
+        const dt = new Date(now);
+        const currentDay = dt.getDay();
+        let diff = currentDay - w.day;
+        if (diff <= 0) diff += 7;
+        dt.setDate(dt.getDate() - diff);
+        dt.setHours(h, m, s, 0);
+        return dt;
+      }
+    }
+
+    // 4. Formato numérico de data: DD/MM/YYYY ou DD/MM ou YYYY-MM-DD
+    const numDateMatch = rawTime.match(/\b(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\b/);
+    if (numDateMatch) {
+      const day = Number(numDateMatch[1]);
+      const mo = Number(numDateMatch[2]) - 1;
+      let y = numDateMatch[3] ? Number(numDateMatch[3]) : currentYear;
       if (y < 100) y += 2000;
       if (y > currentYear) y = currentYear;
-      const h = Number(brDateFirst[4]);
-      const m = Number(brDateFirst[5]);
-      const s = brDateFirst[6] ? Number(brDateFirst[6]) : 0;
-      let dt = new Date(y, mo, d, h, m, s);
-      if (!brDateFirst[3] && dt.getTime() > Date.now() + 60000) {
+      let dt = new Date(y, mo, day, h, m, s);
+      if (!numDateMatch[3] && dt.getTime() > now.getTime() + 60000) {
         y = currentYear - 1;
-        dt = new Date(y, mo, d, h, m, s);
+        dt = new Date(y, mo, day, h, m, s);
       }
-      if (!isNaN(dt.getTime())) return dt;
+      return dt;
     }
 
-    // 3. Formato BR com HORA PRIMEIRO e data completa: [18:36, 31/08/2026] ou [18:36:00, 31/08/26]
-    const brFull = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
-    if (brFull) {
-      let h = Number(brFull[1]), m = Number(brFull[2]), s = brFull[3] ? Number(brFull[3]) : 0;
-      const d = Number(brFull[4]), mo = Number(brFull[5]) - 1;
-      let y = Number(brFull[6]);
+    // 5. Formato com mês em texto: 30 de set. [de 2026] ou 30 de setembro
+    const monthsMap = {
+      'JAN': 0, 'JANEIRO': 0, 'JANUARY': 0,
+      'FEV': 1, 'FEVEREIRO': 1, 'FEB': 1, 'FEBRUARY': 1,
+      'MAR': 2, 'MARÇO': 2, 'MARCO': 2, 'MARCH': 2,
+      'ABR': 3, 'ABRIL': 3, 'APR': 3, 'APRIL': 3,
+      'MAI': 4, 'MAIO': 4, 'MAY': 4,
+      'JUN': 5, 'JUNHO': 5, 'JUNE': 5,
+      'JUL': 6, 'JULHO': 6, 'JULY': 6,
+      'AGO': 7, 'AGOSTO': 7, 'AUG': 7, 'AUGUST': 7,
+      'SET': 8, 'SETEMBRO': 8, 'SEP': 8, 'SEPTEMBER': 8,
+      'OUT': 9, 'OUTUBRO': 9, 'OCT': 9, 'OCTOBER': 9,
+      'NOV': 10, 'NOVEMBRO': 10, 'NOVEMBER': 10,
+      'DEZ': 11, 'DEZEMBRO': 11, 'DEC': 11, 'DECEMBER': 11
+    };
+
+    const monthMatch = rawTime.match(/\b(\d{1,2})\s+DE\s+([A-ZÇ]+)\.?(?:\s+DE\s+(\d{2,4}))?\b/i) ||
+                       rawTime.match(/\b([A-Z]+)\.?\s+(\d{1,2})(?:,?\s+(\d{2,4}))?\b/i);
+    if (monthMatch) {
+      const isDayFirst = !isNaN(Number(monthMatch[1]));
+      const day = isDayFirst ? Number(monthMatch[1]) : Number(monthMatch[2]);
+      const mStr = (isDayFirst ? monthMatch[2] : monthMatch[1]).toUpperCase().replace('.', '');
+      const yStr = isDayFirst ? monthMatch[3] : monthMatch[3];
+      let y = yStr ? Number(yStr) : currentYear;
       if (y < 100) y += 2000;
       if (y > currentYear) y = currentYear;
-      const dt = new Date(y, mo, d, h, m, s);
-      if (!isNaN(dt.getTime())) return dt;
-    }
-
-    // 4. Formato BR com HORA PRIMEIRO SEM ano: [18:36, 31/08] ou [18:36, 31/8]
-    const brNoYear = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})[\/\.-](\d{1,2})$/);
-    if (brNoYear) {
-      let h = Number(brNoYear[1]), m = Number(brNoYear[2]), s = brNoYear[3] ? Number(brNoYear[3]) : 0;
-      const d = Number(brNoYear[4]), mo = Number(brNoYear[5]) - 1;
-      const dt = new Date(currentYear, mo, d, h, m, s);
-      if (!isNaN(dt.getTime())) {
-        if (dt.getTime() > Date.now() + 60000) {
-          dt.setFullYear(currentYear - 1);
-        }
-        return dt;
+      const mo = monthsMap[mStr] !== undefined ? monthsMap[mStr] : 0;
+      let dt = new Date(y, mo, day, h, m, s);
+      if (!yStr && dt.getTime() > now.getTime() + 60000) {
+        y = currentYear - 1;
+        dt = new Date(y, mo, day, h, m, s);
       }
+      return dt;
     }
 
-    // 5. Formato com nome de mês em português: [18:36, 31 de ago. de 2026] ou [18:36, 31 de agosto]
-    const ptMonthMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?[,\s]+(\d{1,2})\s+DE\s+([A-ZÇ]+)\.?(?:\s+DE\s+(\d{2,4}))?/i);
-    if (ptMonthMatch) {
-      let h = Number(ptMonthMatch[1]), m = Number(ptMonthMatch[2]), s = ptMonthMatch[3] ? Number(ptMonthMatch[3]) : 0;
-      const d = Number(ptMonthMatch[4]);
-      const mStr = ptMonthMatch[5].toUpperCase();
-      let y = ptMonthMatch[6] ? Number(ptMonthMatch[6]) : currentYear;
-      if (y < 100) y += 2000;
-      if (y > currentYear) y = currentYear;
-      const mo = PT_MONTH_NAMES[mStr] !== undefined ? PT_MONTH_NAMES[mStr] : 0;
-      const dt = new Date(y, mo, d, h, m, s);
-      if (!isNaN(dt.getTime())) {
-        if (dt.getTime() > Date.now() + 60000 && !ptMonthMatch[6]) {
-          dt.setFullYear(currentYear - 1);
-        }
-        return dt;
-      }
-    }
-
-    // 6. Formato US: 6:36 PM, 08/31/2026 ou 6:36 PM, 8/31
-    const usMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)[,\s]+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/i);
-    if (usMatch) {
-      let h = Number(usMatch[1]), m = Number(usMatch[2]), s = usMatch[3] ? Number(usMatch[3]) : 0;
-      const isPm = usMatch[4].toUpperCase() === 'PM';
-      if (isPm && h < 12) h += 12;
-      if (!isPm && h === 12) h = 0;
-      const mo = Number(usMatch[5]) - 1, d = Number(usMatch[6]);
-      let y = usMatch[7] ? Number(usMatch[7]) : currentYear;
-      if (y < 100) y += 2000;
-      if (y > currentYear) y = currentYear;
-      const dt = new Date(y, mo, d, h, m, s);
-      if (!isNaN(dt.getTime())) return dt;
-    }
-
-    // 7. Se tiver apenas o horário: [13:42] ou [13:42:00]
-    const timeOnlyMatch = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
-    if (timeOnlyMatch) {
-      let h = Number(timeOnlyMatch[1]), m = Number(timeOnlyMatch[2]), s = timeOnlyMatch[3] ? Number(timeOnlyMatch[3]) : 0;
-      if (timeOnlyMatch[4]) {
-        const isPm = timeOnlyMatch[4].toUpperCase() === 'PM';
-        if (isPm && h < 12) h += 12;
-        if (!isPm && h === 12) h = 0;
-      }
-      const ref = fallbackDate || new Date();
+    // 6. Se tiver apenas o horário
+    if (hasExplicitHour) {
+      const ref = fallbackDate || now;
       const dt = new Date(ref.getTime());
       dt.setHours(h, m, s, 0);
       return dt;
@@ -1637,12 +1640,14 @@ ${isDeveloperMode ? `
     }
   }
 
-  /**
+    /**
    * Calibra monotonicamente e cronologicamente todos os timestamps das mensagens
    * usando a ordem física estrita do DOM do WhatsApp como fonte absoluta da verdade.
    * 
-   * Backward Sweep: nenhuma mensagem pode ter timestamp posterior à mensagem abaixo dela.
-   * Forward Sweep: balões subsequentes no mesmo minuto recebem offsets de milissegundos estritamente crescentes.
+   * 1. Âncoras Rígidas: Mensagens que vieram de data-pre-plain-text com data completa
+   *    ou divisores explícitos são âncoras inegociáveis.
+   * 2. Backward Sweep: Propaga datas do futuro para o passado quando há salto de dia.
+   * 3. Forward Sweep: Garante timestamps estritamente crescentes (+10ms no mesmo minuto).
    */
   function calibratePhysicalChatSequence(orderedKeys, messagesMap) {
     if (!orderedKeys || orderedKeys.length === 0 || !messagesMap) return;
@@ -1663,8 +1668,6 @@ ${isDeveloperMode ? `
     // 1. BACKWARD SWEEP (Do fim para o começo):
     // Como o chat caminha estritamente para baixo, a mensagem msgs[i] está fisicamente ACIMA de msgs[i + 1].
     // Portanto, msgs[i] ACONTECEU ANTES de msgs[i + 1]!
-    // Se o timestamp de msgs[i] for maior ou igual ao de msgs[i + 1], significa que msgs[i]
-    // recebeu uma data futura incorreta (ex: fallback provisório para Hoje).
     for (let i = msgs.length - 2; i >= 0; i--) {
       const curr = msgs[i];
       const next = msgs[i + 1];

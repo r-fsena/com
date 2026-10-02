@@ -1835,18 +1835,45 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
 
       const tenantKey = m.tenantId || 'default-tenant';
-      // Não inclui senderType na chave para que mensagens possam ser reclassificadas de CONTACT para USER
-      const key = effectiveId ? `${tenantKey}::${convId}-${effectiveId}` : `${tenantKey}::${convId}-${content}-${timeKey}`;
-      const existing = map.get(key);
+      const key = effectiveId ? `${tenantKey}::${convId}-${effectiveId}` : `${tenantKey}::${convId}-${content.slice(0, 80)}`;
 
-      if (!existing) {
-        map.set(key, normalizedMsg);
+      // Reconciliação inteligente: se já existir mensagem da mesma conversa com conteúdo idêntico no localStorage
+      let matchedOldKey: string | null = null;
+      for (const [k, v] of Array.from(map.entries())) {
+        if (
+          k.startsWith(`${tenantKey}::${convId}-`) &&
+          (v.content || '').trim() === content
+        ) {
+          matchedOldKey = k;
+          break;
+        }
+      }
+
+      if (matchedOldKey && matchedOldKey !== key) {
+        // Substitui a versão prévia do localStorage pelo registro atualizado com timestamp calibrado da extensão
+        const oldMsg = map.get(matchedOldKey);
+        map.delete(matchedOldKey);
+        map.set(key, {
+          ...(oldMsg || {}),
+          ...normalizedMsg,
+          timestamp: normalizedMsg.timestamp || oldMsg?.timestamp || new Date().toISOString(),
+          senderType: normalizedMsg.senderType === 'USER' ? 'USER' : (oldMsg?.senderType || normalizedMsg.senderType),
+          senderName: normalizedMsg.senderName || oldMsg?.senderName,
+        });
       } else {
-        // Se a mensagem já existia marcada erroneamente como CONTACT e agora veio como USER, corrige para USER!
-        if (existing.senderType === 'CONTACT' && normalizedMsg.senderType === 'USER') {
+        const existing = map.get(key);
+        if (!existing) {
           map.set(key, normalizedMsg);
-        } else if (normalizedMsg.senderType === 'USER') {
-          map.set(key, { ...existing, ...normalizedMsg, senderType: 'USER' });
+        } else {
+          map.set(key, {
+            ...existing,
+            ...normalizedMsg,
+            // Sempre prioriza o timestamp calibrado mais recente
+            timestamp: normalizedMsg.timestamp || existing.timestamp,
+            senderType: normalizedMsg.senderType === 'USER' ? 'USER' : existing.senderType,
+            senderName: normalizedMsg.senderName || existing.senderName,
+            attachments: normalizedMsg.attachments || existing.attachments,
+          });
         }
       }
     });

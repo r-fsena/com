@@ -128,12 +128,16 @@ export default function CRMApp() {
 
   if (!isAuthReady) {
     return (
-      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-white select-none">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-xl shadow-emerald-500/20 animate-pulse">
-          <Building2 className="w-6 h-6 text-slate-950" />
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-[#F0F3FA] text-slate-800 select-none">
+        <div className="p-4 bg-white rounded-2xl shadow-md border border-slate-200/80 animate-pulse">
+          <img 
+            src="/brand/brokiva-logo-dark.png" 
+            alt="Brokiva" 
+            className="h-10 w-auto object-contain" 
+          />
         </div>
-        <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-slate-400 tracking-wider font-mono">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+        <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-slate-500 tracking-wider">
+          <span className="w-2 h-2 rounded-full bg-[#3742AC] animate-ping" />
           <span>Carregando workspace...</span>
         </div>
       </div>

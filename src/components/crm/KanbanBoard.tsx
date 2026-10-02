@@ -36,7 +36,11 @@ import {
   ArrowUp,
   ArrowDown,
   Palette,
-  RotateCcw
+  RotateCcw,
+  Layers,
+  ArrowRightLeft,
+  GitFork,
+  ChevronDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Deal, Contact, PipelineStage, PropertyType } from '@/types/crm';
@@ -49,7 +53,12 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const { 
+    pipelines,
     currentPipeline, 
+    setCurrentPipelineById,
+    createPipeline,
+    moveDealToPipeline,
+    lossReasons,
     deals, 
     moveDealStage, 
     updateDeal,
@@ -68,6 +77,21 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
   const [selectedBroker, setSelectedBroker] = useState<string>('ALL');
   const [selectedTemperature, setSelectedTemperature] = useState<string>('ALL');
   const [filterStaleOnly, setFilterStaleOnly] = useState(false);
+
+  // Estados do Seletor e Criação de Funis
+  const [isPipelineSelectorOpen, setIsPipelineSelectorOpen] = useState(false);
+  const [isCreatePipelineModalOpen, setIsCreatePipelineModalOpen] = useState(false);
+  const [newPipelineName, setNewPipelineName] = useState('');
+
+  // Estados de Migração de Oportunidade entre Funis
+  const [migratingDeal, setMigratingDeal] = useState<Deal | null>(null);
+  const [targetPipelineId, setTargetPipelineId] = useState<string>('');
+  const [targetStageId, setTargetStageId] = useState<string>('');
+
+  // Estados do Modal de Perda com Motivos Segregados por Funil
+  const [dealForLossModal, setDealForLossModal] = useState<{ deal: Deal; stageId?: string } | null>(null);
+  const [selectedLossReasonId, setSelectedLossReasonId] = useState<string>('');
+  const [customLossNote, setCustomLossNote] = useState<string>('');
 
   // Estado do Modal de Configuração do Funil
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -207,6 +231,10 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     const qDigits = searchQuery.replace(/\D/g, '');
 
     return deals.filter(deal => {
+      // Isolamento por Funil
+      if (deal.pipelineId && deal.pipelineId !== currentPipeline.id) return false;
+      if (!deal.pipelineId && currentPipeline.id !== 'default-sales' && pipelines[0]?.id !== currentPipeline.id) return false;
+
       const contact = getDealContact(deal);
       if (contact?.isPersonal) return false;
       
@@ -239,7 +267,7 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
 
       return true;
     });
-  }, [deals, getDealContact, filterStaleOnly, getDealUrgencyAnalysis, selectedBroker, selectedTemperature, searchQuery]);
+  }, [deals, getDealContact, filterStaleOnly, getDealUrgencyAnalysis, selectedBroker, selectedTemperature, searchQuery, currentPipeline.id, pipelines]);
 
   // Métricas do Funil
   const { totalPipelineValue, openDealsCount, wonDealsCount, wonTotalValue } = useMemo(() => {
@@ -268,8 +296,67 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     };
   }, [filteredDeals]);
 
+  // Motivos de Perda aplicáveis ao Funil Ativo
+  const availableLossReasons = useMemo(() => {
+    return lossReasons.filter(r => 
+      r.isActive && (!r.pipelineIds || r.pipelineIds.length === 0 || r.pipelineIds.includes(currentPipeline.id))
+    );
+  }, [lossReasons, currentPipeline.id]);
+
+  const handleCreateNewPipeline = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPipelineName.trim()) return;
+    const created = createPipeline({ name: newPipelineName.trim() });
+    setCurrentPipelineById(created.id);
+    setNewPipelineName('');
+    setIsCreatePipelineModalOpen(false);
+  };
+
+  const handleOpenMigrationModal = (deal: Deal) => {
+    setMigratingDeal(deal);
+    const otherPipelines = pipelines.filter(p => p.id !== (deal.pipelineId || currentPipeline.id));
+    const defaultTargetPipeline = otherPipelines[0] || pipelines[0];
+    setTargetPipelineId(defaultTargetPipeline.id);
+    setTargetStageId(defaultTargetPipeline.stages[0]?.id || '');
+  };
+
+  const handleConfirmMigration = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!migratingDeal || !targetPipelineId || !targetStageId) return;
+    moveDealToPipeline(migratingDeal.id, targetPipelineId, targetStageId);
+    setMigratingDeal(null);
+  };
+
+  const handleConfirmLoss = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dealForLossModal) return;
+    const selectedReason = availableLossReasons.find(r => r.id === selectedLossReasonId);
+    const reasonText = selectedReason ? selectedReason.name : (customLossNote.trim() || 'Perda informada');
+
+    updateDeal(dealForLossModal.deal.id, {
+      status: 'LOST',
+      lossReasonId: selectedLossReasonId || undefined,
+      lossReason: reasonText,
+      lossNote: customLossNote.trim() || undefined,
+      ...(dealForLossModal.stageId ? { stageId: dealForLossModal.stageId } : {})
+    });
+
+    setDealForLossModal(null);
+    setSelectedLossReasonId('');
+    setCustomLossNote('');
+  };
+
   const handleMoveStage = (dealId: string, targetStageId: string) => {
     const stage = currentPipeline.stages.find(s => s.id === targetStageId);
+    if (stage?.isLost) {
+      const deal = deals.find(d => d.id === dealId);
+      if (deal) {
+        setDealForLossModal({ deal, stageId: targetStageId });
+        setSelectedLossReasonId(availableLossReasons[0]?.id || '');
+        setCustomLossNote('');
+        return;
+      }
+    }
     moveDealStage(dealId, targetStageId);
 
     if (stage?.isWon) {
@@ -500,15 +587,94 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
       {/* Header & Metrics Bar */}
       <div className="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-4">
+          {/* Seletor de Funis Moderno */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsPipelineSelectorOpen(!isPipelineSelectorOpen)}
+              className="flex items-center gap-2.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-left transition-colors group cursor-pointer"
+              title="Clique para alternar entre funis de vendas"
+            >
+              <div className="w-8 h-8 rounded-lg bg-[#3742AC]/10 text-[#3742AC] flex items-center justify-center shrink-0">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block leading-none">Funil Ativo</span>
+                <span className="text-sm font-bold text-slate-900 leading-tight flex items-center gap-1.5 truncate">
+                  {currentPipeline.name}
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-transform" />
+                </span>
+              </div>
+            </button>
+
+            {isPipelineSelectorOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-30" 
+                  onClick={() => setIsPipelineSelectorOpen(false)} 
+                />
+                <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-40 p-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+                    <span>Alternar Processo / Funil</span>
+                    <span className="text-[10px] font-normal text-slate-400">{pipelines.length} cadastrados</span>
+                  </div>
+                  <div className="py-1 max-h-60 overflow-y-auto space-y-0.5">
+                    {pipelines.map(p => {
+                      const pDeals = deals.filter(d => (!d.pipelineId && p.id === 'default-sales') || d.pipelineId === p.id);
+                      const isSelected = p.id === currentPipeline.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setCurrentPipelineById(p.id);
+                            setIsPipelineSelectorOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl transition-all cursor-pointer ${
+                            isSelected 
+                              ? 'bg-[#3742AC]/10 text-[#3742AC] font-bold' 
+                              : 'text-slate-700 hover:bg-slate-50 font-medium'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-[#3742AC]' : 'bg-slate-300'}`} />
+                            <span className="truncate">{p.name}</span>
+                          </div>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ml-2 ${
+                            isSelected ? 'bg-[#3742AC] text-white' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {pDeals.length}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPipelineSelectorOpen(false);
+                        setIsCreatePipelineModalOpen(true);
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#3742AC] bg-[#3742AC]/5 hover:bg-[#3742AC]/10 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Criar Novo Funil
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-900">{currentPipeline.name}</h1>
               <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
                 {openDealsCount} oportunidades ativas
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Funil Comercial Imobiliário • Arraste os cards ou use as ações rápidas
+              {currentPipeline.stages.length} etapas no fluxo comercial
             </p>
           </div>
 
@@ -885,6 +1051,19 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                                 <span>WhatsApp</span>
                               </button>
                             )}
+
+                            {/* Migrar de Funil */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenMigrationModal(deal);
+                              }}
+                              className="p-1 text-slate-400 hover:text-[#3742AC] hover:bg-[#3742AC]/10 rounded-lg transition cursor-pointer"
+                              title="Migrar oportunidade para outro funil"
+                            >
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                            </button>
 
                             {/* Mover para Esquerda */}
                             {stageIndex > 0 && (
@@ -1373,14 +1552,24 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                     <select
                       value={editLossReason}
                       onChange={(e) => setEditLossReason(e.target.value)}
-                      className="w-full bg-white border border-rose-300 rounded-lg p-2 text-xs text-rose-900 font-medium focus:outline-none"
+                      className="w-full bg-white border border-rose-300 rounded-lg p-2 text-xs text-rose-900 font-medium focus:outline-none cursor-pointer"
                     >
-                      <option value="Preço / Fora do Orçamento">🏷️ Preço / Fora do Orçamento</option>
-                      <option value="Comprou Imóvel Concorrente">🏢 Comprou Imóvel Concorrente</option>
-                      <option value="Financiamento Reprovado">🏦 Financiamento Reprovado</option>
-                      <option value="Localização / Bairro Não Agradou">📍 Localização / Bairro Não Agradou</option>
-                      <option value="Desistência Familiar">👥 Desistência Familiar / Momento Inadequado</option>
-                      <option value="Outro Motivo">📋 Outro Motivo</option>
+                      <option value="">Selecione o motivo da perda...</option>
+                      {availableLossReasons.map(r => (
+                        <option key={r.id} value={r.name}>
+                          {r.name}
+                        </option>
+                      ))}
+                      {availableLossReasons.length === 0 && (
+                        <>
+                          <option value="Preço / Fora do Orçamento">🏷️ Preço / Fora do Orçamento</option>
+                          <option value="Comprou Imóvel Concorrente">🏢 Comprou Imóvel Concorrente</option>
+                          <option value="Financiamento Reprovado">🏦 Financiamento Reprovado</option>
+                          <option value="Localização / Bairro Não Agradou">📍 Localização / Bairro Não Agradou</option>
+                          <option value="Desistência Familiar">👥 Desistência Familiar / Momento Inadequado</option>
+                          <option value="Outro Motivo">📋 Outro Motivo</option>
+                        </>
+                      )}
                     </select>
                   </div>
                 )}
@@ -1401,6 +1590,21 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span>Abrir no WhatsApp</span>
+                  </button>
+
+                  {/* Migrar de Funil */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = selectedDealForModal;
+                      setSelectedDealForModal(null);
+                      handleOpenMigrationModal(d);
+                    }}
+                    className="flex items-center gap-1.5 bg-[#3742AC]/10 hover:bg-[#3742AC]/20 text-[#3742AC] border border-[#3742AC]/20 px-3 py-2 rounded-xl font-bold transition cursor-pointer"
+                    title="Migrar oportunidade para outro funil"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    <span>Migrar Funil</span>
                   </button>
 
                   {/* Excluir */}
@@ -1657,6 +1861,258 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
                     <span>Salvar Funil</span>
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal de Criação de Novo Funil */}
+      {isCreatePipelineModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#3742AC]/30 text-indigo-300 flex items-center justify-center border border-indigo-400/30">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Criar Novo Funil de Vendas</h3>
+                  <p className="text-[11px] text-slate-400">Segregue processos, etapas e motivos de perda</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreatePipelineModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewPipeline} className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nome do Funil *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Captação de Imóveis, Locação, Parcerias..."
+                  value={newPipelineName}
+                  onChange={(e) => setNewPipelineName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3742AC]/20 focus:border-[#3742AC]"
+                  autoFocus
+                />
+              </div>
+
+              <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 text-[11px] text-indigo-900 flex items-start gap-2">
+                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <p>
+                  O novo funil será criado com 5 etapas padrão. Você poderá reordenar, ajustar nomes, cores e SLAs logo em seguida.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreatePipelineModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 bg-[#3742AC] hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Criar e Ativar Funil</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Migração de Oportunidade entre Funis */}
+      {migratingDeal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                  <ArrowRightLeft className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Migrar Oportunidade de Funil</h3>
+                  <p className="text-[11px] text-slate-400">Transferência entre processos comerciais</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMigratingDeal(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmMigration} className="p-5 space-y-4 text-xs">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Oportunidade Selecionada</span>
+                <span className="font-bold text-slate-900 text-sm">{migratingDeal.title}</span>
+                <span className="text-slate-500 block text-[11px] mt-0.5">
+                  Funil atual: <strong className="text-slate-700">{currentPipeline.name}</strong>
+                </span>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Novo Funil de Destino *</label>
+                <select
+                  value={targetPipelineId}
+                  onChange={(e) => {
+                    const newPipId = e.target.value;
+                    setTargetPipelineId(newPipId);
+                    const pip = pipelines.find(p => p.id === newPipId);
+                    if (pip && pip.stages[0]) {
+                      setTargetStageId(pip.stages[0].id);
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:border-[#3742AC] cursor-pointer"
+                >
+                  {pipelines.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.id === currentPipeline.id ? '(Atual)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Etapa Inicial no Novo Funil *</label>
+                {(() => {
+                  const targetPip = pipelines.find(p => p.id === targetPipelineId) || currentPipeline;
+                  return (
+                    <select
+                      value={targetStageId}
+                      onChange={(e) => setTargetStageId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:border-[#3742AC] cursor-pointer"
+                    >
+                      {targetPip.stages.map(st => (
+                        <option key={st.id} value={st.id}>
+                          {st.name} {st.isWon ? '🏆' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  );
+                })()}
+              </div>
+
+              <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 text-[11px] text-indigo-900 flex items-start gap-2">
+                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <p>
+                  O histórico completo da conversa, mensagens do WhatsApp e dados do cliente serão preservados após a migração.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMigratingDeal(null)}
+                  className="px-3.5 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 bg-[#3742AC] hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                  <span>Confirmar Migração</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Perda Segregado por Funil */}
+      {dealForLossModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-rose-900 to-slate-900 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-300 flex items-center justify-center border border-rose-500/30">
+                  <XCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Marcar Oportunidade como Perdida</h3>
+                  <p className="text-[11px] text-rose-200">Funil: {currentPipeline.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDealForLossModal(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmLoss} className="p-5 space-y-4 text-xs">
+              <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-3">
+                <span className="text-[10px] text-rose-700 uppercase font-bold tracking-wider block">Oportunidade</span>
+                <span className="font-bold text-slate-900 text-sm">{dealForLossModal.deal.title}</span>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Motivo da Perda *</label>
+                <select
+                  required
+                  value={selectedLossReasonId}
+                  onChange={(e) => setSelectedLossReasonId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:border-rose-500 cursor-pointer"
+                >
+                  <option value="">Selecione o motivo da perda...</option>
+                  {availableLossReasons.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                  {availableLossReasons.length === 0 && (
+                    <>
+                      <option value="Preço / Fora do Orçamento">🏷️ Preço / Fora do Orçamento</option>
+                      <option value="Comprou Imóvel Concorrente">🏢 Comprou Imóvel Concorrente</option>
+                      <option value="Financiamento Reprovado">🏦 Financiamento Reprovado</option>
+                      <option value="Desistência do Cliente">👥 Desistência do Cliente</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Observações Adicionais (opcional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Detalhes ou justificativa da perda para relatórios futuros..."
+                  value={customLossNote}
+                  onChange={(e) => setCustomLossNote(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:border-rose-500 resize-none"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDealForLossModal(null)}
+                  className="px-3.5 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Confirmar Perda</span>
+                </button>
               </div>
             </form>
           </div>

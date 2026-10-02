@@ -239,11 +239,45 @@ export interface Deal {
   aiProbabilityScore: number;
   status: 'OPEN' | 'WON' | 'LOST';
   lossReason?: string;
+  lossReasonId?: string;
+  lossNote?: string;
   propertyInterest?: string;
   presentedProperties?: PresentedProperty[];
   createdAt: string;
   updatedAt: string;
   closedAt?: string;
+}
+
+export interface LossReason {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  pipelineIds?: string[]; // IDs dos funis onde este motivo está disponível. Se vazio ou indefinido, aplica-se a todos os funis.
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface LeadSourceGroup {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  order?: number;
+  createdAt: string;
+}
+
+export interface LeadSource {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  groupId?: string; // ID do LeadSourceGroup
+  isActive: boolean;
+  order?: number;
+  createdAt: string;
 }
 
 export type MessageSenderType = 'CONTACT' | 'USER' | 'SYSTEM' | 'AI_BOT';

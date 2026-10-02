@@ -45,10 +45,12 @@ import {
   UserCheck,
   Download,
   Puzzle,
-  Zap
+  Zap,
+  GitFork
 } from 'lucide-react';
 import { UserRole, User, TenantAIConfig, AIProvider, AITone, AIObjective } from '@/types/crm';
 import { MessageTemplatesModal } from '@/components/templates/MessageTemplatesModal';
+import { CommercialProcessesSettings } from '@/components/settings/CommercialProcessesSettings';
 
 interface SettingsManagerProps {
   onOpenQrCodeModal?: () => void;
@@ -71,8 +73,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     resetCRMDatabase
   } = useCRM();
   
-  // 6 Submenus: Empresa, Usuários, Permissões, SLAs, Z-API, Inteligência Artificial (Brok.ia)
-  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'ZAPI' | 'AI'>('TENANT');
+  // 7 Submenus: Empresa, Usuários, Permissões, SLAs, Processos & Origens, Z-API, Brok.ia
+  const [activeTab, setActiveTab] = useState<'TENANT' | 'USERS' | 'PERMISSIONS' | 'SLA' | 'PROCESSES' | 'ZAPI' | 'AI'>('TENANT');
   const [isResettingData, setIsResettingData] = useState(false);
   const [resetDataSuccess, setResetDataSuccess] = useState(false);
   const [showConfirmResetDataModal, setShowConfirmResetDataModal] = useState(false);
@@ -413,7 +415,20 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           <span>4. SLAs & Horário Comercial</span>
         </button>
 
-        {/* 5. WHATSAPP & Z-API */}
+        {/* 5. PROCESSOS COMERCIAIS & ORIGENS */}
+        <button
+          onClick={() => setActiveTab('PROCESSES')}
+          className={`py-3.5 border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'PROCESSES'
+              ? 'border-indigo-600 text-indigo-700 font-bold'
+              : 'border-transparent hover:text-slate-800'
+          }`}
+        >
+          <GitFork className="w-4 h-4" />
+          <span>5. Processos & Origens</span>
+        </button>
+
+        {/* 6. WHATSAPP & Z-API */}
         <button
           onClick={() => setActiveTab('ZAPI')}
           className={`py-3.5 border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
@@ -423,10 +438,10 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           }`}
         >
           <Smartphone className="w-4 h-4" />
-          <span>5. Conexão WhatsApp & Z-API</span>
+          <span>6. Conexão WhatsApp & Z-API</span>
         </button>
 
-        {/* 6. INTELIGÊNCIA ARTIFICIAL (BROK.IA) */}
+        {/* 7. INTELIGÊNCIA ARTIFICIAL (BROK.IA) */}
         <button
           onClick={() => setActiveTab('AI')}
           className={`py-3.5 border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
@@ -436,7 +451,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
           }`}
         >
           <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
-          <span>6. Inteligência Artificial (Brok.ia)</span>
+          <span>7. Inteligência Artificial (Brok.ia)</span>
           <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-extrabold flex items-center gap-1">
             <span>BYOK</span>
           </span>
@@ -1377,7 +1392,14 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         )}
 
         {/* ========================================================================= */}
-        {/* SUBMENU 5: WHATSAPP & Z-API                                              */}
+        {/* SUBMENU 5: PROCESSOS COMERCIAIS & ORIGENS                                */}
+        {/* ========================================================================= */}
+        {activeTab === 'PROCESSES' && (
+          <CommercialProcessesSettings />
+        )}
+
+        {/* ========================================================================= */}
+        {/* SUBMENU 6: WHATSAPP & Z-API                                              */}
         {/* ========================================================================= */}
         {activeTab === 'ZAPI' && (
           <div className="space-y-6">

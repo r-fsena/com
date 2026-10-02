@@ -5,6 +5,9 @@ import {
   Contact, 
   Pipeline, 
   Deal, 
+  LossReason,
+  LeadSourceGroup,
+  LeadSource,
   Conversation, 
   Message, 
   AIInsight, 
@@ -202,7 +205,7 @@ export const MOCK_INSTANCES: WhatsAppInstance[] = [
 ];
 
 // -------------------------------------------------------------
-// 4. FUNIL DE VENDAS (KANBAN)
+// 4. FUNIS DE VENDAS & PROCESSOS (KANBAN)
 // -------------------------------------------------------------
 export const MOCK_PIPELINES: Pipeline[] = [
   {
@@ -220,7 +223,73 @@ export const MOCK_PIPELINES: Pipeline[] = [
       { id: 'stage-7', pipelineId: 'pipe-amabile-default', name: '7. Contrato Fechado', order: 7, slaHours: 0, colorHex: '#059669', isWon: true, whatsappLabelMapping: ['Fechado', 'Contrato', 'Vendido', 'Pago'] },
       { id: 'stage-8', pipelineId: 'pipe-amabile-default', name: 'Perdido / Descarte', order: 8, slaHours: 0, colorHex: '#ef4444', isLost: true, whatsappLabelMapping: ['Perdido', 'Descarte', 'Desistiu'] },
     ]
+  },
+  {
+    id: 'pipe-amabile-locacao',
+    tenantId: 'tenant-amabile-barbarotti',
+    name: 'Funil de Locação',
+    isDefault: false,
+    stages: [
+      { id: 'loc-1', pipelineId: 'pipe-amabile-locacao', name: '1. Interessado / Consulta', order: 1, slaHours: 4, colorHex: '#06b6d4' },
+      { id: 'loc-2', pipelineId: 'pipe-amabile-locacao', name: '2. Visita Agendada', order: 2, slaHours: 24, colorHex: '#3b82f6' },
+      { id: 'loc-3', pipelineId: 'pipe-amabile-locacao', name: '3. Ficha & Documentação', order: 3, slaHours: 48, colorHex: '#8b5cf6' },
+      { id: 'loc-4', pipelineId: 'pipe-amabile-locacao', name: '4. Análise de Garantia / CredPago', order: 4, slaHours: 24, colorHex: '#f59e0b' },
+      { id: 'loc-5', pipelineId: 'pipe-amabile-locacao', name: '5. Contrato Assinado / Chaves', order: 5, slaHours: 0, colorHex: '#10b981', isWon: true },
+      { id: 'loc-6', pipelineId: 'pipe-amabile-locacao', name: 'Locação Cancelada', order: 6, slaHours: 0, colorHex: '#ef4444', isLost: true }
+    ]
+  },
+  {
+    id: 'pipe-amabile-captacao',
+    tenantId: 'tenant-amabile-barbarotti',
+    name: 'Funil de Captação (Proprietários)',
+    isDefault: false,
+    stages: [
+      { id: 'cap-1', pipelineId: 'pipe-amabile-captacao', name: '1. Indicação / Lead Proprietário', order: 1, slaHours: 12, colorHex: '#64748b' },
+      { id: 'cap-2', pipelineId: 'pipe-amabile-captacao', name: '2. Avaliação / Vistoria', order: 2, slaHours: 48, colorHex: '#0ea5e9' },
+      { id: 'cap-3', pipelineId: 'pipe-amabile-captacao', name: '3. Negociação de Exclusividade', order: 3, slaHours: 72, colorHex: '#f59e0b' },
+      { id: 'cap-4', pipelineId: 'pipe-amabile-captacao', name: '4. Imóvel Captado & Anunciado', order: 4, slaHours: 0, colorHex: '#10b981', isWon: true },
+      { id: 'cap-5', pipelineId: 'pipe-amabile-captacao', name: 'Captação Recusada', order: 5, slaHours: 0, colorHex: '#ef4444', isLost: true }
+    ]
   }
+];
+
+// 4.1 MOTIVOS DE PERDA (CONFIGURÁVEIS POR FUNIL)
+// -------------------------------------------------------------
+export const MOCK_LOSS_REASONS: LossReason[] = [
+  { id: 'lr-1', tenantId: 'tenant-amabile-barbarotti', name: 'Preço alto / Fora do orçamento', isActive: true, pipelineIds: [], createdAt: '2026-01-01' },
+  { id: 'lr-2', tenantId: 'tenant-amabile-barbarotti', name: 'Optou pelo concorrente / Outra imobiliária', isActive: true, pipelineIds: [], createdAt: '2026-01-01' },
+  { id: 'lr-3', tenantId: 'tenant-amabile-barbarotti', name: 'Falta de crédito / Reprovado no banco', isActive: true, pipelineIds: ['pipe-amabile-default'], createdAt: '2026-01-01' },
+  { id: 'lr-4', tenantId: 'tenant-amabile-barbarotti', name: 'Desistiu da compra / Momento inoportuno', isActive: true, pipelineIds: ['pipe-amabile-default'], createdAt: '2026-01-01' },
+  { id: 'lr-5', tenantId: 'tenant-amabile-barbarotti', name: 'Não respondeu às tentativas de contato', isActive: true, pipelineIds: [], createdAt: '2026-01-01' },
+  { id: 'lr-6', tenantId: 'tenant-amabile-barbarotti', name: 'Localização / Bairro não atendeu', isActive: true, pipelineIds: ['pipe-amabile-default', 'pipe-amabile-locacao'], createdAt: '2026-01-01' },
+  { id: 'lr-7', tenantId: 'tenant-amabile-barbarotti', name: 'Proprietário recusou exclusividade', isActive: true, pipelineIds: ['pipe-amabile-captacao'], createdAt: '2026-01-01' },
+  { id: 'lr-8', tenantId: 'tenant-amabile-barbarotti', name: 'Imóvel já foi vendido/locado por terceiros', isActive: true, pipelineIds: ['pipe-amabile-captacao'], createdAt: '2026-01-01' },
+  { id: 'lr-9', tenantId: 'tenant-amabile-barbarotti', name: 'Garantia locatícia não aprovada (CredPago/Fiador)', isActive: true, pipelineIds: ['pipe-amabile-locacao'], createdAt: '2026-01-01' },
+];
+
+// 4.2 GRUPOS DE ORIGENS E ORIGENS DE LEADS
+// -------------------------------------------------------------
+export const MOCK_LEAD_SOURCE_GROUPS: LeadSourceGroup[] = [
+  { id: 'group-anuncios', tenantId: 'tenant-amabile-barbarotti', name: 'Anúncios & Tráfego Pago', description: 'Campanhas de mídia de performance (Meta, Google, TikTok)', isActive: true, order: 1, createdAt: '2026-01-01' },
+  { id: 'group-portais', tenantId: 'tenant-amabile-barbarotti', name: 'Portais Imobiliários', description: 'Integrações automáticas e leads de portais', isActive: true, order: 2, createdAt: '2026-01-01' },
+  { id: 'group-redes', tenantId: 'tenant-amabile-barbarotti', name: 'Redes Sociais Orgânicas', description: 'Canais orgânicos, perfis e direct', isActive: true, order: 3, createdAt: '2026-01-01' },
+  { id: 'group-indicacoes', tenantId: 'tenant-amabile-barbarotti', name: 'Indicações & Parcerias', description: 'Networking e referências de clientes/corretores', isActive: true, order: 4, createdAt: '2026-01-01' },
+  { id: 'group-outbound', tenantId: 'tenant-amabile-barbarotti', name: 'Prospecção Ativa (Outbound)', description: 'Plantões, placas no imóvel e abordagens ativas', isActive: true, order: 5, createdAt: '2026-01-01' },
+  { id: 'group-receptivo', tenantId: 'tenant-amabile-barbarotti', name: 'Receptivo Direto', description: 'Telefone e balcão da imobiliária', isActive: true, order: 6, createdAt: '2026-01-01' },
+];
+
+export const MOCK_LEAD_SOURCES: LeadSource[] = [
+  { id: 'src-1', tenantId: 'tenant-amabile-barbarotti', name: 'Anúncios ADS Meta (Instagram & Facebook)', groupId: 'group-anuncios', description: 'Campanhas pagas com formulário nativo', isActive: true, order: 1, createdAt: '2026-01-01' },
+  { id: 'src-2', tenantId: 'tenant-amabile-barbarotti', name: 'Google Ads (Pesquisa & Rede Display)', groupId: 'group-anuncios', description: 'Campanhas de busca com intenção imediata', isActive: true, order: 2, createdAt: '2026-01-01' },
+  { id: 'src-3', tenantId: 'tenant-amabile-barbarotti', name: 'Portal Zap Imóveis', groupId: 'group-portais', description: 'Leads do portal Zap Imóveis', isActive: true, order: 3, createdAt: '2026-01-01' },
+  { id: 'src-4', tenantId: 'tenant-amabile-barbarotti', name: 'Portal VivaReal', groupId: 'group-portais', description: 'Leads do portal VivaReal', isActive: true, order: 4, createdAt: '2026-01-01' },
+  { id: 'src-5', tenantId: 'tenant-amabile-barbarotti', name: 'Instagram Orgânico', groupId: 'group-redes', description: 'Direct e comentários no Instagram', isActive: true, order: 5, createdAt: '2026-01-01' },
+  { id: 'src-6', tenantId: 'tenant-amabile-barbarotti', name: 'Indicações Clientes', groupId: 'group-indicacoes', description: 'Recomendações diretas de clientes satisfeitos', isActive: true, order: 6, createdAt: '2026-01-01' },
+  { id: 'src-7', tenantId: 'tenant-amabile-barbarotti', name: 'Indicações Parceiros', groupId: 'group-indicacoes', description: 'Parcerias com corretores externos (co-brokerage)', isActive: true, order: 7, createdAt: '2026-01-01' },
+  { id: 'src-8', tenantId: 'tenant-amabile-barbarotti', name: 'Lista Prospecção - Outbound', groupId: 'group-outbound', description: 'Prospecção fria e contato com proprietários', isActive: true, order: 8, createdAt: '2026-01-01' },
+  { id: 'src-9', tenantId: 'tenant-amabile-barbarotti', name: 'Placa no Imóvel', groupId: 'group-outbound', description: 'Ligação ou WhatsApp via placa de venda', isActive: true, order: 9, createdAt: '2026-01-01' },
+  { id: 'src-10', tenantId: 'tenant-amabile-barbarotti', name: 'Receptivo - Telefone', groupId: 'group-receptivo', description: 'Ligação direta recebida na imobiliária', isActive: true, order: 10, createdAt: '2026-01-01' },
+  { id: 'src-11', tenantId: 'tenant-amabile-barbarotti', name: 'Carteira de Clientes', groupId: 'group-indicacoes', description: 'Base histórica reativada', isActive: true, order: 11, createdAt: '2026-01-01' },
 ];
 
 // -------------------------------------------------------------

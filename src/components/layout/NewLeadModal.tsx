@@ -13,13 +13,23 @@ interface NewLeadModalProps {
 }
 
 export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
-  const { addContact, createDeal, currentPipeline, users, currentUser } = useCRM();
+  const { 
+    addContact, 
+    createDeal, 
+    pipelines,
+    currentPipeline, 
+    leadSources,
+    leadSourceGroups,
+    users, 
+    currentUser 
+  } = useCRM();
 
+  const [selectedPipelineId, setSelectedPipelineId] = useState(currentPipeline.id);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+55 11 ');
   const [email, setEmail] = useState('');
   const [temperature, setTemperature] = useState<LeadTemperature>('WARM');
-  const [source, setSource] = useState('WHATSAPP');
+  const [source, setSource] = useState(leadSources[0]?.name || 'WHATSAPP');
   const [propertyType, setPropertyType] = useState<PropertyType>('APARTMENT');
   const [targetBedrooms, setTargetBedrooms] = useState('');
   const [purchasePurpose, setPurchasePurpose] = useState<'LIVING' | 'INVESTMENT'>('LIVING');
@@ -65,12 +75,15 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
     const regionStr = region.trim() ? ` em ${region.trim()}` : '';
     const dealTitle = `${propName} ${bedroomsStr}${regionStr} - ${name.trim()}`.replace(/\s+/g, ' ');
 
+    const targetPipeline = pipelines.find(p => p.id === selectedPipelineId) || currentPipeline;
+
     createDeal({
       contactId: contact.id,
       assignedUserId,
       title: dealTitle,
       expectedValue: cleanMax > 0 ? cleanMax : 0,
-      stageId: currentPipeline.stages[0]?.id,
+      pipelineId: targetPipeline.id,
+      stageId: targetPipeline.stages[0]?.id || currentPipeline.stages[0]?.id,
       manualProbability: 0,
     });
 
@@ -157,14 +170,45 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
                 onChange={(e) => setSource(e.target.value)}
                 className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none cursor-pointer"
               >
-                <option value="WHATSAPP">WhatsApp Direto</option>
-                <option value="INSTAGRAM_ADS">Instagram Ads</option>
-                <option value="FACEBOOK_ADS">Facebook Ads</option>
-                <option value="PORTAL_ZAP">Portal ZAP</option>
-                <option value="PORTAL_VIVAREAL">VivaReal</option>
-                <option value="GOOGLE">Google Ads</option>
-                <option value="INDICATION">Indicação</option>
-                <option value="MANUAL">Cadastro Manual / Loja</option>
+                {leadSources.length > 0 ? (
+                  <>
+                    {leadSourceGroups.map(group => {
+                      const groupSources = leadSources.filter(s => s.groupId === group.id && s.isActive);
+                      if (groupSources.length === 0) return null;
+                      return (
+                        <optgroup key={group.id} label={group.name}>
+                          {groupSources.map(s => (
+                            <option key={s.id} value={s.name}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                    {(() => {
+                      const ungroupedSources = leadSources.filter(s => !s.groupId && s.isActive);
+                      if (ungroupedSources.length === 0) return null;
+                      return (
+                        <optgroup label="Outras Origens">
+                          {ungroupedSources.map(s => (
+                            <option key={s.id} value={s.name}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    <option value="WhatsApp Direto">WhatsApp Direto</option>
+                    <option value="Instagram Ads">Instagram Ads</option>
+                    <option value="Facebook Ads">Facebook Ads</option>
+                    <option value="Portal Imobiliário">Portal Imobiliário</option>
+                    <option value="Indicação de Clientes">Indicação de Clientes</option>
+                    <option value="Receptivo - Telefone">Receptivo - Telefone</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -310,12 +354,29 @@ export function NewLeadModal({ isOpen, onClose }: NewLeadModalProps) {
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  Funil de Destino
+                </label>
+                <select
+                  value={selectedPipelineId}
+                  onChange={(e) => setSelectedPipelineId(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none cursor-pointer"
+                >
+                  {pipelines.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">
                   Corretor Responsável
                 </label>
                 <select
                   value={assignedUserId}
                   onChange={(e) => setAssignedUserId(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none cursor-pointer"
                 >
                   {users.map(u => (
                     <option key={u.id} value={u.id}>

@@ -13,6 +13,9 @@ import {
   Pipeline, 
   PipelineStage,
   Deal, 
+  LossReason,
+  LeadSourceGroup,
+  LeadSource,
   Conversation, 
   Message, 
   Attachment,
@@ -43,6 +46,9 @@ import {
   MOCK_INSTANCES, 
   MOCK_CONTACTS, 
   MOCK_PIPELINES, 
+  MOCK_LOSS_REASONS,
+  MOCK_LEAD_SOURCE_GROUPS,
+  MOCK_LEAD_SOURCES,
   MOCK_DEALS, 
   MOCK_CONVERSATIONS, 
   MOCK_MESSAGES, 
@@ -114,12 +120,34 @@ interface CRMContextType {
   pipelines: Pipeline[];
   currentPipeline: Pipeline;
   setCurrentPipeline: (pipeline: Pipeline) => void;
+  setCurrentPipelineById: (id: string) => void;
+  createPipeline: (data: { name: string; stages?: Partial<PipelineStage>[] }) => Pipeline;
+  updatePipeline: (id: string, updates: Partial<Pipeline>) => void;
+  deletePipeline: (id: string) => void;
+  moveDealToPipeline: (dealId: string, targetPipelineId: string, targetStageId: string) => void;
   deals: Deal[];
   moveDealStage: (dealId: string, targetStageId: string) => void;
   createDeal: (deal: Partial<Deal>) => Deal;
   updateDeal: (id: string, updates: Partial<Deal>) => void;
   deleteDeal: (id: string) => void;
   updatePipelineStages: (stages: PipelineStage[]) => void;
+
+  // Motivos de Perda
+  lossReasons: LossReason[];
+  createLossReason: (data: Omit<LossReason, 'id' | 'tenantId' | 'createdAt'>) => LossReason;
+  updateLossReason: (id: string, updates: Partial<LossReason>) => void;
+  deleteLossReason: (id: string) => void;
+
+  // Origens & Grupos de Origens de Leads
+  leadSourceGroups: LeadSourceGroup[];
+  createLeadSourceGroup: (data: Omit<LeadSourceGroup, 'id' | 'tenantId' | 'createdAt'>) => LeadSourceGroup;
+  updateLeadSourceGroup: (id: string, updates: Partial<LeadSourceGroup>) => void;
+  deleteLeadSourceGroup: (id: string) => void;
+
+  leadSources: LeadSource[];
+  createLeadSource: (data: Omit<LeadSource, 'id' | 'tenantId' | 'createdAt'>) => LeadSource;
+  updateLeadSource: (id: string, updates: Partial<LeadSource>) => void;
+  deleteLeadSource: (id: string) => void;
 
   // WhatsApp e Mensagens
   instances: WhatsAppInstance[];
@@ -555,7 +583,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.map((p: Pipeline) => {
+            // Garante que novos funis padrão do mock sejam mesclados
+            const existingIds = new Set(parsed.map((p: Pipeline) => p.id));
+            const merged = [...parsed];
+            for (const mockP of MOCK_PIPELINES) {
+              if (!existingIds.has(mockP.id)) {
+                merged.push(mockP);
+              }
+            }
+            return merged.map((p: Pipeline) => {
               const isAmabilePipe = !p.tenantId || p.tenantId === 'tenant-amabile-barbarotti' || p.tenantId.includes('amabile');
               return {
                 ...p,
@@ -583,6 +619,45 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
     return MOCK_PIPELINES[0];
+  });
+
+  const [lossReasons, setLossReasons] = useState<LossReason[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_loss_reasons');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_LOSS_REASONS;
+  });
+
+  const [leadSourceGroups, setLeadSourceGroups] = useState<LeadSourceGroup[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_lead_source_groups');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_LEAD_SOURCE_GROUPS;
+  });
+
+  const [leadSources, setLeadSources] = useState<LeadSource[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vanguard_crm_lead_sources');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return MOCK_LEAD_SOURCES;
   });
 
   const [currentTenant, setCurrentTenantState] = useState<Tenant>(() => {
@@ -690,6 +765,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
     return scopedPipelines[0];
   }, [currentPipeline, scopedPipelines, currentTenant.id]);
+
+  const scopedLossReasons = useMemo(() => {
+    const list = lossReasons.filter(r => !r.tenantId || r.tenantId === currentTenant.id || r.tenantId === 'tenant-amabile-barbarotti');
+    return list.length > 0 ? list : MOCK_LOSS_REASONS;
+  }, [lossReasons, currentTenant.id]);
+
+  const scopedLeadSourceGroups = useMemo(() => {
+    const list = leadSourceGroups.filter(g => !g.tenantId || g.tenantId === currentTenant.id || g.tenantId === 'tenant-amabile-barbarotti');
+    return list.length > 0 ? list : MOCK_LEAD_SOURCE_GROUPS;
+  }, [leadSourceGroups, currentTenant.id]);
+
+  const scopedLeadSources = useMemo(() => {
+    const list = leadSources.filter(s => !s.tenantId || s.tenantId === currentTenant.id || s.tenantId === 'tenant-amabile-barbarotti');
+    return list.length > 0 ? list : MOCK_LEAD_SOURCES;
+  }, [leadSources, currentTenant.id]);
 
   const updateTenant = (updates: Partial<Tenant>) => {
     setCurrentTenant(prev => {
@@ -3232,6 +3322,197 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.setItem('vanguard_crm_current_pipeline', JSON.stringify(updatedPipeline));
     } catch {}
+  };
+
+  const setCurrentPipelineById = (id: string) => {
+    const found = scopedPipelines.find(p => p.id === id);
+    if (found) {
+      setCurrentPipeline(found);
+      try {
+        localStorage.setItem('vanguard_crm_current_pipeline', JSON.stringify(found));
+      } catch {}
+    }
+  };
+
+  const createPipeline = (data: { name: string; stages?: Partial<PipelineStage>[] }) => {
+    const newId = `pipe-${Date.now()}`;
+    const defaultStages: PipelineStage[] = (data.stages && data.stages.length > 0)
+      ? data.stages.map((s, idx) => ({
+          id: s.id || `stage-${Date.now()}-${idx}`,
+          pipelineId: newId,
+          name: s.name || `Etapa ${idx + 1}`,
+          order: idx + 1,
+          slaHours: s.slaHours || 24,
+          colorHex: s.colorHex || '#3b82f6',
+          isWon: s.isWon,
+          isLost: s.isLost,
+        }))
+      : [
+          { id: `${newId}-s1`, pipelineId: newId, name: '1. Novo Lead', order: 1, slaHours: 2, colorHex: '#3b82f6' },
+          { id: `${newId}-s2`, pipelineId: newId, name: '2. Em Atendimento', order: 2, slaHours: 24, colorHex: '#8b5cf6' },
+          { id: `${newId}-s3`, pipelineId: newId, name: '3. Negociação', order: 3, slaHours: 48, colorHex: '#f59e0b' },
+          { id: `${newId}-s4`, pipelineId: newId, name: '4. Concluído', order: 4, slaHours: 0, colorHex: '#10b981', isWon: true },
+          { id: `${newId}-s5`, pipelineId: newId, name: 'Perdido', order: 5, slaHours: 0, colorHex: '#ef4444', isLost: true },
+        ];
+
+    const newPipe: Pipeline = {
+      id: newId,
+      tenantId: currentTenant.id,
+      name: data.name.trim(),
+      isDefault: false,
+      stages: defaultStages,
+    };
+
+    setPipelines(prev => {
+      const updated = [...prev, newPipe];
+      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    return newPipe;
+  };
+
+  const updatePipeline = (id: string, updates: Partial<Pipeline>) => {
+    setPipelines(prev => {
+      const updated = prev.map(p => p.id === id ? { ...p, ...updates } : p);
+      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    if (currentPipeline.id === id) {
+      setCurrentPipeline(prev => ({ ...prev, ...updates }));
+    }
+  };
+
+  const deletePipeline = (id: string) => {
+    setPipelines(prev => {
+      const remaining = prev.filter(p => p.id !== id);
+      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(remaining)); } catch {}
+      return remaining;
+    });
+    if (currentPipeline.id === id) {
+      const fallback = scopedPipelines.find(p => p.id !== id) || scopedPipelines[0];
+      if (fallback) setCurrentPipeline(fallback);
+    }
+  };
+
+  const moveDealToPipeline = (dealId: string, targetPipelineId: string, targetStageId: string) => {
+    setDeals(prev => {
+      const updated = prev.map(d => {
+        if (d.id === dealId) {
+          return {
+            ...d,
+            pipelineId: targetPipelineId,
+            stageId: targetStageId,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return d;
+      });
+      try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const createLossReason = (data: Omit<LossReason, 'id' | 'tenantId' | 'createdAt'>) => {
+    const newReason: LossReason = {
+      id: `lr-${Date.now()}`,
+      tenantId: currentTenant.id,
+      name: data.name.trim(),
+      isActive: data.isActive ?? true,
+      pipelineIds: data.pipelineIds || [],
+      createdAt: new Date().toISOString(),
+    };
+    setLossReasons(prev => {
+      const updated = [...prev, newReason];
+      try { localStorage.setItem('vanguard_crm_loss_reasons', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newReason;
+  };
+
+  const updateLossReason = (id: string, updates: Partial<LossReason>) => {
+    setLossReasons(prev => {
+      const updated = prev.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r);
+      try { localStorage.setItem('vanguard_crm_loss_reasons', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteLossReason = (id: string) => {
+    setLossReasons(prev => {
+      const updated = prev.filter(r => r.id !== id);
+      try { localStorage.setItem('vanguard_crm_loss_reasons', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const createLeadSourceGroup = (data: Omit<LeadSourceGroup, 'id' | 'tenantId' | 'createdAt'>) => {
+    const newGroup: LeadSourceGroup = {
+      id: `group-${Date.now()}`,
+      tenantId: currentTenant.id,
+      name: data.name.trim(),
+      description: data.description?.trim(),
+      isActive: data.isActive ?? true,
+      order: (leadSourceGroups.length + 1),
+      createdAt: new Date().toISOString(),
+    };
+    setLeadSourceGroups(prev => {
+      const updated = [...prev, newGroup];
+      try { localStorage.setItem('vanguard_crm_lead_source_groups', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newGroup;
+  };
+
+  const updateLeadSourceGroup = (id: string, updates: Partial<LeadSourceGroup>) => {
+    setLeadSourceGroups(prev => {
+      const updated = prev.map(g => g.id === id ? { ...g, ...updates } : g);
+      try { localStorage.setItem('vanguard_crm_lead_source_groups', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteLeadSourceGroup = (id: string) => {
+    setLeadSourceGroups(prev => {
+      const updated = prev.filter(g => g.id !== id);
+      try { localStorage.setItem('vanguard_crm_lead_source_groups', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const createLeadSource = (data: Omit<LeadSource, 'id' | 'tenantId' | 'createdAt'>) => {
+    const newSource: LeadSource = {
+      id: `src-${Date.now()}`,
+      tenantId: currentTenant.id,
+      name: data.name.trim(),
+      description: data.description?.trim(),
+      groupId: data.groupId,
+      isActive: data.isActive ?? true,
+      order: (leadSources.length + 1),
+      createdAt: new Date().toISOString(),
+    };
+    setLeadSources(prev => {
+      const updated = [...prev, newSource];
+      try { localStorage.setItem('vanguard_crm_lead_sources', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    return newSource;
+  };
+
+  const updateLeadSource = (id: string, updates: Partial<LeadSource>) => {
+    setLeadSources(prev => {
+      const updated = prev.map(s => s.id === id ? { ...s, ...updates } : s);
+      try { localStorage.setItem('vanguard_crm_lead_sources', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const deleteLeadSource = (id: string) => {
+    setLeadSources(prev => {
+      const updated = prev.filter(s => s.id !== id);
+      try { localStorage.setItem('vanguard_crm_lead_sources', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   // Envio de Mensagem WhatsApp / Nota Interna
@@ -5958,12 +6239,29 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       pipelines: scopedPipelines,
       currentPipeline: effectiveCurrentPipeline,
       setCurrentPipeline,
+      setCurrentPipelineById,
+      createPipeline,
+      updatePipeline,
+      deletePipeline,
+      moveDealToPipeline,
       deals: scopedDeals,
       moveDealStage,
       createDeal,
       updateDeal,
       deleteDeal,
       updatePipelineStages,
+      lossReasons: scopedLossReasons,
+      createLossReason,
+      updateLossReason,
+      deleteLossReason,
+      leadSourceGroups: scopedLeadSourceGroups,
+      createLeadSourceGroup,
+      updateLeadSourceGroup,
+      deleteLeadSourceGroup,
+      leadSources: scopedLeadSources,
+      createLeadSource,
+      updateLeadSource,
+      deleteLeadSource,
       instances: scopedInstances,
       activeInstanceId: effectiveActiveInstanceId,
       setActiveInstanceId,

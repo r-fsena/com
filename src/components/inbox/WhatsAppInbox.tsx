@@ -612,6 +612,37 @@ export function WhatsAppInbox() {
         }
       }
 
+      // 3. Deduplicação inteligente por conteúdo limpo: se já existe mensagem no mesmo sentido com texto idêntico
+      const cleanContent = (msg.content || '')
+        .replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '')
+        .trim();
+
+      const dupIdx = deduped.findIndex(d => {
+        if (d.senderType !== msg.senderType) return false;
+        const dClean = (d.content || '')
+          .replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '')
+          .trim();
+        return dClean === cleanContent && cleanContent.length > 0;
+      });
+
+      if (dupIdx !== -1) {
+        const existing = deduped[dupIdx];
+        const isMsgNative = Boolean(msgId.startsWith('true_') || msgId.startsWith('false_') || msgId.startsWith('wpp-'));
+        const isExistingNative = Boolean((existing.id || '').startsWith('true_') || (existing.id || '').startsWith('false_') || (existing.id || '').startsWith('wpp-'));
+
+        // Prioriza a mensagem com ID nativo do WhatsApp ou com timestamp calibrado mais antigo/preciso
+        if (isMsgNative && !isExistingNative) {
+          deduped[dupIdx] = msg;
+        } else if (new Date(msg.timestamp || 0).getTime() < new Date(existing.timestamp || 0).getTime()) {
+          deduped[dupIdx] = {
+            ...existing,
+            timestamp: msg.timestamp,
+            content: msg.content,
+          };
+        }
+        continue;
+      }
+
       if (msgId) seenIds.add(msgId);
       deduped.push(msg);
     }

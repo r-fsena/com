@@ -1126,15 +1126,14 @@ ${isDeveloperMode ? `
         .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
     }
 
-    // 1. Ordenação estritamente cronológica preservando a ordem física rigorosa do chat
+    // 1. Ordenação estritamente cronológica preservando a sequência unificada do chat
     validContentMsgs.sort((a, b) => {
-      const ordA = a.domOrder !== undefined ? a.domOrder : 0;
-      const ordB = b.domOrder !== undefined ? b.domOrder : 0;
-      if (ordA !== ordB) return ordA - ordB;
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
-      if (!isNaN(tA) && !isNaN(tB)) return tA - tB;
-      return 0;
+      if (!isNaN(tA) && !isNaN(tB) && tA !== tB) return tA - tB;
+      const ordA = a.domOrder !== undefined ? a.domOrder : 0;
+      const ordB = b.domOrder !== undefined ? b.domOrder : 0;
+      return ordA - ordB;
     });
 
     // 2. Garantia de Monotonicidade Rigorosa (Offset sutil de milissegundos):
@@ -1665,44 +1664,11 @@ ${isDeveloperMode ? `
       }
     }
 
-    // 1. BACKWARD SWEEP (Do fim para o começo):
-    // Como o chat caminha estritamente para baixo, a mensagem msgs[i] está fisicamente ACIMA de msgs[i + 1].
-    // Portanto, msgs[i] ACONTECEU ANTES de msgs[i + 1]!
-    for (let i = msgs.length - 2; i >= 0; i--) {
-      const curr = msgs[i];
-      const next = msgs[i + 1];
-
-      let currTime = new Date(curr.timestamp).getTime();
-      const nextTime = new Date(next.timestamp).getTime();
-
-      if (currTime >= nextTime) {
-        const nextDate = new Date(nextTime);
-        const currDate = new Date(currTime);
-
-        const currHour = currDate.getHours();
-        const currMin = currDate.getMinutes();
-
-        // Se a hora do atual for maior que a do próximo (ex: 18:30 vs 09:15), mudou de dia!
-        if (currHour > nextDate.getHours() || (currHour === nextDate.getHours() && currMin >= nextDate.getMinutes())) {
-          const prevDay = new Date(nextDate);
-          prevDay.setDate(prevDay.getDate() - 1);
-          prevDay.setHours(currHour, currMin, 0, 0);
-          curr.timestamp = prevDay.toISOString();
-        } else {
-          // No mesmo dia, mas antes
-          const sameDay = new Date(nextDate);
-          sameDay.setHours(currHour, currMin, 0, 0);
-          if (sameDay.getTime() < nextTime) {
-            curr.timestamp = sameDay.toISOString();
-          } else {
-            curr.timestamp = new Date(nextTime - 1000).toISOString();
-          }
-        }
-      }
-    }
-
-    // 2. FORWARD SWEEP (Do começo para o fim):
-    // Garante monotonicidade rigorosa estritamente crescente (+10ms para mensagens no mesmo minuto)
+    // 1. FORWARD SWEEP MONOTÔNICO (Do início para o fim do chat):
+    // Como orderedKeys é construído seguindo rigorosamente o fluxo físico do WhatsApp Web
+    // (mensagens superiores são mais antigas, inferiores são mais novas),
+    // garantimos que cada mensagem subsequente tenha timestamp estritamente posterior (+10ms).
+    // NUNCA subtrai dias por mensagens no mesmo minuto!
     let lastSeqMs = 0;
     for (let i = 0; i < msgs.length; i++) {
       const curr = msgs[i];
@@ -1718,7 +1684,6 @@ ${isDeveloperMode ? `
     }
   }
 
-  // Coleta balões de mensagem do DOM de #main e insere em um Map deduplicado
   function harvestDomMessages(messagesMap, fallbackPhone = '', orderTracker = null, scrollDirection = 'INIT') {
     const main = document.querySelector('#main');
     if (!main) return;

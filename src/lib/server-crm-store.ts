@@ -1097,6 +1097,22 @@ export const serverCRMStore = {
     const filteredOldMsgs = oldMsgs.filter(m => {
       // Descarta apenas mensagens de placeholder sintético
       if (m.content && m.content.startsWith('Conversa ativa no WhatsApp com')) return false;
+
+      // Se esta conversa recebeu um lote fresco e calibrado da extensão,
+      // descarta mensagens legadas da extensão para esta conversa para evitar conflito de timestamps antigos
+      const tKey = m.tenantId || 'default-tenant';
+      if (freshSyncConvIds.has(`${tKey}::${m.conversationId}`)) {
+        const isLegacyExtMsg = Boolean(
+          m.id?.startsWith('ext-msg-') ||
+          m.id?.startsWith('wpp-ext-') ||
+          m.id?.startsWith('synthetic-') ||
+          (m.externalId && (m.externalId.startsWith('ext-msg-') || m.externalId.startsWith('wpp-ext-')))
+        );
+        if (isLegacyExtMsg && !m.isInternalNote) {
+          return false;
+        }
+      }
+
       return true;
     });
 

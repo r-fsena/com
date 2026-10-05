@@ -89,6 +89,17 @@ export async function POST(req: NextRequest) {
       }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
     }
 
+    // Se houver mensagens existentes sendo sincronizadas, persiste no PostgreSQL garantindo zero perda
+    if (process.env.DATABASE_URL && Array.isArray(payload.messages) && payload.messages.length > 0) {
+      import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
+        try {
+          await ContactsDBService.seedMessages(targetTenantId, payload.messages);
+        } catch (dbErr) {
+          console.warn('[ContactsDBService] Aviso ao sincronizar mensagens no banco:', dbErr);
+        }
+      }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
+    }
+
     const scopedState = serverCRMStore.getScopedState(targetTenantId);
 
     return NextResponse.json({

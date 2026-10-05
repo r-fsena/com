@@ -4993,6 +4993,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   // Polling inteligente e não-bloqueante de novos eventos do Webhook Z-API em tempo real com deduplicação rigorosa
   const lastPollTimeRef = useRef<number>(Date.now() - 120000);
+  const initialSyncDoneRef = useRef<boolean>(false);
   const processedMsgIdsRef = useRef<Set<string>>(new Set());
   const activeConversationIdRef = useRef<string | null>(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
@@ -5016,8 +5017,30 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       try {
-        // Janela móvel de 5 minutos: evita perder mensagens quando requisições alternam entre diferentes instâncias Lambda no Amplify
-        const lookbackTime = Math.max(0, Date.now() - 300000);
+        // Lookback dinâmico: na primeira requisição após ligar o computador ou abrir o CRM,
+        // consulta desde o último sincronismo gravado no localStorage ou a mensagem mais recente.
+        // Garante que NENHUMA mensagem recebida enquanto o computador estava desligado seja perdida!
+        let lookbackTime = 0;
+        if (!initialSyncDoneRef.current) {
+          initialSyncDoneRef.current = true;
+          let savedSync = 0;
+          try {
+            savedSync = Number(localStorage.getItem('vanguard_crm_last_sync_timestamp') || '0');
+          } catch {}
+
+          if (savedSync > 0) {
+            lookbackTime = Math.max(0, savedSync - 120000); // 2 minutos de margem
+          } else {
+            const latestMsgTime = messages.reduce((max, m) => {
+              const t = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+              return t > max ? t : max;
+            }, 0);
+            lookbackTime = latestMsgTime > 0 ? Math.max(0, latestMsgTime - 120000) : Math.max(0, Date.now() - 7 * 86400000);
+          }
+        } else {
+          lookbackTime = Math.max(0, Date.now() - 180000);
+        }
+
         const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}&since=${lookbackTime}`, {
           credentials: 'include',
           headers: {
@@ -5028,6 +5051,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
         if (!res.ok) return;
         const data = await res.json();
+
+        // Atualiza a marca de tempo de sincronismo bem-sucedido no localStorage
+        try {
+          localStorage.setItem('vanguard_crm_last_sync_timestamp', String(Date.now()));
+        } catch {}
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
           // Filtra mensagens novas ou mensagens enviadas pelo corretor para reclassificação

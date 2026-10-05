@@ -547,6 +547,30 @@ export async function processZapiWebhookRequest(
         }],
       });
 
+      // Persistência definitiva no PostgreSQL (AWS Aurora / RDS) para garantir que
+      // mensagens recebidas mesmo com o computador ou navegador desligados nunca sejam perdidas
+      if (process.env.DATABASE_URL && cleanPhone && cleanPhone !== '0') {
+        import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
+          try {
+            await ContactsDBService.persistIncomingWebhookMessage({
+              tenantId,
+              instanceId,
+              phone: cleanPhone,
+              lid: lid || undefined,
+              senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
+              content,
+              mediaType,
+              mediaUrl,
+              fromMe,
+              externalId: messageId,
+              timestamp: messageTimestampIso,
+            });
+          } catch (dbErr) {
+            console.warn('[Webhook] Erro ao persistir webhook no PostgreSQL:', dbErr);
+          }
+        }).catch(err => console.warn('[Webhook] Erro ao carregar ContactsDBService:', err));
+      }
+
       // Se o contato não possuir foto cadastrada, enriquece em segundo plano com a foto oficial do WhatsApp
       if (cleanPhone && (!existingContact?.avatarUrl && !senderPhoto) && !isLidIdentifier(cleanPhone)) {
         setTimeout(async () => {

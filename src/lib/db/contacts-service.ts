@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { contacts, conversations, messages, deals, aiInsights, tenants } from '@/db/schema';
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { contacts, conversations, messages, deals, aiInsights, tenants, whatsappInstances } from '@/db/schema';
+import { eq, and, desc, asc, gt } from 'drizzle-orm';
 import { Contact, Deal, Message } from '@/types/crm';
 
 /**
@@ -45,6 +45,39 @@ export class ContactsDBService {
       return created[0]?.id || null;
     } catch (err) {
       console.warn('[ContactsDBService] Aviso ao resolver tenant UUID no banco:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Resolve ou registra a instância do WhatsApp para garantir a chave estrangeira
+   */
+  static async resolveInstanceId(resolvedTenantId: string, zapiInstanceId?: string): Promise<string | null> {
+    const rawInst = zapiInstanceId || '3F1B67FC8139425171C79ED390C0144C';
+    try {
+      const existing = await db
+        .select()
+        .from(whatsappInstances)
+        .where(and(eq(whatsappInstances.tenantId, resolvedTenantId), eq(whatsappInstances.zapiInstanceId, rawInst)))
+        .limit(1);
+
+      if (existing[0]?.id) return existing[0].id;
+
+      const created = await db
+        .insert(whatsappInstances)
+        .values({
+          tenantId: resolvedTenantId,
+          name: 'WhatsApp Z-API',
+          phoneNumber: '+554888774408',
+          zapiInstanceId: rawInst,
+          zapiTokenSecretRef: 'zapi-default-secret',
+          status: 'CONNECTED',
+        })
+        .returning();
+
+      return created[0]?.id || null;
+    } catch (err) {
+      console.warn('[ContactsDBService] Aviso ao resolver instanceId:', err);
       return null;
     }
   }
@@ -148,6 +181,209 @@ export class ContactsDBService {
   }
 
   /**
+   * Obtém ou cria uma conversa vinculada ao contato
+   */
+  static async getOrCreateConversation(tenantIdUuid: string, contactIdUuid: string, instanceIdUuid: string, lastMessagePreview?: string) {
+    try {
+      const existing = await db
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.tenantId, tenantIdUuid), eq(conversations.contactId, contactIdUuid)))
+        .limit(1);
+
+      if (existing[0]?.id) {
+        if (lastMessagePreview) {
+          await db
+            .update(conversations)
+            .set({
+              lastMessagePreview,
+              lastMessageAt: new Date(),
+            })
+            .where(eq(conversations.id, existing[0].id));
+        }
+        return existing[0];
+      }
+
+      const created = await db
+        .insert(conversations)
+        .values({
+          tenantId: tenantIdUuid,
+          instanceId: instanceIdUuid,
+          contactId: contactIdUuid,
+          status: 'OPEN',
+          lastMessagePreview: lastMessagePreview || 'Conversa iniciada',
+          lastMessageAt: new Date(),
+        })
+        .returning();
+
+      return created[0] || null;
+    } catch (err) {
+      console.warn('[ContactsDBService] Aviso ao criar conversa:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Persiste mensagem recebida via Webhook Z-API em tempo real de forma atômica
+   */
+  static async persistIncomingWebhookMessage(data: {
+    tenantId: string;
+    instanceId?: string;
+    phone: string;
+    lid?: string;
+    senderName?: string;
+    content: string;
+    mediaType?: string;
+    mediaUrl?: string;
+    fromMe: boolean;
+    externalId?: string;
+    timestamp?: string;
+  }) {
+    const raw = this.cleanPhone(data.phone);
+    if (!raw || raw.length < 8) return null;
+
+    try {
+      const resolvedTenant = await this.resolveTenantId(data.tenantId);
+      if (!resolvedTenant) return null;
+
+      const contact = await this.upsertContact(data.tenantId, {
+        phone: raw,
+        lid: data.lid,
+        name: data.senderName,
+      });
+      if (!contact) return null;
+
+      const resolvedInst = await this.resolveInstanceId(resolvedTenant, data.instanceId);
+      if (!resolvedInst) return null;
+
+      const conversation = await this.getOrCreateConversation(
+        resolvedTenant, 
+        contact.id, 
+        resolvedInst, 
+        (data.content || '').substring(0, 100)
+      );
+      if (!conversation) return null;
+
+      // Idempotency: verifica se a mensagem já foi salva por externalId
+      if (data.externalId) {
+        const existingMsg = await db
+          .select()
+          .from(messages)
+          .where(and(eq(messages.tenantId, resolvedTenant), eq(messages.externalId, data.externalId)))
+          .limit(1);
+
+        if (existingMsg[0]?.id) {
+          return existingMsg[0];
+        }
+      }
+
+      const msgDate = data.timestamp ? new Date(data.timestamp) : new Date();
+
+      const createdMsg = await db
+        .insert(messages)
+        .values({
+          tenantId: resolvedTenant,
+          conversationId: conversation.id,
+          externalId: data.externalId,
+          idempotencyKey: data.externalId ? `${resolvedTenant}_${data.externalId}` : undefined,
+          senderType: data.fromMe ? 'USER' : 'CONTACT',
+          senderName: data.senderName || (data.fromMe ? 'Corretor' : 'Cliente'),
+          messageType: (data.mediaType === 'audio' ? 'AUDIO' : data.mediaType === 'image' ? 'IMAGE' : data.mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
+          content: data.content,
+          status: 'DELIVERED',
+          timestamp: msgDate,
+        })
+        .returning();
+
+      return createdMsg[0] || null;
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha ao persistir mensagem de webhook no banco:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Busca mensagens persistidas no PostgreSQL com timestamp maior que `sinceMs`
+   */
+  static async getMessagesSince(tenantId: string, sinceMs: number) {
+    try {
+      const resolvedTenant = await this.resolveTenantId(tenantId);
+      if (!resolvedTenant) return [];
+
+      const conditions = [eq(messages.tenantId, resolvedTenant)];
+      if (sinceMs > 0) {
+        conditions.push(gt(messages.timestamp, new Date(sinceMs)));
+      }
+
+      const rows = await db
+        .select({
+          msg: messages,
+          conv: conversations,
+          cnt: contacts,
+        })
+        .from(messages)
+        .leftJoin(conversations, eq(messages.conversationId, conversations.id))
+        .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+        .where(and(...conditions))
+        .orderBy(desc(messages.timestamp))
+        .limit(300);
+
+      return rows.map(r => ({
+        id: r.msg.externalId || r.msg.id,
+        tenantId,
+        instanceId: '3F1B67FC8139425171C79ED390C0144C',
+        phone: r.cnt?.phoneNormalized || '',
+        lid: r.cnt?.whatsappLid || undefined,
+        senderName: r.msg.senderName || r.cnt?.name || (r.msg.senderType === 'USER' ? 'Corretor' : 'Cliente'),
+        content: r.msg.content,
+        mediaType: (r.msg.messageType ? r.msg.messageType.toLowerCase() : 'text') as any,
+        fromMe: r.msg.senderType === 'USER',
+        timestamp: new Date(r.msg.timestamp).toISOString(),
+        receivedAt: new Date(r.msg.timestamp).getTime(),
+      }));
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha ao buscar mensagens since:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Sincroniza / faz seed de lote de mensagens do frontend no banco para garantir zero perda
+   */
+  static async seedMessages(tenantId: string, messagesList: Message[]) {
+    if (!messagesList || messagesList.length === 0) return 0;
+    try {
+      const resolvedTenant = await this.resolveTenantId(tenantId);
+      if (!resolvedTenant) return 0;
+
+      let savedCount = 0;
+      for (const m of messagesList) {
+        if (!m || !m.content) continue;
+        let phone = (m as any).phone ? this.cleanPhone((m as any).phone) : '';
+        if (!phone && m.conversationId) {
+          phone = this.cleanPhone(m.conversationId);
+        }
+        if (!phone || phone.length < 8) continue;
+
+        await this.persistIncomingWebhookMessage({
+          tenantId,
+          phone,
+          content: m.content,
+          fromMe: m.senderType === 'USER',
+          senderName: m.senderName,
+          externalId: m.externalId || m.id,
+          timestamp: m.timestamp,
+        });
+        savedCount++;
+      }
+      return savedCount;
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha ao executar seed de mensagens:', err);
+      return 0;
+    }
+  }
+
+  /**
    * Atualização de Qualificação Rápida
    */
   static async updateQualification(tenantId: string, phone: string, qualification: {
@@ -183,9 +419,6 @@ export class ContactsDBService {
       .returning();
   }
 
-  /**
-   * Salva mensagem do WhatsApp no histórico definitivo
-   */
   /**
    * Salva mensagem do WhatsApp no histórico definitivo
    */

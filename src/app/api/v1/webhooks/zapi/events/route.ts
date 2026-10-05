@@ -38,8 +38,29 @@ export async function GET(request: NextRequest) {
     ? webhookStore.getMessagesSince(since)
     : webhookStore.getAllMessages();
 
+  // Consulta também o banco PostgreSQL para resgatar mensagens offline ou históricas
+  let dbMessages: any[] = [];
+  if (process.env.DATABASE_URL) {
+    try {
+      const { ContactsDBService } = await import('@/lib/db/contacts-service');
+      dbMessages = await ContactsDBService.getMessagesSince(targetTenantId, since);
+    } catch (err) {
+      console.warn('[Events API] Aviso ao buscar mensagens no PostgreSQL:', err);
+    }
+  }
+
+  // Mescla mensagens do banco com as da memória sem duplicar IDs
+  const messageMap = new Map<string, any>();
+  for (const m of dbMessages) {
+    if (m && m.id) messageMap.set(m.id, m);
+  }
+  for (const m of allMessages) {
+    if (m && m.id) messageMap.set(m.id, m);
+  }
+  const mergedList = Array.from(messageMap.values());
+
   // Filtra pelo tenant autorizado do usuário ou entrega para a instância ativa
-  const messages = allMessages.filter(m => 
+  const messages = mergedList.filter(m => 
     !m.tenantId || 
     m.tenantId === targetTenantId || 
     session?.isSuperAdmin || 

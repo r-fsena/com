@@ -172,7 +172,6 @@ export const pipelines = pgTable('pipelines', {
   tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   isDefault: boolean('is_default').default(false).notNull(),
-  displayOrder: integer('display_order').default(1).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   tenantIdx: index('pipelines_tenant_idx').on(table.tenantId),
@@ -182,7 +181,7 @@ export const pipelineStages = pgTable('pipeline_stages', {
   id: uuid('id').defaultRandom().primaryKey(),
   pipelineId: uuid('pipeline_id').references(() => pipelines.id, { onDelete: 'cascade' }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  order: integer('order').notNull(),
+  order: integer('order_index').notNull(),
   slaHours: integer('sla_hours').default(24).notNull(),
   colorHex: varchar('color_hex', { length: 20 }).default('#10b981').notNull(),
   isWon: boolean('is_won').default(false).notNull(),

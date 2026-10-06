@@ -1,7 +1,7 @@
 import { db } from '@/db';
-import { contacts, conversations, messages, deals, aiInsights, tenants, whatsappInstances } from '@/db/schema';
+import { contacts, conversations, messages, deals, aiInsights, tenants, whatsappInstances, pipelines, pipelineStages } from '@/db/schema';
 import { eq, and, desc, asc, gt } from 'drizzle-orm';
-import { Contact, Deal, Message } from '@/types/crm';
+import { Contact, Deal, Message, Pipeline, PipelineStage, Conversation } from '@/types/crm';
 
 /**
  * Serviço de Acesso a Dados do CRM (PostgreSQL / AWS RDS)
@@ -452,5 +452,207 @@ export class ContactsDBService {
       .from(messages)
       .where(and(eq(messages.tenantId, tenantId), eq(messages.conversationId, conversationId)))
       .orderBy(asc(messages.timestamp));
+  }
+
+  /**
+   * Busca todos os contatos persistidos no PostgreSQL para o tenant
+   */
+  static async getAllContacts(tenantId: string): Promise<Contact[]> {
+    try {
+      const resolvedTenant = await this.resolveTenantId(tenantId);
+      if (!resolvedTenant) return [];
+
+      const rows = await db
+        .select()
+        .from(contacts)
+        .where(eq(contacts.tenantId, resolvedTenant))
+        .orderBy(desc(contacts.updatedAt));
+
+      return rows.map(r => ({
+        id: r.id,
+        tenantId,
+        name: r.name,
+        phone: r.phoneNormalized ? ('+' + r.phoneNormalized) : '',
+        lid: r.whatsappLid || undefined,
+        email: r.email || undefined,
+        monthlyIncome: r.monthlyIncome ? Number(r.monthlyIncome) : undefined,
+        householdIncome: r.householdIncome ? Number(r.householdIncome) : undefined,
+        downPaymentAvailable: r.downPaymentAvailable ? Number(r.downPaymentAvailable) : undefined,
+        estimatedFinancing: r.estimatedFinancing ? Number(r.estimatedFinancing) : undefined,
+        minPropertyValue: r.minPropertyValue ? Number(r.minPropertyValue) : undefined,
+        maxPropertyValue: r.maxPropertyValue ? Number(r.maxPropertyValue) : undefined,
+        preferredPropertyType: (r.preferredPropertyType as any) || 'APARTMENT',
+        purchasePurpose: (r.purchasePurpose as any) || 'LIVING',
+        targetRegions: (r.targetRegions as string[]) || [],
+        targetBedrooms: r.targetBedrooms || undefined,
+        targetParkingSpots: r.targetParkingSpots || undefined,
+        purchaseTimeline: (r.purchaseTimeline as any) || '1_TO_3_MONTHS',
+        source: (r.source as any) || 'WHATSAPP',
+        temperature: (r.temperature as any) || 'WARM',
+        aiPriorityScore: r.aiPriorityScore || 70,
+        assignedUserId: r.assignedUserId || undefined,
+        tags: (r.tags as string[]) || [],
+        notesCount: 0,
+        consentGiven: r.consentGiven ?? true,
+        consentDate: r.consentDate ? r.consentDate.toISOString() : undefined,
+        hasOptedOut: r.hasOptedOut ?? false,
+        avatarUrl: r.avatarUrl || undefined,
+        lastClientInteractionAt: r.lastClientInteractionAt ? r.lastClientInteractionAt.toISOString() : undefined,
+        lastTeamInteractionAt: r.lastTeamInteractionAt ? r.lastTeamInteractionAt.toISOString() : undefined,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      }));
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha ao buscar contatos do banco:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Busca todas as oportunidades (deals) do funil no PostgreSQL
+   */
+  static async getAllDeals(tenantId: string): Promise<Deal[]> {
+    try {
+      const resolvedTenant = await this.resolveTenantId(tenantId);
+      if (!resolvedTenant) return [];
+
+      const rows = await db
+        .select()
+        .from(deals)
+        .where(eq(deals.tenantId, resolvedTenant))
+        .orderBy(desc(deals.updatedAt));
+
+      return rows.map(r => ({
+        id: r.id,
+        tenantId,
+        contactId: r.contactId,
+        pipelineId: r.pipelineId,
+        stageId: r.stageId,
+        assignedUserId: r.assignedUserId || '',
+        title: r.title,
+        expectedValue: r.expectedValue ? Number(r.expectedValue) : 0,
+        manualProbability: r.manualProbability || 50,
+        aiProbabilityScore: r.aiProbabilityScore || 60,
+        status: (r.status as any) || 'OPEN',
+        lossReason: r.lossReason || undefined,
+        propertyInterest: r.propertyInterest || undefined,
+        closedAt: r.closedAt ? r.closedAt.toISOString() : undefined,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      }));
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha ao buscar deals do banco:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Upsert de Oportunidade (Deal)
+   */
+  static async upsertDeal(tenantId: string, deal: Partial<Deal>) {
+    if (!deal || !deal.title) return null;
+    try {
+      const resolvedTenant = await this.resolveTenantId(tenantId);
+      if (!resolvedTenant) return null;
+
+      if (deal.id) {
+        const existing = await db
+          .select()
+          .from(deals)
+          .where(and(eq(deals.tenantId, resolvedTenant), eq(deals.id, deal.id)))
+          .limit(1);
+
+        if (existing.length > 0) {
+          const updated = await db
+            .update(deals)
+            .set({
+              title: deal.title || existing[0].title,
+              stageId: deal.stageId || existing[0].stageId,
+              expectedValue: deal.expectedValue !== undefined ? String(deal.expectedValue) : existing[0].expectedValue,
+              manualProbability: deal.manualProbability !== undefined ? deal.manualProbability : existing[0].manualProbability,
+              aiProbabilityScore: deal.aiProbabilityScore !== undefined ? deal.aiProbabilityScore : existing[0].aiProbabilityScore,
+              status: (deal.status as any) || existing[0].status,
+              lossReason: deal.lossReason !== undefined ? deal.lossReason : existing[0].lossReason,
+              propertyInterest: deal.propertyInterest !== undefined ? deal.propertyInterest : existing[0].propertyInterest,
+              updatedAt: new Date(),
+            })
+            .where(eq(deals.id, existing[0].id))
+            .returning();
+          return updated[0];
+        }
+      }
+
+      if (!deal.contactId || !deal.pipelineId || !deal.stageId) return null;
+      const created = await db
+        .insert(deals)
+        .values({
+          tenantId: resolvedTenant,
+          contactId: deal.contactId,
+          pipelineId: deal.pipelineId,
+          stageId: deal.stageId,
+          title: deal.title,
+          expectedValue: deal.expectedValue !== undefined ? String(deal.expectedValue) : '0.00',
+          manualProbability: deal.manualProbability || 50,
+          aiProbabilityScore: deal.aiProbabilityScore || 60,
+          status: (deal.status as any) || 'OPEN',
+          propertyInterest: deal.propertyInterest,
+        })
+        .returning();
+      return created[0];
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha no upsertDeal:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Busca pipelines e estágios do banco para o tenant
+   */
+  static async getAllPipelines(tenantId: string): Promise<Pipeline[]> {
+    try {
+      const resolvedTenant = await this.resolveTenantId(tenantId);
+      if (!resolvedTenant) return [];
+
+      const pipeRows = await db
+        .select()
+        .from(pipelines)
+        .where(eq(pipelines.tenantId, resolvedTenant))
+        .orderBy(asc(pipelines.createdAt));
+
+      if (pipeRows.length === 0) return [];
+
+      const stageRows = await db
+        .select()
+        .from(pipelineStages)
+        .orderBy(asc(pipelineStages.order));
+
+      const stagesByPipe = new Map<string, PipelineStage[]>();
+      for (const s of stageRows) {
+        if (!stagesByPipe.has(s.pipelineId)) {
+          stagesByPipe.set(s.pipelineId, []);
+        }
+        stagesByPipe.get(s.pipelineId)!.push({
+          id: s.id,
+          pipelineId: s.pipelineId,
+          name: s.name,
+          order: s.order,
+          slaHours: s.slaHours,
+          colorHex: s.colorHex,
+          isWon: s.isWon,
+          isLost: s.isLost,
+        });
+      }
+
+      return pipeRows.map(p => ({
+        id: p.id,
+        tenantId,
+        name: p.name,
+        isDefault: p.isDefault,
+        stages: stagesByPipe.get(p.id) || [],
+      }));
+    } catch (err) {
+      console.warn('[ContactsDBService] Falha ao buscar pipelines do banco:', err);
+      return [];
+    }
   }
 }

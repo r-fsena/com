@@ -24,6 +24,46 @@ export async function GET(req: NextRequest) {
     }
 
     const state = serverCRMStore.getScopedState(targetTenantId);
+
+    // Se o banco PostgreSQL estiver configurado, lê do banco como fonte primária
+    if (process.env.DATABASE_URL) {
+      try {
+        const { ContactsDBService } = await import('@/lib/db/contacts-service');
+        const [dbContacts, dbDeals] = await Promise.all([
+          ContactsDBService.getAllContacts(targetTenantId),
+          ContactsDBService.getAllDeals(targetTenantId),
+        ]);
+
+        if (dbContacts && dbContacts.length > 0) {
+          const contactMap = new Map<string, any>();
+          for (const c of (state.contacts || [])) {
+            if (c.phone) contactMap.set(c.phone.replace(/\D/g, ''), c);
+          }
+          for (const c of dbContacts) {
+            if (c.phone) {
+              const clean = c.phone.replace(/\D/g, '');
+              const existing = contactMap.get(clean);
+              contactMap.set(clean, { ...(existing || {}), ...c });
+            }
+          }
+          state.contacts = Array.from(contactMap.values());
+        }
+
+        if (dbDeals && dbDeals.length > 0) {
+          const dealMap = new Map<string, any>();
+          for (const d of (state.deals || [])) {
+            dealMap.set(d.id, d);
+          }
+          for (const d of dbDeals) {
+            dealMap.set(d.id, { ...(dealMap.get(d.id) || {}), ...d });
+          }
+          state.deals = Array.from(dealMap.values());
+        }
+      } catch (dbErr) {
+        console.warn('[GET /api/v1/crm/state] Aviso ao buscar do PostgreSQL:', dbErr);
+      }
+    }
+
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
     return NextResponse.json({
       success: true,
@@ -96,6 +136,21 @@ export async function POST(req: NextRequest) {
           await ContactsDBService.seedMessages(targetTenantId, payload.messages);
         } catch (dbErr) {
           console.warn('[ContactsDBService] Aviso ao sincronizar mensagens no banco:', dbErr);
+        }
+      }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
+    }
+
+    // Se houver oportunidades (deals) sendo atualizadas, persiste no PostgreSQL
+    if (process.env.DATABASE_URL && Array.isArray(payload.deals) && payload.deals.length > 0) {
+      import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
+        for (const d of payload.deals) {
+          if (d && d.title) {
+            try {
+              await ContactsDBService.upsertDeal(d.tenantId || targetTenantId, d);
+            } catch (dbErr) {
+              console.warn('[ContactsDBService] Aviso ao persistir deal no banco:', dbErr);
+            }
+          }
         }
       }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
     }

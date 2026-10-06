@@ -683,7 +683,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                   type="password"
                   value={instanceToken}
                   onChange={(e) => setInstanceToken(e.target.value)}
-                  placeholder="Ex: 7A18BD2BADA4840FB0374499"
+                  placeholder="Cole aqui o Instance Token da Z-API"
                   className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
                 />

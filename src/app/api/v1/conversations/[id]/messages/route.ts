@@ -7,12 +7,9 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { isLidIdentifier, cleanLid, arePhonesEquivalent } from '@/lib/whatsapp-filter';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 
 export const dynamic = 'force-dynamic';
-
-const DEFAULT_ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID || '3F8144490C66805B4E3FD64A35E2F2DC';
-const DEFAULT_ZAPI_INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5';
-const DEFAULT_ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || 'Fc78d61c833db4b50864816b70766aee8S';
 
 const SendMessageSchema = z.object({
   content: z.string().default(''),
@@ -28,6 +25,7 @@ const SendMessageSchema = z.object({
   instanceToken: z.string().optional(),
   clientToken: z.string().optional(),
   senderUserId: z.string().optional(),
+  tenantId: z.string().optional(),
 });
 
 export async function POST(
@@ -103,15 +101,16 @@ export async function POST(
       }, { status: 400 });
     }
 
-    let instanceId = validated.data.instanceId;
-    if (!instanceId || instanceId.startsWith('inst-') || instanceId.startsWith('INST-') || instanceId.length < 20) {
-      instanceId = process.env.ZAPI_INSTANCE_ID || DEFAULT_ZAPI_INSTANCE_ID;
-    }
-    let instanceToken = validated.data.instanceToken;
-    if (!instanceToken || instanceToken.length < 15) {
-      instanceToken = process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_ZAPI_INSTANCE_TOKEN;
-    }
-    let securityToken = validated.data.clientToken || process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || DEFAULT_ZAPI_CLIENT_TOKEN;
+    const effectiveTenantId = validated.data.tenantId || session?.tenantId || request.headers.get('x-tenant-id') || undefined;
+    const creds = await ZapiCredentialsService.resolveCredentials({
+      instanceId: validated.data.instanceId,
+      tenantId: effectiveTenantId,
+      token: validated.data.instanceToken,
+      clientToken: validated.data.clientToken,
+    });
+    const instanceId = creds.instanceId;
+    const instanceToken = creds.instanceToken;
+    const securityToken = creds.securityToken;
 
     let externalMessageId = `zapi-${Date.now()}`;
 

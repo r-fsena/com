@@ -5,10 +5,6 @@ import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 
 export const dynamic = 'force-dynamic';
 
-const DEFAULT_INSTANCE_ID = '3F8144490C66805B4E3FD64A35E2F2DC';
-const DEFAULT_INSTANCE_TOKEN = '550DBC07B2F984AB74E4BCE5';
-const DEFAULT_CLIENT_TOKEN = 'Fc78d61c833db4b50864816b70766aee8S';
-
 export async function GET(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN', 'MANAGER', 'BROKER'],

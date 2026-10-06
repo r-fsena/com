@@ -9,7 +9,7 @@ export async function processZapiWebhookRequest(
   routeParams?: { tenantId?: string; instanceId?: string }
 ) {
   // Validação Resiliente de Segurança do Webhook Z-API
-  const expectedToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || 'Fc78d61c833db4b50864816b70766aee8S';
+  const expectedToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
   const clientToken = request.headers.get('client-token') || request.headers.get('x-client-token') || request.nextUrl.searchParams.get('token');
 
   let body: any = null;
@@ -576,10 +576,15 @@ export async function processZapiWebhookRequest(
         setTimeout(async () => {
           try {
             const { ZApiClient } = await import('@/lib/zapi-client');
-            const zapi = new ZApiClient({
+            const { ZapiCredentialsService } = await import('@/lib/db/zapi-credentials-service');
+            const creds = await ZapiCredentialsService.resolveCredentials({
               instanceId,
-              instanceToken: process.env.ZAPI_INSTANCE_TOKEN || '550DBC07B2F984AB74E4BCE5',
-              securityToken: expectedToken,
+              tenantId,
+            });
+            const zapi = new ZApiClient({
+              instanceId: creds.instanceId,
+              instanceToken: creds.instanceToken,
+              securityToken: creds.securityToken,
             });
             const pic = await zapi.getProfilePicture(cleanPhone);
             if (pic.success && pic.data?.link) {

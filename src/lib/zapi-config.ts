@@ -42,13 +42,9 @@ export function resolveZapiCredentials(
     ? rawToken.trim()
     : (known?.token || process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_ZAPI_INSTANCE_TOKEN);
 
-  // Evita mismatch entre ID e Token caso o ambiente ou o cliente mande o token de outra instância
-  if (known && known.token && token !== known.token) {
-    if (token === '550DBC07B2F984AB74E4BCE5' && instanceId === '3F1B67FC8139425171C79ED390C0144C') {
-      token = known.token;
-    } else if (token === '7A18BD2BADA4840FB0374499' && instanceId === '3F8144490C66805B4E3FD64A35E2F2DC') {
-      token = known.token;
-    }
+  // Se a instância conhecida possui token configurado diretamente, priorize-o
+  if (known && known.token) {
+    token = known.token;
   }
 
   const clientToken = (rawClientToken && rawClientToken.trim() && rawClientToken !== 'undefined' && rawClientToken !== 'null')

@@ -8,6 +8,7 @@
 -- 1. Extensões Essenciais
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- 2. ENUMs do Domínio Imobiliário & Comercial
 DO $$ BEGIN

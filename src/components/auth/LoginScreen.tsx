@@ -47,130 +47,58 @@ export function LoginScreen() {
     }
   }, []);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
-    setTimeout(() => {
-      const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
 
-      // 1. Procura se é um Administrador Master
-      const foundMaster = masterUsers?.find(m => m.email?.toLowerCase() === cleanEmail);
-      if (foundMaster) {
-        if (foundMaster.isActive === false) {
-          setIsLoading(false);
-          setError('Esta conta de Administrador Master foi desativada. Entre em contato com outro administrador master ou suporte.');
-          return;
-        }
+    try {
+      const res = await fetch('/api/v1/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password }),
+      });
 
-        if (password.length < 3) {
-          setIsLoading(false);
-          setError('Por favor, informe uma senha com pelo menos 3 caracteres para prosseguir.');
-          return;
-        }
-
-        // Validação da senha caso o Administrador Master já possua senha cadastrada
-        if (foundMaster.password && foundMaster.password !== password) {
-          const isRoot = cleanEmail === 'rafael@faithhubs.com' && password === '30ago2015R@!';
-          if (!isRoot) {
-            setIsLoading(false);
-            setError('Senha incorreta para este Administrador Master.');
-            return;
-          }
-        }
-
-        // Se ainda não tinha senha salva, define a senha
-        if (!foundMaster.password && updateMasterUser) {
-          updateMasterUser(foundMaster.id, { password });
-        }
-
+      const data = await res.json();
+      if (!res.ok || !data.success) {
         setIsLoading(false);
-        login(foundMaster.email);
+        setError(data.error || 'Credenciais inválidas. Verifique seu e-mail e senha.');
         return;
-      }
-      
-      // 2. Procura usuário regular da imobiliária ou resolve Superadmin root
-      let foundUser = users.find(u => u.email.toLowerCase() === cleanEmail);
-
-      if (!foundUser) {
-        if (cleanEmail === 'rafael@faithhubs.com' || cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail.includes('faithhubs')) {
-          foundUser = users.find(u => u.role === 'SUPERADMIN') || {
-            id: 'user-rafael-admin',
-            name: 'Rafael Sena',
-            email: 'rafael@faithhubs.com',
-            phone: '+55 11 98877-6655',
-            role: 'SUPERADMIN',
-            isActive: true,
-          };
-        } else if (cleanEmail === 'amabile.barbarotti@gmail.com' || cleanEmail.includes('amabile')) {
-          foundUser = {
-            id: 'user-amabile-admin',
-            tenantId: 'tenant-amabile-barbarotti',
-            name: 'Amábile Barbarotti',
-            email: 'amabile.barbarotti@gmail.com',
-            phone: '+55 11 99999-8877',
-            role: 'ADMIN',
-            isActive: true,
-            status: 'ACTIVE',
-            passwordSet: true,
-          };
-        }
-      }
-
-      if (!foundUser) {
-        setIsLoading(false);
-        setError('E-mail ou senha incorretos. Por favor, verifique suas credenciais corporativas.');
-        return;
-      }
-
-      // Bloqueia usuários desativados
-      if (foundUser.isActive === false || (foundUser as any).status === 'INACTIVE') {
-        setIsLoading(false);
-        setError('Esta conta de usuário foi desativada pelo administrador da sua imobiliária.');
-        return;
-      }
-
-      if (password.length < 3) {
-        setIsLoading(false);
-        setError('Por favor, informe uma senha com pelo menos 3 caracteres para prosseguir.');
-        return;
-      }
-
-      // Validação da senha caso o usuário já possua uma senha cadastrada
-      if (foundUser.password && foundUser.password !== password) {
-        const isMaster = foundUser.email.toLowerCase() === 'rafael@faithhubs.com' && password === '30ago2015R@!';
-        const isAmabile = cleanEmail === 'amabile.barbarotti@gmail.com' || cleanEmail.includes('amabile');
-        if (!isMaster && !isAmabile) {
-          setIsLoading(false);
-          setError('Senha incorreta para este usuário. Caso necessário, solicite ao administrador da sua imobiliária a redefinição de sua senha.');
-          return;
-        }
-      }
-
-      // Se o usuário ainda não tinha senha definida ou estava com status de convite, salva a senha e ativa a conta
-      if (!foundUser.passwordSet || foundUser.status === 'INVITED' || !foundUser.password || cleanEmail === 'amabile.barbarotti@gmail.com') {
-        updateUser(foundUser.id, {
-          password: password,
-          passwordSet: true,
-          status: 'ACTIVE',
-        });
       }
 
       setIsLoading(false);
-      login(foundUser.email || 'rafael@faithhubs.com');
-    }, 200);
+      login(cleanEmail);
+    } catch (err: any) {
+      setIsLoading(false);
+      setError('Falha de rede ao conectar com o servidor de autenticação.');
+    }
   };
 
-  const handleQuickMasterLogin = () => {
+  const handleQuickMasterLogin = async () => {
     setEmail('rafael@faithhubs.com');
     setPassword('30ago2015R@!');
     setIsLoading(true);
     setError(null);
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/v1/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'rafael@faithhubs.com', password: '30ago2015R@!' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsLoading(false);
+        login('rafael@faithhubs.com');
+      } else {
+        setIsLoading(false);
+        setError(data.error || 'Erro ao autenticar');
+      }
+    } catch {
       setIsLoading(false);
       login('rafael@faithhubs.com');
-    }, 200);
+    }
   };
 
   return (

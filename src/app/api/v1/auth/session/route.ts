@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { MOCK_USERS } from '@/lib/mock-data';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { signSessionPayload, verifySessionToken } from '@/lib/api-auth';
+import { AuthService } from '@/lib/db/auth-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,9 +35,40 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { email, userId, role, tenantId, name } = body;
+    const { email, password, cognitoSub, userId, role, tenantId, name } = body;
 
     const userEmail = (email || 'rafael@faithhubs.com').toLowerCase().trim();
+
+    // Se senha ou cognitoSub forem passados, autentica no banco PostgreSQL / Cognito
+    if (password || cognitoSub) {
+      const authRes = await AuthService.authenticateUser(userEmail, password, cognitoSub, tenantId);
+      if (!authRes.success || !authRes.user || !authRes.sessionToken) {
+        return NextResponse.json({
+          success: false,
+          error: authRes.error || 'Falha na autenticação',
+        }, { status: 401 });
+      }
+
+      const res = NextResponse.json({
+        success: true,
+        message: 'Sessão autenticada com sucesso via HttpOnly Cookie assinado.',
+        user: authRes.user,
+      });
+
+      res.cookies.set({
+        name: COOKIE_NAME,
+        value: authRes.sessionToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 7, // 7 dias
+      });
+
+      return res;
+    }
+
+    // Fallback para sessões internas / impersonate
     const allUsers = serverCRMStore.getUsers();
     const foundUser = allUsers.find(u => u.email.toLowerCase() === userEmail || (userId && u.id === userId))
       || MOCK_USERS.find(u => u.email.toLowerCase() === userEmail || (userId && u.id === userId))

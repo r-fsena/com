@@ -35,7 +35,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Parâmetros inválidos. Informe o valor e o cliente.' }, { status: 400 });
     }
 
-    const asaasKey = apiKey || process.env.ASAAS_API_KEY || 'asaas_api_key_sandbox';
+    let asaasKey = process.env.ASAAS_API_KEY;
+
+    if (process.env.DATABASE_URL) {
+      try {
+        const { db } = await import('@/db');
+        const { tenants, platformSettings } = await import('@/db/schema');
+        const { eq } = await import('drizzle-orm');
+
+        const resolvedTenant = session?.tenantId || (body as any).tenantId;
+        if (resolvedTenant) {
+          const cleanSlug = resolvedTenant.replace(/^tenant-/, '');
+          const tRows = await db.select().from(tenants).where(eq(tenants.slug, cleanSlug)).limit(1);
+          if (tRows[0]?.asaasApiKey) {
+            asaasKey = tRows[0].asaasApiKey;
+          }
+        }
+
+        if (!asaasKey) {
+          const pRows = await db.select().from(platformSettings).where(eq(platformSettings.id, 'default')).limit(1);
+          if (pRows[0]?.asaasMasterApiKey) {
+            asaasKey = pRows[0].asaasMasterApiKey;
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Asaas] Falha ao consultar chave no banco:', dbErr);
+      }
+    }
+
+    if (!asaasKey) {
+      asaasKey = 'asaas_api_key_sandbox';
+    }
 
     // Se tiver chave real do Asaas e ambiente de produção configurado, pode chamar live API
     // Caso contrário, gera cobrança simulada idêntica à API do Asaas com QR Code PIX válido

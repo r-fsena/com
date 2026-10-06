@@ -64,12 +64,35 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Sanitização de segurança: remove senhas e hashes do estado enviado ao cliente
+    const safeState = { ...state };
+    if (safeState.users) {
+      safeState.users = safeState.users.map((u: any) => {
+        const safe = { ...u };
+        delete safe.password;
+        delete safe.passwordHash;
+        delete safe.salt;
+        delete safe.tempPassword;
+        return safe;
+      });
+    }
+
+    if ((safeState as any).saasApiConfig) {
+      const cfg = (safeState as any).saasApiConfig;
+      (safeState as any).saasApiConfig = {
+        ...cfg,
+        asaasMasterApiKey: cfg.asaasMasterApiKey ? '••••••••' : '',
+        openAiApiKey: cfg.openAiApiKey ? '••••••••' : '',
+        googleGeminiApiKey: cfg.googleGeminiApiKey ? '••••••••' : '',
+      };
+    }
+
     const deletedKeys = serverCRMStore.getDeletedChatKeys();
     return NextResponse.json({
       success: true,
       tenantId: targetTenantId,
       deletedKeys,
-      ...state,
+      ...safeState,
     });
   } catch (err: any) {
     return NextResponse.json({
@@ -153,6 +176,44 @@ export async function POST(req: NextRequest) {
           }
         }
       }).catch(err => console.warn('[ContactsDBService] Erro ao carregar serviço de banco:', err));
+    }
+
+    // Se houver configurações globais da plataforma (saasApiConfig), persiste no PostgreSQL
+    if (process.env.DATABASE_URL && payload.saasApiConfig) {
+      import('@/db').then(async ({ db }) => {
+        const { platformSettings } = await import('@/db/schema');
+        try {
+          const cfg = payload.saasApiConfig;
+          await db
+            .insert(platformSettings)
+            .values({
+              id: 'default',
+              asaasMasterApiKey: cfg.asaasMasterApiKey,
+              asaasMasterWalletId: cfg.asaasMasterWalletId,
+              asaasWebhookUrl: cfg.asaasWebhookUrl,
+              openAiApiKey: cfg.openAiApiKey,
+              googleGeminiApiKey: cfg.googleGeminiApiKey,
+              awsBedrockModel: cfg.awsBedrockModel,
+              awsBedrockRegion: cfg.awsBedrockRegion,
+              updatedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: platformSettings.id,
+              set: {
+                asaasMasterApiKey: cfg.asaasMasterApiKey,
+                asaasMasterWalletId: cfg.asaasMasterWalletId,
+                asaasWebhookUrl: cfg.asaasWebhookUrl,
+                openAiApiKey: cfg.openAiApiKey,
+                googleGeminiApiKey: cfg.googleGeminiApiKey,
+                awsBedrockModel: cfg.awsBedrockModel,
+                awsBedrockRegion: cfg.awsBedrockRegion,
+                updatedAt: new Date(),
+              }
+            });
+        } catch (dbErr) {
+          console.warn('[platformSettings] Falha ao persistir configurações da plataforma no banco:', dbErr);
+        }
+      }).catch(err => console.warn('[platformSettings] Erro ao carregar db:', err));
     }
 
     const scopedState = serverCRMStore.getScopedState(targetTenantId);

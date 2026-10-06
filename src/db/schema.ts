@@ -50,6 +50,22 @@ export const tenants = pgTable('tenants', {
     workDays: [1, 2, 3, 4, 5, 6]
   }),
   status: varchar('status', { length: 50 }).default('ACTIVE'),
+  asaasApiKey: varchar('asaas_api_key', { length: 255 }),
+  asaasWalletId: varchar('asaas_wallet_id', { length: 100 }),
+  aiConfig: jsonb('ai_config'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const platformSettings = pgTable('platform_settings', {
+  id: varchar('id', { length: 50 }).primaryKey().default('default'),
+  asaasMasterApiKey: varchar('asaas_master_api_key', { length: 255 }),
+  asaasMasterWalletId: varchar('asaas_master_wallet_id', { length: 100 }),
+  asaasWebhookUrl: text('asaas_webhook_url'),
+  openAiApiKey: varchar('open_ai_api_key', { length: 255 }),
+  googleGeminiApiKey: varchar('google_gemini_api_key', { length: 255 }),
+  awsBedrockModel: varchar('aws_bedrock_model', { length: 100 }).default('anthropic.claude-3-5-sonnet-20241022-v2:0'),
+  awsBedrockRegion: varchar('aws_bedrock_region', { length: 50 }).default('us-east-1'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -76,6 +92,10 @@ export const users = pgTable('users', {
   fullName: varchar('full_name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 30 }),
   avatarUrl: text('avatar_url'),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  salt: varchar('salt', { length: 64 }),
+  tempPasswordHash: varchar('temp_password_hash', { length: 255 }),
+  mustChangePassword: boolean('must_change_password').default(false),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

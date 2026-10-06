@@ -100,7 +100,7 @@ export const MOCK_TENANTS: Tenant[] = [
     monthlyFee: 890.00,
     maxBrokers: 15,
     maxInstances: 3,
-    asaasApiKey: 'asaas_secret_key_amabile_production',
+    asaasApiKey: '',
     featureFlags: { 
       ...DEFAULT_FEATURE_FLAGS,
       proposals: false,
@@ -465,10 +465,10 @@ export const MOCK_MASTER_USERS: MasterUser[] = [
 // 9. CONFIGURAÇÃO DE APIS GLOBAIS DO SAAS MASTER
 // -------------------------------------------------------------
 export const MOCK_SAAS_API_CONFIG: SaaSApiConfig = {
-  zapiMasterKey: 'zapi_integrator_key_master_faithhubs_live',
+  zapiMasterKey: '',
   zapiGlobalWebhook: 'https://crm.faithhubs.com/api/v1/webhooks/zapi',
-  asaasMasterApiKey: 'asaas_secret_key_master_faithhubs_production',
-  asaasMasterWalletId: 'wal_master_faithhubs_saas_01',
+  asaasMasterApiKey: '',
+  asaasMasterWalletId: '',
   asaasWebhookUrl: 'https://crm.faithhubs.com/api/v1/asaas/webhook',
   awsBedrockModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
   awsBedrockRegion: 'us-east-1',

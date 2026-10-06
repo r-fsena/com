@@ -99,13 +99,17 @@ async function migrate() {
       tenantSlug: 'ambiente-teste-rafael-sena',
       name: 'Instância Pessoal • Rafael Sena',
       phoneNumber: '+554888774408',
-      zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C'
+      zapiInstanceId: '3F1B67FC8139425171C79ED390C0144C',
+      zapiToken: '7A18BD2BADA4840FB0374499',
+      clientToken: 'Fc78d61c833db4b50864816b70766aee8S'
     },
     {
       tenantSlug: 'amabile-barbarotti',
       name: 'Central WhatsApp • Amábile Barbarotti',
       phoneNumber: '+554899797603',
-      zapiInstanceId: '3F8144490C66805B4E3FD64A35E2F2DC'
+      zapiInstanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
+      zapiToken: '550DBC07B2F984AB74E4BCE5',
+      clientToken: 'Fc78d61c833db4b50864816b70766aee8S'
     }
   ];
 
@@ -118,12 +122,17 @@ async function migrate() {
     `;
     if (existing.length === 0) {
       await sql`
-        INSERT INTO whatsapp_instances (tenant_id, name, phone_number, zapi_instance_id, zapi_token_secret_ref, status)
-        VALUES (${tId}, ${inst.name}, ${inst.phoneNumber}, ${inst.zapiInstanceId}, 'zapi-secret', 'CONNECTED')
+        INSERT INTO whatsapp_instances (tenant_id, name, phone_number, zapi_instance_id, zapi_token, client_token, zapi_token_secret_ref, status)
+        VALUES (${tId}, ${inst.name}, ${inst.phoneNumber}, ${inst.zapiInstanceId}, ${inst.zapiToken}, ${inst.clientToken}, 'zapi-secret', 'CONNECTED')
       `;
       console.log(`  Instância "${inst.name}" cadastrada.`);
     } else {
-      console.log(`  Instância "${inst.name}" já cadastrada.`);
+      await sql`
+        UPDATE whatsapp_instances 
+        SET zapi_token = ${inst.zapiToken}, client_token = ${inst.clientToken}
+        WHERE id = ${existing[0].id}
+      `;
+      console.log(`  Instância "${inst.name}" tokens sincronizados.`);
     }
   }
 

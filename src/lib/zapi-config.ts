@@ -1,7 +1,7 @@
 export interface ZapiInstanceCredentials {
   instanceId: string;
-  token: string;
-  clientToken: string;
+  token?: string;
+  clientToken?: string;
   name?: string;
   tenantId?: string;
   assignedUserId?: string;
@@ -11,8 +11,6 @@ export const KNOWN_ZAPI_INSTANCES: Record<string, ZapiInstanceCredentials> = {
   // Instância Individual - Rafael Sena (Master)
   '3F1B67FC8139425171C79ED390C0144C': {
     instanceId: '3F1B67FC8139425171C79ED390C0144C',
-    token: '7A18BD2BADA4840FB0374499',
-    clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
     name: 'WhatsApp Individual • Rafael Sena',
     tenantId: 'tenant-1790857269847',
     assignedUserId: 'user-rafael-admin',
@@ -20,16 +18,14 @@ export const KNOWN_ZAPI_INSTANCES: Record<string, ZapiInstanceCredentials> = {
   // Central WhatsApp - Amábile Barbarotti
   '3F8144490C66805B4E3FD64A35E2F2DC': {
     instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
-    token: '550DBC07B2F984AB74E4BCE5',
-    clientToken: 'Fc78d61c833db4b50864816b70766aee8S',
     name: 'Central WhatsApp • Amábile Barbarotti',
     tenantId: 'tenant-amabile-barbarotti',
   },
 };
 
 export const DEFAULT_ZAPI_INSTANCE_ID = '3F1B67FC8139425171C79ED390C0144C';
-export const DEFAULT_ZAPI_INSTANCE_TOKEN = '7A18BD2BADA4840FB0374499';
-export const DEFAULT_ZAPI_CLIENT_TOKEN = 'Fc78d61c833db4b50864816b70766aee8S';
+export const DEFAULT_ZAPI_INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN || '';
+export const DEFAULT_ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.ZAPI_WEBHOOK_SECRET || '';
 
 export function resolveZapiCredentials(
   rawInstanceId?: string | null,

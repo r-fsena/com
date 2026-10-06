@@ -3,6 +3,7 @@ import { validateApiSession } from '@/lib/api-auth';
 import { normalizePhoneNumber } from '@/lib/vcf-parser';
 import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,18 +13,31 @@ export async function POST(req: NextRequest) {
   });
   if (errorResponse) return errorResponse;
 
-  let instanceId = process.env.ZAPI_INSTANCE_ID || '';
-  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
-  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+  let rawInstanceId = '';
+  let rawToken = '';
+  let rawClientToken = '';
+  let targetTenant = req.headers.get('x-tenant-id');
   let historyDays = 0; // Padrão: 0 (Todo o histórico sem restrição de corte)
 
   try {
     const body = await req.json().catch(() => ({}));
-    if (body.instanceId) instanceId = body.instanceId;
-    if (body.token) instanceToken = body.token;
-    if (body.clientToken) securityToken = body.clientToken;
+    if (body.instanceId) rawInstanceId = body.instanceId;
+    if (body.tenantId) targetTenant = body.tenantId;
+    if (body.token) rawToken = body.token;
+    if (body.clientToken) rawClientToken = body.clientToken;
     if (body.historyDays !== undefined) historyDays = Number(body.historyDays);
   } catch {}
+
+  const creds = await ZapiCredentialsService.resolveCredentials({
+    instanceId: rawInstanceId,
+    tenantId: targetTenant,
+    token: rawToken,
+    clientToken: rawClientToken,
+  });
+
+  const instanceId = creds.instanceId;
+  const instanceToken = creds.instanceToken;
+  const securityToken = creds.securityToken;
 
   const cutoffMs = historyDays > 0 ? Date.now() - (historyDays * 24 * 60 * 60 * 1000) : 0;
 

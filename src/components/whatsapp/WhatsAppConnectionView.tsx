@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { KNOWN_ZAPI_INSTANCES, DEFAULT_ZAPI_INSTANCE_ID } from '@/lib/zapi-config';
+import { DEFAULT_ZAPI_INSTANCE_ID } from '@/lib/zapi-config';
 import { 
   Smartphone,
   QrCode,
@@ -123,14 +123,9 @@ export function WhatsAppConnectionView() {
     if (instId.startsWith('inst-') || instId.length < 20) {
       instId = DEFAULT_ZAPI_INSTANCE_ID;
     }
-    const known = KNOWN_ZAPI_INSTANCES[instId];
-    const tok = (activeInstance as any)?.token || known?.token || '7A18BD2BADA4840FB0374499';
-    const cTok = (activeInstance as any)?.clientToken || known?.clientToken || 'Fc78d61c833db4b50864816b70766aee8S';
 
     const params = new URLSearchParams();
     params.set('instanceId', instId);
-    params.set('token', tok);
-    params.set('clientToken', cTok);
     params.set('tenantId', currentTenant?.id || 'tenant-1790857269847');
     return params;
   };
@@ -383,8 +378,6 @@ export function WhatsAppConnectionView() {
 
     try {
       const instId = activeInstance?.zapiInstanceId || '';
-      const tok = (activeInstance as any)?.token || '';
-      const cTok = (activeInstance as any)?.clientToken || '';
 
       const res = await fetch('/api/v1/zapi/auto-configure', {
         method: 'POST',
@@ -397,8 +390,6 @@ export function WhatsAppConnectionView() {
         },
         body: JSON.stringify({
           instanceId: instId,
-          token: tok,
-          clientToken: cTok,
           tenantId: currentTenant.id,
         }),
       });
@@ -423,8 +414,6 @@ export function WhatsAppConnectionView() {
     setShowConfirmDisconnect(false);
     try {
       const instId = activeInstance?.zapiInstanceId || '';
-      const tok = (activeInstance as any)?.token || '';
-      const cTok = (activeInstance as any)?.clientToken || '';
 
       const res = await fetch('/api/v1/zapi/disconnect', {
         method: 'POST',
@@ -437,8 +426,7 @@ export function WhatsAppConnectionView() {
         },
         body: JSON.stringify({
           instanceId: instId,
-          token: tok,
-          clientToken: cTok,
+          tenantId: currentTenant.id,
         }),
       });
 

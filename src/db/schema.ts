@@ -103,6 +103,8 @@ export const whatsappInstances = pgTable('whatsapp_instances', {
   name: varchar('name', { length: 255 }).notNull(),
   phoneNumber: varchar('phone_number', { length: 30 }).notNull(),
   zapiInstanceId: varchar('zapi_instance_id', { length: 100 }).notNull(),
+  zapiToken: varchar('zapi_token', { length: 128 }),
+  clientToken: varchar('client_token', { length: 128 }),
   zapiTokenSecretRef: text('zapi_token_secret_ref').notNull(), // Referência ao AWS Secrets Manager
   status: instanceStatusEnum('status').default('DISCONNECTED').notNull(),
   batteryLevel: integer('battery_level'),

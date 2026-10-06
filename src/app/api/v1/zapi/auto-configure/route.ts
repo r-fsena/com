@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
 import { validateApiSession } from '@/lib/api-auth';
 
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
+
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
@@ -27,16 +29,20 @@ export async function POST(req: NextRequest) {
     const { instanceId, token, clientToken, tenantId } = body;
 
     const currentTenantId = tenantId || clientTenantHeader || session?.tenantId || 'tenant-amabile-barbarotti';
-    const currentInstanceId = instanceId || process.env.ZAPI_INSTANCE_ID || '';
-    const currentToken = token || process.env.ZAPI_INSTANCE_TOKEN || '';
-    const securityToken = clientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+
+    const creds = await ZapiCredentialsService.resolveCredentials({
+      instanceId,
+      tenantId: currentTenantId,
+      token,
+      clientToken,
+    });
 
     const webhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
     const client = new ZApiClient({
-      instanceId: currentInstanceId,
-      instanceToken: currentToken,
-      securityToken,
+      instanceId: creds.instanceId,
+      instanceToken: creds.instanceToken,
+      securityToken: creds.securityToken,
     });
 
     const result = await client.configureAllWebhooks(webhookUrl);

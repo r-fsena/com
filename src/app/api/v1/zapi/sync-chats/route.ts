@@ -4,6 +4,7 @@ import { serverCRMStore } from '@/lib/server-crm-store';
 import { validateApiSession } from '@/lib/api-auth';
 import { isWhatsAppChannelOrGroup, isRealWhatsAppConversation, isLidIdentifier, cleanLid } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +67,16 @@ async function handleSyncChats(req: NextRequest) {
     if (searchParams.get('assignedUserId')) assignedUserId = searchParams.get('assignedUserId')!;
     if (searchParams.get('historyDays')) historyDays = Number(searchParams.get('historyDays'));
   }
+
+  const creds = await ZapiCredentialsService.resolveCredentials({
+    instanceId,
+    tenantId,
+    token: instanceToken,
+    clientToken: securityToken,
+  });
+  instanceId = creds.instanceId;
+  instanceToken = creds.instanceToken;
+  securityToken = creds.securityToken;
 
   if (!instanceId || !instanceToken) {
     return NextResponse.json({

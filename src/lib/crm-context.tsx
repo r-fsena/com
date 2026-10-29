@@ -81,7 +81,7 @@ interface CRMContextType {
   // Autenticação & Sessão Cognito
   isAuthenticated: boolean;
   isAuthReady: boolean;
-  login: (email: string, role?: string) => void;
+  login: (email: string, role?: string) => Promise<void>;
   logout: () => void;
 
   // Gestão de Ambientes SaaS (SuperAdmin) & Tenant
@@ -504,22 +504,27 @@ export function isChatKeyDeleted(idOrPhone?: string | null, deletedSet?: Set<str
   return false;
 }
 
+async function fetchCRMState(url: string, options?: RequestInit) {
+  const headers = new Headers(options?.headers);
+  const selectedTenant = JSON.parse(localStorage.getItem('vanguard_crm_current_tenant') || '{}').id;
+  if (selectedTenant && !headers.has('x-tenant-id')) headers.set('x-tenant-id', selectedTenant);
+  options = { ...options, headers };
+  if (options?.method === 'POST' && typeof options.body === 'string') {
+    const tenantId = new Headers(options.headers).get('x-tenant-id') || JSON.parse(localStorage.getItem('vanguard_crm_current_tenant') || '{}').id;
+    const payload = JSON.parse(options.body);
+    for (const key of ['contacts', 'conversations', 'messages', 'deals', 'quickReplies']) {
+      if (Array.isArray(payload[key])) payload[key] = payload[key].filter((item: any) => item.tenantId === tenantId);
+    }
+    return fetch(url, { ...options, body: JSON.stringify(payload) });
+  }
+  return fetch(url, options);
+}
+
 const CRMContext = createContext<CRMContextType | undefined>(undefined);
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
   const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('vanguard_auth_session');
-        if (saved) {
-          const session = JSON.parse(saved);
-          return Boolean(session?.userEmail);
-        }
-      } catch {}
-    }
-    return false;
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [tenants, setTenants] = useState<Tenant[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -1068,7 +1073,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
       // Persistência central no servidor para todos os navegadores/dispositivos
       if (typeof window !== 'undefined') {
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ users: updated }),
@@ -1132,7 +1137,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const updated = [...prev, newUser];
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
       if (typeof window !== 'undefined') {
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ users: updated }),
@@ -1198,7 +1203,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       });
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
       if (typeof window !== 'undefined') {
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ users: updated }),
@@ -1299,7 +1304,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const updated = prev.filter(u => u.id !== userId);
       try { localStorage.setItem('vanguard_crm_users', JSON.stringify(updated)); } catch {}
       if (typeof window !== 'undefined') {
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ users: updated }),
@@ -1445,139 +1450,36 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // Checa se já existe sessão salva no navegador
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('vanguard_auth_session');
-      if (saved) {
-        const session = JSON.parse(saved);
-        if (session?.userEmail) {
-          const cleanEmail = session.userEmail.toLowerCase();
-          
-          // Verifica se é master user
-          const foundMaster = masterUsers.find(m => m.email?.toLowerCase() === cleanEmail);
-          if (foundMaster) {
-            if (foundMaster.isActive === false) {
-              localStorage.removeItem('vanguard_auth_session');
-              setIsAuthenticated(false);
-              return;
-            }
-            const masterAsUser: User = {
-              id: foundMaster.id,
-              name: foundMaster.name,
-              email: foundMaster.email,
-              phone: foundMaster.phone || '',
-              role: 'SUPERADMIN',
-              isActive: true,
-            };
-            setCurrentUser(masterAsUser);
-            setIsAuthenticated(true);
-            return;
-          }
-
-          const u = users.find(x => x.email.toLowerCase() === cleanEmail);
-          if (u) {
-            if (u.isActive === false || u.status === 'INACTIVE') {
-              localStorage.removeItem('vanguard_auth_session');
-              setIsAuthenticated(false);
-              return;
-            }
-            setCurrentUser(u);
-            // Renova o cookie assinado HttpOnly no servidor para requisições à API
-            fetch('/api/v1/auth/session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: u.email,
-                userId: u.id,
-                role: u.role,
-                tenantId: currentTenant.id,
-              }),
-            }).catch(() => {});
-          }
-          setIsAuthenticated(true);
-        } else {
-          setIsAuthenticated(false);
-        }
-      } else {
-        setIsAuthenticated(false);
-      }
-    } catch {
-      setIsAuthenticated(false);
-    } finally {
-      setIsAuthReady(true);
-    }
-  }, [users, masterUsers, currentTenant.id]);
-
-  const login = (email: string, role?: string) => {
-    let targetUser = currentUser;
-    const cleanEmail = email.trim().toLowerCase();
-
-    // 1. Verifica se é um usuário Master
-    const foundMaster = masterUsers.find(m => m.email?.toLowerCase() === cleanEmail);
-    if (foundMaster) {
-      if (foundMaster.isActive === false) {
-        throw new Error('Esta conta de Administrador Master foi desativada.');
-      }
-      const masterAsUser: User = {
-        id: foundMaster.id,
-        name: foundMaster.name,
-        email: foundMaster.email,
-        phone: foundMaster.phone || '',
-        role: 'SUPERADMIN',
-        isActive: true,
-      };
-      targetUser = masterAsUser;
-      setCurrentUser(masterAsUser);
-    } else {
-      // 2. Procura nos usuários regulares da imobiliária
-      const foundUser = users.find(u => u.email.toLowerCase() === cleanEmail) ||
-        (cleanEmail === 'rafael@faithhubs.com' || cleanEmail.includes('rafael') || cleanEmail.includes('admin') || cleanEmail === 'admin@faithhubs.com' || cleanEmail === 'superadmin@faithhubs.com'
-          ? (users.find(u => u.email.toLowerCase() === 'rafael@faithhubs.com') || users.find(u => u.role === 'SUPERADMIN') || MOCK_USERS[0])
-          : null);
-
-      if (foundUser) {
-        if (foundUser.isActive === false || foundUser.status === 'INACTIVE') {
-          throw new Error('Esta conta de usuário foi desativada pelo administrador.');
-        }
-        targetUser = foundUser;
-        setCurrentUser(foundUser);
-      } else if (role) {
-        const roleUser = users.find(u => u.role === role);
-        if (roleUser) {
-          if (roleUser.isActive === false || roleUser.status === 'INACTIVE') {
-            throw new Error('Esta conta de usuário foi desativada pelo administrador.');
-          }
-          targetUser = roleUser;
-          setCurrentUser(roleUser);
-        }
-      }
-    }
-
-    try {
-      localStorage.setItem('vanguard_auth_session', JSON.stringify({ userEmail: targetUser.email, userId: targetUser.id }));
-      localStorage.setItem('vanguard_crm_current_tab', 'dashboard');
-      
-      const isMasterLogin = typeof window !== 'undefined' && window.location.search.includes('action=master-login');
-      if (foundMaster || (isMasterLogin && targetUser.role === 'SUPERADMIN')) {
-        localStorage.setItem('faithhubs_view_mode', 'SAAS_MASTER');
-      } else {
-        localStorage.setItem('faithhubs_view_mode', 'TENANT_CRM');
-      }
-
-      // Sincroniza sessão no servidor com HttpOnly Cookie
-      fetch('/api/v1/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: targetUser.email,
-          userId: targetUser.id,
-          role: targetUser.role,
-          tenantId: currentTenant.id,
-        }),
-      }).catch(() => {});
-    } catch {}
+  const applyServerSession = (session: any) => {
+    const authenticatedUser: User = { id: session.userId, email: session.userEmail, name: session.userName,
+      phone: '', role: session.role, tenantId: session.tenantId, isActive: true };
+    setCurrentUser(authenticatedUser);
+    setUsers(prev => [...prev.filter(user => user.id !== authenticatedUser.id), authenticatedUser]);
+    setCurrentTenant(tenants.find(t => t.id === session.tenantId) || { ...currentTenant, id: session.tenantId,
+      slug: session.tenantId.replace(/^tenant-/, ''), name: session.tenantId.replace(/^tenant-/, '') });
+    localStorage.setItem('vanguard_auth_session', JSON.stringify({ userEmail: session.userEmail, userId: session.userId, tenantId: session.tenantId }));
     setIsAuthenticated(true);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/v1/auth/session', { credentials: 'include', cache: 'no-store' }).then(async response => {
+      const data = await response.json();
+      if (cancelled) return;
+      if (response.ok && data.authenticated) applyServerSession(data.user);
+      else { localStorage.removeItem('vanguard_auth_session'); setIsAuthenticated(false); }
+    }).catch(() => { if (!cancelled) setIsAuthenticated(false); })
+      .finally(() => { if (!cancelled) setIsAuthReady(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const login = async (_email: string, _role?: string) => {
+    const response = await fetch('/api/v1/auth/session', { credentials: 'include', cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok || !data.authenticated) throw new Error('Autenticação necessária. Informe e-mail e senha.');
+    applyServerSession(data.user);
+    localStorage.setItem('vanguard_crm_current_tab', 'dashboard');
+    localStorage.setItem('faithhubs_view_mode', data.user.isSuperAdmin ? 'SAAS_MASTER' : 'TENANT_CRM');
   };
 
   const logout = () => {
@@ -1644,44 +1546,22 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_DEALS;
   });
 
-  const [instances, setInstances] = useState<WhatsAppInstance[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('vanguard_crm_instances');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const list = parsed.map((inst: WhatsAppInstance) => {
-              const isAmabileInst = !inst.tenantId || inst.tenantId === 'tenant-amabile-barbarotti' || inst.tenantId.includes('amabile');
-              return {
-                ...inst,
-                tenantId: isAmabileInst ? 'tenant-amabile-barbarotti' : inst.tenantId,
-              };
-            });
-            for (const mockInst of MOCK_INSTANCES) {
-              const exists = list.some(i => i.id === mockInst.id || i.zapiInstanceId === mockInst.zapiInstanceId);
-              if (!exists) {
-                list.unshift(mockInst);
-              }
-            }
-            return list;
-          }
-        }
-      } catch {}
-    }
-    return MOCK_INSTANCES;
-  });
+  const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
+  useEffect(() => {
+    if (!isAuthenticated) { setInstances([]); return; }
+    let cancelled = false;
+    setInstances([]);
+    fetch('/api/v1/zapi/instances', { headers: { 'x-tenant-id': currentTenant.id }, cache: 'no-store' })
+      .then(response => response.json()).then(data => { if (!cancelled && data.success) setInstances(data.instances); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isAuthenticated, currentTenant.id]);
 
   const [activeInstanceId, setActiveInstanceId] = useState<string>(() => {
     return MOCK_INSTANCES[0]?.id || 'inst-rafael-individual';
   });
 
-  const [isZapiConnected, setIsZapiConnected] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('vanguard_crm_zapi_connected') === 'true';
-    }
-    return false;
-  });
+  const [isZapiConnected, setIsZapiConnected] = useState(false);
 
   const [zapiLiveDetails, setZapiLiveDetails] = useState<{
     connected: boolean;
@@ -1700,7 +1580,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       name: data.name || 'Nova Linha WhatsApp',
       phoneNumber: data.phoneNumber || 'Aguardando pareamento',
       zapiInstanceId: data.zapiInstanceId || `INST-${Date.now().toString(36).toUpperCase()}`,
-      status: data.status || 'CONNECTED',
+      status: 'DISCONNECTED',
       type: data.type || 'BROKER_DIRECT',
       assignedUserId: data.assignedUserId,
       batteryLevel: 100,
@@ -2126,7 +2006,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // 1. Busca estado inicial do servidor (persistência cross-device, outro navegador e aba anônima)
         let serverData: any = null;
         try {
-          const res = await fetch('/api/v1/crm/state', {
+          const res = await fetchCRMState('/api/v1/crm/state', {
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
@@ -2199,25 +2079,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const serverTenantContacts = Array.isArray(serverData?.contacts) ? serverData.contacts : [];
         const localTenantContacts = (Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []).filter(c => !c.tenantId || c.tenantId === currentTenant.id);
 
-        // Auto-reconciliação: Se estiver no Ambiente Teste Rafael Sena e não houver contatos desse tenant,
-        // mas existirem contatos locais sincronizados via WhatsApp Web salvos anteriormente:
-        if (currentTenant.id === 'tenant-1790857269847') {
-          const hasTenantWpp = localTenantContacts.some(c => c.source === 'WHATSAPP' || c.tags?.includes('WhatsApp Web Sincronizado'));
-          if (!hasTenantWpp) {
-            const orphanedWpp = otherTenantContacts.filter(c => c.source === 'WHATSAPP' || c.tags?.includes('WhatsApp Web Sincronizado'));
-            if (orphanedWpp.length > 0) {
-              console.log(`[CRM Context] Reconciliando ${orphanedWpp.length} contatos sincronizados via WhatsApp Web para o Ambiente Teste...`);
-              orphanedWpp.forEach(c => {
-                localTenantContacts.push({
-                  ...c,
-                  tenantId: 'tenant-1790857269847',
-                  assignedUserId: 'user-rafael-admin',
-                });
-              });
-            }
-          }
-        }
-
         const combinedContacts = [
           ...serverTenantContacts,
           ...localTenantContacts,
@@ -2235,27 +2096,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const otherTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => cv.tenantId && cv.tenantId !== currentTenant.id);
         const serverTenantConvs = Array.isArray(serverData?.conversations) ? serverData.conversations : [];
         const localTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => !cv.tenantId || cv.tenantId === currentTenant.id);
-
-        if (currentTenant.id === 'tenant-1790857269847') {
-          const activeContactIds = new Set(localTenantContacts.map(c => c.id));
-          const activePhones = new Set(localTenantContacts.map(c => c.phone?.replace(/\D/g, '')).filter(Boolean));
-          const orphanedConvs = otherTenantConvs.filter(cv => {
-            const digits = cv.id.replace(/\D/g, '') || cv.contactId.replace(/\D/g, '');
-            return activeContactIds.has(cv.contactId) || (digits && activePhones.has(digits));
-          });
-          if (orphanedConvs.length > 0) {
-            orphanedConvs.forEach(cv => {
-              if (!localTenantConvs.some(existing => existing.id === cv.id || existing.contactId === cv.contactId)) {
-                localTenantConvs.push({
-                  ...cv,
-                  tenantId: 'tenant-1790857269847',
-                  assignedUserId: 'user-rafael-admin',
-                  instanceId: '3F1B67FC8139425171C79ED390C0144C',
-                });
-              }
-            });
-          }
-        }
 
         const combinedConvs = [
           ...serverTenantConvs,
@@ -2276,12 +2116,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           ...(Array.isArray(serverData?.messages) ? serverData.messages : []),
           ...(Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : []),
         ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content))
-         .map(m => {
-           if (currentTenant.id === 'tenant-1790857269847' && activeConvIds.has(m.conversationId)) {
-             return { ...m, tenantId: 'tenant-1790857269847' };
-           }
-           return m;
-         });
+;
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
         setMessages(finalMsgs);
@@ -2330,7 +2165,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const serverNeedsSeeding = !serverData || !Array.isArray(serverData.conversations) || serverData.conversations.length < finalConvs.length;
         if (serverNeedsSeeding && finalConvs.length > 0) {
           console.log('[CRM Context] Semeando servidor com histórico consolidado para persistência cross-device...');
-          fetch('/api/v1/crm/state', {
+          fetchCRMState('/api/v1/crm/state', {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -2379,28 +2214,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         console.log('[Brokiva CRM] Mensagens sincronizadas recebidas da extensão:', event.data.data);
         const { messages: incomingMsgs, contacts: incomingContacts, conversations: incomingConvs } = event.data.data;
 
-        const effectiveTenantId = currentTenantRef.current?.id || 'tenant-1790857269847';
-        const effectiveUserId = currentUserRef.current?.id || 'user-rafael-admin';
-        const effectiveInstanceId = activeInstanceIdRef.current || '3F1B67FC8139425171C79ED390C0144C';
-
-        // Garante que contatos sincronizados pelo usuário pertençam ao tenant ativo
-        const sanitizedContacts = (incomingContacts || []).map((c: Contact) => ({
-          ...c,
-          tenantId: effectiveTenantId,
-          assignedUserId: c.assignedUserId || effectiveUserId,
-        }));
-
-        const sanitizedConvs = (incomingConvs || []).map((cv: Conversation) => ({
-          ...cv,
-          tenantId: effectiveTenantId,
-          assignedUserId: cv.assignedUserId || effectiveUserId,
-          instanceId: cv.instanceId || effectiveInstanceId,
-        }));
-
-        const sanitizedMsgs = (incomingMsgs || []).map((m: Message) => ({
-          ...m,
-          tenantId: effectiveTenantId,
-        }));
+        const effectiveTenantId = currentTenantRef.current?.id;
+        if (!effectiveTenantId || event.data.data.tenantId !== effectiveTenantId) return;
+        const sanitizedContacts = (incomingContacts || []).filter((c: Contact) => c.tenantId === effectiveTenantId);
+        const sanitizedConvs = (incomingConvs || []).filter((c: Conversation) => c.tenantId === effectiveTenantId);
+        const sanitizedMsgs = (incomingMsgs || []).filter((m: Message) => m.tenantId === effectiveTenantId);
 
         let updatedContactsList: Contact[] = [];
         if (sanitizedContacts.length > 0) {
@@ -2433,22 +2251,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // Persiste imediatamente no servidor central
-        fetch('/api/v1/crm/state', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-tenant-id': effectiveTenantId,
-            'x-user-id': effectiveUserId,
-            'x-user-email': currentUserRef.current?.email || 'rafael@faithhubs.com',
-          },
-          body: JSON.stringify({
-            contacts: sanitizedContacts,
-            conversations: sanitizedConvs,
-            messages: sanitizedMsgs,
-          }),
-        }).catch(() => {});
+
       }
     };
 
@@ -2537,7 +2340,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setQuickReplies(updated);
     try {
       localStorage.setItem('vanguard_crm_quick_replies', JSON.stringify(updated));
-      fetch('/api/v1/crm/state', {
+      fetchCRMState('/api/v1/crm/state', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -2641,7 +2444,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         try {
           localStorage.setItem('vanguard_crm_contacts', JSON.stringify(deduped));
-          fetch('/api/v1/crm/state', {
+          fetchCRMState('/api/v1/crm/state', {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -2683,7 +2486,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -2814,7 +2617,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       // Persistência imediata no servidor
       try {
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -2937,7 +2740,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     // Persistência unificada imediata no servidor (banco de dados + store do servidor)
     try {
-      fetch('/api/v1/crm/state', {
+      fetchCRMState('/api/v1/crm/state', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -2977,7 +2780,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contacts: updated }),
@@ -3003,7 +2806,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deals: updated }),
@@ -3028,7 +2831,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contacts: updated }),
@@ -3068,7 +2871,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contacts: updated }),
@@ -3126,7 +2929,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -3165,7 +2968,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -3205,7 +3008,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       });
       try {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -3265,7 +3068,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const updated = [newDeal, ...filtered];
       try {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -3287,7 +3090,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const updated = prev.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d);
       try {
         localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -3791,7 +3594,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       });
       try {
         localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -3876,7 +3679,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     // 1. Notifica o servidor para remoção do estado em memória
     try {
-      fetch('/api/v1/crm/state', {
+      fetchCRMState('/api/v1/crm/state', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId, phone: cleanPhone }),
@@ -4203,7 +4006,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
       try {
         localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetch('/api/v1/crm/state', {
+        fetchCRMState('/api/v1/crm/state', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contacts: updated }),
@@ -4431,6 +4234,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const [isSyncingWhatsApp, setIsSyncingWhatsApp] = useState(false);
   const [activeSyncJob, setActiveSyncJob] = useState<{
+
+
     id: string;
     status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
     progress: number;
@@ -4440,6 +4245,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     currentStepText: string;
     error?: string;
   } | null>(null);
+  useEffect(() => {
+    if (!isAuthenticated) { setActiveSyncJob(null); return; }
+    let cancelled = false;
+    fetch('/api/v1/zapi/background-sync', { headers: { 'x-tenant-id': currentTenant.id }, cache: 'no-store' })
+      .then(response => response.json()).then(data => { if (!cancelled && data.success) setActiveSyncJob(data.job); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isAuthenticated, currentTenant.id]);
 
   const startBackgroundSync = async (options?: { historyDays?: number; importMode?: 'CHATS' | 'PHONEBOOK' | 'ALL' }): Promise<string | null> => {
     try {
@@ -4476,7 +4288,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/v1/zapi/background-sync?jobId=${activeSyncJob.id}`);
+        const res = await fetch('/api/v1/zapi/background-sync', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: activeSyncJob.id }) });
         if (!res.ok) return;
         const data = await res.json();
         if (data.success && data.job) {
@@ -4644,7 +4456,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         // 4. Sincroniza Snapshot com a API de Estado do Servidor
         try {
-          fetch('/api/v1/crm/state', {
+          fetchCRMState('/api/v1/crm/state', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -4884,8 +4696,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   // Consulta e atualiza o status de conexão da Z-API em tempo real
   const refreshLiveZapiStatus = async (): Promise<boolean> => {
+    const selected = instances.find(i => i.tenantId === currentTenant.id && (i.id === activeInstanceId || i.zapiInstanceId === activeInstanceId)) || instances.find(i => i.tenantId === currentTenant.id);
     try {
-      const res = await fetch(`/api/v1/zapi/status?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}`, {
+      const res = await fetch(`/api/v1/zapi/status?tenantId=${encodeURIComponent(currentTenant.id)}${selected?.zapiInstanceId ? '&instanceId=' + encodeURIComponent(selected.zapiInstanceId) : ''}`, {
         credentials: 'include',
         headers: {
           'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
@@ -4894,6 +4707,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         }
       });
       const data = await res.json();
+      if (currentTenantRef.current.id !== currentTenant.id || activeInstanceIdRef.current !== activeInstanceId) return false;
       const connected = Boolean(data.success && data.connected);
       setIsZapiConnected(connected);
       if (typeof window !== 'undefined') {
@@ -4913,7 +4727,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         setInstances(prev => {
           const updated = prev.length > 0 
-            ? prev.map(i => ({
+            ? prev.map(i => (i.tenantId !== currentTenant.id || i.zapiInstanceId !== data.instanceId) ? i : ({
                 ...i,
                 status: 'CONNECTED' as const,
                 phoneNumber: data.phone || i.phoneNumber || '+55 (48) 9979-7603',
@@ -4944,7 +4758,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         });
 
         setInstances(prev => {
-          const updated = prev.map(i => ({
+          const updated = prev.map(i => (i.tenantId !== currentTenant.id || (data.instanceId && i.zapiInstanceId !== data.instanceId)) ? i : ({
             ...i,
             status: 'DISCONNECTED' as const,
             lastSyncAt: new Date().toISOString()
@@ -4956,12 +4770,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {
       setIsZapiConnected(false);
+      setZapiLiveDetails(null);
       return false;
     }
   };
 
   // Checa status de conexão da Z-API ao carregar e periodicamente a cada 15s (com respeito ao document.hidden)
   useEffect(() => {
+    setIsZapiConnected(false);
+    setZapiLiveDetails(null);
     let isMounted = true;
     const checkStatus = async () => {
       if (!isMounted) return;
@@ -4988,7 +4805,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         document.removeEventListener('visibilitychange', handleVisibility);
       }
     };
-  }, []);
+  }, [currentTenant.id, currentUser.id, activeInstanceId, instances.length]);
 
   // Polling inteligente e não-bloqueante de novos eventos do Webhook Z-API em tempo real com deduplicação rigorosa
   const lastPollTimeRef = useRef<number>(Date.now() - 120000);
@@ -5024,7 +4841,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           initialSyncDoneRef.current = true;
           let savedSync = 0;
           try {
-            savedSync = Number(localStorage.getItem('vanguard_crm_last_sync_timestamp') || '0');
+            savedSync = Number(localStorage.getItem(`vanguard_crm_last_sync_timestamp:${currentTenant.id}`) || '0');
           } catch {}
 
           if (savedSync > 0) {
@@ -5053,7 +4870,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         // Atualiza a marca de tempo de sincronismo bem-sucedido no localStorage
         try {
-          localStorage.setItem('vanguard_crm_last_sync_timestamp', String(Date.now()));
+          localStorage.setItem(`vanguard_crm_last_sync_timestamp:${currentTenant.id}`, String(data.serverTime));
         } catch {}
 
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
@@ -5312,7 +5129,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       try {
-        const stateRes = await fetch('/api/v1/crm/state', {
+        const stateRes = await fetchCRMState('/api/v1/crm/state', {
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
@@ -5687,15 +5504,15 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const isCurrentAmabile = currentTenant.id === 'tenant-amabile-barbarotti' || currentTenant.id.includes('amabile');
 
   const scopedContacts = useMemo(() => {
-    return contacts.filter(c => c.tenantId === currentTenant.id || (isCurrentAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile'))));
+    return contacts.filter(c => c.tenantId === currentTenant.id);
   }, [contacts, currentTenant.id, isCurrentAmabile]);
 
   const scopedConversations = useMemo(() => {
-    return conversations.filter(c => c.tenantId === currentTenant.id || (isCurrentAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile'))));
+    return conversations.filter(c => c.tenantId === currentTenant.id);
   }, [conversations, currentTenant.id, isCurrentAmabile]);
 
   const scopedInstances = useMemo(() => {
-    return instances.filter(i => i.tenantId === currentTenant.id || (isCurrentAmabile && (!i.tenantId || i.tenantId === 'tenant-vanguard-01' || i.tenantId.includes('amabile'))));
+    return instances.filter(i => i.tenantId === currentTenant.id);
   }, [instances, currentTenant.id, isCurrentAmabile]);
 
   const effectiveActiveInstanceId = useMemo(() => {
@@ -5713,19 +5530,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [scopedConversations, activeConversationId]);
 
   const scopedDeals = useMemo(() => {
-    return deals.filter(d => d.tenantId === currentTenant.id || (isCurrentAmabile && (!d.tenantId || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile'))));
+    return deals.filter(d => d.tenantId === currentTenant.id);
   }, [deals, currentTenant.id, isCurrentAmabile]);
 
   const scopedTasks = useMemo(() => {
-    return tasks.filter(t => t.tenantId === currentTenant.id || (isCurrentAmabile && (!t.tenantId || t.tenantId === 'tenant-vanguard-01' || t.tenantId.includes('amabile'))));
+    return tasks.filter(t => t.tenantId === currentTenant.id);
   }, [tasks, currentTenant.id, isCurrentAmabile]);
 
   const scopedProposals = useMemo(() => {
-    return proposals.filter(p => p.tenantId === currentTenant.id || (isCurrentAmabile && (!p.tenantId || p.tenantId === 'tenant-vanguard-01' || p.tenantId.includes('amabile'))));
+    return proposals.filter(p => p.tenantId === currentTenant.id);
   }, [proposals, currentTenant.id, isCurrentAmabile]);
 
   const scopedTransactions = useMemo(() => {
-    return transactions.filter(t => t.tenantId === currentTenant.id || (isCurrentAmabile && (!t.tenantId || t.tenantId === 'tenant-vanguard-01' || t.tenantId.includes('amabile'))));
+    return transactions.filter(t => t.tenantId === currentTenant.id);
   }, [transactions, currentTenant.id, isCurrentAmabile]);
 
   const scopedCampaigns = useMemo(() => {
@@ -5737,7 +5554,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [alerts, currentTenant.id]);
 
   const scopedQuickReplies = useMemo(() => {
-    return quickReplies.filter(q => !q.tenantId || q.tenantId === currentTenant.id || currentTenant.id.includes('amabile'));
+    return quickReplies.filter(q => q.tenantId === currentTenant.id);
   }, [quickReplies, currentTenant.id]);
 
   // Índices O(1) de alta performance para evitar travamentos de UI e buscas lineares repetidas
@@ -5745,12 +5562,13 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const map = new Map<string, Message>();
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
+      if (m.tenantId !== currentTenant.id) continue;
       if (!map.has(m.conversationId)) {
         map.set(m.conversationId, m);
       }
     }
     return map;
-  }, [messages]);
+  }, [messages, currentTenant.id]);
 
   const convByContactIdMap = useMemo(() => {
     const map = new Map<string, Conversation>();

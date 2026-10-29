@@ -34,12 +34,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [selectedInstId, setSelectedInstId] = useState<string>(instances[0]?.id || 'inst-amabile-central');
   const selectedInst = instances.find(i => i.id === selectedInstId) || instances[0];
 
-  const [isConnected, setIsConnected] = useState<boolean>(() => {
-    return Boolean(instances.some(i => i.status === 'CONNECTED'));
-  });
-  const [connectedPhone, setConnectedPhone] = useState<string>(() => {
-    return instances.find(i => i.status === 'CONNECTED')?.phoneNumber || '';
-  });
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectedPhone, setConnectedPhone] = useState('');
   const [countdown, setCountdown] = useState(25);
   const [batteryLevel] = useState(98);
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
@@ -49,8 +45,8 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const [instanceId, setInstanceId] = useState(
     instances[0]?.zapiInstanceId || ''
   );
-  const [instanceToken, setInstanceToken] = useState((instances[0] as any)?.token || '');
-  const [clientToken, setClientToken] = useState((instances[0] as any)?.clientToken || '');
+  const [instanceToken, setInstanceToken] = useState('');
+  const [clientToken, setClientToken] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [syncHistoryDays, setSyncHistoryDays] = useState<number>(0);
 
@@ -59,7 +55,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Função para buscar QR Code real da API
   const fetchLiveQrCode = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const id = instId || instanceId || '';
     const t = tok !== undefined ? tok : (instanceToken || '');
     const ct = cTok !== undefined ? cTok : (clientToken || '');
 
@@ -71,8 +67,6 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setQrError(null);
       const params = new URLSearchParams();
       if (id) params.set('instanceId', id);
-      if (t) params.set('token', t);
-      if (ct) params.set('clientToken', ct);
       params.set('tenantId', currentTenant?.id || 'tenant-amabile-barbarotti');
 
       const url = `/api/v1/zapi/qr-code?${params.toString()}`;
@@ -112,7 +106,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   // Função para checar status sem causar loops de re-render
   const checkStatusOnce = useCallback(async (instId?: string, tok?: string, cTok?: string) => {
-    const id = instId || instanceId || '3F8144490C66805B4E3FD64A35E2F2DC';
+    const id = instId || instanceId || '';
     const t = tok !== undefined ? tok : (instanceToken || '');
     const ct = cTok !== undefined ? cTok : (clientToken || '');
 
@@ -122,8 +116,6 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       isCheckingRef.current = true;
       const params = new URLSearchParams();
       if (id) params.set('instanceId', id);
-      if (t) params.set('token', t);
-      if (ct) params.set('clientToken', ct);
       params.set('tenantId', currentTenant?.id || 'tenant-amabile-barbarotti');
 
       const res = await fetch(`/api/v1/zapi/status?${params.toString()}`, {
@@ -135,6 +127,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         }
       });
       const data = await res.json();
+      if (!data.success || !data.connected) setIsConnected(false);
       if (data.success && data.connected) {
         setIsConnected(true);
         if (data.phone) setConnectedPhone(data.phone);
@@ -157,8 +150,6 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
           },
           body: JSON.stringify({
             instanceId: id,
-            token: t,
-            clientToken: ct,
             tenantId: currentTenant?.id || 'tenant-amabile-barbarotti',
           }),
         }).catch(() => {});
@@ -180,7 +171,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   useEffect(() => {
     if (isOpen) {
       const activeInst = instances.find(i => i.id === selectedInstId) || instances[0];
-      const isInstConnected = activeInst?.status === 'CONNECTED';
+      const isInstConnected = false;
       setIsConnected(Boolean(isInstConnected));
       if (activeInst?.phoneNumber) {
         setConnectedPhone(activeInst.phoneNumber);
@@ -225,48 +216,19 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
 
   if (!isOpen) return null;
 
-  const handleSimulatePairing = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      const simulatedPhone = '+55 11 9' + Math.floor(10000000 + Math.random() * 90000000);
-      const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
-      
-      if (currentInst) {
-        updateInstance(currentInst.id, {
-          status: 'CONNECTED',
-          phoneNumber: simulatedPhone,
-          lastSyncAt: new Date().toISOString()
-        });
-      } else {
-        createInstance({
-          name: `Central WhatsApp (${currentTenant.name})`,
-          phoneNumber: simulatedPhone,
-          zapiInstanceId: instanceId || '3F1B67FC8139425171C79ED390C0144C',
-          status: 'CONNECTED',
-          type: 'COMPANY_CENTRAL',
-          isDefault: true,
-        });
-      }
-
-      setIsConnected(true);
-      setConnectedPhone(simulatedPhone);
-      setIsLoading(false);
-    }, 400);
-  };
-
   const handleDisconnect = async () => {
     setIsLoading(true);
     try {
-      await fetch('/api/v1/zapi/disconnect', {
+      const disconnectResponse = await fetch('/api/v1/zapi/disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instanceId: instanceId.trim(),
-          token: instanceToken.trim(),
-          clientToken: clientToken.trim(),
         }),
       });
-    } catch {}
+      const result = await disconnectResponse.json();
+      if (!disconnectResponse.ok || !result.success) throw new Error(result.error || 'Falha ao desconectar.');
+    } catch (error: any) { setQrError(error.message); setIsLoading(false); return; }
 
     const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
     if (currentInst) {
@@ -286,6 +248,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
   const handleManualSync = async () => {
     setSyncSuccessMessage(null);
     const res = await syncWhatsAppChats(selectedInstId, syncHistoryDays);
+    if (!res.success) { setQrError('Sincronização não confirmada. Verifique a conexão e tente novamente.'); return; }
     setSyncSuccessMessage(`Conversas e contatos sincronizados com sucesso (${res.count} contatos nos últimos ${syncHistoryDays === 0 ? 'todos os' : `${syncHistoryDays}`} dias)!`);
     setTimeout(() => setSyncSuccessMessage(null), 4000);
   };
@@ -296,15 +259,15 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
     setSavedSuccess(false);
 
     try {
-      // Atualiza na instância do contexto
-      const currentInst = instances.find(i => i.id === selectedInstId) || instances[0];
-      if (currentInst) {
-        updateInstance(currentInst.id, {
-          zapiInstanceId: instanceId.trim(),
-          status: 'DISCONNECTED',
-          phoneNumber: '',
-        });
-      }
+      const saveResponse = await fetch('/api/v1/zapi/instances', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instanceId: instanceId.trim(), token: instanceToken.trim(),
+          clientToken: clientToken.trim(), tenantId: currentTenant.id, name: selectedInst?.name || 'WhatsApp Comercial' }) });
+      const saved = await saveResponse.json();
+      if (!saveResponse.ok || !saved.success) throw new Error(saved.error || 'Não foi possível salvar a conexão.');
+      if (instances.some(i => i.id === saved.instance.id)) updateInstance(saved.instance.id, saved.instance);
+      else createInstance(saved.instance);
+      setSelectedInstId(saved.instance.id);
+      setInstanceToken(''); setClientToken('');
 
       // Auto-configura os webhooks na Z-API automaticamente
       await fetch('/api/v1/zapi/auto-configure', {
@@ -312,8 +275,6 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instanceId: instanceId.trim(),
-          token: instanceToken.trim(),
-          clientToken: clientToken.trim(),
           tenantId: currentTenant.id,
         }),
       });
@@ -324,8 +285,9 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
       setQrCodeImage(null);
       setActiveTab('QR');
       fetchLiveQrCode(instanceId.trim(), instanceToken.trim(), clientToken.trim());
-    } catch {
-      setSavedSuccess(true);
+    } catch (error: any) {
+      setQrError(error.message || 'Não foi possível salvar a conexão.');
+      setSavedSuccess(false);
       setIsConnected(false);
       setActiveTab('QR');
       fetchLiveQrCode(instanceId.trim(), instanceToken.trim(), clientToken.trim());
@@ -628,24 +590,7 @@ export function ZapiQrCodeModal({ isOpen, onClose }: ZapiQrCodeModalProps) {
                         </div>
                       )}
 
-                      {/* Botão de Pareamento Imediato para Testes */}
-                      <button
-                        onClick={handleSimulatePairing}
-                        disabled={isLoading}
-                        className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 rounded-xl transition shadow-xs active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {isLoading ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Validando Conexão WhatsApp...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Simular Leitura (Modo Demonstração)</span>
-                          </>
-                        )}
-                      </button>
+
                     </div>
                   </div>
                 </div>

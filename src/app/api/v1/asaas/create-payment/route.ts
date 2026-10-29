@@ -1,94 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateApiSession } from '@/lib/api-auth';
+import { z } from 'zod';
+import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
+import { AsaasClient } from '@/lib/asaas-client';
+import { db } from '@/db';
+import { tenants } from '@/db/schema';
+import { eq, sql } from 'drizzle-orm';
 
+const schema = z.object({
+  customerName: z.string().min(2), customerCpfCnpj: z.string().transform(value => value.replace(/\D/g, '')).refine(value => [11, 14].includes(value.length)),
+  customerEmail: z.string().email().optional(), customerPhone: z.string().optional(),
+  value: z.number().positive().finite(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  description: z.string().optional(), billingType: z.enum(['PIX', 'BOLETO', 'CREDIT_CARD']).default('PIX'),
+  externalReference: z.string().min(8).max(100), tenantId: z.string().optional(),
+});
 export async function POST(req: NextRequest) {
-  // Rate Limiting (Máx 20 cobranças por minuto por IP)
-  const clientIp = getClientIp(req.headers);
-  const rateCheck = checkRateLimit(`asaas-payment:${clientIp}`, 20, 60);
-  if (!rateCheck.allowed) {
-    return NextResponse.json({
-      error: `Limite de operações excedido. Aguarde ${rateCheck.resetInSeconds} segundos.`,
-    }, { status: 429 });
-  }
-
-  const { session, errorResponse } = validateApiSession(req, {
-    requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER'],
-  });
+  const { session, errorResponse } = validateApiSession(req, { requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER'] });
   if (errorResponse) return errorResponse;
-
+  if (!checkRateLimit(`payment:${getClientIp(req.headers)}`, 20, 60).allowed) return NextResponse.json({ error: 'Aguarde para criar outra cobrança.' }, { status: 429 });
+  const parsed = schema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ success: false, error: 'Informe cliente, CPF/CNPJ, valor, vencimento e referência única da cobrança.', details: parsed.error.format() }, { status: 400 });
+  if (parsed.data.tenantId && parsed.data.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Imobiliária não autorizada.' }, { status: 403 });
   try {
-    const body = await req.json();
-    const { 
-      customerName, 
-      customerCpfCnpj, 
-      customerEmail, 
-      customerPhone, 
-      value, 
-      dueDate, 
-      description, 
-      billingType = 'PIX', // PIX, BOLETO, CREDIT_CARD
-      apiKey
-    } = body;
-
-    if (!value || !customerName) {
-      return NextResponse.json({ error: 'Parâmetros inválidos. Informe o valor e o cliente.' }, { status: 400 });
-    }
-
-    let asaasKey = process.env.ASAAS_API_KEY;
-
+    const tenantId = authorizedTenant(session!, parsed.data.tenantId || req.headers.get('x-tenant-id'));
+    let key = '';
     if (process.env.DATABASE_URL) {
-      try {
-        const { db } = await import('@/db');
-        const { tenants, platformSettings } = await import('@/db/schema');
-        const { eq } = await import('drizzle-orm');
-
-        const resolvedTenant = session?.tenantId || (body as any).tenantId;
-        if (resolvedTenant) {
-          const cleanSlug = resolvedTenant.replace(/^tenant-/, '');
-          const tRows = await db.select().from(tenants).where(eq(tenants.slug, cleanSlug)).limit(1);
-          if (tRows[0]?.asaasApiKey) {
-            asaasKey = tRows[0].asaasApiKey;
-          }
-        }
-
-        if (!asaasKey) {
-          const pRows = await db.select().from(platformSettings).where(eq(platformSettings.id, 'default')).limit(1);
-          if (pRows[0]?.asaasMasterApiKey) {
-            asaasKey = pRows[0].asaasMasterApiKey;
-          }
-        }
-      } catch (dbErr) {
-        console.warn('[Asaas] Falha ao consultar chave no banco:', dbErr);
-      }
-    }
-
-    if (!asaasKey) {
-      asaasKey = 'asaas_api_key_sandbox';
-    }
-
-    // Se tiver chave real do Asaas e ambiente de produção configurado, pode chamar live API
-    // Caso contrário, gera cobrança simulada idêntica à API do Asaas com QR Code PIX válido
-    const paymentId = `pay_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-    const invoiceUrl = `https://sandbox.asaas.com/i/${paymentId}`;
-    const pixQrCode = `00020126580014br.gov.bcb.pix0136${paymentId}5204000053039865409${Number(value).toFixed(2)}5802BR5920${encodeURIComponent(customerName.slice(0, 20))}6009Sao Paulo62070503***6304ABCD`;
-
-    return NextResponse.json({
-      success: true,
-      payment: {
-        id: paymentId,
-        customerName,
-        value: Number(value),
-        dueDate: dueDate || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        billingType,
-        status: 'PENDING',
-        invoiceUrl,
-        bankSlipUrl: billingType === 'BOLETO' ? `${invoiceUrl}/pdf` : undefined,
-        pixQrCode: billingType === 'PIX' ? pixQrCode : undefined,
-        pixPayload: billingType === 'PIX' ? pixQrCode : undefined,
-      }
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Erro ao processar cobrança Asaas' }, { status: 500 });
-  }
+      const [tenant] = await db.select({ apiKey: tenants.asaasApiKey }).from(tenants).where(eq(tenants.slug, tenantId.replace(/^tenant-/, ''))).limit(1);
+      key = tenant?.apiKey || '';
+    } else if (process.env.ASAAS_TENANT_ID === tenantId) key = process.env.ASAAS_API_KEY || '';
+    if (!key) return NextResponse.json({ success: false, error: 'Asaas não configurado para esta imobiliária.' }, { status: 503 });
+    const create = () => new AsaasClient(key).createPayment({ ...parsed.data, externalReference: `${tenantId}:${parsed.data.externalReference}` });
+    const payment = process.env.DATABASE_URL ? await db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${tenantId + ':asaas:' + parsed.data.externalReference}))`);
+      return create();
+    }) : await create();
+    return NextResponse.json({ success: true, environment: process.env.ASAAS_ENVIRONMENT || 'sandbox', payment });
+  } catch { return NextResponse.json({ success: false, error: 'Operação Asaas não confirmada. Consulte a referência antes de repetir a cobrança.' }, { status: 502 }); }
 }

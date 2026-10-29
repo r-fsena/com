@@ -390,3 +390,17 @@ export const auditLogs = pgTable('audit_logs', {
   tenantIdx: index('audit_logs_tenant_idx').on(table.tenantId),
   createdAtIdx: index('audit_logs_created_at_idx').on(table.tenantId, table.createdAt),
 }));
+
+// Estado operacional por imobiliária: confirmação HTTP somente após commit desta linha.
+export const crmTenantState = pgTable('crm_tenant_state', {
+  tenantKey: text('tenant_key').primaryKey(),
+  state: jsonb('state').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+export const crmSyncJobs = pgTable('crm_sync_jobs', {
+  id: text('id').primaryKey(),
+  tenantKey: text('tenant_key').notNull(),
+  payload: jsonb('payload').notNull(),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => ({ tenantIdx: index('crm_sync_jobs_tenant_idx').on(table.tenantKey) }));

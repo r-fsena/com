@@ -277,8 +277,8 @@ if (!global.__GLOBAL_DELETED_CHAT_KEYS__) {
   global.__GLOBAL_DELETED_CHAT_KEYS__ = new Set(DEFAULT_DELETED_CHAT_KEYS);
 }
 
-// Carrega imediatamente dados persistidos do disco
-loadStateFromDisk();
+// O JSON legado não participa da operação em produção.
+if (process.env.NODE_ENV !== 'production') loadStateFromDisk();
 
 
 export const serverCRMStore = {
@@ -557,49 +557,17 @@ export const serverCRMStore = {
       };
     }
 
-    const isAmabile = tenantId === 'tenant-amabile-barbarotti' || tenantId.includes('amabile');
-
-    const scopedContacts = rawState.contacts.filter(c => {
-      return c.tenantId === tenantId || (isAmabile && (!c.tenantId || c.tenantId === 'tenant-vanguard-01' || c.tenantId.includes('amabile')));
-    });
-
-    const scopedContactIds = new Set(scopedContacts.map(c => c.id));
-    const scopedPhones = new Set(scopedContacts.map(c => c.phone?.replace(/\D/g, '')).filter(Boolean));
-
-    const scopedConversations = rawState.conversations.filter(cv => {
-      if (cv.tenantId === tenantId || (isAmabile && (!cv.tenantId || cv.tenantId === 'tenant-vanguard-01' || cv.tenantId.includes('amabile')))) return true;
-      if (scopedContactIds.has(cv.contactId)) return true;
-      const digits = cv.id.replace(/\D/g, '');
-      if (digits && scopedPhones.has(digits)) return true;
-      return false;
-    });
-
-    const scopedConvIds = new Set(scopedConversations.map(cv => cv.id));
-
-    const scopedMessages = rawState.messages.filter(m => {
-      if (scopedConvIds.has(m.conversationId)) return true;
-      if (m.tenantId === tenantId || (isAmabile && (!m.tenantId || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile')))) return true;
-      return false;
-    });
-
-    const scopedDeals = rawState.deals.filter(d => {
-      return d.tenantId === tenantId || (isAmabile && (!d.tenantId || d.tenantId === 'tenant-vanguard-01' || d.tenantId.includes('amabile'))) || scopedContactIds.has(d.contactId);
-    });
-
-    const scopedQRs = (rawState.quickReplies || []).filter(q => {
-      return !q.tenantId || q.tenantId === tenantId || (isAmabile && (q.tenantId === 'tenant-vanguard-01' || q.tenantId.includes('amabile')));
-    });
-
-    const sanitizedUsers = (rawState.users || []).map(sanitizeUser);
-
+    const scopedContacts = rawState.contacts.filter(c => c.tenantId === tenantId);
+    const scopedConversations = rawState.conversations.filter(c => c.tenantId === tenantId);
+    const ids = new Set([...scopedContacts, ...scopedConversations].map(c => c.id));
     return {
       contacts: scopedContacts,
       conversations: scopedConversations,
-      messages: scopedMessages,
-      deals: scopedDeals,
-      aiInsights: rawState.aiInsights || {},
-      users: sanitizedUsers,
-      quickReplies: scopedQRs,
+      messages: rawState.messages.filter(m => m.tenantId === tenantId),
+      deals: rawState.deals.filter(d => d.tenantId === tenantId),
+      aiInsights: Object.fromEntries(Object.entries(rawState.aiInsights || {}).filter(([id]) => ids.has(id))),
+      users: (rawState.users || []).filter(u => u.tenantId === tenantId).map(sanitizeUser),
+      quickReplies: (rawState.quickReplies || []).filter(q => q.tenantId === tenantId),
     };
   },
 

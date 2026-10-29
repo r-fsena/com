@@ -13,14 +13,8 @@ export async function POST(req: NextRequest) {
 
   const clientTenantHeader = req.headers.get('x-tenant-id');
   const clientUserHeader = req.headers.get('x-user-id');
-  const isInternal = Boolean(
-    clientTenantHeader ||
-    clientUserHeader ||
-    req.headers.get('sec-fetch-site') === 'same-origin' ||
-    req.headers.get('referer')?.includes(req.nextUrl.host)
-  );
 
-  if (errorResponse && !isInternal) {
+  if (errorResponse) {
     return errorResponse;
   }
 
@@ -31,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const creds = await ZapiCredentialsService.resolveCredentials({
       instanceId,
-      tenantId: currentTenantId,
+      tenantId: session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId,
       token,
       clientToken,
     });
@@ -45,10 +39,10 @@ export async function POST(req: NextRequest) {
     const result = await client.disconnect();
 
     return NextResponse.json({
-      success: true,
-      message: 'Sessão Z-API desconectada com sucesso. Pronto para novo pareamento via QR Code.',
+      success: result.success,
+      message: result.success ? 'Sessão desconectada com sucesso.' : 'Não foi possível desconectar a sessão.',
       details: result,
-    });
+    }, { status: result.success ? 200 : 502 });
   } catch (error: any) {
     return NextResponse.json({
       success: false,

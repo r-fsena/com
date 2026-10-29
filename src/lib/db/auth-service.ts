@@ -63,54 +63,25 @@ export class AuthService {
         return { success: false, error: 'Esta conta de usuário foi desativada.' };
       }
 
-      // 2. Validação se autenticação for via Cognito
-      if (cognitoSub) {
-        if (dbUser.cognitoSub && dbUser.cognitoSub !== cognitoSub) {
-          return { success: false, error: 'Identificador Cognito inválido para este usuário.' };
-        }
-        if (!dbUser.cognitoSub) {
-          // Vincula o sub do Cognito ao usuário no banco
-          await db.update(users).set({ cognitoSub, updatedAt: new Date() }).where(eq(users.id, dbUser.id));
-        }
-      } else if (password) {
-        // Validação de senha no banco
-        if (dbUser.passwordHash && dbUser.salt) {
-          const isValid = this.verifyPassword(password, dbUser.passwordHash, dbUser.salt);
-          if (!isValid) {
-            // Suporte transitório para senha mestre root se configurada
-            const isMasterPass = (cleanEmail === 'rafael@faithhubs.com' && password === '30ago2015R@!') ||
-                                 (cleanEmail.includes('amabile') && password === '30ago2015R@!');
-            if (!isMasterPass) {
-              return { success: false, error: 'Senha incorreta para este usuário.' };
-            }
-          }
-        } else {
-          // Se o usuário ainda não tem hash salvo, salva na primeira autenticação bem sucedida
-          const newCreds = this.hashPassword(password);
-          await db
-            .update(users)
-            .set({ passwordHash: newCreds.hash, salt: newCreds.salt, updatedAt: new Date() })
-            .where(eq(users.id, dbUser.id));
-        }
-      } else {
-        return { success: false, error: 'Senha ou credencial Cognito não fornecida.' };
+      // Identificadores Cognito enviados pelo cliente não comprovam autenticação.
+      if (cognitoSub || !password || password.length > 1024 || !dbUser.passwordHash || !dbUser.salt ||
+          !this.verifyPassword(password, dbUser.passwordHash, dbUser.salt)) {
+        return { success: false, error: 'E-mail ou senha inválidos. Contas sem senha devem ser provisionadas pelo administrador.' };
       }
 
-      // 3. Busca vínculo de membership (permissão e tenant)
-      const memberRows = await db
-        .select({
-          role: memberships.role,
-          tenantId: memberships.tenantId,
-          tenantSlug: tenants.slug,
-        })
-        .from(memberships)
-        .leftJoin(tenants, eq(memberships.tenantId, tenants.id))
-        .where(eq(memberships.userId, dbUser.id))
-        .limit(1);
-
-      const membership = memberRows[0];
-      const role: UserRole = (membership?.role as UserRole) || (cleanEmail === 'rafael@faithhubs.com' ? 'SUPERADMIN' : 'BROKER');
-      const resolvedTenantSlug = membership?.tenantSlug ? `tenant-${membership.tenantSlug}` : (targetTenantId || 'tenant-amabile-barbarotti');
+      const memberRows = await db.select({ role: memberships.role, tenantId: tenants.id, tenantSlug: tenants.slug })
+        .from(memberships).innerJoin(tenants, eq(memberships.tenantId, tenants.id))
+        .where(and(eq(memberships.userId, dbUser.id), eq(memberships.isActive, true), eq(tenants.status, 'ACTIVE')));
+      const target = targetTenantId?.replace(/^tenant-/, '');
+      const membership = memberRows.find(m => !target || m.tenantId === targetTenantId || m.tenantSlug === target);
+      const globalAdmin = memberRows.find(m => m.role === 'SUPERADMIN');
+      let resolvedTenantSlug = membership ? `tenant-${membership.tenantSlug}` : '';
+      if (!membership && globalAdmin && target) {
+        const targetRows = await db.select().from(tenants).where(eq(tenants.slug, target)).limit(1);
+        if (targetRows[0]?.status === 'ACTIVE') resolvedTenantSlug = `tenant-${targetRows[0].slug}`;
+      }
+      if (!resolvedTenantSlug || (!membership && !globalAdmin)) return { success: false, error: 'Usuário sem vínculo ativo com a imobiliária.' };
+      const role: UserRole = globalAdmin ? 'SUPERADMIN' : membership!.role;
 
       // 4. Monta o payload de sessão seguro
       const sessionData: AuthenticatedSession = {
@@ -119,7 +90,7 @@ export class AuthService {
         userName: dbUser.fullName,
         role,
         tenantId: resolvedTenantSlug,
-        isSuperAdmin: role === 'SUPERADMIN' || role === 'ADMIN_MASTER',
+        isSuperAdmin: role === 'SUPERADMIN',
       };
 
       const sessionToken = signSessionPayload(sessionData);

@@ -1,6 +1,8 @@
 export interface SyncJob {
   id: string;
   tenantId: string;
+  instanceId?: string;
+  assignedUserId?: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
   progress: number; // 0 - 100
   pagesScanned: number;
@@ -21,52 +23,62 @@ export interface SyncJob {
   resultMessages?: any[];
 }
 
-declare global {
-  var __SYNC_JOBS__: Map<string, SyncJob> | undefined;
+// PostgreSQL é obrigatório em produção. O Map atende apenas desenvolvimento local.
+const localLeases = new Set<string>();
+const localJobs = new Map<string, SyncJob>();
+import { db } from '@/db';
+import { crmSyncJobs } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import crypto from 'crypto';
+function useDatabase() {
+  if (!process.env.DATABASE_URL && process.env.NODE_ENV === 'production') throw new Error('DATABASE_URL obrigatória para sincronização.');
+  return Boolean(process.env.DATABASE_URL);
 }
-
-if (!global.__SYNC_JOBS__) {
-  global.__SYNC_JOBS__ = new Map<string, SyncJob>();
-}
-
 export const syncJobStore = {
-  createJob(tenantId: string, options: { historyDays?: number; importMode?: 'CHATS' | 'PHONEBOOK' | 'ALL' } = {}): SyncJob {
-    const id = `job-sync-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  async createJob(tenantId: string, options: { historyDays?: number; importMode?: 'CHATS' | 'PHONEBOOK' | 'ALL'; instanceId?: string; assignedUserId?: string } = {}): Promise<SyncJob> {
     const job: SyncJob = {
-      id,
-      tenantId,
-      status: 'PENDING',
-      progress: 0,
-      pagesScanned: 0,
-      totalChatsFound: 0,
-      contactsImported: 0,
-      currentStepText: 'Iniciando conexão segura com a Z-API...',
-      historyDays: options.historyDays ?? 0,
-      importMode: options.importMode ?? 'CHATS',
-      startedAt: new Date().toISOString(),
+      id: `job-sync-${crypto.randomUUID()}`, tenantId, status: 'PENDING', progress: 0, pagesScanned: 0,
+      totalChatsFound: 0, contactsImported: 0, currentStepText: 'Aguardando sincronização...',
+      historyDays: options.historyDays ?? 0, importMode: options.importMode ?? 'CHATS', startedAt: new Date().toISOString(),
+      instanceId: options.instanceId, assignedUserId: options.assignedUserId,
     };
-    global.__SYNC_JOBS__!.set(id, job);
+    if (useDatabase()) await db.insert(crmSyncJobs).values({ id: job.id, tenantKey: tenantId, payload: job });
+    else localJobs.set(job.id, job);
     return job;
   },
-
-  getJob(id: string): SyncJob | null {
-    return global.__SYNC_JOBS__!.get(id) || null;
+  async getJob(id: string): Promise<SyncJob | null> {
+    if (!useDatabase()) return localJobs.get(id) || null;
+    const rows = await db.select().from(crmSyncJobs).where(eq(crmSyncJobs.id, id)).limit(1);
+    return rows[0] ? rows[0].payload as SyncJob : null;
   },
-
-  getActiveJobForTenant(tenantId: string): SyncJob | null {
-    for (const job of Array.from(global.__SYNC_JOBS__!.values())) {
-      if (job.tenantId === tenantId && (job.status === 'RUNNING' || job.status === 'PENDING')) {
-        return job;
-      }
+  async getActiveJobForTenant(tenantId: string): Promise<SyncJob | null> {
+    const jobs = useDatabase() ? (await db.select().from(crmSyncJobs).where(eq(crmSyncJobs.tenantKey, tenantId))).map(r => r.payload as SyncJob) : Array.from(localJobs.values());
+    return jobs.find(job => job.tenantId === tenantId && ['PENDING', 'RUNNING'].includes(job.status)) || null;
+  },
+  async updateJob(id: string, partial: Partial<SyncJob>): Promise<SyncJob | null> {
+    if (!useDatabase()) {
+      const job = localJobs.get(id); if (!job) return null;
+      const next = { ...job, ...partial }; localJobs.set(id, next); return next;
     }
-    return null;
+    return db.transaction(async tx => {
+      const [row] = await tx.select().from(crmSyncJobs).where(eq(crmSyncJobs.id, id)).for('update');
+      if (!row) return null;
+      const next = { ...(row.payload as SyncJob), ...partial };
+      await tx.update(crmSyncJobs).set({ payload: next, updatedAt: new Date(), ...(['COMPLETED', 'FAILED'].includes(next.status) ? { leaseUntil: null } : {}) }).where(eq(crmSyncJobs.id, id));
+      return next;
+    });
   },
-
-  updateJob(id: string, partial: Partial<SyncJob>): SyncJob | null {
-    const existing = global.__SYNC_JOBS__!.get(id);
-    if (!existing) return null;
-    const updated = { ...existing, ...partial };
-    global.__SYNC_JOBS__!.set(id, updated);
-    return updated;
+  async releaseJob(id: string) {
+    if (!useDatabase()) { localLeases.delete(id); return; }
+    await db.update(crmSyncJobs).set({ leaseUntil: null }).where(eq(crmSyncJobs.id, id));
+  },
+  async claimJob(id: string): Promise<boolean> {
+    if (!useDatabase()) { const job = localJobs.get(id); if (!job || localLeases.has(id) || ['COMPLETED', 'FAILED'].includes(job.status)) return false; localLeases.add(id); return true; }
+    return db.transaction(async tx => {
+      const [row] = await tx.select().from(crmSyncJobs).where(eq(crmSyncJobs.id, id)).for('update');
+      if (!row || ['COMPLETED', 'FAILED'].includes((row.payload as SyncJob).status) || (row.leaseUntil && row.leaseUntil.getTime() > Date.now())) return false;
+      await tx.update(crmSyncJobs).set({ leaseUntil: new Date(Date.now() + 120000) }).where(eq(crmSyncJobs.id, id));
+      return true;
+    });
   },
 };

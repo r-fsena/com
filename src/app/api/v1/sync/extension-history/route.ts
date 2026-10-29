@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { serverCRMStore } from '@/lib/server-crm-store';
@@ -5,8 +6,10 @@ import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, formatCanonicalPhone } from '@/lib/whatsapp-filter';
 import { recordExtensionLog } from '@/lib/cloudwatch-logger';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
-import { validateApiSession } from '@/lib/api-auth';
+import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
+
+import { readCRMState, writeCRMState } from '@/lib/crm-repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,10 +62,11 @@ const IngestChatSchema = z.object({
 });
 
 const BatchSyncSchema = z.object({
-  tenantId: z.string().default('tenant-amabile-barbarotti'),
+  tenantId: z.string().optional(),
   brokerUserId: z.string().optional(),
   brokerName: z.string().optional(),
-  chats: z.array(IngestChatSchema),
+  chats: z.array(IngestChatSchema).max(100),
+  instanceId: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -97,37 +101,13 @@ export async function POST(req: NextRequest) {
 
     const { tenantId, brokerUserId, brokerName, chats } = parsed.data;
 
-    // Resolução inteligente e ultra-resiliente de tenantId
-    const headerTenant = req.headers.get('x-tenant-id');
-    let effectiveTenantId = tenantId;
-    if (!effectiveTenantId || effectiveTenantId === 'default-tenant' || effectiveTenantId === 'tenant-amabile-barbarotti') {
-      if (headerTenant && headerTenant !== 'default-tenant' && headerTenant !== 'tenant-amabile-barbarotti') {
-        effectiveTenantId = headerTenant;
-      } else if (session?.tenantId && session.tenantId !== 'tenant-amabile-barbarotti') {
-        effectiveTenantId = session.tenantId;
-      } else if (brokerUserId === 'user-rafael-admin' || session?.userEmail === 'rafael@faithhubs.com') {
-        effectiveTenantId = 'tenant-1790857269847';
-      } else {
-        // Checa se algum chat pertence a um contato conhecido no tenant de Rafael
-        const rafaelContacts = serverCRMStore.getState().contacts.filter(c => c.tenantId === 'tenant-1790857269847');
-        const matchesRafael = chats.some(ch => {
-          const d = (ch.phone || '').replace(/\D/g, '');
-          return rafaelContacts.some(rc => arePhonesEquivalent(rc.phone, d) || (rc.name && ch.name && rc.name.toLowerCase() === ch.name.toLowerCase()));
-        });
-        if (matchesRafael) {
-          effectiveTenantId = 'tenant-1790857269847';
-        }
-      }
-    }
-
-    const effectiveBrokerUserId = brokerUserId || session?.userId || (effectiveTenantId === 'tenant-1790857269847' ? 'user-rafael-admin' : undefined);
-    const effectiveBrokerName = brokerName || session?.userName || (effectiveTenantId === 'tenant-1790857269847' ? 'Rafael Sena' : 'Corretor');
-
-    // Resolução dinâmica de instância WhatsApp correspondente
-    let targetInstanceId = '3F1B67FC8139425171C79ED390C0144C'; // Rafael Sena
-    if (effectiveTenantId === 'tenant-amabile-barbarotti') {
-      targetInstanceId = '3F8144490C66805B4E3FD64A35E2F2DC'; // Amábile Barbarotti
-    }
+    if (tenantId && tenantId !== session!.tenantId && !session!.isSuperAdmin) return jsonWithCors({ success: false, error: 'Imobiliária não autorizada.' }, { status: 403 });
+    const effectiveTenantId = authorizedTenant(session!, tenantId);
+    const effectiveBrokerUserId = session!.userId;
+    const effectiveBrokerName = session!.userName;
+    const currentState = await readCRMState(effectiveTenantId);
+    // A importação via WhatsApp Web não implica uma conexão Z-API existente.
+    const targetInstanceId = parsed.data.instanceId || `extension-${session!.userId}`;
 
     let importedContactsCount = 0;
     let importedMessagesCount = 0;
@@ -149,7 +129,7 @@ export async function POST(req: NextRequest) {
       // Tenta resolver para o telefone canônico caso seja um LID
       let cleanPhone = rawDigits;
       if (isInputLid) {
-        const resolvedFromStore = serverCRMStore.resolvePhoneFromLid(incomingLid || rawDigits);
+        const resolvedFromStore = currentState.contacts.find(c => c.lid === (incomingLid || rawDigits))?.phone?.replace(/\D/g, '');
         if (resolvedFromStore) {
           cleanPhone = resolvedFromStore;
         }
@@ -161,7 +141,7 @@ export async function POST(req: NextRequest) {
 
       // Localiza se já existe contato ou conversa prévia DENTRO DO MESMO TENANT (Isolamento Estrito)
       const cleanIncomingName = (chat.name || '').trim().toLowerCase();
-      const currentState = serverCRMStore.getState();
+
       const existingContact = currentState.contacts.find(c => {
         if (c.tenantId !== effectiveTenantId) return false;
 
@@ -275,7 +255,7 @@ export async function POST(req: NextRequest) {
             if (ms > 0) mTimestamp = new Date(ms).toISOString();
           }
 
-          const mId = m.id || `ext-msg-${cleanPhone}-${idx}-${mTimestamp}`;
+          const mId = m.id || `ext-msg-${crypto.createHash('sha256').update(JSON.stringify([conversationId, cleanContent, m.timestamp || '', m.fromMe, idx])).digest('hex').slice(0, 32)}`;
           const isFromMe = Boolean(m.fromMe);
           const batchDedupeKey = m.id || `${conversationId}-${cleanContent}-${mTimestamp.slice(0, 19)}-${isFromMe}`;
           if (seenInBatch.has(batchDedupeKey)) return;
@@ -310,29 +290,9 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Se nenhuma mensagem foi incluída no array, cria mensagem de interação
-      if (newMessages.filter(m => m.conversationId === conversationId).length === 0) {
-        const initialText = (lastMsgText && !isWhatsAppSystemMessage(lastMsgText))
-          ? lastMsgText
-          : `Conversa ativa no WhatsApp com ${contactName}`;
-
-        newMessages.push({
-          id: `ext-msg-initial-${cleanPhone}-${Date.now()}`,
-          tenantId: effectiveTenantId,
-          conversationId,
-          senderType: 'CONTACT',
-          senderName: contactName,
-          messageType: 'TEXT',
-          content: initialText,
-          status: 'DELIVERED',
-          isInternalNote: false,
-          timestamp: lastMsgTime,
-        });
-      }
-
       // 2. Contato: Garante separação estrita entre telefone e LID
       const isCleanPhoneLid = isLidIdentifier(cleanPhone);
-      const resolvedPhoneFromStore = isCleanPhoneLid ? serverCRMStore.resolvePhoneFromLid(cleanPhone) : null;
+      const resolvedPhoneFromStore = isCleanPhoneLid ? currentState.contacts.find(c => c.lid === cleanPhone)?.phone?.replace(/\D/g, '') : null;
       const resolvedPhone = existingContact?.phone && !isLidIdentifier(existingContact.phone)
         ? existingContact.phone
         : (resolvedPhoneFromStore ? `+${resolvedPhoneFromStore}` : `+${cleanPhone}`);
@@ -408,27 +368,8 @@ export async function POST(req: NextRequest) {
     }
 
 
-    // Atualiza estado do servidor centralizado
-    serverCRMStore.updateState({
-      contacts: newContacts,
-      conversations: newConversations,
-      messages: newMessages,
-    });
-
-    // Se houver DATABASE_URL (PostgreSQL), persiste os contatos ingeridos no banco em segundo plano
-    if (process.env.DATABASE_URL && newContacts.length > 0) {
-      import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
-        for (const c of newContacts) {
-          if (c && (c.phone || c.id)) {
-            try {
-              await ContactsDBService.upsertContact(effectiveTenantId, c);
-            } catch (err) {
-              console.warn('[ExtensionSync] Erro ao persistir contato no banco:', err);
-            }
-          }
-        }
-      }).catch(err => console.warn('[ExtensionSync] Erro ao carregar ContactsDBService:', err));
-    }
+    // O ACK só é devolvido depois de contatos, conversas e mensagens terem sido confirmados juntos.
+    await writeCRMState(effectiveTenantId, { contacts: newContacts, conversations: newConversations, messages: newMessages });
 
     // Registra log estruturado no CloudWatch
     await recordExtensionLog({
@@ -443,9 +384,10 @@ export async function POST(req: NextRequest) {
         chatsReceived: chats.length,
         contactsSample: newContacts.slice(0, 5).map(c => ({ name: c.name, phone: c.phone })),
       },
-    });
+    }).catch(() => {});
 
     return jsonWithCors({
+      tenantId: effectiveTenantId,
       success: true,
       message: `Sincronização concluída: ${importedContactsCount} contatos e ${importedMessagesCount} mensagens ingeridas com sucesso!`,
       contactsCount: importedContactsCount,

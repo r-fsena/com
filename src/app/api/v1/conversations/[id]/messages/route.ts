@@ -1,8 +1,10 @@
+import crypto from 'crypto';
+import { readCRMState, writeCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ZApiClient } from '@/lib/zapi-client';
 import { webhookStore } from '@/lib/webhook-store';
-import { validateApiSession } from '@/lib/api-auth';
+import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 import { serverCRMStore } from '@/lib/server-crm-store';
@@ -44,12 +46,8 @@ export async function POST(
   const { session, errorResponse } = validateApiSession(request, {
     requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN', 'MANAGER', 'BROKER'],
   });
-  const isSameOrigin = request.headers.get('sec-fetch-site') === 'same-origin' || 
-                       request.headers.get('sec-fetch-site') === 'same-site' ||
-                       (!!request.nextUrl.host && !!request.headers.get('referer')?.includes(request.nextUrl.host)) ||
-                       Boolean(request.headers.get('x-user-id') || request.headers.get('x-user-email'));
 
-  if (errorResponse && !isSameOrigin) return errorResponse;
+  if (errorResponse) return errorResponse;
 
   const conversationId = params.id;
 
@@ -66,16 +64,17 @@ export async function POST(
 
     const { content, messageType, mediaUrl, fileName, isInternalNote, idempotencyKey, senderUserId } = validated.data;
 
-    // Se for nota interna, grava internamente sem disparar para a Z-API
+    if (validated.data.tenantId && validated.data.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Imobiliária não autorizada.' }, { status: 403 });
+    const effectiveTenantId = authorizedTenant(session!, validated.data.tenantId || request.headers.get('x-tenant-id'));
+    const scopedState = await readCRMState(effectiveTenantId);
+    const ownedConversation = scopedState.conversations.find(c => c.id === conversationId);
+    if (!ownedConversation) return NextResponse.json({ error: 'Conversa não encontrada nesta imobiliária.' }, { status: 404 });
     if (isInternalNote) {
-      return NextResponse.json({
-        id: `msg-${Date.now()}`,
-        conversationId,
-        isInternalNote: true,
-        content,
-        status: 'SENT',
-        timestamp: new Date().toISOString(),
-      });
+      const note = { id: `note-${crypto.randomUUID()}`, tenantId: effectiveTenantId, conversationId,
+        senderType: 'USER' as const, senderName: session!.userName, messageType: 'TEXT' as const,
+        isInternalNote: true, content, status: 'SENT' as const, timestamp: new Date().toISOString() };
+      await writeCRMState(effectiveTenantId, { messages: [note] });
+      return NextResponse.json(note);
     }
 
     let targetPhone = validated.data.phone || validated.data.contactPhone;
@@ -85,7 +84,7 @@ export async function POST(
     }
 
     if (!targetPhone) {
-      const serverState = serverCRMStore.getState();
+      const serverState = scopedState;
       const conv = serverState.conversations.find(c => c.id === conversationId);
       const contact = serverState.contacts.find(c => c.id === conv?.contactId);
       if (contact?.phone) {
@@ -101,10 +100,9 @@ export async function POST(
       }, { status: 400 });
     }
 
-    const effectiveTenantId = validated.data.tenantId || session?.tenantId || request.headers.get('x-tenant-id') || undefined;
     const creds = await ZapiCredentialsService.resolveCredentials({
       instanceId: validated.data.instanceId,
-      tenantId: effectiveTenantId,
+      tenantId: session!.isSuperAdmin ? (request.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId,
       token: validated.data.instanceToken,
       clientToken: validated.data.clientToken,
     });
@@ -162,7 +160,7 @@ export async function POST(
       // Adiciona imediatamente ao webhookStore para reflexo instantâneo no polling do CRM
       webhookStore.addMessage({
         id: externalMessageId,
-        tenantId: session?.tenantId || request.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti',
+        tenantId: effectiveTenantId,
         instanceId,
         phone: cleanPhone,
         senderName: session?.userName || 'Corretor',
@@ -174,7 +172,7 @@ export async function POST(
       });
 
       // Registra mensagem enviada também no store para manter o histórico alinhado
-      const serverState = serverCRMStore.getState();
+      const serverState = scopedState;
       const existingConv = serverState.conversations.find(c => 
         c.id === conversationId || 
         c.id === `conv-zapi-${cleanPhone}` ||
@@ -188,10 +186,10 @@ export async function POST(
       const targetConvId = existingConv ? existingConv.id : (conversationId || `conv-zapi-${cleanPhone}`);
       const targetContactId = existingContact ? existingContact.id : (existingConv?.contactId || `contact-zapi-${cleanPhone}`);
 
-      serverCRMStore.updateState({
+      await writeCRMState(effectiveTenantId, {
         conversations: [{
           id: targetConvId,
-          tenantId: session?.tenantId || request.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti',
+          tenantId: effectiveTenantId,
           instanceId,
           contactId: targetContactId,
           status: 'PENDING_CLIENT',
@@ -203,7 +201,7 @@ export async function POST(
         }],
         messages: [{
           id: externalMessageId,
-          tenantId: session?.tenantId || request.headers.get('x-tenant-id') || 'tenant-amabile-barbarotti',
+          tenantId: effectiveTenantId,
           conversationId: targetConvId,
           senderType: 'USER',
           senderName: session?.userName || 'Corretor',

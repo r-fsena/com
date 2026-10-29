@@ -1,138 +1,81 @@
-/**
- * Brokiva CRM Bridge - Injeta mensagens sincronizadas da extensão diretamente na aba do CRM
- * e sincroniza catálogo de contatos com o background da extensão.
- */
+/** Pareamento explícito, renovação de sessão e notificações restritas à imobiliária de origem. */
+let pairing = false;
+let explicitPairing = new URLSearchParams(location.search).get('pairExtension') === '1';
+const clearKeys = ['extensionSessionToken', 'extensionSessionExpiresAt', 'brokerUserId', 'brokerName', 'brokerEmail', 'tenantId', 'tenantName', 'isPaired', 'brokivaCrmContacts', 'brokivaPendingCrmSync', 'brokiva_lid_phone_map'];
 
-function syncCrmContactsToStorage() {
+async function pairFromAuthenticatedCrm() {
+  if (pairing || document.visibilityState !== 'visible') return;
+  pairing = true;
   try {
-    const raw = localStorage.getItem('vanguard_crm_contacts');
-    if (raw) {
-      const contacts = JSON.parse(raw);
-      if (Array.isArray(contacts) && contacts.length > 0) {
-        chrome.storage.local.set({ brokivaCrmContacts: contacts });
-      }
+    const existing = await chrome.storage.local.get(['crmUrl', 'brokerUserId', 'tenantId', 'extensionSessionExpiresAt', 'isPaired']);
+    const sessionRes = await fetch('/api/v1/auth/session', { credentials: 'include', cache: 'no-store' });
+    if (sessionRes.status === 401) {
+      if (existing.crmUrl === location.origin) await chrome.storage.local.remove(clearKeys);
+      return;
     }
-  } catch (e) {}
+    if (!sessionRes.ok) return;
+    const { user } = await sessionRes.json();
+    let selectedTenant = user.tenantId;
+    if (user.isSuperAdmin) {
+      try { selectedTenant = JSON.parse(localStorage.getItem('vanguard_crm_current_tenant') || '{}').id || user.tenantId; } catch {}
+    }
+    const sameContext = existing.crmUrl === location.origin && existing.brokerUserId === user.userId && existing.tenantId === selectedTenant;
+    // Outra aba ou uma troca de tenant nunca altera silenciosamente o destino da extensão.
+    if (!sameContext && !explicitPairing) return;
+    if (!explicitPairing && !existing.isPaired) return;
+    if (sameContext && existing.extensionSessionExpiresAt > Date.now() / 1000 + 120) return;
+    const response = await fetch('/api/v1/auth/extension-login', { method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId: selectedTenant }) });
+    const data = await response.json();
+    if (!response.ok || !data.success) return;
+    await chrome.runtime.sendMessage({ action: 'PAIR_FROM_CRM', data: { token: data.token, expiresAt: data.expiresAt, user: data.user } });
+    if (explicitPairing) {
+      const url = new URL(location.href); url.searchParams.delete('pairExtension'); history.replaceState(null, '', url); explicitPairing = false;
+    }
+  } catch (error) { console.warn('[Brokiva] Não foi possível renovar o pareamento.', error.message); }
+  finally { pairing = false; }
 }
 
-// Sincroniza ao inicializar a página e periodicamente
-syncCrmContactsToStorage();
-setInterval(syncCrmContactsToStorage, 5000);
-
-// Pareamento Automático Dinâmico com a Sessão Ativa e Tenant Selecionado no CRM
-async function autoPairExtensionFromCrm() {
+async function activeContext() {
+  const response = await fetch('/api/v1/auth/session', { credentials: 'include', cache: 'no-store' });
+  if (!response.ok) return null;
+  const { user } = await response.json();
+  let tenantId = user.tenantId;
+  if (user.isSuperAdmin) { try { tenantId = JSON.parse(localStorage.getItem('vanguard_crm_current_tenant') || '{}').id || tenantId; } catch {} }
+  return { userId: user.userId, tenantId };
+}
+async function deliver(data) {
+  const context = await activeContext();
+  if (!context || data.tenantId !== context.tenantId) return;
+  window.postMessage({ type: 'BROKIVA_EXTENSION_SYNC', data }, location.origin);
+}
+let lastDelivered = 0;
+async function refresh() {
+  await pairFromAuthenticatedCrm();
+  const config = await chrome.storage.local.get(['crmUrl', 'tenantId', 'brokerUserId', 'isPaired', 'brokivaPendingCrmSync']);
+  if (config.crmUrl !== location.origin || !config.isPaired) return;
+  const context = await activeContext();
+  if (!context || context.tenantId !== config.tenantId || context.userId !== config.brokerUserId) return;
   try {
-    const sessionRaw = localStorage.getItem('vanguard_auth_session');
-    const tenantRaw = localStorage.getItem('vanguard_crm_current_tenant');
-    if (!sessionRaw) return;
-
-    const session = JSON.parse(sessionRaw);
-    const tenant = tenantRaw ? JSON.parse(tenantRaw) : null;
-    if (!session?.userEmail) return;
-
-    const currentTenantId = tenant?.id || (session.userEmail === 'rafael@faithhubs.com' ? 'tenant-1790857269847' : 'tenant-amabile-barbarotti');
-    const currentBrokerEmail = session.userEmail.toLowerCase().trim();
-
-    // Checa credenciais salvas na extensão
-    const existing = await chrome.storage.local.get(['extensionSessionToken', 'brokerEmail', 'tenantId', 'crmUrl']);
-
-    // Re-pareia se ainda não autenticada OU se o usuário mudou de tenant no CRM ou trocou de login
-    const needsRePair = !existing.extensionSessionToken ||
-                        existing.tenantId !== currentTenantId ||
-                        existing.brokerEmail !== currentBrokerEmail ||
-                        existing.crmUrl !== window.location.origin;
-
-    if (needsRePair) {
-      console.log('[Brokiva Extension Bridge] Sincronizando extensão com sessão/tenant ativo:', currentBrokerEmail, currentTenantId);
-      const res = await fetch('/api/v1/auth/extension-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: session.userEmail,
-          name: session.userEmail.split('@')[0],
-          tenantId: currentTenantId,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.token) {
-        await chrome.storage.local.set({
-          extensionSessionToken: data.token,
-          brokerUserId: data.user.userId,
-          brokerName: data.user.name,
-          brokerEmail: data.user.email,
-          tenantId: data.user.tenantId,
-          tenantName: data.user.tenantName,
-          crmUrl: window.location.origin,
-          isPaired: true,
-        });
-        console.log('[Brokiva Extension Bridge] ✓ Extensão pareada com sucesso para:', data.user.name, '| Tenant:', data.user.tenantId);
-      }
-    }
-  } catch (err) {
-    console.warn('[Brokiva Extension Bridge] Aviso no auto-pareamento:', err);
+    const contacts = JSON.parse(localStorage.getItem('vanguard_crm_contacts') || '[]');
+    await chrome.storage.local.set({ brokivaCrmContacts: contacts.filter(c => c.tenantId === context.tenantId) });
+  } catch {}
+  const pending = config.brokivaPendingCrmSync;
+  if (pending?.timestamp > lastDelivered && pending.tenantId === context.tenantId && Date.now() - pending.timestamp < 14400000) {
+    await deliver(pending); lastDelivered = pending.timestamp;
   }
 }
-
-autoPairExtensionFromCrm();
-setInterval(autoPairExtensionFromCrm, 4000);
-
-// Observa se há lote de sincronização pendente entregue pela extensão em segundo plano
-let lastDeliveredSyncTime = 0;
-async function checkPendingExtensionSync() {
-  try {
-    const data = await chrome.storage.local.get(['brokivaPendingCrmSync']);
-    const pending = data.brokivaPendingCrmSync;
-    if (pending && pending.timestamp && pending.timestamp > lastDeliveredSyncTime) {
-      // Se tiver sido concluída nas últimas 4 horas
-      if (Date.now() - pending.timestamp < 14400000) {
-        lastDeliveredSyncTime = pending.timestamp;
-        console.log('[Brokiva Extension Bridge] Entregando sincronização pendente para a tela do CRM:', {
-          contatos: pending.contacts?.length || 0,
-          conversas: pending.conversations?.length || 0,
-          mensagens: pending.messages?.length || 0,
-        });
-        window.postMessage({
-          type: 'BROKIVA_EXTENSION_SYNC',
-          data: pending
-        }, window.location.origin);
-      }
-    }
-  } catch (e) {}
-}
-
-checkPendingExtensionSync();
-setInterval(checkPendingExtensionSync, 3000);
-window.addEventListener('focus', checkPendingExtensionSync);
-
-// Observa alterações no localStorage pela aba do CRM
-window.addEventListener('storage', (e) => {
-  if (e.key === 'vanguard_crm_contacts') {
-    syncCrmContactsToStorage();
-  }
-  if (e.key === 'vanguard_auth_session' || e.key === 'vanguard_crm_current_tenant') {
-    autoPairExtensionFromCrm();
-  }
-});
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'BROKIVA_NEW_SYNCED_MESSAGES') {
-    console.log('[Brokiva Extension] Enviando mensagens sincronizadas para a página do CRM:', request.data);
-    window.postMessage({
-      type: 'BROKIVA_EXTENSION_SYNC',
-      data: request.data
-    }, window.location.origin);
-    sendResponse({ success: true });
-    return false;
+    deliver(request.data).then(() => sendResponse({ success: true })); return true;
   }
-
   if (request.action === 'GET_CRM_CONTACTS') {
-    try {
-      const raw = localStorage.getItem('vanguard_crm_contacts');
-      const contacts = raw ? JSON.parse(raw) : [];
-      sendResponse({ success: true, contacts });
-    } catch (err) {
-      sendResponse({ success: false, error: err.message, contacts: [] });
-    }
-    return false;
+    activeContext().then(context => {
+      const contacts = JSON.parse(localStorage.getItem('vanguard_crm_contacts') || '[]');
+      sendResponse({ success: true, contacts: contacts.filter(c => c.tenantId === context?.tenantId && c.tenantId === request.tenantId) });
+    }).catch(() => sendResponse({ success: false, contacts: [] })); return true;
   }
 });
+refresh().catch(() => {});
+setInterval(() => refresh().catch(() => {}), 30000);
+window.addEventListener('focus', () => refresh().catch(() => {}));

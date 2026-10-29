@@ -17,7 +17,7 @@ A **Extensão Brokiva** transforma o WhatsApp Web oficial (`web.whatsapp.com`) e
 4. No canto superior esquerdo, clique no botão **"Carregar sem compactação"** (*Load unpacked*).
 5. Selecione a pasta:
    ```text
-   /Users/rafaelsena/Desktop/Projetos-apps/CRM /chrome-extension
+   /Users/rafaelsena/Desktop/Projetos-apps/brokiva-chrome-extension
    ```
 6. Pronto! O ícone da **Brokiva** aparecerá na sua barra de extensões do Chrome.
 
@@ -45,3 +45,7 @@ Clique no ícone da extensão no Chrome para ajustar:
 * **URL do CRM:** `https://crm.faithhubs.com` (ou `http://localhost:3000` em desenvolvimento).
 * **ID da Imobiliária / Tenant:** `tenant-amabile-barbarotti` (ou o ID da sua imobiliária).
 * **Nome do Corretor:** seu nome para identificação no CRM.
+
+## Pareamento seguro (1.0.51)
+
+Clique em **Entrar e parear no CRM**, autentique-se com e-mail e senha e mantenha aberta a aba do CRM para renovar a sessão de 15 minutos. Para trocar de imobiliária, selecione o ambiente no CRM e refaça o pareamento explicitamente pelo popup. Trocar de aba não altera o destino da sincronização.

@@ -272,6 +272,9 @@
     return url.replace(/\/+$/, '');
   }
 
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.extensionSessionToken || changes.tenantId)) renderSidebarContent();
+  });
   // 1.1 Renderizador dinâmico de Login ou Ferramentas Ativas
   async function renderSidebarContent() {
     if (!chrome?.runtime?.id) return;
@@ -282,6 +285,7 @@
 
       const storage = await chrome.storage.local.get([
         'extensionSessionToken',
+        'extensionSessionExpiresAt',
         'brokerName',
         'brokerEmail',
         'tenantName',
@@ -292,7 +296,7 @@
 
       const isDeveloperMode = Boolean(storage.developerMode);
 
-    const isConnected = Boolean(storage.extensionSessionToken && storage.brokerName);
+    const isConnected = Boolean(storage.extensionSessionToken && storage.extensionSessionExpiresAt > Date.now() / 1000 && storage.brokerName);
     const crmUrl = storage.crmUrl || 'https://crm.faithhubs.com';
     const brokerName = storage.brokerName || 'Corretor';
     const tenantName = storage.tenantName || 'Amábile Barbarotti Imóveis';
@@ -317,7 +321,7 @@
         `;
         document.getElementById('sovereign-btn-logout-sidebar')?.addEventListener('click', async () => {
           if (confirm('Deseja desconectar a extensão Brokiva deste corretor?')) {
-            await chrome.storage.local.remove(['extensionSessionToken', 'brokerName', 'brokerUserId', 'brokerEmail']);
+            await chrome.runtime.sendMessage({ action: 'UNPAIR' });
             await renderSidebarContent();
           }
         });
@@ -423,106 +427,16 @@ ${isDeveloperMode ? `
       if (headerContainer) headerContainer.innerHTML = '';
       bodyContainer.innerHTML = `
         <div class="sovereign-login-card">
-          <div class="sovereign-login-badge">✦ Conexão Segura Brokiva</div>
-          <div class="sovereign-login-title">Identifique-se no CRM</div>
-          <div class="sovereign-login-desc">
-            Conecte sua conta de corretor para sincronizar leads e ativar a Brok.ia sem interrupções.
-          </div>
-
-          <div id="sovereign-sidebar-error" class="sovereign-login-error"></div>
-
-          <div class="sovereign-field">
-            <label class="sovereign-label">Imobiliária / Espaço:</label>
-            <select id="sovereign-sidebar-tenant" class="sovereign-select">
-              <option value="tenant-amabile-barbarotti" selected>Amábile Barbarotti Imóveis</option>
-            </select>
-          </div>
-
-          <div class="sovereign-field">
-            <label class="sovereign-label">Seu Nome ou E-mail:</label>
-            <input type="text" id="sovereign-sidebar-broker" class="sovereign-input" value="Rafael Sena" placeholder="Ex: Rafael Sena ou rafael@faithhubs.com">
-          </div>
-
-          <div class="sovereign-field">
-            <label class="sovereign-label">Servidor do CRM:</label>
-            <input type="text" id="sovereign-sidebar-crm-url" class="sovereign-input" value="${normalizeCrmUrl(crmUrl)}" placeholder="https://crm.faithhubs.com">
-          </div>
-
-          <button id="sovereign-sidebar-login-btn" class="sovereign-btn-login">
-            <span>✦ Conectar ao Brokiva CRM</span>
-          </button>
-        </div>
-      `;
-
-      // Busca catálogo de imobiliárias para o select através do background worker (isento de CORS)
-      safeSendMessage({ action: 'GET_TENANTS', data: { crmUrl: normalizeCrmUrl(crmUrl) } }, (resp) => {
-        const data = resp?.result;
-        const select = document.getElementById('sovereign-sidebar-tenant');
-        if (select && data && data.success && Array.isArray(data.tenants)) {
-          select.innerHTML = data.tenants.map(t => 
-            `<option value="${t.id}" ${t.id === (storage.tenantId || 'tenant-amabile-barbarotti') ? 'selected' : ''}>${t.name}</option>`
-          ).join('');
-        }
-      });
-
-      // Listener de login da sidebar
-      document.getElementById('sovereign-sidebar-login-btn')?.addEventListener('click', async () => {
-        const errorEl = document.getElementById('sovereign-sidebar-error');
-        const loginBtn = document.getElementById('sovereign-sidebar-login-btn');
-        const tenantSelect = document.getElementById('sovereign-sidebar-tenant');
-        const brokerInput = document.getElementById('sovereign-sidebar-broker');
-        const urlInput = document.getElementById('sovereign-sidebar-crm-url');
-
-        if (errorEl) errorEl.style.display = 'none';
-        const targetUrl = normalizeCrmUrl(urlInput?.value || crmUrl);
-        const tenantId = tenantSelect?.value || 'tenant-amabile-barbarotti';
-        const brokerVal = brokerInput?.value?.trim() || '';
-
-        if (!brokerVal) {
-          if (errorEl) {
-            errorEl.textContent = 'Informe seu nome ou e-mail de corretor.';
-            errorEl.style.display = 'block';
-          }
-          return;
-        }
-
-        if (loginBtn) {
-          loginBtn.disabled = true;
-          loginBtn.innerText = 'Conectando ao Brokiva...';
-        }
-
-        // Executa autenticação através do background worker para evitar bloqueio de CORS do WhatsApp Web
-        safeSendMessage({
-          action: 'EXTENSION_LOGIN',
-          data: { email: brokerVal, name: brokerVal, tenantId, crmUrl: targetUrl }
-        }, async (resp) => {
-          if (loginBtn) {
-            loginBtn.disabled = false;
-            loginBtn.innerText = '✦ Conectar ao Brokiva CRM';
-          }
-
-          const data = resp?.result;
-          if (resp && resp.success && data && data.success && data.token && data.user) {
-            await chrome.storage.local.set({
-              extensionSessionToken: data.token,
-              brokerUserId: data.user.userId,
-              brokerName: data.user.name,
-              brokerEmail: data.user.email,
-              tenantId: data.user.tenantId,
-              tenantName: data.user.tenantName,
-              crmUrl: targetUrl,
-              isPaired: true,
-            });
-            await renderSidebarContent();
-          } else {
-            if (errorEl) {
-              const err = data?.error || resp?.error || 'Falha na autenticação do corretor.';
-              errorEl.textContent = err;
-              errorEl.style.display = 'block';
-            }
-          }
+          <div class="sovereign-login-title">Conectar ao CRM</div>
+          <p class="sovereign-login-desc">Entre com e-mail e senha no CRM e pareie a extensão com a imobiliária desejada.</p>
+          <button id="sovereign-sidebar-login-btn" class="sovereign-btn-login">Entrar e parear no CRM</button>
+        </div>`;
+      document.getElementById('sovereign-sidebar-login-btn')?.addEventListener('click', () => {
+        safeSendMessage({ action: 'OPEN_CRM_PAIRING', data: { crmUrl } }, response => {
+          if (!response?.success) alert(response?.error || 'Não foi possível abrir o CRM.');
         });
       });
+
     }
   } catch (e) {}
 }
@@ -2674,96 +2588,12 @@ ${isDeveloperMode ? `
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
   // Despacho Resiliente de Sincronização: tenta worker e faz fallback autônomo via fetch() direto
   async function dispatchSyncBatchChats(chats) {
-    if (!chats || !Array.isArray(chats) || chats.length === 0) {
-      return { success: true, count: 0 };
-    }
-
-    // Tentativa 1: Via Background Service Worker se runtime estiver ativo
-    let canUseRuntime = false;
+    if (!Array.isArray(chats) || !chats.length) return { success: true, count: 0 };
     try {
-      canUseRuntime = Boolean(typeof chrome !== "undefined" && chrome?.runtime && chrome.runtime.id);
-    } catch (_) {
-      canUseRuntime = false;
-    }
-
-    if (canUseRuntime) {
-      try {
-        const bgRes = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({
-            action: "SYNC_BATCH_CHATS",
-            data: { chats }
-          }, (res) => {
-            if (chrome.runtime.lastError) {
-              resolve({ success: false, error: chrome.runtime.lastError.message });
-            } else {
-              resolve(res || { success: false, error: "Resposta vazia do worker" });
-            }
-          });
-        });
-        if (bgRes && bgRes.success) {
-          return bgRes;
-        }
-        console.log("[Brokiva] Worker desconectado ou sem resposta. Acionando fallback direto via fetch...", bgRes?.error);
-      } catch (err) {
-        console.log("[Brokiva] Falha ao contatar worker. Acionando fallback direto via fetch...", err?.message);
-      }
-    } else {
-      console.log("[Brokiva] Runtime desconectado (extensão recarregada). Usando envio direto via fetch para o CRM...");
-    }
-
-    // Tentativa 2: Fallback Direto e Robusto via Fetch para o CRM (sobrevive a reload de extensão sem precisar de F5)
-    try {
-      let crmUrl = "https://crm.faithhubs.com";
-      let tenantId = "tenant-1790857269847";
-      let brokerUserId = "user-rafael-admin";
-      let brokerName = "Rafael Sena";
-      let sessionToken = null;
-
-      try {
-        if (typeof chrome !== "undefined" && chrome?.storage?.local) {
-          const cfg = await chrome.storage.local.get(["crmUrl", "tenantId", "brokerUserId", "brokerName", "extensionSessionToken"]);
-          if (cfg?.crmUrl) crmUrl = cfg.crmUrl;
-          if (cfg?.tenantId) tenantId = cfg.tenantId;
-          if (cfg?.brokerUserId) brokerUserId = cfg.brokerUserId;
-          if (cfg?.brokerName) brokerName = cfg.brokerName;
-          if (cfg?.extensionSessionToken) sessionToken = cfg.extensionSessionToken;
-        }
-      } catch (_) {}
-
-      crmUrl = (crmUrl || "https://crm.faithhubs.com").replace(/\/+$/, "");
-      const endpoint = crmUrl + "/api/v1/sync/extension-history";
-
-      const headers = {
-        "Content-Type": "application/json",
-        "x-extension-token": "brokiva-ext-sync-secret-2026",
-      };
-      if (sessionToken) {
-        headers["Authorization"] = "Bearer " + sessionToken;
-      }
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        mode: "cors",
-        headers,
-        body: JSON.stringify({
-          tenantId,
-          brokerUserId,
-          brokerName,
-          chats,
-        }),
-      });
-
-      const resText = await response.text();
-      let resJson = {};
-      try { resJson = JSON.parse(resText); } catch (_) {}
-
-      if (response.ok && resJson.success) {
-        return { success: true, count: resJson.count || chats.length };
-      } else {
-        return { success: false, error: resJson.error || ("HTTP " + response.status + ": " + resText.slice(0, 100)) };
-      }
-    } catch (netErr) {
-      return { success: false, error: "Falha de conexão com o CRM: " + (netErr?.message || netErr) };
+      const config = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']);
+      return await chrome.runtime.sendMessage({ action: 'SYNC_BATCH_CHATS', data: { chats, context: config } });
+    } catch (error) {
+      return { success: false, error: 'Não foi possível contatar a extensão. Recarregue o WhatsApp Web e entre novamente no CRM.' };
     }
   }
 

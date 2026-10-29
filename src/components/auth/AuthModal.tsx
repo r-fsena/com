@@ -21,7 +21,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
-  const { currentUser, setCurrentUser, users, currentTenant, setCurrentTenant, tenants } = useCRM();
+  const { login, currentUser, setCurrentUser, users, currentTenant, setCurrentTenant, tenants } = useCRM();
 
   const [mode, setMode] = useState<'LOGIN' | 'FORGOT_PASSWORD' | 'REGISTER_TENANT'>('LOGIN');
   const [email, setEmail] = useState(currentUser.email);
@@ -36,11 +36,15 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase()) || users[0];
-    setCurrentUser(foundUser);
-    onClose();
+    try {
+      const response = await fetch('/api/v1/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+      const data = await response.json();
+      if (!response.ok || !data.success) { window.alert(data.error || 'Credenciais inválidas.'); return; }
+      await login(email);
+      onClose();
+    } catch { window.alert('Não foi possível autenticar. Tente novamente.'); }
   };
 
   const handleRegisterTenant = (e: React.FormEvent) => {

@@ -1,3 +1,5 @@
+import { writeCRMState, readCRMState } from '@/lib/crm-repository';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
@@ -17,24 +19,15 @@ export async function POST(req: NextRequest) {
   const referer = req.headers.get('referer');
   const host = req.headers.get('host');
 
-  const isInternal = Boolean(
-    session ||
-    clientTenantHeader ||
-    clientUserHeader ||
-    secFetchSite === 'same-origin' ||
-    secFetchSite === 'same-site' ||
-    (referer && host && referer.includes(host)) ||
-    process.env.NODE_ENV !== 'production'
-  );
 
-  if (errorResponse && !isInternal) return errorResponse;
+  if (errorResponse) return errorResponse;
 
   try {
     const body = await req.json();
     const { 
       phone, 
       conversationId, 
-      tenantId = session?.tenantId || 'tenant-amabile-barbarotti',
+
       historyDays = 15,
       page = 1,
       pageSize = 40,
@@ -48,9 +41,9 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanPhone = phone.replace(/\D/g, '');
-    const instanceId = reqInstId || process.env.ZAPI_INSTANCE_ID || '';
-    const instanceToken = reqToken || process.env.ZAPI_INSTANCE_TOKEN || '';
-    const securityToken = reqClientToken || process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+    if (body.tenantId && body.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Imobiliária não autorizada.' }, { status: 403 });
+    const tenantId = session!.isSuperAdmin ? (body.tenantId || req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId;
+    const { instanceId, instanceToken, securityToken } = await ZapiCredentialsService.resolveCredentials({ instanceId: reqInstId, tenantId });
 
     const cutoffMs = historyDays > 0 ? Date.now() - (Number(historyDays) * 24 * 60 * 60 * 1000) : 0;
 
@@ -108,7 +101,7 @@ export async function POST(req: NextRequest) {
 
     // Se a Z-API Multi-Device não retorna histórico remoto antigo do aparelho, recupera apenas mensagens reais gravadas
     if (formattedMessages.length === 0) {
-      const serverState = serverCRMStore.getState();
+      const serverState = await readCRMState(tenantId);
       const storedMsgs = serverState.messages.filter(m => 
         (m.conversationId === (conversationId || `conv-zapi-${cleanPhone}`) ||
         (m as any).phone === cleanPhone) && !isWhatsAppSystemMessage(m.content)
@@ -119,6 +112,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await writeCRMState(tenantId, { messages: formattedMessages });
     return NextResponse.json({
       success: true,
       count: formattedMessages.length,

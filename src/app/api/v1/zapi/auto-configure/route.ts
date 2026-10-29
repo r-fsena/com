@@ -1,6 +1,7 @@
+import { buildZapiWebhookUrl } from '@/lib/zapi-webhook-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
-import { validateApiSession } from '@/lib/api-auth';
+import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 
@@ -13,14 +14,8 @@ export async function POST(req: NextRequest) {
 
   const clientTenantHeader = req.headers.get('x-tenant-id');
   const clientUserHeader = req.headers.get('x-user-id');
-  const isInternal = Boolean(
-    clientTenantHeader ||
-    clientUserHeader ||
-    req.headers.get('sec-fetch-site') === 'same-origin' ||
-    req.headers.get('referer')?.includes(req.nextUrl.host)
-  );
 
-  if (errorResponse && !isInternal) {
+  if (errorResponse) {
     return errorResponse;
   }
 
@@ -28,7 +23,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { instanceId, token, clientToken, tenantId } = body;
 
-    const currentTenantId = tenantId || clientTenantHeader || session?.tenantId || 'tenant-amabile-barbarotti';
+    const currentTenantId = authorizedTenant(session!, tenantId || clientTenantHeader);
 
     const creds = await ZapiCredentialsService.resolveCredentials({
       instanceId,
@@ -37,7 +32,7 @@ export async function POST(req: NextRequest) {
       clientToken,
     });
 
-    const webhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
+    const webhookUrl = buildZapiWebhookUrl(creds.instanceId, currentTenantId!);
 
     const client = new ZApiClient({
       instanceId: creds.instanceId,
@@ -48,11 +43,11 @@ export async function POST(req: NextRequest) {
     const result = await client.configureAllWebhooks(webhookUrl);
 
     return NextResponse.json({
-      success: true,
-      message: 'Webhooks da Z-API configurados automaticamente com sucesso!',
-      webhookUrl,
+      success: result.success,
+      message: result.success ? 'Webhooks da Z-API configurados automaticamente com sucesso!' : 'Configuração de webhooks incompleta.',
+      webhookUrl: webhookUrl.split('?')[0],
       result,
-    });
+    }, { status: result.success ? 200 : 502 });
   } catch (error: any) {
     return NextResponse.json({
       success: false,

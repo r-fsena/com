@@ -1,3 +1,5 @@
+import { writeCRMState, readCRMState } from '@/lib/crm-repository';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
 import { syncJobStore } from '@/lib/sync-job-store';
@@ -8,6 +10,7 @@ import { normalizePhoneNumber } from '@/lib/vcf-parser';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 async function runBackgroundSyncWorker(params: {
   jobId: string;
@@ -30,7 +33,7 @@ async function runBackgroundSyncWorker(params: {
     importMode,
   } = params;
 
-  syncJobStore.updateJob(jobId, {
+  await syncJobStore.updateJob(jobId, {
     status: 'RUNNING',
     currentStepText: 'Carregando agenda e etiquetas do WhatsApp...',
     progress: 5,
@@ -46,10 +49,10 @@ async function runBackgroundSyncWorker(params: {
   try {
     // 1. Busca contatos da agenda do aparelho e etiquetas do WhatsApp Business em paralelo
     const [tagsRes, contactsRes] = await Promise.all([
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/tags`, { headers })
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/tags`, { headers, signal: AbortSignal.timeout(15000) })
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
-      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=1&pageSize=300`, { headers })
+      fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/contacts?page=1&pageSize=300`, { headers, signal: AbortSignal.timeout(15000) })
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
     ]);
@@ -77,28 +80,28 @@ async function runBackgroundSyncWorker(params: {
       });
     }
 
-    syncJobStore.updateJob(jobId, {
+    await syncJobStore.updateJob(jobId, {
       progress: 15,
       currentStepText: 'Iniciando varredura contínua de conversas...',
     });
 
     // 2. Itera todas as páginas de chats até o fim
-    let page = 1;
+    const previousJob = await syncJobStore.getJob(jobId);
+    const startPage = (previousJob?.pagesScanned || 0) + 1;
+    let page = startPage;
     let keepPaging = true;
     const allValidChatsMap = new Map<string, any>();
     let totalRawScanned = 0;
-    const maxPages = 30; // Segurança contra loops infinitos (até 3.000 chats)
+    const maxPages = startPage; // Uma página por execução; progresso confirmado antes da próxima chamada.
 
     while (keepPaging && page <= maxPages) {
       try {
         const res = await fetch(
           `https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chats?page=${page}&pageSize=100`,
-          { headers }
+          { headers, signal: AbortSignal.timeout(15000) }
         );
 
-        if (!res.ok) {
-          break;
-        }
+        if (!res.ok) throw new Error(`Z-API indisponível (HTTP ${res.status}).`);
 
         const chatBatch = await res.json();
         if (!Array.isArray(chatBatch) || chatBatch.length === 0) {
@@ -141,7 +144,7 @@ async function runBackgroundSyncWorker(params: {
         }
 
         const calculatedProgress = Math.min(15 + Math.round((page / 15) * 60), 75);
-        syncJobStore.updateJob(jobId, {
+        await syncJobStore.updateJob(jobId, {
           pagesScanned: page,
           totalChatsFound: totalRawScanned,
           contactsImported: allValidChatsMap.size,
@@ -149,16 +152,17 @@ async function runBackgroundSyncWorker(params: {
           currentStepText: `Varrendo página ${page}: ${allValidChatsMap.size} conversas qualificadas encontradas...`,
         });
 
+        if (chatBatch.length < 100) keepPaging = false;
         page++;
         // Pausa suave de 150ms para evitar rate-limit da Z-API
         await new Promise(r => setTimeout(r, 150));
       } catch (pageErr) {
         console.error(`[BackgroundSync] Erro na página ${page}:`, pageErr);
-        page++;
+        throw pageErr;
       }
     }
 
-    syncJobStore.updateJob(jobId, {
+    await syncJobStore.updateJob(jobId, {
       progress: 80,
       currentStepText: `Construindo registros para ${allValidChatsMap.size} contatos...`,
     });
@@ -258,7 +262,7 @@ async function runBackgroundSyncWorker(params: {
     }
 
     // 3.5. Busca histórico real de mensagens para as 25 conversas mais recentes em paralelo controlado
-    syncJobStore.updateJob(jobId, {
+    await syncJobStore.updateJob(jobId, {
       progress: 85,
       currentStepText: 'Baixando histórico de mensagens das conversas ativas...',
     });
@@ -271,7 +275,7 @@ async function runBackgroundSyncWorker(params: {
 
           const msgRes = await fetch(
             `https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/chat-messages/${cleanPhone}?page=1&pageSize=25`,
-            { headers }
+            { headers, signal: AbortSignal.timeout(15000) }
           );
 
           if (msgRes.ok) {
@@ -316,31 +320,31 @@ async function runBackgroundSyncWorker(params: {
     );
 
     // 4. Salva no Store Global do Servidor e Auto-sincroniza Deals no Funil
-    serverCRMStore.updateState({
+    const persisted = await writeCRMState(tenantId, {
       contacts: newContacts,
       conversations: newConversations,
       messages: newMessages,
     });
 
-    syncJobStore.updateJob(jobId, {
-      status: 'COMPLETED',
-      progress: 100,
+    await syncJobStore.updateJob(jobId, {
+      status: keepPaging ? 'RUNNING' : 'COMPLETED',
+      progress: keepPaging ? Math.min(95, page * 3) : 100,
       pagesScanned: page - 1,
-      totalChatsFound: totalRawScanned,
-      contactsImported: newContacts.length,
-      currentStepText: `Sincronização concluída com sucesso! ${newContacts.length} contatos ativos importados.`,
-      completedAt: new Date().toISOString(),
+      totalChatsFound: (previousJob?.totalChatsFound || 0) + totalRawScanned,
+      contactsImported: (previousJob?.contactsImported || 0) + newContacts.length,
+      currentStepText: keepPaging ? `Página ${page - 1} salva; aguardando próxima página...` : `Sincronização concluída: ${(previousJob?.contactsImported || 0) + newContacts.length} contatos.`,
+      completedAt: keepPaging ? undefined : new Date().toISOString(),
       resultSummary: {
         totalContacts: newContacts.length,
         totalConversations: newConversations.length,
       },
-      resultContacts: newContacts,
-      resultConversations: newConversations,
-      resultMessages: newMessages,
+      resultContacts: keepPaging ? [] : persisted.contacts,
+      resultConversations: keepPaging ? [] : persisted.conversations,
+      resultMessages: keepPaging ? [] : persisted.messages,
     });
   } catch (err: any) {
     console.error('[BackgroundSync] Falha no job:', err);
-    syncJobStore.updateJob(jobId, {
+    await syncJobStore.updateJob(jobId, {
       status: 'FAILED',
       progress: 100,
       currentStepText: 'Falha durante o processamento em segundo plano.',
@@ -351,77 +355,44 @@ async function runBackgroundSyncWorker(params: {
 }
 
 export async function POST(req: NextRequest) {
-  const { session, errorResponse } = validateApiSession(req, {
-    requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
-  });
+  const { session, errorResponse } = validateApiSession(req, { requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'] });
   if (errorResponse) return errorResponse;
-
-  let instanceId = process.env.ZAPI_INSTANCE_ID || '';
-  let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || '';
-  let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
-  let tenantId = session?.tenantId || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
-  let historyDays = 0; // 0 = Sem limite (tudo)
-  let assignedUserId = session?.userId;
-  let importMode: 'CHATS' | 'PHONEBOOK' | 'ALL' = 'CHATS';
-
   try {
-    const body = await req.json().catch(() => ({}));
-    if (body.instanceId) instanceId = body.instanceId;
-    if (body.token) instanceToken = body.token;
-    if (body.clientToken) securityToken = body.clientToken;
-    if (body.tenantId && session?.isSuperAdmin) tenantId = body.tenantId;
-    if (body.assignedUserId) assignedUserId = body.assignedUserId;
-    if (body.historyDays !== undefined) historyDays = Number(body.historyDays);
-    if (body.importMode) importMode = body.importMode;
-  } catch {}
-
-  // Cria o registro do Job
-  const job = syncJobStore.createJob(tenantId, {
-    historyDays,
-    importMode,
-  });
-
-  // Dispara o worker em segundo plano de forma não-bloqueante
-  setImmediate(() => {
-    runBackgroundSyncWorker({
-      jobId: job.id,
-      tenantId,
-      instanceId,
-      instanceToken,
-      securityToken,
-      historyDays,
-      assignedUserId,
-      importMode,
-    }).catch(err => {
-      console.error('[BackgroundSync] Erro fatal no worker:', err);
-    });
-  });
-
-  // Retorna resposta HTTP 202 imediatamente com o ID do job
-  return NextResponse.json({
-    success: true,
-    message: 'Sincronização em segundo plano iniciada com sucesso.',
-    job,
-  }, { status: 202 });
+    const body = await req.json();
+    if (body.tenantId && body.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Imobiliária não autorizada.' }, { status: 403 });
+    const tenantId = session!.isSuperAdmin ? (body.tenantId || req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId;
+    const creds = await ZapiCredentialsService.resolveCredentials({ tenantId, instanceId: body.instanceId });
+    const job = await syncJobStore.createJob(tenantId, { instanceId: creds.instanceId, assignedUserId: session!.userId,
+      historyDays: Math.max(0, Number(body.historyDays) || 0), importMode: ['CHATS', 'PHONEBOOK', 'ALL'].includes(body.importMode) ? body.importMode : 'CHATS' });
+    // O cliente avança o job por POST; nenhum trabalho fica solto depois da resposta HTTP.
+    return NextResponse.json({ success: true, job }, { status: 202 });
+  } catch { return NextResponse.json({ success: false, error: 'Não foi possível criar a sincronização. Verifique a conexão e o banco.' }, { status: 503 }); }
 }
 
 export async function GET(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req);
   if (errorResponse) return errorResponse;
-
-  const { searchParams } = new URL(req.url);
-  const jobId = searchParams.get('jobId');
-  const tenantId = searchParams.get('tenantId') || session?.tenantId || 'tenant-amabile-barbarotti';
-
-  if (jobId) {
-    const job = syncJobStore.getJob(jobId);
-    if (!job) {
-      return NextResponse.json({ success: false, error: 'Job de sincronização não encontrado.' }, { status: 404 });
-    }
+  try {
+    const jobId = req.nextUrl.searchParams.get('jobId');
+    const tenantId = session!.isSuperAdmin ? (req.nextUrl.searchParams.get('tenantId') || req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId;
+    const job = jobId ? await syncJobStore.getJob(jobId) : await syncJobStore.getActiveJobForTenant(tenantId);
+    if (job && job.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Job não encontrado.' }, { status: 404 });
     return NextResponse.json({ success: true, job });
-  }
+  } catch { return NextResponse.json({ success: false, error: 'Sincronização indisponível.' }, { status: 503 }); }
+}
 
-  // Se não passou jobId, busca o job ativo para o tenant
-  const activeJob = syncJobStore.getActiveJobForTenant(tenantId);
-  return NextResponse.json({ success: true, job: activeJob });
+export async function PUT(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req, { requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'] });
+  if (errorResponse) return errorResponse;
+  try {
+    const { jobId } = await req.json();
+    const job = await syncJobStore.getJob(jobId);
+    if (!job || (job.tenantId !== session!.tenantId && !session!.isSuperAdmin)) return NextResponse.json({ error: 'Job não encontrado.' }, { status: 404 });
+    if (await syncJobStore.claimJob(job.id)) {
+      const creds = await ZapiCredentialsService.resolveCredentials({ tenantId: job.tenantId, instanceId: job.instanceId });
+      try { await runBackgroundSyncWorker({ jobId: job.id, tenantId: job.tenantId, ...creds,
+        historyDays: job.historyDays, assignedUserId: job.assignedUserId, importMode: job.importMode }); } finally { await syncJobStore.releaseJob(job.id); }
+    }
+    return NextResponse.json({ success: true, job: await syncJobStore.getJob(job.id) });
+  } catch { return NextResponse.json({ success: false, error: 'Sincronização interrompida. O progresso salvo pode ser retomado.' }, { status: 503 }); }
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { EXTENSION_RELEASE } from '@/lib/extension-release';
 import React, { useState, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { DEFAULT_ZAPI_INSTANCE_ID } from '@/lib/zapi-config';
@@ -33,7 +34,9 @@ export function WhatsAppConnectionView() {
   const { 
     currentUser,
     currentTenant, 
-    instances, 
+    instances,
+    activeInstanceId,
+    setActiveInstanceId,
     updateInstance,
     refreshLiveZapiStatus,
     isZapiConnected: crmZapiConnected,
@@ -43,10 +46,8 @@ export function WhatsAppConnectionView() {
     isSyncingWhatsApp 
   } = useCRM();
 
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string>(() => {
-    const defaultInst = instances.find(i => i.assignedUserId === currentUser?.id) || instances.find(i => i.tenantId === currentTenant?.id) || instances[0];
-    return defaultInst?.id || 'inst-rafael-individual';
-  });
+  const selectedInstanceId = activeInstanceId;
+  const setSelectedInstanceId = setActiveInstanceId;
 
   const activeInstance = instances.find(i => i.id === selectedInstanceId) || instances.find(i => i.assignedUserId === currentUser?.id) || instances[0];
   const [instanceIdInput, setInstanceIdInput] = useState('');
@@ -74,21 +75,13 @@ export function WhatsAppConnectionView() {
         isBusiness: Boolean(zapiLiveDetails.isBusiness),
       };
     }
-    return {
-      connected: true,
-      phone: activeInstance?.phoneNumber || '+55 (48) 9979-7603',
-      name: activeInstance?.name || 'Amábile Barbarotti',
-      avatarUrl: null,
-      deviceModel: 'Smartphone',
-      battery: 100,
-      isBusiness: true,
-    };
+    return null;
   });
 
   // Estados do QR Code ao vivo
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [isLoadingQr, setIsLoadingQr] = useState(false);
-  const [isQrConnected, setIsQrConnected] = useState<boolean>(true);
+  const [isQrConnected, setIsQrConnected] = useState<boolean>(false);
   const [qrCountdown, setQrCountdown] = useState<number>(25);
   const [qrError, setQrError] = useState<string | null>(null);
 
@@ -119,14 +112,10 @@ export function WhatsAppConnectionView() {
   const officialWebhookUrl = 'https://crm.faithhubs.com/api/v1/webhooks/zapi';
 
   const getZapiQueryParams = () => {
-    let instId = activeInstance?.zapiInstanceId || DEFAULT_ZAPI_INSTANCE_ID;
-    if (instId.startsWith('inst-') || instId.length < 20) {
-      instId = DEFAULT_ZAPI_INSTANCE_ID;
-    }
-
     const params = new URLSearchParams();
-    params.set('instanceId', instId);
-    params.set('tenantId', currentTenant?.id || 'tenant-1790857269847');
+    const instId = activeInstance?.zapiInstanceId;
+    if (instId) params.set('instanceId', instId);
+    params.set('tenantId', currentTenant.id);
     return params;
   };
 
@@ -151,8 +140,8 @@ export function WhatsAppConnectionView() {
           setQrCodeData(null);
           setLiveDetails(prev => ({
             connected: true,
-            phone: prev?.phone && prev.phone !== 'Não conectado' ? prev.phone : '+55 (48) 8877-4408',
-            name: prev?.name && prev.name !== 'Instância Desconectada' ? prev.name : 'Rafael Sena',
+            phone: prev?.phone || activeInstance?.phoneNumber || 'Conectado',
+            name: prev?.name || activeInstance?.name || 'WhatsApp',
             avatarUrl: prev?.avatarUrl || null,
             deviceModel: prev?.deviceModel || 'Smartphone',
             battery: prev?.battery || 100,
@@ -226,10 +215,12 @@ export function WhatsAppConnectionView() {
           await fetchFreshQrCode();
         }
       } else {
+        setLiveDetails(null); setIsQrConnected(false);
         await fetchFreshQrCode();
       }
       await refreshLiveZapiStatus();
     } catch {
+      setLiveDetails(null); setIsQrConnected(false);
       await fetchFreshQrCode();
     } finally {
       setIsLoadingQr(false);
@@ -248,8 +239,8 @@ export function WhatsAppConnectionView() {
         battery: zapiLiveDetails.battery || 100,
         isBusiness: Boolean(zapiLiveDetails.isBusiness),
       });
+      setIsQrConnected(Boolean(zapiLiveDetails.connected));
       if (zapiLiveDetails.connected) {
-        setIsQrConnected(true);
         setQrCodeData(null);
       }
     } else if (crmZapiConnected !== undefined) {
@@ -262,9 +253,9 @@ export function WhatsAppConnectionView() {
       setInstanceIdInput(activeInstance.zapiInstanceId || activeInstance.id || '');
     }
     handleRefreshAllStatus();
-  }, []);
+  }, [activeInstance?.id, currentTenant.id]);
 
-  const isConnected = Boolean(liveDetails?.connected || isQrConnected || crmZapiConnected || activeInstance?.status === 'CONNECTED');
+  const isConnected = liveDetails?.connected === true && isQrConnected;
 
   // Polling de detecção de conexão e auto-renovação de QR Code enquanto desconectado
   useEffect(() => {
@@ -547,10 +538,11 @@ export function WhatsAppConnectionView() {
                     type="button"
                     onClick={() => {
                       setSelectedInstanceId(inst.id);
-                      setIsQrConnected(inst.status === 'CONNECTED');
+                      setIsQrConnected(false);
+                      setLiveDetails(null);
                       setQrCodeData(null);
                       setQrError(null);
-                      setTimeout(() => fetchFreshQrCode(), 50);
+
                     }}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
                       isSelected 
@@ -589,7 +581,7 @@ export function WhatsAppConnectionView() {
                   </span>
                   <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    v1.0.50 Oficial
+                    v{EXTENSION_RELEASE.version} Oficial
                   </span>
                 </div>
                 <h2 className="text-lg sm:text-xl font-extrabold text-white">
@@ -604,7 +596,7 @@ export function WhatsAppConnectionView() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full md:w-auto">
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.50.zip"
+                download={`brokiva-chrome-extension-v${EXTENSION_RELEASE.version}.zip`}
                 className="inline-flex items-center justify-center gap-2 text-xs font-extrabold text-slate-950 bg-white hover:bg-slate-100 px-5 py-3 rounded-2xl shadow-md transition active:scale-95 cursor-pointer"
               >
                 <Download className="w-4 h-4 text-[#3742AC]" />
@@ -1146,7 +1138,7 @@ export function WhatsAppConnectionView() {
             <div className="flex items-center gap-2 pt-2">
               <a
                 href="/api/v1/downloads/extension"
-                download="brokiva-chrome-extension-v1.0.50.zip"
+                download={`brokiva-chrome-extension-v${EXTENSION_RELEASE.version}.zip`}
                 className="flex-1 py-2.5 px-4 text-xs font-bold text-white bg-[#3742AC] hover:bg-[#2D368E] rounded-xl shadow-xs transition text-center flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Download className="w-4 h-4" />

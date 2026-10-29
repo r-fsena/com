@@ -69,37 +69,13 @@ export function LoginScreen() {
       }
 
       setIsLoading(false);
-      login(cleanEmail);
+      await login(cleanEmail);
     } catch (err: any) {
       setIsLoading(false);
       setError('Falha de rede ao conectar com o servidor de autenticação.');
     }
   };
 
-  const handleQuickMasterLogin = async () => {
-    setEmail('rafael@faithhubs.com');
-    setPassword('30ago2015R@!');
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/v1/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'rafael@faithhubs.com', password: '30ago2015R@!' }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setIsLoading(false);
-        login('rafael@faithhubs.com');
-      } else {
-        setIsLoading(false);
-        setError(data.error || 'Erro ao autenticar');
-      }
-    } catch {
-      setIsLoading(false);
-      login('rafael@faithhubs.com');
-    }
-  };
 
   return (
     <div className="min-h-screen w-screen flex flex-col lg:flex-row bg-[#F0F3FA] text-slate-800 antialiased selection:bg-[#3742AC] selection:text-white">

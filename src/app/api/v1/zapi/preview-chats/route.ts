@@ -8,7 +8,7 @@ import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { errorResponse } = validateApiSession(req, {
+  const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
   });
   if (errorResponse) return errorResponse;
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   const creds = await ZapiCredentialsService.resolveCredentials({
     instanceId: rawInstanceId,
-    tenantId: targetTenant,
+    tenantId: session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId,
     token: rawToken,
     clientToken: rawClientToken,
   });

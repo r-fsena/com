@@ -1,61 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-
+import crypto from 'crypto';
+import { EXTENSION_RELEASE } from '@/lib/extension-release';
 export const dynamic = 'force-dynamic';
-
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const candidatePaths = [
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.50.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.49.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.48.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.47.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.46.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-latest.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.41.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.40.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.38.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.37.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.36.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.35.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.34.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.33.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.32.zip'),
-      path.join(process.cwd(), 'public', 'downloads', 'brokiva-extension-v1.0.31.zip'),
-    ];
-
-    let zipBuffer: Buffer | null = null;
-    let foundPath = '';
-
-    for (const filePath of candidatePaths) {
-      if (fs.existsSync(filePath)) {
-        zipBuffer = fs.readFileSync(filePath);
-        foundPath = filePath;
-        break;
-      }
-    }
-
-    if (!zipBuffer) {
-      return NextResponse.json({
-        success: false,
-        error: 'Arquivo da extensão não encontrado para download.',
-      }, { status: 404 });
-    }
-
-    return new NextResponse(new Uint8Array(zipBuffer), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename="brokiva-chrome-extension-v1.0.50.zip"',
-        'Cache-Control': 'public, max-age=3600, s-maxage=3600',
-      },
-    });
-  } catch (error: any) {
-    console.error('Erro ao disponibilizar download da extensão:', error);
-    return NextResponse.json({
-      success: false,
-      error: error.message || 'Falha ao processar download da extensão.',
-    }, { status: 500 });
-  }
+    const zip = fs.readFileSync(path.join(process.cwd(), 'public/downloads', EXTENSION_RELEASE.file));
+    if (crypto.createHash('sha256').update(zip).digest('hex') !== EXTENSION_RELEASE.sha256) throw new Error('Checksum inválido');
+    return new NextResponse(new Uint8Array(zip), { headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="brokiva-chrome-extension-v${EXTENSION_RELEASE.version}.zip"`,
+      'Content-Length': String(zip.length), ETag: `"${EXTENSION_RELEASE.sha256}"`, 'Cache-Control': 'public, max-age=300',
+    } });
+  } catch { return NextResponse.json({ success: false, error: 'Pacote da extensão indisponível. Verifique a publicação da versão atual.' }, { status: 503 }); }
 }

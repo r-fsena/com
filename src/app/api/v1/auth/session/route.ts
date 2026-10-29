@@ -1,137 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MOCK_USERS } from '@/lib/mock-data';
-import { serverCRMStore } from '@/lib/server-crm-store';
-import { signSessionPayload, verifySessionToken } from '@/lib/api-auth';
+import { validateApiSession } from '@/lib/api-auth';
 import { AuthService } from '@/lib/db/auth-service';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
-
 const COOKIE_NAME = 'vanguard_session';
 
-/**
- * Gestão Segura de Sessão com HttpOnly Cookies Assinados com HMAC-SHA256
- * Elimina falsificação de sessão e exfiltração via XSS no localStorage.
- */
-
-// GET: Retorna a sessão ativa a partir do cookie HttpOnly assinado
 export async function GET(req: NextRequest) {
-  const cookie = req.cookies.get(COOKIE_NAME);
-  if (!cookie || !cookie.value) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
-  }
-
-  const sessionData = verifySessionToken(cookie.value);
-  if (!sessionData) {
-    return NextResponse.json({ authenticated: false, error: 'Sessão inválida ou adulterada' }, { status: 401 });
-  }
-
-  return NextResponse.json({
-    authenticated: true,
-    user: sessionData,
-  });
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+  return NextResponse.json({ authenticated: true, user: session }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
-// POST: Cria a sessão segura e injeta o cookie HttpOnly assinado
 export async function POST(req: NextRequest) {
+  const limit = checkRateLimit(`login:${getClientIp(req.headers)}`, 10, 60);
+  if (!limit.allowed) return NextResponse.json({ success: false, error: 'Muitas tentativas. Aguarde um minuto.' }, { status: 429 });
   try {
-    const body = await req.json();
-    const { email, password, cognitoSub, userId, role, tenantId, name } = body;
-
-    const userEmail = (email || 'rafael@faithhubs.com').toLowerCase().trim();
-
-    // Se senha ou cognitoSub forem passados, autentica no banco PostgreSQL / Cognito
-    if (password || cognitoSub) {
-      const authRes = await AuthService.authenticateUser(userEmail, password, cognitoSub, tenantId);
-      if (!authRes.success || !authRes.user || !authRes.sessionToken) {
-        return NextResponse.json({
-          success: false,
-          error: authRes.error || 'Falha na autenticação',
-        }, { status: 401 });
-      }
-
-      const res = NextResponse.json({
-        success: true,
-        message: 'Sessão autenticada com sucesso via HttpOnly Cookie assinado.',
-        user: authRes.user,
-      });
-
-      res.cookies.set({
-        name: COOKIE_NAME,
-        value: authRes.sessionToken,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 7, // 7 dias
-      });
-
-      return res;
+    const { email, password, tenantId } = await req.json();
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
+      return NextResponse.json({ success: false, error: 'Informe e-mail e senha.' }, { status: 401 });
     }
-
-    // Fallback para sessões internas / impersonate
-    const allUsers = serverCRMStore.getUsers();
-    const foundUser = allUsers.find(u => u.email.toLowerCase() === userEmail || (userId && u.id === userId))
-      || MOCK_USERS.find(u => u.email.toLowerCase() === userEmail || (userId && u.id === userId))
-      || {
-        id: userId || `user-${Date.now()}`,
-        email: userEmail,
-        name: name || userEmail.split('@')[0],
-        role: role || 'BROKER',
-        tenantId: tenantId || 'tenant-amabile-barbarotti',
-      };
-
-    const sessionPayload = {
-      userId: foundUser.id,
-      email: foundUser.email,
-      name: foundUser.name,
-      role: role || foundUser.role,
-      tenantId: tenantId || 'tenant-amabile-barbarotti',
-      createdAt: new Date().toISOString(),
-    };
-
-    const sessionToken = signSessionPayload(sessionPayload);
-
-    const res = NextResponse.json({
-      success: true,
-      message: 'Sessão autenticada com sucesso via HttpOnly Cookie assinado.',
-      user: sessionPayload,
-    });
-
-    res.cookies.set({
-      name: COOKIE_NAME,
-      value: sessionToken,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7, // 7 dias
-    });
-
+    const result = await AuthService.authenticateUser(email, password, undefined, tenantId);
+    if (!result.success || !result.user || !result.sessionToken) return NextResponse.json({ success: false, error: result.error || 'Credenciais inválidas.' }, { status: 401 });
+    const res = NextResponse.json({ success: true, user: result.user });
+    res.cookies.set({ name: COOKIE_NAME, value: result.sessionToken, httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/', maxAge: 86400 });
+    res.headers.set('Cache-Control', 'no-store');
     return res;
-  } catch (err: any) {
-    return NextResponse.json({
-      success: false,
-      error: err.message || 'Erro ao inicializar sessão',
-    }, { status: 500 });
-  }
+  } catch { return NextResponse.json({ success: false, error: 'Não foi possível autenticar. Verifique a configuração do servidor.' }, { status: 503 }); }
 }
 
-// DELETE: Encerra a sessão e remove o cookie HttpOnly
 export async function DELETE() {
-  const res = NextResponse.json({
-    success: true,
-    message: 'Sessão encerrada com sucesso.',
-  });
-
-  res.cookies.set({
-    name: COOKIE_NAME,
-    value: '',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
-
+  const res = NextResponse.json({ success: true });
+  res.cookies.set({ name: COOKIE_NAME, value: '', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/', maxAge: 0 });
   return res;
 }

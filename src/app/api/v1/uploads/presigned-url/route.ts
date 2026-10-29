@@ -4,10 +4,10 @@ import { S3StorageClient } from '@/lib/s3-client';
 import { validateApiSession } from '@/lib/api-auth';
 
 const PresignedUrlSchema = z.object({
-  tenantId: z.string().default('tenant-amabile-barbarotti'),
+  tenantId: z.string().optional(),
   fileName: z.string().min(1, 'Nome do arquivo obrigatório'),
   fileType: z.string().min(1, 'MIME type obrigatório'),
-  fileSizeBytes: z.number().max(25 * 1024 * 1024, 'Arquivo não pode exceder 25MB').optional(),
+  fileSizeBytes: z.number().int().positive().max(25 * 1024 * 1024, 'Arquivo não pode exceder 25MB'),
 });
 
 export async function POST(request: NextRequest) {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const s3 = new S3StorageClient();
-    const tenantId = session?.isSuperAdmin ? validated.data.tenantId : (session?.tenantId || validated.data.tenantId);
+    const tenantId = session!.isSuperAdmin ? (validated.data.tenantId || session!.tenantId) : session!.tenantId;
     const result = await s3.generatePresignedUploadUrl({ ...validated.data, tenantId });
 
     return NextResponse.json({ data: result }, { status: 200 });

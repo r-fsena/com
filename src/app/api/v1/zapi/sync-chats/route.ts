@@ -1,3 +1,4 @@
+import { writeCRMState, readCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
@@ -23,19 +24,10 @@ async function handleSyncChats(req: NextRequest) {
   const referer = req.headers.get('referer');
   const host = req.headers.get('host');
 
-  const isInternal = Boolean(
-    session ||
-    clientTenantHeader ||
-    clientUserHeader ||
-    secFetchSite === 'same-origin' ||
-    secFetchSite === 'same-site' ||
-    (referer && host && referer.includes(host)) ||
-    process.env.NODE_ENV !== 'production'
-  );
 
-  if (errorResponse && !isInternal) return errorResponse;
+  if (errorResponse) return errorResponse;
 
-  let instanceId = process.env.ZAPI_INSTANCE_ID || DEFAULT_ZAPI_INSTANCE_ID;
+  let instanceId = '';
   let instanceToken = process.env.ZAPI_INSTANCE_TOKEN || DEFAULT_ZAPI_INSTANCE_TOKEN;
   let securityToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || DEFAULT_ZAPI_CLIENT_TOKEN;
   let tenantId = session?.tenantId || clientTenantHeader || process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-amabile-barbarotti';
@@ -52,7 +44,8 @@ async function handleSyncChats(req: NextRequest) {
       }
       if (body.token && body.token.trim() !== '') instanceToken = body.token;
       if (body.clientToken && body.clientToken.trim() !== '') securityToken = body.clientToken;
-      if (body.tenantId) tenantId = body.tenantId;
+      if (body.tenantId && body.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Imobiliária não autorizada.' }, { status: 403 });
+      if (session!.isSuperAdmin && body.tenantId) tenantId = body.tenantId;
       if (body.assignedUserId) assignedUserId = body.assignedUserId;
       if (typeof body.fetchHistoryMessages === 'boolean') fetchHistoryMessages = body.fetchHistoryMessages;
       if (body.historyDays !== undefined) historyDays = Number(body.historyDays);
@@ -68,11 +61,10 @@ async function handleSyncChats(req: NextRequest) {
     if (searchParams.get('historyDays')) historyDays = Number(searchParams.get('historyDays'));
   }
 
+  tenantId = session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || tenantId) : session!.tenantId;
   const creds = await ZapiCredentialsService.resolveCredentials({
     instanceId,
     tenantId,
-    token: instanceToken,
-    clientToken: securityToken,
   });
   instanceId = creds.instanceId;
   instanceToken = creds.instanceToken;
@@ -167,6 +159,7 @@ async function handleSyncChats(req: NextRequest) {
     });
 
     // Mapeamentos para separação: Conversas Ativas vs Contatos da Agenda Telefônica
+    const storedState = await readCRMState(tenantId);
     const activeChatsByPhone = new Map<string, any>();
     const coldAgendaByPhone = new Map<string, any>();
 
@@ -192,7 +185,7 @@ async function handleSyncChats(req: NextRequest) {
       const unreadCount = Number(c.unread || c.messagesUnread || 0);
       const rawLastMsg = typeof c.lastMessage === 'string' ? c.lastMessage.trim() : (c.lastMessage?.message || c.lastMessage?.text || c.message || '');
       const lastMsgTime = parseWhatsAppTimestamp(c.lastMessageTime);
-      const hasStoredMsgs = serverCRMStore.getState().messages.some(m => m.conversationId === `conv-zapi-${clean}` || (m as any).phone === clean);
+      const hasStoredMsgs = storedState.messages.some(m => m.conversationId === `conv-zapi-${clean}` || (m as any).phone === clean);
 
       const hasActiveConversation = Boolean((rawLastMsg && rawLastMsg !== '0') || unreadCount > 0 || hasStoredMsgs || (lastMsgTime && lastMsgTime > 0));
 
@@ -283,30 +276,30 @@ async function handleSyncChats(req: NextRequest) {
     const activeContacts = validChats.map((c: any) => {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const formattedPhone = c.phone.startsWith('+') ? c.phone : `+${c.phone}`;
-      
-      const resolvedName = c.name 
-        || contactsNameMap.get(cleanPhone) 
+
+      const resolvedName = c.name
+        || contactsNameMap.get(cleanPhone)
         || (cleanPhone.length >= 10 ? `WhatsApp (${cleanPhone.slice(-4)})` : `Cliente ${cleanPhone}`);
 
-      const avatar = picturesMap.get(c.phone) 
+      const avatar = picturesMap.get(c.phone)
         || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=059669&color=fff`;
 
       const msgMs = parseWhatsAppTimestamp(c.lastMessageTime);
-      const lastInteraction = msgMs > 0 
-        ? new Date(msgMs).toISOString() 
+      const lastInteraction = msgMs > 0
+        ? new Date(msgMs).toISOString()
         : new Date().toISOString();
 
-      const rawLabels = Array.isArray(c.labels) 
-        ? c.labels 
+      const rawLabels = Array.isArray(c.labels)
+        ? c.labels
         : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
-      
+
       const resolvedLabels = rawLabels.map((lbl: any) => {
         const lblStr = String(lbl);
         return labelsMap.get(lblStr) || lblStr;
       }).filter(Boolean);
 
       const generatedTags = Array.from(new Set([
-        'WhatsApp Sync', 
+        'WhatsApp Sync',
         'Lead WhatsApp',
         ...resolvedLabels.map((l: string) => `[Etiqueta] ${l}`)
       ]));
@@ -345,16 +338,16 @@ async function handleSyncChats(req: NextRequest) {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const formattedPhone = c.phone.startsWith('+') ? c.phone : `+${c.phone}`;
 
-      const resolvedName = c.name 
-        || contactsNameMap.get(cleanPhone) 
+      const resolvedName = c.name
+        || contactsNameMap.get(cleanPhone)
         || (cleanPhone.length >= 10 ? `Agenda (${cleanPhone.slice(-4)})` : `Contato ${cleanPhone}`);
 
       const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=64748b&color=fff`;
 
-      const rawLabels = Array.isArray(c.labels) 
-        ? c.labels 
+      const rawLabels = Array.isArray(c.labels)
+        ? c.labels
         : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
-      
+
       const resolvedLabels = rawLabels.map((lbl: any) => {
         const lblStr = String(lbl);
         return labelsMap.get(lblStr) || lblStr;
@@ -402,8 +395,8 @@ async function handleSyncChats(req: NextRequest) {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
       const unread = Number(c.unread || c.messagesUnread || 0);
       const msgMs = parseWhatsAppTimestamp(c.lastMessageTime);
-      const lastMsgDate = msgMs > 0 
-        ? new Date(msgMs).toISOString() 
+      const lastMsgDate = msgMs > 0
+        ? new Date(msgMs).toISOString()
         : new Date().toISOString();
 
       const lastMessageText = typeof c.lastMessage === 'string' && c.lastMessage.trim()
@@ -438,8 +431,8 @@ async function handleSyncChats(req: NextRequest) {
     const chatLastMessages: any[] = [];
     validChats.forEach((c: any) => {
       const cleanPhone = (c.phone || '').replace(/\D/g, '');
-      const lastMsgDate = c.lastMessageTime 
-        ? new Date(Number(c.lastMessageTime)).toISOString() 
+      const lastMsgDate = c.lastMessageTime
+        ? new Date(Number(c.lastMessageTime)).toISOString()
         : new Date().toISOString();
 
       let msgText = '';
@@ -504,7 +497,7 @@ async function handleSyncChats(req: NextRequest) {
                     const isFromMe = Boolean(m.fromMe);
                     const text = m.text?.message || m.body || m.caption || m.message || (m.image ? '📷 [Foto]' : m.audio ? '🎙️ [Áudio]' : m.document ? '📄 [Documento]' : '');
                     const timestamp = m.momment ? new Date(Number(m.momment)).toISOString() : (m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString());
-                    
+
                     // Filtra por data de corte selecionada (ex: últimos 15 dias)
                     if (cutoffMs > 0 && new Date(timestamp).getTime() < cutoffMs) {
                       return;
@@ -573,7 +566,7 @@ async function handleSyncChats(req: NextRequest) {
     const finalMessages = Array.from(allMessagesMap.values());
 
     // Persiste imediatamente o snapshot dos contatos, conversas e mensagens no banco de dados do servidor
-    serverCRMStore.updateState({
+    await writeCRMState(tenantId, {
       contacts,
       conversations,
       messages: finalMessages,

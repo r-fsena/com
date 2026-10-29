@@ -1,3 +1,4 @@
+import { resetCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { webhookStore } from '@/lib/webhook-store';
@@ -11,9 +12,8 @@ export async function POST(req: NextRequest) {
     requiredRoles: ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN'],
   });
 
-  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
 
-  if (errorResponse && !isSameOrigin) {
+  if (errorResponse) {
     return errorResponse;
   }
 
@@ -27,16 +27,8 @@ export async function POST(req: NextRequest) {
     const targetTenantId = isMaster ? (body?.tenantId || session?.tenantId || 'tenant-amabile-barbarotti') : (session?.tenantId || 'tenant-amabile-barbarotti');
     const wipeAll = isMaster && body?.wipeAll === true;
 
-    if (wipeAll) {
-      // 1. Limpa o buffer global de estado em memória e persistência em disco
-      serverCRMStore.resetState();
-      // 2. Limpa o buffer de eventos e webhooks do WhatsApp
-      webhookStore.clearAll();
-    } else {
-      // Limpa especificamente os dados do tenant solicitado (ex: Amabile Barbarotti)
-      serverCRMStore.resetTenantState(targetTenantId);
-      webhookStore.clearAll();
-    }
+    if (wipeAll) return NextResponse.json({ success: false, error: 'Execute a limpeza global por ferramenta administrativa no servidor.' }, { status: 400 });
+    await resetCRMState(targetTenantId);
 
     return NextResponse.json({
       success: true,

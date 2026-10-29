@@ -1,5 +1,8 @@
+import { webhookToken } from '@/lib/zapi-webhook-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { readCRMState, writeCRMState } from '@/lib/crm-repository';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier, arePhonesEquivalent, KNOWN_LID_PHONE_MAP, resolveKnownPhone } from '@/lib/whatsapp-filter';
@@ -9,7 +12,7 @@ export async function processZapiWebhookRequest(
   routeParams?: { tenantId?: string; instanceId?: string }
 ) {
   // Validação Resiliente de Segurança do Webhook Z-API
-  const expectedToken = process.env.ZAPI_WEBHOOK_SECRET || process.env.ZAPI_CLIENT_TOKEN || '';
+  const expectedToken = process.env.ZAPI_WEBHOOK_SECRET || '';
   const clientToken = request.headers.get('client-token') || request.headers.get('x-client-token') || request.nextUrl.searchParams.get('token');
 
   let body: any = null;
@@ -19,33 +22,22 @@ export async function processZapiWebhookRequest(
     return NextResponse.json({ success: false, error: 'Payload JSON inválido' }, { status: 400 });
   }
 
-  const isTokenValid = Boolean(clientToken && clientToken === expectedToken);
-  const isKnownInstance = Boolean(
-    body && (
-      body.instanceId ||
-      body.zaapId ||
-      body.phone ||
-      body.chatPhone ||
-      body.chatId ||
-      body.senderPhone ||
-      body.recipientPhone ||
-      body.data ||
-      body.message ||
-      body.messageId ||
-      body.id ||
-      body.text ||
-      body.type ||
-      body.event ||
-      body.ids
-    )
-  );
-
-  if (expectedToken && !isTokenValid && !isKnownInstance) {
-    return NextResponse.json(
-      { success: false, error: 'Acesso negado: Token de webhook Z-API ausente ou inválido' },
-      { status: 401 }
-    );
+  if (!expectedToken) return NextResponse.json({ error: 'Segredo do webhook não configurado.' }, { status: 503 });
+  if (!clientToken) return NextResponse.json({ error: 'Token de webhook obrigatório.' }, { status: 401 });
+  const instanceId = routeParams?.instanceId || body.instanceId || body.zaapId;
+  if (!instanceId) return NextResponse.json({ error: 'Instância obrigatória.' }, { status: 400 });
+  const expectedBuffer = Buffer.from(webhookToken(instanceId));
+  const suppliedBuffer = Buffer.from(clientToken || '');
+  if (expectedBuffer.length !== suppliedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)) {
+    return NextResponse.json({ error: 'Token do webhook ausente ou inválido.' }, { status: 401 });
   }
+  let tenantId: string;
+  try {
+    tenantId = await ZapiCredentialsService.resolveWebhookTenant(instanceId);
+    if ((routeParams?.tenantId && routeParams.tenantId !== tenantId) || (body.instanceId && body.instanceId !== instanceId)) {
+      return NextResponse.json({ error: 'Instância e imobiliária incompatíveis.' }, { status: 403 });
+    }
+  } catch { return NextResponse.json({ error: 'Instância não autorizada.' }, { status: 403 }); }
 
   try {
     // 0.1 Tratamento do Webhook de Status de Mensagem (MessageStatusCallback - Oficial Z-API)
@@ -67,7 +59,12 @@ export async function processZapiWebhookRequest(
       }
 
       const rawIds = Array.isArray(body.ids) ? body.ids : (body.id ? [body.id] : []);
-      const updatedCount = serverCRMStore.updateMessageStatus(rawIds, crmStatus);
+      const current = await readCRMState(tenantId);
+      const rank = { PENDING: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: -1 };
+      const updates = current.messages.filter(m => rawIds.includes(m.externalId || m.id) && rank[crmStatus] > rank[m.status])
+        .map(m => ({ ...m, status: crmStatus }));
+      await writeCRMState(tenantId, { messages: updates });
+      const updatedCount = updates.length;
 
       return NextResponse.json({
         received: true,
@@ -100,7 +97,7 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    const KNOWN_CONNECTED_PHONES = ['554888774408', '4888774408'];
+    const KNOWN_CONNECTED_PHONES: string[] = [];
     const connectedPhoneInBody = body.connectedPhone ? String(body.connectedPhone).replace(/\D/g, '') : '';
 
     const isConnectedPhone = (phoneCandidate: any) => {
@@ -280,15 +277,13 @@ export async function processZapiWebhookRequest(
 
     // Se o telefone estiver vazio ou for um LID, resolve para o telefone canônico
     if ((!cleanPhone || isLidIdentifier(cleanPhone)) && lid) {
-      let resolved = resolveKnownPhone(lid) || serverCRMStore.resolvePhoneFromLid(lid);
-      if (!resolved) {
-        resolved = await serverCRMStore.resolvePhoneFromLidAsync(lid, routeParams?.instanceId);
-      }
+      const currentState = await readCRMState(tenantId);
+      const resolved = currentState.contacts.find(c => c.lid && cleanLid(c.lid) === lid)?.phone?.replace(/\D/g, '');
       if (resolved) {
         cleanPhone = resolved;
       } else {
         // Tenta localizar contato por pushName/chatName se não tiver mapeamento
-        const serverState = serverCRMStore.getState();
+        const serverState = await readCRMState(tenantId);
         const targetName = (body.chatName || body.senderName || '').toLowerCase().trim();
         const contactByName = serverState.contacts.find(c => 
           c.name && targetName && 
@@ -418,21 +413,9 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    const instanceId = routeParams?.instanceId || body?.instanceId || body?.zaapId || process.env.ZAPI_INSTANCE_ID || '3F1B67FC8139425171C79ED390C0144C';
-    let tenantId = routeParams?.tenantId;
-    if (!tenantId) {
-      if (instanceId === '3F1B67FC8139425171C79ED390C0144C') {
-        tenantId = 'tenant-1790857269847';
-      } else if (instanceId === '3F8144490C66805B4E3FD64A35E2F2DC') {
-        tenantId = 'tenant-amabile-barbarotti';
-      } else {
-        tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'tenant-1790857269847';
-      }
-    }
-
     // Se temos um telefone e conteúdo válido, registra no buffer global de eventos
     if (cleanPhone && cleanPhone !== '0') {
-      const serverState = serverCRMStore.getState();
+      const serverState = await readCRMState(tenantId);
       
       // Localiza contato existente por equivalência de telefone ou LID
       const existingContact = serverState.contacts.find(c => 
@@ -487,7 +470,7 @@ export async function processZapiWebhookRequest(
       });
 
       // Atualiza também no serverCRMStore unificando conversa e mensagem
-      serverCRMStore.updateState({
+      await writeCRMState(tenantId, {
         contacts: (!existingContact && cleanPhone && !isLidIdentifier(cleanPhone)) ? [{
           id: targetContactId,
           tenantId,
@@ -547,52 +530,7 @@ export async function processZapiWebhookRequest(
         }],
       });
 
-      // Persistência definitiva no PostgreSQL (AWS Aurora / RDS) para garantir que
-      // mensagens recebidas mesmo com o computador ou navegador desligados nunca sejam perdidas
-      if (process.env.DATABASE_URL && cleanPhone && cleanPhone !== '0') {
-        import('@/lib/db/contacts-service').then(async ({ ContactsDBService }) => {
-          try {
-            await ContactsDBService.persistIncomingWebhookMessage({
-              tenantId,
-              instanceId,
-              phone: cleanPhone,
-              lid: lid || undefined,
-              senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
-              content,
-              mediaType,
-              mediaUrl,
-              fromMe,
-              externalId: messageId,
-              timestamp: messageTimestampIso,
-            });
-          } catch (dbErr) {
-            console.warn('[Webhook] Erro ao persistir webhook no PostgreSQL:', dbErr);
-          }
-        }).catch(err => console.warn('[Webhook] Erro ao carregar ContactsDBService:', err));
-      }
 
-      // Se o contato não possuir foto cadastrada, enriquece em segundo plano com a foto oficial do WhatsApp
-      if (cleanPhone && (!existingContact?.avatarUrl && !senderPhoto) && !isLidIdentifier(cleanPhone)) {
-        setTimeout(async () => {
-          try {
-            const { ZApiClient } = await import('@/lib/zapi-client');
-            const { ZapiCredentialsService } = await import('@/lib/db/zapi-credentials-service');
-            const creds = await ZapiCredentialsService.resolveCredentials({
-              instanceId,
-              tenantId,
-            });
-            const zapi = new ZApiClient({
-              instanceId: creds.instanceId,
-              instanceToken: creds.instanceToken,
-              securityToken: creds.securityToken,
-            });
-            const pic = await zapi.getProfilePicture(cleanPhone);
-            if (pic.success && pic.data?.link) {
-              serverCRMStore.updateContactAvatar(cleanPhone, pic.data.link);
-            }
-          } catch {}
-        }, 800);
-      }
     }
 
     return NextResponse.json({

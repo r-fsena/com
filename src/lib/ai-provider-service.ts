@@ -1,4 +1,5 @@
 import { AICopilotAnalysis, BedrockCopilotClient } from './bedrock-client';
+import { LocalSemanticCopilotClient } from './local-semantic-client';
 import { TenantAIConfig } from '@/types/crm';
 
 export interface CopilotChatHistoryItem {
@@ -20,19 +21,14 @@ export class UniversalCopilotService {
     const apiKey = (config.apiKey || '').trim();
 
     if (provider === 'PLATFORM_DEFAULT') {
-      const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
-      if (platformGeminiKey) {
-        return { 
-          success: true, 
-          message: 'Motor Google Gemini Flash ativo e operacional como inteligência central do CRM (Custo Mínimo & Contexto de 1M tokens).',
-          model: 'gemini-flash-latest'
-        };
+      const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+      if (geminiKey) return this.testConnection({ ...config, provider: 'GEMINI', apiKey: geminiKey });
+      if (process.env.OPENAI_API_KEY) return this.testConnection({ ...config, provider: 'OPENAI', apiKey: process.env.OPENAI_API_KEY });
+      if (process.env.AWS_BEDROCK_MODEL_ID) {
+        try { await new BedrockCopilotClient().testConnection(); return { success: true, message: 'Conexão com Amazon Bedrock verificada.', model: process.env.AWS_BEDROCK_MODEL_ID }; }
+        catch { return { success: false, message: 'Não foi possível conectar ao Bedrock. Verifique modelo, região e permissões IAM.' }; }
       }
-      const defaultKey = process.env.OPENAI_API_KEY;
-      if (defaultKey) {
-        return { success: true, message: 'Brok.ia da Plataforma ativa e operacional com OpenAI.', model: 'gpt-4o-mini' };
-      }
-      return { success: true, message: 'Motor de inferência nativo de alto desempenho pronto para uso.' };
+      return { success: false, message: 'Nenhum provedor de IA conectado. Apenas a análise heurística local está disponível.', model: 'LOCAL_HEURISTICS' };
     }
 
     if (!apiKey) {
@@ -216,7 +212,11 @@ export class UniversalCopilotService {
     }
 
     // 5. Fallback de alta precisão sem custos de API (Motor Semântico Local)
-    const fallbackEngine = new BedrockCopilotClient();
+    if (provider === 'PLATFORM_DEFAULT' && process.env.AWS_BEDROCK_MODEL_ID) {
+      try { return await new BedrockCopilotClient().analyzeConversation(chatHistory, brokerName, contactContext); }
+      catch (error) { console.warn('[Copilot] Bedrock indisponível; usando análise heurística local.'); }
+    }
+    const fallbackEngine = new LocalSemanticCopilotClient();
     return fallbackEngine.analyzeConversation(chatHistory, brokerName, contactContext);
   }
 

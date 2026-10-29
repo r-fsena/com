@@ -1,3 +1,5 @@
+import { buildZapiWebhookUrl } from '@/lib/zapi-webhook-auth';
+import { readCRMState, writeCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { ZApiClient } from '@/lib/zapi-client';
 import { validateApiSession } from '@/lib/api-auth';
@@ -33,16 +35,12 @@ export async function POST(req: NextRequest) {
     }, { status: 429 });
   }
 
-  const { errorResponse } = validateApiSession(req, {
+  const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
   });
 
-  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || 
-                       req.headers.get('sec-fetch-site') === 'same-site' ||
-                       (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host)) ||
-                       Boolean(req.headers.get('x-user-id') || req.headers.get('x-user-email'));
 
-  if (errorResponse && !isSameOrigin) return errorResponse;
+  if (errorResponse) return errorResponse;
 
   try {
     const body = await req.json();
@@ -50,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     const creds = await ZapiCredentialsService.resolveCredentials({
       instanceId: targetInstanceId,
-      tenantId: req.headers.get('x-tenant-id'),
+      tenantId: session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId,
       token: targetToken,
     });
 
@@ -67,7 +65,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'update-every-webhooks') {
-      const { webhookUrl, notifySentByMe } = body;
+      if (!['ADMIN', 'SUPERADMIN'].includes(session!.role)) return NextResponse.json({ error: 'Configuração restrita ao administrador.' }, { status: 403 });
+      const webhookUrl = buildZapiWebhookUrl(creds.instanceId, session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId);
+      const notifySentByMe = true;
       const res = await zapi.updateEveryWebhooks(webhookUrl, notifySentByMe ?? true);
       return NextResponse.json(res);
     }
@@ -91,7 +91,10 @@ export async function POST(req: NextRequest) {
     // Marcação de Leitura / Desleitura no WhatsApp (Item 2)
     if (action === 'read' || action === 'unread') {
       if (action === 'read') {
-        serverCRMStore.markConversationRead(cleanPhone);
+        const tenantId = session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId;
+        const state = await readCRMState(tenantId);
+        const ids = new Set(state.contacts.filter(c => c.phone.replace(/\D/g, '') === cleanPhone).map(c => c.id));
+        await writeCRMState(tenantId, { conversations: state.conversations.filter(c => ids.has(c.contactId)).map(c => ({ ...c, unreadCount: 0 })) });
       }
       const res = await zapi.modifyChat(cleanPhone, action);
       return NextResponse.json(res);

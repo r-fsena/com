@@ -1,3 +1,5 @@
+import { writeCRMState, readCRMState } from '@/lib/crm-repository';
+import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
 import { normalizePhoneNumber } from '@/lib/vcf-parser';
@@ -35,9 +37,10 @@ export async function POST(req: NextRequest) {
     const historyLimit = Number(body.historyLimit || 15);
     const assignedUserId = body.assignedUserId || session?.userId;
 
-    if (body.instanceId) instanceId = body.instanceId;
-    if (body.token) instanceToken = body.token;
-    if (body.clientToken) securityToken = body.clientToken;
+    if (body.tenantId && body.tenantId !== session!.tenantId && !session!.isSuperAdmin) return NextResponse.json({ error: 'Imobiliária não autorizada.' }, { status: 403 });
+    tenantId = session!.isSuperAdmin ? (body.tenantId || req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId;
+    const credentials = await ZapiCredentialsService.resolveCredentials({ instanceId: body.instanceId, tenantId });
+    instanceId = credentials.instanceId; instanceToken = credentials.instanceToken; securityToken = credentials.securityToken;
 
     if (items.length === 0) {
       return NextResponse.json({ success: true, contacts: [], conversations: [], messages: [], count: 0 });
@@ -215,7 +218,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Atualiza o estado em memória do servidor
-    serverCRMStore.updateState({
+    await writeCRMState(tenantId, {
       contacts,
       conversations,
       messages,

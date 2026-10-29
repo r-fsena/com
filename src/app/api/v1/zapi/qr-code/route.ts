@@ -18,32 +18,22 @@ export async function GET(req: NextRequest) {
   const referer = req.headers.get('referer');
   const host = req.headers.get('host');
 
-  const isInternal = Boolean(
-    session ||
-    clientTenantHeader ||
-    clientUserHeader ||
-    queryTenant ||
-    secFetchSite === 'same-origin' ||
-    secFetchSite === 'same-site' ||
-    (referer && host && referer.includes(host)) ||
-    process.env.NODE_ENV !== 'production'
-  );
 
-  if (errorResponse && !isInternal) {
+  if (errorResponse) {
     return errorResponse;
   }
 
+  try {
   const rawInstanceId = searchParams.get('instanceId');
   const targetTenant = queryTenant || clientTenantHeader || session?.tenantId;
 
   const { instanceId, instanceToken, securityToken } = await ZapiCredentialsService.resolveCredentials({
     instanceId: rawInstanceId,
-    tenantId: targetTenant,
+    tenantId: session!.isSuperAdmin ? (req.headers.get('x-tenant-id') || session!.tenantId) : session!.tenantId,
     token: searchParams.get('token'),
     clientToken: searchParams.get('clientToken'),
   });
 
-  try {
     const client = new ZApiClient({
       instanceId,
       instanceToken,

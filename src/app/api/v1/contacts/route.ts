@@ -1,3 +1,4 @@
+import { readCRMState, writeCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { MOCK_CONTACTS } from '@/lib/mock-data';
@@ -30,7 +31,9 @@ export async function GET(request: NextRequest) {
   const temperature = searchParams.get('temperature');
   const search = searchParams.get('q');
 
-  let list = MOCK_CONTACTS.filter(c => c.tenantId === tenantId);
+  let list;
+  try { list = (await readCRMState(tenantId)).contacts; }
+  catch { return NextResponse.json({ error: "Contatos indisponíveis." }, { status: 503 }); }
 
   if (temperature && temperature !== 'ALL') {
     list = list.filter(c => c.temperature === temperature);
@@ -82,6 +85,7 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
+    await writeCRMState(newContact.tenantId, { contacts: [newContact as any] });
     return NextResponse.json({ data: newContact }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: 'Erro ao criar contato', message: err.message }, { status: 500 });

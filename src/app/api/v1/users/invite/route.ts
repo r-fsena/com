@@ -32,8 +32,7 @@ export async function POST(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req, {
     requiredRoles: ['SUPERADMIN', 'ADMIN'],
   });
-  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
-  if (errorResponse && !isSameOrigin) return errorResponse;
+  if (errorResponse) return errorResponse;
 
   try {
     const body = await req.json();

@@ -27,4 +27,4 @@ jobs:
       run: npm run build
 
     - name: Executar Testes Automatizados de Isolamento Multi-tenant
-      run: npm test -- --passWithNoTests || true
+      run: npm test

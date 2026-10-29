@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { UserRole } from '@/types/crm';
-import { MOCK_USERS } from '@/lib/mock-data';
-import { serverCRMStore } from '@/lib/server-crm-store';
-
-function getAllKnownUsers() {
-  try {
-    return serverCRMStore.getUsers();
-  } catch {
-    return MOCK_USERS;
-  }
-}
 
 export interface AuthenticatedSession {
   userId: string;
@@ -19,174 +9,76 @@ export interface AuthenticatedSession {
   role: UserRole;
   tenantId: string;
   isSuperAdmin: boolean;
+  expiresAt?: number;
+  source?: string;
 }
 
-const SESSION_SECRET = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET || 'brokiva-vanguard-super-secure-secret-token-key-2026';
-export const EXTENSION_SYNC_SECRET = process.env.BROKIVA_EXTENSION_SECRET || process.env.EXTENSION_SYNC_KEY || 'brokiva-ext-sync-secret-2026';
-
-/**
- * Assina um payload de sessão com HMAC-SHA256
- */
-export function signSessionPayload(payload: any): string {
-  const payloadStr = JSON.stringify(payload);
-  const payloadB64 = Buffer.from(payloadStr, 'utf-8').toString('base64url');
-  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
-  return `${payloadB64}.${signature}`;
+const developmentSecret = crypto.randomBytes(32).toString('hex');
+function sessionSecret() {
+  const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
+  if (secret && secret.length >= 32) return secret;
+  if (process.env.NODE_ENV === 'production') throw new Error('Configure SESSION_SECRET com pelo menos 32 caracteres.');
+  return developmentSecret;
 }
 
-/**
- * Valida a integridade e decodifica um token de sessão assinado
- */
+// Tokens anteriores à versão 2 são invalidados, inclusive os emitidos pelos fluxos inseguros.
+export function signSessionPayload(payload: any, lifetimeSeconds = 60 * 60 * 24): string {
+  const now = Math.floor(Date.now() / 1000);
+  const normalized = {
+    ...payload,
+    email: payload.userEmail || payload.email,
+    name: payload.userName || payload.name,
+    userEmail: payload.userEmail || payload.email,
+    userName: payload.userName || payload.name,
+    version: 2,
+    iat: now,
+    exp: now + Math.min(lifetimeSeconds, 60 * 60 * 24),
+    aud: 'brokiva-crm',
+  };
+  const encoded = Buffer.from(JSON.stringify(normalized), 'utf8').toString('base64url');
+  return `${encoded}.${crypto.createHmac('sha256', sessionSecret()).update(encoded).digest('base64url')}`;
+}
+
 export function verifySessionToken(token: string): any | null {
-  if (!token) return null;
   try {
-    const parts = token.split('.');
-    if (parts.length === 2) {
-      const [payloadB64, signature] = parts;
-      const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('base64url');
-      const sigBuffer = Buffer.from(signature);
-      const expectedBuffer = Buffer.from(expectedSig);
-      if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
-        return null;
-      }
-      return JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
-    }
-    return null;
-  } catch {
-    return null;
-  }
+    const [encoded, signature, extra] = token.split('.');
+    if (!encoded || !signature || extra) return null;
+    const expected = crypto.createHmac('sha256', sessionSecret()).update(encoded).digest('base64url');
+    if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    const now = Math.floor(Date.now() / 1000);
+    const roles: UserRole[] = ['SUPERADMIN', 'ADMIN_MASTER', 'ADMIN', 'MANAGER', 'BROKER', 'VIEWER'];
+    if (payload.version !== 2 || payload.aud !== 'brokiva-crm' || !Number.isFinite(payload.exp) || payload.exp <= now ||
+        !Number.isFinite(payload.iat) || payload.iat > now + 30 || payload.exp - payload.iat > 86400 ||
+        !payload.userId || !payload.email || !payload.tenantId || !roles.includes(payload.role)) return null;
+    return payload;
+  } catch { return null; }
 }
 
-/**
- * Validador de Sessão & Identidade para Rotas de API
- * Extrai e valida a identidade do usuário a partir de cookies assinados, tokens de extensão ou cabeçalhos.
- */
 export function validateApiSession(req: NextRequest, options?: {
   requiredRoles?: UserRole[];
   requireSuperAdmin?: boolean;
 }): { session: AuthenticatedSession | null; errorResponse: NextResponse | null } {
-  const authHeader = req.headers.get('authorization') || '';
-  const clientTenantHeader = req.headers.get('x-tenant-id') || '';
-  const clientUserHeader = req.headers.get('x-user-id') || '';
-  const clientEmailHeader = req.headers.get('x-user-email') || '';
-  const extensionTokenHeader = req.headers.get('x-extension-token') || '';
-  const sessionCookie = req.cookies.get('vanguard_session')?.value;
-
-  let userEmail = '';
-  let userId = '';
-  let cookieTenantId = '';
-  let tokenRole: UserRole | undefined;
-  let isExtensionAuthenticated = false;
-
-  // 1. Verificação do Cookie HttpOnly Seguro Assinado
-  if (sessionCookie) {
-    const sessionData = verifySessionToken(sessionCookie);
-    if (sessionData) {
-      if (sessionData.email) userEmail = sessionData.email.toLowerCase().trim();
-      if (sessionData.userId) userId = sessionData.userId;
-      if (sessionData.tenantId) cookieTenantId = sessionData.tenantId;
-      if (sessionData.role) tokenRole = sessionData.role;
-    }
-  }
-
-  // 2. Verificação de Token de Extensão Chrome (Shared Secret)
-  if (!userEmail && extensionTokenHeader && extensionTokenHeader === EXTENSION_SYNC_SECRET) {
-    isExtensionAuthenticated = true;
-    userEmail = clientEmailHeader.toLowerCase().trim() || 'extensao@faithhubs.com';
-    userId = clientUserHeader.trim() || 'user-extension-bridge';
-    tokenRole = 'BROKER';
-  }
-
-  // 3. Verificação de Bearer Token
-  if (!userEmail && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.replace('Bearer ', '').trim();
-    const sessionData = verifySessionToken(token);
-    if (sessionData) {
-      if (sessionData.email) userEmail = sessionData.email.toLowerCase().trim();
-      if (sessionData.userId) userId = sessionData.userId;
-      if (sessionData.tenantId) cookieTenantId = sessionData.tenantId;
-      if (sessionData.role) tokenRole = sessionData.role;
-    } else if (token === EXTENSION_SYNC_SECRET) {
-      isExtensionAuthenticated = true;
-      userEmail = clientEmailHeader.toLowerCase().trim() || 'extensao@faithhubs.com';
-      userId = clientUserHeader.trim() || 'user-extension-bridge';
-      tokenRole = 'BROKER';
-    }
-  }
-
-  // 3.1 Proteção contra Header Spoofing: aceita cabeçalhos se same-origin ou não-produção
-  const isSameOrigin = req.headers.get('sec-fetch-site') === 'same-origin' || 
-                       req.headers.get('sec-fetch-site') === 'same-site' ||
-                       (!!req.nextUrl.host && !!req.headers.get('referer')?.includes(req.nextUrl.host));
-
-  const allKnownUsers = getAllKnownUsers();
-  if ((process.env.NODE_ENV !== 'production' || isSameOrigin) && !userEmail && (clientEmailHeader || clientUserHeader)) {
-    const targetEmail = clientEmailHeader.toLowerCase().trim();
-    const foundUser = allKnownUsers.find(u => (targetEmail && u.email.toLowerCase() === targetEmail) || (clientUserHeader && u.id === clientUserHeader));
-    if (foundUser) {
-      userEmail = foundUser.email;
-      userId = foundUser.id;
-      cookieTenantId = clientTenantHeader || foundUser.tenantId || '';
-      tokenRole = foundUser.role;
-    }
-  }
-
-  // 4. Bloqueio Estrito: Sem credencial verificada -> Retorna 401 Unauthorized imediatamente
-  if (!userEmail && !userId && !isExtensionAuthenticated) {
-    return {
-      session: null,
-      errorResponse: NextResponse.json({
-        success: false,
-        error: 'Autenticação necessária. Credenciais ausentes ou inválidas.',
-      }, { status: 401 }),
-    };
-  }
-
-  // 5. Localiza o usuário correspondente no catálogo
-  const foundUser = allKnownUsers.find(u => 
-    (userId && u.id === userId) || 
-    (userEmail && u.email.toLowerCase() === userEmail)
-  );
-
-  const role: UserRole = tokenRole || foundUser?.role || (userEmail.includes('admin') || userEmail.includes('rafael') ? 'SUPERADMIN' : 'BROKER');
-  const isSuperAdmin = role === 'SUPERADMIN';
-  
-  // Anti-IDOR: O tenantId é sempre associado ao tenant do usuário ou validado
-  const tenantId = cookieTenantId || clientTenantHeader || (foundUser?.tenantId || 'tenant-amabile-barbarotti');
-
+  const fail = (status: number, error: string) => ({ session: null, errorResponse: NextResponse.json({ success: false, error }, { status }) });
+  const auth = req.headers.get('authorization');
+  const token = auth ? (auth.startsWith('Bearer ') ? auth.slice(7).trim() : '') : req.cookies.get('vanguard_session')?.value;
+  const payload = token ? verifySessionToken(token) : null;
+  if (!payload) return fail(401, 'Autenticação necessária. Entre novamente com e-mail e senha.');
+  const isSuperAdmin = payload.role === 'SUPERADMIN';
   const session: AuthenticatedSession = {
-    userId: foundUser?.id || userId || 'user-authenticated',
-    userEmail: foundUser?.email || userEmail,
-    userName: foundUser?.name || (isExtensionAuthenticated ? 'Extensão Brokiva' : 'Usuário Autenticado'),
-    role,
-    tenantId,
-    isSuperAdmin,
+    userId: payload.userId, userEmail: payload.email, userName: payload.name || payload.email,
+    role: payload.role, tenantId: payload.tenantId, isSuperAdmin, expiresAt: payload.exp, source: payload.source,
   };
-
-  // 6. Verificação de SuperAdmin
-  if (options?.requireSuperAdmin && !isSuperAdmin) {
-    return {
-      session: null,
-      errorResponse: NextResponse.json({
-        success: false,
-        error: 'Acesso negado: Requer privilégios de SuperAdmin Master.',
-      }, { status: 403 }),
-    };
+  // Cabeçalhos são contexto, nunca credenciais. Somente o administrador global pode trocar de tenant.
+  for (const requested of [req.headers.get('x-tenant-id'), req.nextUrl.searchParams.get('tenantId')]) {
+    if (requested && requested !== session.tenantId && !isSuperAdmin) return fail(403, 'Imobiliária não autorizada para esta sessão.');
   }
-
-  // 7. Verificação de Matriz de Permissões (RBAC)
-  if (options?.requiredRoles && options.requiredRoles.length > 0) {
-    const hasRole = isSuperAdmin || options.requiredRoles.includes(role);
-    if (!hasRole) {
-      return {
-        session: null,
-        errorResponse: NextResponse.json({
-          success: false,
-          error: `Acesso negado: Seu perfil (${role}) não possui autorização para esta operação.`,
-        }, { status: 403 }),
-      };
-    }
-  }
-
+  if (options?.requireSuperAdmin && !isSuperAdmin) return fail(403, 'Acesso restrito ao administrador global.');
+  if (options?.requiredRoles?.length && !isSuperAdmin && !options.requiredRoles.includes(session.role)) return fail(403, 'Seu perfil não tem permissão para esta operação.');
   return { session, errorResponse: null };
+}
+
+export function authorizedTenant(session: AuthenticatedSession, requested?: string | null): string {
+  if (requested && requested !== session.tenantId && !session.isSuperAdmin) throw new Error('Imobiliária não autorizada para esta sessão.');
+  return session.isSuperAdmin && requested ? requested : session.tenantId;
 }

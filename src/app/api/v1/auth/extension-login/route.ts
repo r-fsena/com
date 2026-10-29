@@ -1,122 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MOCK_USERS, MOCK_TENANTS } from '@/lib/mock-data';
-import { serverCRMStore } from '@/lib/server-crm-store';
-import { signSessionPayload } from '@/lib/api-auth';
+import { signSessionPayload, validateApiSession, authorizedTenant } from '@/lib/api-auth';
+import { AuthService } from '@/lib/db/auth-service';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-extension-token',
-};
-
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: corsHeaders,
-  });
-}
-
-/**
- * GET: Retorna catálogo simplificado de Imobiliárias e Corretores ativos
- * para exibição amigável na interface de login da extensão
- */
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Cache-Control': 'no-store' };
+export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: cors }); }
 export async function GET(req: NextRequest) {
-  const tenants = MOCK_TENANTS.map(t => ({
-    id: t.id,
-    name: t.name,
-    slug: t.slug,
-    primaryColor: t.primaryColor || '#3742AC',
-  }));
-
-  const allUsers = serverCRMStore.getUsers();
-  const brokers = allUsers.filter(u => u.isActive).map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role,
-    tenantId: u.tenantId || 'tenant-amabile-barbarotti',
-    avatarUrl: u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=3742AC&color=ffffff`,
-  }));
-
-  return NextResponse.json({
-    success: true,
-    tenants,
-    brokers,
-  }, { headers: corsHeaders });
+  const { session, errorResponse } = validateApiSession(req);
+  if (errorResponse) return errorResponse;
+  // O catálogo público de corretores e perfis foi removido.
+  return NextResponse.json({ success: true, user: session, tenants: [{ id: session!.tenantId, name: session!.tenantId.replace(/^tenant-/, '') }] }, { headers: cors });
 }
-
-/**
- * POST: Autentica o corretor e emite um token assinado com HMAC-SHA256
- * isolado para uso persistente na extensão Brokiva.
- */
 export async function POST(req: NextRequest) {
-  // Rate Limiting preventivo (Máx 20 tentativas por minuto por IP)
-  const clientIp = getClientIp(req.headers);
-  const rateCheck = checkRateLimit(`ext-login:${clientIp}`, 20, 60);
-  if (!rateCheck.allowed) {
-    return NextResponse.json({
-      success: false,
-      error: `Muitas tentativas. Aguarde ${rateCheck.resetInSeconds} segundos.`,
-    }, { status: 429, headers: corsHeaders });
-  }
-
+  const limit = checkRateLimit(`ext-login:${getClientIp(req.headers)}`, 10, 60);
+  if (!limit.allowed) return NextResponse.json({ success: false, error: 'Muitas tentativas. Aguarde um minuto.' }, { status: 429, headers: cors });
   try {
     const body = await req.json();
-    const { email, name, tenantId } = body;
-
-    if (!email && !name) {
-      return NextResponse.json({
-        success: false,
-        error: 'Informe o e-mail ou nome do corretor para identificação.',
-      }, { status: 400, headers: corsHeaders });
+    // Pareamento por cookie já autenticado, ou login real com senha.
+    let { session } = validateApiSession(req);
+    if (typeof body.password === 'string' && typeof body.email === 'string') {
+      const result = await AuthService.authenticateUser(body.email, body.password, undefined, body.tenantId || undefined);
+      session = result.success && result.user ? result.user : null;
     }
-
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const targetTenantId = tenantId || 'tenant-amabile-barbarotti';
-    const foundTenant = MOCK_TENANTS.find(t => t.id === targetTenantId || t.slug === targetTenantId) || MOCK_TENANTS[0];
-
-    // Localiza usuário existente ou provisiona credencial de corretor para o tenant selecionado
-    const allKnownBrokers = serverCRMStore.getUsers();
-    let foundUser = allKnownBrokers.find(u => 
-      (cleanEmail && u.email.toLowerCase() === cleanEmail) ||
-      (name && u.name.toLowerCase().trim() === String(name).toLowerCase().trim())
-    ) || MOCK_USERS.find(u => 
-      (cleanEmail && u.email.toLowerCase() === cleanEmail) ||
-      (name && u.name.toLowerCase().trim() === String(name).toLowerCase().trim())
-    );
-
-    const displayName = foundUser?.name || (name ? String(name).trim() : cleanEmail.split('@')[0]);
-    const finalEmail = foundUser?.email || cleanEmail || `${displayName.toLowerCase().replace(/\s+/g, '.')}@amabile.com.br`;
-    const finalUserId = foundUser?.id || `user-broker-${displayName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
-    const finalRole = foundUser?.role || 'BROKER';
-
-    const sessionPayload = {
-      userId: finalUserId,
-      email: finalEmail,
-      name: displayName,
-      role: finalRole,
-      tenantId: foundTenant.id,
-      tenantName: foundTenant.name,
-      avatarUrl: foundUser?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=3742AC&color=ffffff`,
-      source: 'CHROME_EXTENSION',
-      issuedAt: new Date().toISOString(),
-    };
-
-    const token = signSessionPayload(sessionPayload);
-
-    return NextResponse.json({
-      success: true,
-      message: `Corretor ${displayName} autenticado com sucesso na extensão Brokiva.`,
-      token,
-      user: sessionPayload,
-    }, { headers: corsHeaders });
-  } catch (error: any) {
-    return NextResponse.json({
-      success: false,
-      error: error.message || 'Falha ao autenticar corretor na extensão',
-    }, { status: 500, headers: corsHeaders });
-  }
+    if (!session) return NextResponse.json({ success: false, error: 'Entre no CRM ou informe e-mail e senha para conectar a extensão.' }, { status: 401, headers: cors });
+    // O cookie define o contexto do pareamento; dados do localStorage não escolhem identidade ou tenant.
+    session = { ...session, tenantId: authorizedTenant(session, body.tenantId) };
+    const expiresAt = Math.min(session.expiresAt || Infinity, Math.floor(Date.now() / 1000) + 900);
+    const token = signSessionPayload({ ...session, source: 'CHROME_EXTENSION' }, expiresAt - Math.floor(Date.now() / 1000));
+    return NextResponse.json({ success: true, token, expiresAt, user: { ...session, email: session.userEmail, name: session.userName, tenantName: session.tenantId.replace(/^tenant-/, '') } }, { headers: cors });
+  } catch { return NextResponse.json({ success: false, error: 'Não foi possível conectar a extensão.' }, { status: 503, headers: cors }); }
 }

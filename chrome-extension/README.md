@@ -1,6 +1,6 @@
 # Brokiva — extensão para WhatsApp Web
 
-Versão **1.0.52**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
+Versão **1.0.53**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
 
 ## Instalação e pareamento
 
@@ -18,6 +18,12 @@ Versão **1.0.52**. Importa mensagens disponibilizadas pelo WhatsApp Web para a 
 - A rolagem preserva sobreposição entre páginas virtualizadas e aguarda carregamentos. Estabilidade sem confirmação do início disponível resulta em **leitura parcial**, não em sucesso completo. Há limites de proteção de 1.600 etapas/20 minutos por conversa e 4.000 etapas por lista; atingir um limite é informado como pendência.
 - IDs e direção vêm das mensagens reais do WhatsApp. Números, horários digitados, emojis e textos repetidos são preservados. Não se cria uma mensagem a partir da prévia da lista, nem um telefone a partir do nome.
 - Sem ID, telefone ou data verificáveis, a mensagem/conversa fica indicada como pendente de leitura; não se atribui o conteúdo a um contato por aproximação. O cache nativo complementa o DOM e não é apresentado como histórico completo.
+
+## Compatibilidade com o formato atual do WhatsApp
+
+A versão 1.0.53 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
+
+O título vem prioritariamente de `conversation-info-header-chat-title`, excluindo controles injetados pela própria Brokiva. Isso impede que “Sincronizar Histórico” seja tratado como nome do cliente.
 
 ## Gravação e retomada
 

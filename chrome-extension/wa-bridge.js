@@ -236,7 +236,10 @@
     for (const message of getModels(chat?.msgs)) {
       const type = message.type || message.__x_type || 'chat';
       if (['e2e_notification', 'notification_template', 'gp2', 'ciphertext', 'revoked', 'protocol'].includes(type)) continue;
-      const id = message.id?._serialized || (typeof message.id === 'string' ? message.id : '');
+      const sourceKey = message.id || message.__x_id;
+      const explicitDirection = [sourceKey?.fromMe, message.fromMe, message.__x_fromMe].find(value => typeof value === 'boolean');
+      const rawId = sourceKey?.id || (typeof sourceKey === 'string' ? sourceKey : '');
+      const id = sourceKey?._serialized || (typeof explicitDirection === 'boolean' && /^[a-f0-9]{16,128}$/i.test(rawId) ? `${explicitDirection}_${jid}_${rawId}` : rawId);
       const idMatch = id.match(/^(true|false)_([^_]+)_(.+)$/);
       const rawTime = Number(message.t || message.__x_t || 0);
       const time = rawTime < 1e12 ? rawTime * 1000 : rawTime;

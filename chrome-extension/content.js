@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.52';
+    let extVersion = '1.0.53';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.52';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.53';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -772,17 +772,29 @@ ${isDeveloperMode ? `
   }
 
   // 1.5 Aguarda confirmação ativa de troca de conversa no #main (evita contaminação entre chats)
+  function chatHeaderTitle(main) {
+    const exact = main?.querySelector('[data-testid="conversation-info-header-chat-title"]');
+    if (exact) return (exact.getAttribute('title') || exact.innerText || '').normalize('NFKC').trim();
+    const candidates = Array.from(main?.querySelectorAll('header span[title], header span[dir="auto"]') || []);
+    const title = candidates.find(el => !el.closest('#brokiva-header-sync-btn, #sovereign-crm-root') && (el.getAttribute('title') || el.innerText || '').trim());
+    return (title?.getAttribute('title') || title?.innerText || '').normalize('NFKC').trim();
+  }
   function activeChatIdentity() {
     const main = document.querySelector('#main');
-    const titleEl = main?.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
-    const title = (titleEl?.getAttribute('title') || titleEl?.innerText || '').normalize('NFKC').trim();
-    const jids = new Set(Array.from(main?.querySelectorAll('[data-id]') || []).map(el => BrokivaImport.messageIdentity(el.getAttribute('data-id'))?.jid).filter(Boolean));
+    const title = chatHeaderTitle(main);
+    const ids = Array.from(main?.querySelectorAll('[data-id]') || []).map(el => el.getAttribute('data-id'));
+    const jids = new Set(ids.map(id => BrokivaImport.messageIdentity(id)?.jid).filter(Boolean));
+    const anchors = new Set(ids.filter(id => BrokivaImport.messageIdentity(id) || /^[a-f0-9]{16,128}$/i.test(id)));
     if (jids.size > 1) throw new Error('Foram encontradas mensagens de conversas diferentes. Leitura interrompida.');
-    return { main, title, jid: Array.from(jids)[0] || '' };
+    return { main, title, anchors, jid: Array.from(jids)[0] || '' };
   }
   function assertActiveChat(expected) {
     const current = activeChatIdentity();
-    if (!current.main || current.title !== expected.title || !current.jid || current.jid !== expected.jid) throw new Error('A conversa mudou durante a leitura. Nenhuma mensagem foi associada ao novo contato.');
+    const sameHeader = current.main && current.title === expected.title;
+    const nativeMatch = current.jid && current.jid === expected.jid;
+    const anchoredMatch = !current.jid && expected.verifiedByDrawer && [...current.anchors].some(id => expected.anchors.has(id));
+    if (!sameHeader || (!nativeMatch && !anchoredMatch)) throw new Error('A conversa mudou ou perdeu a continuidade durante a leitura. Reabra o contato e tente novamente.');
+    expected.anchors = current.anchors;
   }
   async function waitForChatToOpen(row, previous, timeoutMs = 10000) {
     const start = Date.now();
@@ -791,10 +803,11 @@ ${isDeveloperMode ? `
       const current = activeChatIdentity();
       const expectedTitle = row.title.normalize('NFKC').trim();
       const selected = row.clickable.getAttribute('aria-selected') === 'true' || Boolean(row.clickable.querySelector('[aria-selected="true"]'));
-      const identityMatches = row.jid ? current.jid === row.jid
-        : (previous.title !== expectedTitle || current.jid !== previous.jid || selected);
-      if (current.title === expectedTitle && current.jid && identityMatches) {
-        const signature = `${current.title}:${current.jid}`;
+      const changedMessages = [...current.anchors].some(id => !previous.anchors.has(id));
+      const identityMatches = row.jid && current.jid ? current.jid === row.jid
+        : (previous.title !== expectedTitle || changedMessages || selected);
+      if (current.title === expectedTitle && current.anchors.size && identityMatches) {
+        const signature = `${current.title}:${current.jid}:${[...current.anchors].slice(0, 2).join(':')}`;
         if (stable === signature) return current;
         stable = signature;
       } else stable = '';
@@ -903,30 +916,7 @@ ${isDeveloperMode ? `
       return null;
     }
 
-    // 1. Identifica nome e título no header do chat (ignora status como online, visto por último, etc.)
-    let contactName = '';
-    const headerSpans = Array.from(main.querySelectorAll('header span[title], header div[data-testid="conversation-info-header"] span, header div[role="button"] span[title], header span[dir="auto"]'));
-    for (const s of headerSpans) {
-      const t = (s.getAttribute('title') || s.innerText || '').trim();
-      const lower = t.toLowerCase();
-      if (
-        t &&
-        t.length >= 1 &&
-        !lower.includes('online') &&
-        !lower.includes('visto por último') &&
-        !lower.includes('last seen') &&
-        !lower.includes('clique aqui') &&
-        !lower.includes('dados do') &&
-        !lower.includes('typing') &&
-        !lower.includes('digitando')
-      ) {
-        contactName = t;
-        break;
-      }
-    }
-    if (!contactName) {
-      contactName = 'Contato WhatsApp';
-    }
+    const contactName = chatHeaderTitle(main) || 'Contato WhatsApp';
 
     // 2. Localiza telefone do contato e LID
     let resolvedPhone = '';
@@ -1444,10 +1434,10 @@ ${isDeveloperMode ? `
       if (el.getAttribute('role') === 'row' && el.querySelector('.message-in, .message-out')) {
         continue;
       }
-      const bubble = el.matches('.message-in, .message-out') ? el : (el.querySelector('.message-in, .message-out') || el);
+      const bubble = el.closest('[data-testid^="conv-msg-"]') || el.querySelector('[data-testid^="conv-msg-"]') || (el.matches('.message-in, .message-out') ? el : (el.querySelector('.message-in, .message-out') || el));
       if (seenElements.has(bubble)) continue;
       seenElements.add(bubble);
-      uniqueElements.push(el);
+      uniqueElements.push(bubble);
     }
 
     let currentWalkingDateIso = '';
@@ -1512,7 +1502,8 @@ ${isDeveloperMode ? `
       // Validação resiliente de ID de mensagem do WhatsApp
       const isDataIdFromMe = actualDataId.startsWith('true_');
       const isDataIdFromContact = actualDataId.startsWith('false_');
-      const isRealMsgKey = isDataIdFromMe || isDataIdFromContact;
+      const isRawMessageKey = /^[a-f0-9]{16,128}$/i.test(actualDataId) && idEl?.getAttribute('data-testid') === `conv-msg-${actualDataId}`;
+      const isRealMsgKey = isDataIdFromMe || isDataIdFromContact || isRawMessageKey;
       const rawDataId = isRealMsgKey ? actualDataId : '';
 
       const structuredNodes = Array.from(container.querySelectorAll('.selectable-text, [data-testid="msg-text"]'))
@@ -1875,9 +1866,17 @@ ${isDeveloperMode ? `
         }
       }
 
-      const uniqueMsgKey = rawDataId;
-      const identity = BrokivaImport.messageIdentity(rawDataId);
-      if (!identity) { messagesMap._issues ||= new Set(); messagesMap._issues.add('MESSAGE_ID_UNAVAILABLE'); return; }
+      let identity = BrokivaImport.messageIdentity(rawDataId);
+      if (!identity && isRawMessageKey && messagesMap._identity?.jid) {
+        const sender = cleanPrePlain.replace(/^.*?\]\s*/, '').replace(/:\s*$/, '').trim();
+        const tailOut = Boolean(container.querySelector('[data-icon="tail-out"]'));
+        const tailIn = Boolean(container.querySelector('[data-icon="tail-in"]'));
+        const checked = Boolean(container.querySelector('[data-testid="msg-meta"] [data-icon*="check"]'));
+        const explicit = tailOut || checked ? true : tailIn ? false : null;
+        identity = BrokivaImport.rawMessageIdentity(rawDataId, messagesMap._identity.jid, sender, messagesMap._identity.title, currentBrokerName, explicit);
+      }
+      if (!identity) { messagesMap._issues ||= new Set(); messagesMap._issues.add(isRawMessageKey ? 'AUTHOR_UNCONFIRMED' : 'MESSAGE_ID_UNAVAILABLE'); return; }
+      const uniqueMsgKey = identity.id;
       const isTimestampEstimated = !isHardPrePlainDate;
       currentWalkingDateIso = msgTime;
       lastSeenValidTimeMs = Date.parse(msgTime) || lastSeenValidTimeMs;
@@ -1886,7 +1885,7 @@ ${isDeveloperMode ? `
 
       if (!messagesMap.has(uniqueMsgKey)) {
         messagesMap.set(uniqueMsgKey, {
-          id: rawDataId,
+          id: identity.id,
           content,
           fromMe: identity.fromMe,
           timestamp: msgTime,
@@ -2116,12 +2115,13 @@ ${isDeveloperMode ? `
     return false;
   }
 
-  async function deepScrollChatHistory(_legacyLimit, onProgress = null, checkpoint = null) {
-    const identity = activeChatIdentity();
+  async function deepScrollChatHistory(_legacyLimit, onProgress = null, checkpoint = null, expectedIdentity = null) {
+    const identity = expectedIdentity || activeChatIdentity();
     if (!identity.jid) throw new Error('WhatsApp ainda não disponibilizou a identidade das mensagens. Aguarde o carregamento e tente novamente.');
     const main = identity.main;
     const scroller = findChatScrollContainer();
     const messages = new Map();
+    messages._identity = identity;
     const tracker = { orderedKeys: [], seenKeys: new Set(), knownAnchorDateIso: '' };
     const wait = () => new Promise(resolve => setTimeout(resolve, 750));
     const capture = direction => {
@@ -2189,7 +2189,7 @@ ${isDeveloperMode ? `
       if (!main) return null;
 
       // O botão clicável do cabeçalho que abre a gaveta de dados do contato
-      const headerClickable = main.querySelector('header [data-testid="conversation-info-header"]') ||
+      const headerClickable = main.querySelector('[data-testid="conversation-info-header-chat-title"]') || main.querySelector('header [data-testid="conversation-info-header"]') ||
                               main.querySelector('header div[role="button"]') ||
                               main.querySelector('header div[tabindex="0"]') ||
                               main.querySelector('header span[title]')?.closest('div[role="button"]') ||
@@ -2197,7 +2197,7 @@ ${isDeveloperMode ? `
                               main.querySelector('header');
       if (!headerClickable) return null;
 
-      headerClickable.click();
+      if (!document.querySelector('[data-testid="contact-info-drawer"], [data-testid="chat-info-drawer"]')) headerClickable.click();
 
       let foundPhone = null;
       let foundPushName = null;
@@ -2266,7 +2266,7 @@ ${isDeveloperMode ? `
       }
 
       // Fecha a gaveta lateral
-      const closeBtn = document.querySelector('div[tabindex="-1"] span[data-icon="x"]')?.closest('button') ||
+      const closeBtn = document.querySelector('[data-testid="drawer-right"] [data-testid="btn-closer"]') || document.querySelector('[data-testid="drawer-right"] [aria-label="Fechar"]') || document.querySelector('div[tabindex="-1"] span[data-icon="x"]')?.closest('button') ||
                        document.querySelector('header button[aria-label*="Fechar" i], header button[aria-label*="Close" i]') ||
                        document.querySelector('div[tabindex="-1"] button[aria-label*="Fechar" i], div[tabindex="-1"] button[aria-label*="Close" i]') ||
                        document.querySelector('[data-testid="btn-closer"]');
@@ -2323,15 +2323,18 @@ ${isDeveloperMode ? `
       NATIVE_UNREADABLE: 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
       UNREADABLE_MESSAGE: 'Há balões sem conteúdo legível.',
       MESSAGE_ID_UNAVAILABLE: 'Há balões sem identificador verificável.',
+      AUTHOR_UNCONFIRMED: 'Há mensagens cuja autoria não pôde ser confirmada.',
     };
     return String(coverage?.reason || 'UNCONFIRMED_BOUNDARY').split(', ').map(reason => reasons[reason] || 'Uma parte do histórico precisa ser conferida.').join(' ');
   }
-  async function readAndImportActiveChat(context, labels = []) {
+  async function readAndImportActiveChat(context, labels = [], expectedRow = null) {
     const identity = activeChatIdentity();
-    if (!identity.jid) throw new Error('A identidade da conversa ainda não foi carregada.');
+    if (!identity.title || !identity.anchors.size) throw new Error('A conversa e suas mensagens ainda não foram carregadas.');
     const details = {};
-    const phone = await resolvePhoneFromCrmIfLid(identity.title, identity.jid, identity.jid.endsWith('@lid'), details);
+    const phone = await resolvePhoneFromCrmIfLid(identity.title, identity.jid, !identity.jid || identity.jid.endsWith('@lid'), details);
+    if (!identity.jid && phone) { identity.jid = `${phone}@c.us`; identity.verifiedByDrawer = true; }
     assertActiveChat(identity);
+    if (expectedRow?.jid && BrokivaImport.canonicalJid(expectedRow.jid) !== identity.jid) throw new Error('O contato aberto não corresponde ao item da lista.');
     if (!phone) throw new Error('Telefone da conversa não confirmado. Abra os dados do contato e tente novamente.');
     const base = { phone, name: identity.title, labels: [...new Set([...labels, ...(details.labels || [])])], ...(identity.jid.endsWith('@lid') ? { lid: identity.jid } : {}) };
     const persisted = new Set();
@@ -2353,7 +2356,7 @@ ${isDeveloperMode ? `
       messages = await deepScrollChatHistory(null, step => {
         const badge = document.getElementById('sovereign-sync-badge');
         if (badge) badge.innerText = `Lendo histórico: ${messagesReadLabel(step)}...`;
-      }, map => save(map));
+      }, map => save(map), identity);
       assertActiveChat(identity);
       const readableCount = Array.from(messages.values()).filter(message => !message.timestampEstimated).length;
       if (!readableCount) throw new Error('Nenhuma mensagem com ID e data verificável foi disponibilizada. Leitura pendente.');
@@ -2963,7 +2966,7 @@ ${isDeveloperMode ? `
             const previous = activeChatIdentity();
             row.clickable.click();
             await waitForChatToOpen(row, previous);
-            const result = await readAndImportActiveChat(context, row.labels);
+            const result = await readAndImportActiveChat(context, row.labels, row);
             const saved = result.response.confirmedMessages || 0;
             report.totalMessages += saved;
             if (result.response.success) report.totalChats++;

@@ -25,7 +25,7 @@ npm run dev
 3. Antes de publicar o backend, execute `npm run db:migrate:state`. Isso aplica `database/03_durable_crm_state.sql` e copia contatos, conversas, mensagens e oportunidades das tabelas existentes para o estado operacional de cada imobiliária. Para incluir um arquivo legado, execute `npm run db:migrate:state -- /caminho/crm-state.json`. Registros sem `tenantId` não são transferidos automaticamente. Snapshots existentes são preservados.
 4. Publique o backend e confira o login com uma conta cujo hash/salt e vínculo ativo estejam cadastrados no PostgreSQL. Esta migração não cadastra usuários nem redefine senhas. Identificadores Cognito enviados pelo cliente não são aceitos como autenticação.
 5. Cadastre ou confira as conexões em `/api/v1/zapi/instances` com uma sessão ADMIN ou SUPERADMIN. Os tokens ficam no servidor; leituras retornam apenas dados públicos da conexão. Use a ação de configurar webhooks depois da publicação: ela registra uma URL HTTPS com token por instância. As URLs antigas sem token deixam de ser aceitas.
-6. Atualize a extensão para **1.0.52**, faça login novamente no CRM e clique em **Entrar e parear no CRM** no popup. As sessões antigas são invalidadas. Trocar de imobiliária requer novo pareamento explícito. A sessão da extensão dura até 15 minutos e é renovada pela aba autenticada do CRM.
+6. Atualize a extensão para **1.0.53**, faça login novamente no CRM e clique em **Entrar e parear no CRM** no popup. As sessões antigas são invalidadas. Trocar de imobiliária requer novo pareamento explícito. A sessão da extensão dura até 15 minutos e é renovada pela aba autenticada do CRM.
 
 Publique o backend antes de distribuir a nova extensão. A correção de código não executa migrações nem altera credenciais de produção automaticamente.
 
@@ -56,17 +56,17 @@ Na configuração do provedor, confira **também** `update-webhook-received-deli
 
 - **Ambiente Teste Rafael Sena:** Z-API `CANCELED`, status recusado por necessidade de assinatura; URLs ainda diferentes das esperadas. Mantida a decisão de operar com a extensão, sem renovar a assinatura.
 - **Amábile Barbarotti:** instância desconectada; URLs, inclusive recebidas/enviadas, corretas e notificação de enviadas habilitada. O provedor informa `PAYMENT_RETRY`.
-- A revisão posterior da importação inclui a extensão 1.0.52 e o protocolo de recibos 2 descrito abaixo; confira a versão publicada antes de distribuir a extensão.
+- A revisão posterior da importação inclui a extensão 1.0.53 e o protocolo de recibos 2 descrito abaixo; confira a versão publicada antes de distribuir a extensão.
 
 `npm test` cobre recebidas e enviadas sem navegador, reinício da execução HTTP, mensagens antigas recebidas depois, concorrência, reentrega, falha de banco, avanço do cursor e isolamento entre imobiliárias. São eventos sintéticos em banco de teste. A validação real com o navegador fechado depende de uma instância operacional: enviar e receber pelo celular, reabrir o CRM e conferir ambas as mensagens sem usar a importação da extensão.
 
-## Importação verificada pela extensão (1.0.52)
+## Importação verificada pela extensão (1.0.53)
 
 O coletor percorre a lista aberta e o histórico com sobreposição entre páginas, confere a identidade da conversa durante a leitura e informa limites/pendências. Não usa somente o nome para identificar conversas, não inventa telefones e não transforma a prévia da lista em mensagem. Somente mensagens com ID e data verificáveis são enviadas. O cache do WhatsApp complementa a leitura, sem comprovar cobertura integral. Na tela do CRM, contatos e conversas mantêm os IDs do servidor; textos iguais não são fundidos, prévias não viram balões e o cache legado do navegador não é republicado automaticamente sobre o snapshot confirmado. Quando o servidor está indisponível, a leitura local continua servindo como fallback.
 
 Os lotes são persistidos antes da transmissão na fila da extensão, limitados a 150 mensagens/384 KiB e 6 MiB no total da fila. A API exige autenticação e grava cada lote em uma transação com os webhooks. Preserva texto, status de leitura, vínculo da instância, não lidas e o resumo mais recente. Reenvios reconciliam IDs do WhatsApp em vez de duplicar a mensagem. O recibo contém `protocol: 2`, `batchId`, `tenantId` e os IDs efetivamente processados; só é emitido após o commit. Estruturas inválidas rejeitam o lote inteiro.
 
-**Ordem de publicação:** backend primeiro; confira `X-Brokiva-Import-Protocol: 2` em `OPTIONS /api/v1/sync/extension-history`. Depois distribua/recarregue a extensão 1.0.52 e recarregue o WhatsApp Web. O popup mostra envios pendentes e o relatório da última importação; o botão **Retomar envios** reenvia os lotes preservados. Se um backend antigo responder HTTP 200 sem recibo completo, a extensão retém o lote e informa a incompatibilidade.
+**Ordem de publicação:** backend primeiro; confira `X-Brokiva-Import-Protocol: 2` em `OPTIONS /api/v1/sync/extension-history`. Depois distribua/recarregue a extensão 1.0.53 e recarregue o WhatsApp Web. O popup mostra envios pendentes e o relatório da última importação; o botão **Retomar envios** reenvia os lotes preservados. Se um backend antigo responder HTTP 200 sem recibo completo, a extensão retém o lote e informa a incompatibilidade.
 
 A fila retoma envios após falha/reinício, dentro da mesma conta e com sessão válida. A leitura interrompida precisa ser reiniciada. Arquivadas, filtros, datas não disponibilizadas e arquivos de mídia ausentes ficam explícitos como pendência, sem declaração de importação integral. Instruções completas em `../brokiva-chrome-extension/README.md`.
 

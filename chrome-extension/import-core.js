@@ -15,6 +15,18 @@
     const jid = match && canonicalJid(match[2]);
     return jid ? { id: value, jid, fromMe: match[1] === 'true' } : null;
   }
+  const normalizedName = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
+  function rawMessageIdentity(rawId, jid, sender, contactName, brokerName, explicitDirection = null) {
+    if (!/^[a-f0-9]{16,128}$/i.test(rawId) || !canonicalJid(jid)) return null;
+    const name = normalizedName(sender);
+    const incoming = name && name === normalizedName(contactName);
+    const outgoing = name && (name === normalizedName(brokerName) || ['voce', 'you'].includes(name));
+    if (incoming && outgoing) return null;
+    let fromMe = incoming ? false : outgoing ? true : explicitDirection;
+    if (typeof fromMe !== 'boolean') return null;
+    if (typeof explicitDirection === 'boolean' && (incoming || outgoing) && fromMe !== explicitDirection) return null;
+    return messageIdentity(`${fromMe}_${canonicalJid(jid)}_${rawId}`);
+  }
   const bytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
   function chunkChats(chats, maxMessages = 150, maxBytes = 384 * 1024) {
     if (!Array.isArray(chats) || !chats.length) throw new Error('Nenhuma conversa para importar.');
@@ -83,5 +95,5 @@
     }
     return { complete: false, reason: 'STEP_LIMIT', steps: maxSteps };
   }
-  return { canonicalJid, messageIdentity, bytes, chunkChats, verifyReceipt, sameContext, walkHistory };
+  return { canonicalJid, messageIdentity, rawMessageIdentity, bytes, chunkChats, verifyReceipt, sameContext, walkHistory };
 });

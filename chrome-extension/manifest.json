@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Brokiva — CRM Imobiliário & WhatsApp Sync",
-  "version": "1.0.52",
+  "version": "1.0.53",
   "description": "Extensão oficial Brokiva: importação verificada de conversas disponíveis no WhatsApp Web, gestão de leads e Brok.ia.",
   "permissions": [
     "storage",

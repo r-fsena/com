@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.54';
+    let extVersion = '1.0.55';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.54';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.55';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -264,6 +264,14 @@
     } catch (e) {}
   }
 
+  function showImportReport(report, context) {
+    const box = document.getElementById('sovereign-import-result');
+    if (!box) return;
+    if (!report || !BrokivaImport.sameContext(report.context, context)) { box.textContent = ''; box.hidden = true; return; }
+    box.textContent = `Última importação: ${report.totalMessages || 0} mensagens confirmadas.\n` + (report.issues || []).map(issue => `${issue.name}: ${issue.reason}`).join('\n');
+    box.hidden = false;
+  }
+
   function normalizeCrmUrl(raw) {
     let url = (raw || '').trim();
     if (!url) return 'https://crm.faithhubs.com';
@@ -275,6 +283,7 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.extensionSessionToken || changes.tenantId)) renderSidebarContent();
+    if (area === 'local' && changes.brokivaLastImportReport) chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']).then(context => showImportReport(changes.brokivaLastImportReport.newValue, context));
   });
   // 1.1 Renderizador dinâmico de Login ou Ferramentas Ativas
   async function renderSidebarContent() {
@@ -288,6 +297,8 @@
         'extensionSessionToken',
         'extensionSessionExpiresAt',
         'brokerName',
+        'brokerUserId',
+        'brokivaLastImportReport',
         'brokerEmail',
         'tenantName',
         'tenantId',
@@ -361,6 +372,7 @@
             <div id="sovereign-progress-fill" class="sovereign-progress-fill" style="background:#3742AC;"></div>
           </div>
           <p id="sovereign-progress-status" style="font-size:10px; color:#64748b; margin-top:6px; display:none; text-align:center;"></p>
+          <div id="sovereign-import-result" role="status" hidden style="white-space:pre-wrap;font-size:11px;color:#475569;margin-top:10px;max-height:180px;overflow:auto"></div>
         </div>
 
         <!-- Card do Lead Selecionado -->
@@ -411,6 +423,8 @@ ${isDeveloperMode ? `
         </div>
 ` : ""}
       `;
+
+      showImportReport(storage.brokivaLastImportReport, storage);
 
       // Conecta botões das ferramentas
       document.getElementById('sovereign-batch-sync-recent-btn')?.addEventListener('click', () => executeBatchHistoryScan({ mode: 'RECENT' }));
@@ -1511,6 +1525,7 @@ ${isDeveloperMode ? `
       const structuredText = structuredNodes.map(node => {
         const copy = node.cloneNode(true);
         copy.querySelectorAll('[data-testid*="quote"], .quoted-mention').forEach(node => node.remove());
+        copy.querySelectorAll('br').forEach(br => br.replaceWith(document.createTextNode('\n')));
         copy.querySelectorAll('img[alt]').forEach(img => img.replaceWith(document.createTextNode(img.getAttribute('alt'))));
         return copy.innerText || copy.textContent || '';
       }).join('\n').trim();
@@ -2379,7 +2394,7 @@ ${isDeveloperMode ? `
   async function syncCurrentActiveChat() {
     if (isSyncing) return { complete: false };
     isSyncing = true; cancelSyncRequested = false;
-    const badge = document.getElementById('sovereign-sync-badge');
+    let badge = document.getElementById('sovereign-sync-badge');
     const startedAt = Date.now();
     let context;
     try {
@@ -2387,6 +2402,7 @@ ${isDeveloperMode ? `
       if (isCurrentChatGroupOrChannel()) throw new Error('Selecione uma conversa individual.');
       context = await importContext();
       const { response, chat, coverage } = await readAndImportActiveChat(context);
+      badge = document.getElementById('sovereign-sync-badge');
       const saved = response.confirmedMessages || 0;
       const complete = response.success && coverage?.complete;
       if (badge) badge.innerText = complete ? `✓ ${saved} confirmadas` : `${saved} confirmadas • revisar pendências`;
@@ -2402,6 +2418,7 @@ ${isDeveloperMode ? `
         (!response.success ? `\n${response.error}` : ''));
       return { complete, saved };
     } catch (error) {
+      badge = document.getElementById('sovereign-sync-badge');
       if (badge) { badge.innerText = 'Importação pendente'; badge.title = error.message; }
       await chrome.storage.local.set({ brokivaLastImportReport: { context, mode: 'SINGLE', startedAt, finishedAt: Date.now(), totalChats: 0, totalMessages: 0, issues: [{ name: chatHeaderTitle(document.querySelector('#main')) || 'Conversa', reason: error.message }] } }).catch(() => {});
       alert(`Importação pendente: ${error.message}`);

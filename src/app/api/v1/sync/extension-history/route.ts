@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-tenant-id',
-  'Access-Control-Expose-Headers': 'X-Brokiva-Import-Protocol', 'X-Brokiva-Import-Protocol': '2',
+  'Access-Control-Expose-Headers': 'X-Brokiva-Import-Protocol, X-Brokiva-Import-Revision',
+  'X-Brokiva-Import-Protocol': '2', 'X-Brokiva-Import-Revision': '20261029.2',
 };
 function json(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: CORS_HEADERS }); }
 export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: CORS_HEADERS }); }

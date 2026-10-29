@@ -76,7 +76,7 @@ import {
   resolveKnownPhone
 } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
-import { reconcileIdentities, reconcileMessageHistory, reconcileConversationHistory } from '@/lib/crm-history';
+import { reconcileIdentities, reconcileMessageHistory, reconcileConversationHistory, tenantSnapshotRecords } from '@/lib/crm-history';
 import { crmEventCursor, mergeSyncedRecords } from '@/lib/crm-event-cursor';
 
 interface CRMContextType {
@@ -1693,14 +1693,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const serverTenantContacts = Array.isArray(serverData?.contacts) ? serverData.contacts : [];
         const localTenantContacts = (Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []).filter(c => !c.tenantId || c.tenantId === currentTenant.id);
 
-        const combinedContacts = [
-          ...localTenantContacts,
-          ...serverTenantContacts,
-          ...otherTenantContacts,
-        ].map((c: any) => ({
-          ...c,
-          isPersonal: c.isPersonal === true ? true : false,
-        })).filter(c => !isChatKeyDeleted(c.id, combinedDeleted) && !isChatKeyDeleted(c.phone, combinedDeleted) && !isChatKeyDeleted(c.lid, combinedDeleted));
+        const combinedContacts = tenantSnapshotRecords(
+          Array.isArray(parsedLocalContacts) ? parsedLocalContacts : [], serverTenantContacts,
+          currentTenant.id, serverData?.success === true,
+        ).filter(c => !isChatKeyDeleted(c.id, combinedDeleted) && !isChatKeyDeleted(c.phone, combinedDeleted) && !isChatKeyDeleted(c.lid, combinedDeleted));
 
         const finalContacts = deduplicateContactList(combinedContacts);
         setContacts(finalContacts);
@@ -1711,14 +1707,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const serverTenantConvs = Array.isArray(serverData?.conversations) ? serverData.conversations : [];
         const localTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => !cv.tenantId || cv.tenantId === currentTenant.id);
 
-        const combinedConvs = [
-          ...localTenantConvs,
-          ...serverTenantConvs,
-          ...otherTenantConvs,
-        ].map((cv: any) => ({
-          ...cv,
-          isPersonal: cv.isPersonal === true ? true : false,
-        })).filter(cv => !isChatKeyDeleted(cv.id, combinedDeleted) && !isChatKeyDeleted(cv.contactId, combinedDeleted));
+        const combinedConvs = tenantSnapshotRecords(
+          Array.isArray(parsedLocalConvs) ? parsedLocalConvs : [], serverTenantConvs,
+          currentTenant.id, serverData?.success === true,
+        ).filter(cv => !isChatKeyDeleted(cv.id, combinedDeleted) && !isChatKeyDeleted(cv.contactId, combinedDeleted));
 
         const finalConvs = deduplicateConversations(combinedConvs, finalContacts);
         setConversations(finalConvs);
@@ -1726,11 +1718,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
         // 6. Mescla mensagens
         const activeConvIds = new Set(localTenantConvs.map(cv => cv.id));
-        const combinedMsgs = [
-          ...(Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : []),
-          ...(Array.isArray(serverData?.messages) ? serverData.messages : []),
-        ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted))
-;
+        const combinedMsgs = tenantSnapshotRecords(
+          Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : [], Array.isArray(serverData?.messages) ? serverData.messages : [],
+          currentTenant.id, serverData?.success === true,
+        ).filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted));
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
         setMessages(finalMsgs);
@@ -1773,30 +1764,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         setQuickReplies(finalQRs);
         try { localStorage.setItem('vanguard_crm_quick_replies', JSON.stringify(finalQRs)); } catch {}
 
-        // 9. Sincronização e Re-semeadura Bi-direcional do Servidor
-        // Se o navegador local tiver dados no localStorage e o servidor estiver vazio ou com menos registros,
-        // envia para o servidor para que o disco seja gravado e outros navegadores/dispositivos (ex: Safari) recebam tudo!
-        const serverNeedsSeeding = !serverData || !Array.isArray(serverData.conversations) || serverData.conversations.length < finalConvs.length;
-        if (serverNeedsSeeding && finalConvs.length > 0) {
-          console.log('[CRM Context] Semeando servidor com histórico consolidado para persistência cross-device...');
-          fetchCRMState('/api/v1/crm/state', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-tenant-id': currentTenant.id,
-              'x-user-id': currentUser.id,
-              'x-user-email': currentUser.email,
-            },
-            body: JSON.stringify({
-              contacts: finalContacts,
-              conversations: finalConvs,
-              messages: finalMsgs,
-              deals: finalDeals,
-              aiInsights: finalInsights,
-            }),
-          }).catch(() => {});
-        }
+        // Dados legados do navegador não são republicados automaticamente sobre o snapshot confirmado.
 
         // 10. Conversa ativa
         const savedActive = localStorage.getItem('vanguard_crm_active_conv_id');

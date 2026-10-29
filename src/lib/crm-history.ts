@@ -10,6 +10,13 @@ export function reconcileIdentities<T extends { id: string; tenantId: string }>(
   }
   return Array.from(map.values());
 }
+/** O cache não reintroduz registros legados numa imobiliária já lida com sucesso do servidor. */
+export function tenantSnapshotRecords<T extends { id: string; tenantId: string }>(cached: T[], server: T[], tenantId: string, serverAvailable: boolean): T[] {
+  return reconcileIdentities([
+    ...cached.filter(record => record.tenantId && (!serverAvailable || record.tenantId !== tenantId)),
+    ...server.filter(record => record.tenantId === tenantId),
+  ]);
+}
 export function reconcileMessageHistory(records: Message[]): Message[] {
   const map = new Map<string, Message>();
   const rank = { PENDING: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: -1 };

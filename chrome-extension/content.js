@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.53';
+    let extVersion = '1.0.54';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.53';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.54';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -1969,12 +1969,13 @@ ${isDeveloperMode ? `
             topSyncBtn.disabled = true;
             topSyncBtn.style.opacity = '0.7';
             topSyncBtn.innerHTML = `<span>⏳ Lendo histórico...</span>`;
+            let outcome;
             try {
-              await syncCurrentActiveChat();
+              outcome = await syncCurrentActiveChat();
             } finally {
               topSyncBtn.disabled = false;
               topSyncBtn.style.opacity = '1';
-              topSyncBtn.innerHTML = `<span>✓ Histórico Salvo!</span>`;
+              topSyncBtn.innerHTML = `<span>${outcome?.complete ? "✓ Importação conferida" : "Consultar pendências"}</span>`;
               setTimeout(() => {
                 const b = document.getElementById('brokiva-header-sync-btn');
                 if (b) {
@@ -2044,7 +2045,7 @@ ${isDeveloperMode ? `
           }
         }
       } else {
-        const headerTitle = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]')?.innerText?.trim() || '';
+        const headerTitle = chatHeaderTitle(main);
         if (headerTitle && lastLeadSignature !== headerTitle) {
           lastLeadSignature = headerTitle;
           nameElem.innerText = headerTitle;
@@ -2107,9 +2108,10 @@ ${isDeveloperMode ? `
     const main = document.querySelector('#main');
     if (!main) return false;
     for (const button of main.querySelectorAll('button, [role="button"], [data-testid*="history"], [data-testid*="load"]')) {
-      if (button.closest('.message-in, .message-out, [data-id]')) continue;
+      if (button.closest('.message-in, .message-out, [data-id], [data-testid^="conv-msg-"]')) continue;
       const text = (button.innerText || button.getAttribute('aria-label') || '').trim();
-      if (text.length > 180 || !/^(?:clique (?:aqui )?para (?:carregar|baixar)|carregar (?:mais |as )?(?:mensagens|conversas)|load (?:more|older) messages|click (?:here )?to load)/i.test(text)) continue;
+      if (text.length > 180 || !/^(?:clique (?:aqui |neste aviso )?para (?:carregar|baixar)|carregar (?:mais |as )?(?:mensagens|conversas)|load (?:more|older) messages|click (?:here )?to load)/i.test(text)) continue;
+      if (button.disabled || button.getAttribute('aria-disabled') === 'true') continue;
       button.click(); return true;
     }
     return false;
@@ -2124,9 +2126,11 @@ ${isDeveloperMode ? `
     messages._identity = identity;
     const tracker = { orderedKeys: [], seenKeys: new Set(), knownAnchorDateIso: '' };
     const wait = () => new Promise(resolve => setTimeout(resolve, 750));
+    let olderAttempts = 0, olderRequestedAt = 0, previousCount = 0;
     const capture = direction => {
       assertActiveChat(identity);
       harvestDomMessages(messages, identity.jid, tracker, direction);
+      if (messages.size > previousCount) { previousCount = messages.size; olderAttempts = 0; }
       return `${messages.size}:${Array.from(main.querySelectorAll('[data-id]')).map(el => el.getAttribute('data-id')).join('|')}`;
     };
     if (!scroller) {
@@ -2150,11 +2154,13 @@ ${isDeveloperMode ? `
         capture: () => capture('UP'),
         atStart: () => scroller.scrollTop <= 3,
         startConfirmed: () => Boolean(main.querySelector('[data-testid="chat-history-start"], [data-testid="conversation-start"]')),
-        loading: () => Boolean(main.querySelector('[data-testid="chat-history-loader"], [role="progressbar"]')),
+        loading: () => Boolean(main.querySelector('[data-testid="chat-history-loader"], [role="progressbar"], [aria-busy="true"]')) || (olderRequestedAt > 0 && Date.now() - olderRequestedAt < 20000),
         moveUp: async () => {
           scroller.scrollTop -= Math.max(50, scroller.clientHeight * 0.65);
           scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-          if (scroller.scrollTop <= 3) await checkAndClickLoadMoreButton();
+          if (scroller.scrollTop <= 3 && olderAttempts < 2 && (!olderRequestedAt || Date.now() - olderRequestedAt >= 20000)) {
+            if (await checkAndClickLoadMoreButton()) { olderAttempts++; olderRequestedAt = Date.now(); }
+          }
         }, wait,
         checkpoint: checkpoint ? () => checkpoint(messages) : undefined,
       }, { onProgress });
@@ -2371,23 +2377,35 @@ ${isDeveloperMode ? `
   }
   const messagesReadLabel = step => `${step} etapas`;
   async function syncCurrentActiveChat() {
-    if (isSyncing) return;
+    if (isSyncing) return { complete: false };
     isSyncing = true; cancelSyncRequested = false;
     const badge = document.getElementById('sovereign-sync-badge');
+    const startedAt = Date.now();
+    let context;
     try {
+      if (badge) badge.innerText = 'Conferindo contato...';
       if (isCurrentChatGroupOrChannel()) throw new Error('Selecione uma conversa individual.');
-      const context = await importContext();
+      context = await importContext();
       const { response, chat, coverage } = await readAndImportActiveChat(context);
       const saved = response.confirmedMessages || 0;
       const complete = response.success && coverage?.complete;
       if (badge) badge.innerText = complete ? `✓ ${saved} confirmadas` : `${saved} confirmadas • revisar pendências`;
+      const issues = [
+        ...(!coverage?.complete ? [{ name: chat.name, reason: coverage?.reason || 'Leitura incompleta.' }] : []),
+        ...(!response.success ? [{ name: chat.name, reason: response.error || 'Envio pendente.' }] : []),
+      ];
+      await chrome.storage.local.set({ brokivaLastImportReport: { context, mode: 'SINGLE', startedAt, finishedAt: Date.now(), totalChats: saved ? 1 : 0, totalMessages: saved, issues } }).catch(() => {});
+      if (badge) badge.title = issues.map(issue => issue.reason).join(' ');
       alert(`${saved} mensagens confirmadas no CRM para ${chat.name}.` +
         (response.pendingMessages ? `\n${response.pendingMessages} mensagens guardadas na fila local. Entre no CRM e use Retomar envios no popup.` : '') +
         (!coverage?.complete ? `\nLeitura parcial: ${coverage?.reason || 'limite do histórico não confirmado'}. Reabra a conversa e execute novamente para conferir mensagens anteriores.` : '') +
         (!response.success ? `\n${response.error}` : ''));
+      return { complete, saved };
     } catch (error) {
-      if (badge) badge.innerText = 'Importação pendente';
+      if (badge) { badge.innerText = 'Importação pendente'; badge.title = error.message; }
+      await chrome.storage.local.set({ brokivaLastImportReport: { context, mode: 'SINGLE', startedAt, finishedAt: Date.now(), totalChats: 0, totalMessages: 0, issues: [{ name: chatHeaderTitle(document.querySelector('#main')) || 'Conversa', reason: error.message }] } }).catch(() => {});
       alert(`Importação pendente: ${error.message}`);
+      return { complete: false };
     } finally { isSyncing = false; }
   }
 

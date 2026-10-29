@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parent.parent
 source = root.parent / 'brokiva-chrome-extension'
 manifest = json.loads((source / 'manifest.json').read_text())
 version = manifest['version']
-files = ['manifest.json', 'background.js', 'content.js', 'content.css', 'crm-bridge.js', 'wa-bridge.js', 'popup.html', 'popup.js', 'README.md']
+files = ['manifest.json', 'background.js', 'import-core.js', 'content.js', 'content.css', 'crm-bridge.js', 'wa-bridge.js', 'popup.html', 'popup.js', 'README.md']
 files += [str(file.relative_to(source)) for file in sorted((source / 'icons').glob('*')) if file.is_file()]
 output = root / 'public/downloads'
 output.mkdir(parents=True, exist_ok=True)

@@ -1,51 +1,42 @@
-# Brokiva — Extensão Chrome para WhatsApp Web
+# Brokiva — extensão para WhatsApp Web
 
-A **Extensão Brokiva** transforma o WhatsApp Web oficial (`web.whatsapp.com`) em um terminal comercial de alta performance com **Sincronização de Histórico Completo**, **Perfil 360º do Lead** e **Brok.ia (Inteligência Artificial)** com inserção de respostas persuasivas em 1 clique.
+Versão **1.0.52**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
 
-> **Brokiva — Relacionamentos que viram negócios.**
+## Instalação e pareamento
 
----
+1. Publique primeiro o backend com o protocolo de recibos de importação 2. `OPTIONS /api/v1/sync/extension-history` deve retornar `X-Brokiva-Import-Protocol: 2`.
+2. Em `chrome://extensions`, ative o modo de desenvolvedor e carregue esta pasta. Se já estiver instalada, recarregue a Brokiva.
+3. Recarregue também a aba do WhatsApp Web para carregar o coletor novo.
+4. No popup, clique em **Entrar e parear no CRM**, autentique-se e confira a imobiliária e o corretor. A sessão dura 15 minutos e a aba autenticada do CRM a renova. Trocar de imobiliária exige pareamento explícito.
 
-## 🚀 Como Instalar no Google Chrome / Brave / Edge (Passo a Passo)
+## Leitura e importação
 
-1. Abra o seu navegador Chrome (ou Brave/Edge/Opera).
-2. Na barra de endereços, digite:
-   ```text
-   chrome://extensions
-   ```
-3. No canto superior direito da tela, ative a chave **"Modo do desenvolvedor"** (*Developer mode*).
-4. No canto superior esquerdo, clique no botão **"Carregar sem compactação"** (*Load unpacked*).
-5. Selecione a pasta:
-   ```text
-   /Users/rafaelsena/Desktop/Projetos-apps/brokiva-chrome-extension
-   ```
-6. Pronto! O ícone da **Brokiva** aparecerá na sua barra de extensões do Chrome.
+- **Importar Lista de Conversas** percorre a lista aberta no WhatsApp sem corte de data. Arquivadas e filtros precisam ser conferidos separadamente.
+- **Sincronizar Recentes** limita a seleção às 60 conversas encontradas no topo da lista; a profundidade de leitura de cada conversa continua sendo verificada.
+- **Salvar Histórico Desta Conversa** lê somente a conversa aberta.
+- Mantenha a conversa selecionada durante a leitura. A extensão interrompe se a identidade ou o ambiente mudar. Conversas com o mesmo nome não são deduplicadas pelo nome.
+- A rolagem preserva sobreposição entre páginas virtualizadas e aguarda carregamentos. Estabilidade sem confirmação do início disponível resulta em **leitura parcial**, não em sucesso completo. Há limites de proteção de 1.600 etapas/20 minutos por conversa e 4.000 etapas por lista; atingir um limite é informado como pendência.
+- IDs e direção vêm das mensagens reais do WhatsApp. Números, horários digitados, emojis e textos repetidos são preservados. Não se cria uma mensagem a partir da prévia da lista, nem um telefone a partir do nome.
+- Sem ID, telefone ou data verificáveis, a mensagem/conversa fica indicada como pendente de leitura; não se atribui o conteúdo a um contato por aproximação. O cache nativo complementa o DOM e não é apresentado como histórico completo.
 
----
+## Gravação e retomada
 
-## 💻 Como Usar no Dia a Dia
+As mensagens verificadas são salvas em checkpoints durante a leitura. Cada envio é dividido em lotes de até 150 mensagens/384 KiB, guardados em `chrome.storage.local` **antes** da chamada ao servidor. A fila é limitada a 6 MiB; se não houver espaço, a importação para e informa a pendência, sem sobrescrever a fila anterior.
 
-1. Abra o seu [WhatsApp Web](https://web.whatsapp.com).
-2. Você verá uma aba verde flutuante no canto superior direito da tela com o símbolo da **Brokiva**.
-3. **⚡ Sincronizar Histórico Completo:**
-   * Clique no botão **"⚡ Sincronizar Histórico Completo"**.
-   * A extensão fará a leitura paginada de todas as suas conversas ativas e enviará todo o histórico de mensagens direto para o seu CRM (`crm.faithhubs.com`).
-4. **✨ Brok.ia em 1 Clique:**
-   * Ao abrir a conversa com qualquer cliente, clique em **"✨ Sugerir Respostas Inteligentes"**.
-   * A Brok.ia analisa a conversa e gera 3 opções de mensagens persuasivas.
-   * Clique na resposta escolhida e ela será **inserida automaticamente no campo de digitação do WhatsApp**! Basta apertar Enter para enviar.
-5. **📥 Salvar Histórico Individual:**
-   * Ao conversar com um lead novo, você pode clicar em **"Salvar Histórico Desta Conversa"** a qualquer momento para forçar a atualização imediata no CRM.
+O CRM precisa confirmar, após o commit, o identificador do lote, a imobiliária e todos os IDs enviados. HTTP 200 sem esse recibo não conta como sucesso. Reentregas usam os mesmos IDs e atualizam o mesmo histórico. Queda de rede, timeout, 401 e 429 preservam a fila. A extensão tenta novamente por alarme enquanto o navegador está funcionando e a sessão é válida; novo pareamento também permite retomar os envios da mesma conta. Lotes de outra conta permanecem retidos e não são transmitidos à imobiliária atual.
 
----
+No popup, confira **mensagens pendentes**, use **Retomar envios** após entrar novamente no CRM e consulte **Última importação** para ver as conversas com pendências. Cancelar preserva os lotes já guardados/confirmados; uma leitura interrompida precisa ser iniciada novamente, e os IDs impedem duplicação. Se uma conversa ainda estava sendo lida antes do próximo checkpoint quando a aba fechou, essa parte precisará ser relida.
 
-## ⚙️ Configurações da Extensão
+**Limites do WhatsApp:** mensagens que ele não disponibiliza, histórico anterior restrito ao celular e arquivos de mídia indisponíveis não podem ser inventados ou recuperados pela extensão. Um registro de áudio/foto sem arquivo utilizável é informado como pendência; uma miniatura não equivale ao arquivo original. Não remova a extensão nem limpe seu armazenamento enquanto houver envios pendentes.
 
-Clique no ícone da extensão no Chrome para ajustar:
-* **URL do CRM:** `https://crm.faithhubs.com` (ou `http://localhost:3000` em desenvolvimento).
-* **ID da Imobiliária / Tenant:** `tenant-amabile-barbarotti` (ou o ID da sua imobiliária).
-* **Nome do Corretor:** seu nome para identificação no CRM.
+## Verificação de desenvolvimento
 
-## Pareamento seguro (1.0.51)
+```sh
+npm ci
+npm test
+npm run check
+```
 
-Clique em **Entrar e parear no CRM**, autentique-se com e-mail e senha e mantenha aberta a aba do CRM para renovar a sessão de 15 minutos. Para trocar de imobiliária, selecione o ambiente no CRM e refaça o pareamento explicitamente pelo popup. Trocar de aba não altera o destino da sincronização.
+Os testes usam HTML sintético (jsdom), fila/worker com falhas controladas e paginação virtual simulada. Não acessam mensagens reais nem enviam mensagens a contatos. Cobrem identidade, homônimos, conteúdo, citações, IDs repetidos, retomada, quota, sessão expirada, timeout após commit e recibo incompleto. O backend tem testes complementares de transação, concorrência e rollback em PostgreSQL embarcado.
+
+Fonte oficial: `https://github.com/r-fsena/brokiva-chrome-extension`, branch `main`. Depois da validação, commit/push neste repositório. O CRM gera ZIP e espelho com `python3 scripts/package-extension.py`; `node_modules` e testes não são distribuídos no ZIP.

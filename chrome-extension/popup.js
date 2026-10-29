@@ -11,7 +11,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     byId('brokerAvatar').textContent = (config.brokerName || 'B').split(' ').map(n => n[0]).slice(0, 2).join('');
     byId('crmUrlInput').value = config.crmUrl || 'https://crm.faithhubs.com';
     byId('developerModeToggle').checked = Boolean(config.developerMode);
+    const status = await chrome.runtime.sendMessage({ action: 'IMPORT_STATUS' });
+    byId('importStatus').textContent = status.pendingMessages ? `${status.pendingMessages} mensagens aguardam confirmação no CRM. ${status.lastError || ''}` : 'Nenhum envio pendente nesta conta.';
+    byId('retryImportsBtn').disabled = !connected || !status.pendingMessages;
+    if (status.report) byId('importReport').textContent = `${status.report.totalMessages} mensagens confirmadas.\n` + status.report.issues.map(item => `${item.name}: ${item.reason}`).join('\n');
   }
+  byId('retryImportsBtn').addEventListener('click', async () => {
+    byId('retryImportsBtn').disabled = true;
+    await chrome.runtime.sendMessage({ action: 'RETRY_IMPORTS' });
+    await render();
+  });
   byId('loginBtn').addEventListener('click', async () => {
     const result = await chrome.runtime.sendMessage({ action: 'OPEN_CRM_PAIRING', data: { crmUrl: byId('crmUrlInput').value } });
     if (!result.success) { byId('errorMsg').textContent = result.error; byId('errorMsg').style.display = 'block'; }

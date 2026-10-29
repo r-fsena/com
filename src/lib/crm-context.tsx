@@ -76,6 +76,8 @@ import {
   resolveKnownPhone
 } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
+import { reconcileIdentities, reconcileMessageHistory, reconcileConversationHistory } from '@/lib/crm-history';
+import { crmEventCursor, mergeSyncedRecords } from '@/lib/crm-event-cursor';
 
 interface CRMContextType {
   // Autenticação & Sessão Cognito
@@ -295,140 +297,7 @@ export function isLidNumber(phoneOrId: string | undefined): boolean {
 }
 
 export function deduplicateContactList(list: Contact[]): Contact[] {
-  const phoneMap = new Map<string, Contact>();
-  const lidMap = new Map<string, Contact>();
-  const idMap = new Map<string, Contact>();
-  const nameMap = new Map<string, Contact>();
-  const result: Contact[] = [];
-
-  list.forEach(contact => {
-    if (!contact) return;
-    const tenantKey = contact.tenantId || 'default-tenant';
-    const isPhoneLid = isLidIdentifier(contact.phone);
-    const pureLid = cleanLid(contact.lid || (isPhoneLid ? contact.phone : ''));
-
-    // Se o contato foi salvo com LID no campo de telefone, preserva no campo lid
-    if (pureLid && !contact.lid) {
-      contact.lid = pureLid;
-    }
-
-    const pKey = !isPhoneLid ? canonicalPhoneKey(contact.phone) : '';
-    const normName = contact.name && !contact.name.startsWith('+') && !contact.name.startsWith('WhatsApp') && contact.name !== 'Lead WhatsApp' && contact.name !== 'Cliente'
-      ? contact.name.toLowerCase().trim()
-      : '';
-
-    // Tenta resolver se esse LID já foi mapeado para um telefone conhecido no navegador ou catálogo canônico
-    let mappedPhone = (pureLid && KNOWN_LID_PHONE_MAP[pureLid]) || '';
-    if (!mappedPhone && pureLid && typeof window !== 'undefined') {
-      try {
-        const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-        if (storedMap[pureLid]) mappedPhone = storedMap[pureLid];
-      } catch {}
-    }
-
-    // Se o contato atual tem o mesmo avatar de outro contato com telefone real DENTRO DO MESMO TENANT
-    const avatarMatch = (contact.avatarUrl && !contact.avatarUrl.includes('ui-avatars.com')) 
-      ? result.find(c => c.tenantId === contact.tenantId && c.avatarUrl === contact.avatarUrl && c.phone && !isLidIdentifier(c.phone))
-      : null;
-
-    const existing = (pKey ? phoneMap.get(`${tenantKey}::${pKey}`) : null) 
-      || (mappedPhone ? phoneMap.get(`${tenantKey}::${canonicalPhoneKey(mappedPhone)}`) : null)
-      || (pureLid ? lidMap.get(`${tenantKey}::${pureLid}`) : null) 
-      || avatarMatch
-      || idMap.get(`${tenantKey}::${contact.id}`)
-      || (normName ? nameMap.get(`${tenantKey}::${normName}`) : null);
-
-    if (existing) {
-      const existingIsLid = isLidIdentifier(existing.phone);
-      const isSyntheticA = existing.phone && (existing.phone.includes('554863562855') || existing.id.includes('554863562855'));
-      const isSyntheticB = contact.phone && (contact.phone.includes('554863562855') || contact.id.includes('554863562855'));
-
-      // Prefere SEMPRE o telefone real
-      const chosenPhone = (!existingIsLid && !isSyntheticA && existing.phone) 
-        ? existing.phone 
-        : ((!isPhoneLid && !isSyntheticB && contact.phone) ? contact.phone : existing.phone);
-
-      const chosenLid = cleanLid(existing.lid || pureLid || (existingIsLid ? existing.phone : '')) || undefined;
-      const chosenId = chosenPhone && !isLidIdentifier(chosenPhone) && !isSyntheticA 
-        ? `contact-zapi-${chosenPhone.replace(/\D/g, '')}` 
-        : existing.id;
-
-      // Se um dos nomes for o nome do corretor (ex: "Rafael Sena" ou "Corretor"), descarta e mantém o nome do cliente ("anna carolina")
-      const isBrokerName = (n?: string) => !n || n === 'Rafael Sena' || n.toLowerCase().includes('corretor') || n.startsWith('WhatsApp ') || n === 'Cliente';
-      const cleanName = !isBrokerName(existing.name) ? existing.name : (!isBrokerName(contact.name) ? contact.name : (existing.name || contact.name));
-
-      const merged: Contact = {
-        ...existing,
-        ...contact,
-        temperature: (existing.temperature === 'HOT' || existing.temperature === 'WARM')
-          ? existing.temperature
-          : (contact.temperature || existing.temperature),
-        aiPriorityScore: Math.max(existing.aiPriorityScore || 0, contact.aiPriorityScore || 0),
-        id: chosenId,
-        phone: chosenPhone,
-        lid: chosenLid,
-        name: cleanName,
-        monthlyIncome: contact.monthlyIncome !== undefined ? contact.monthlyIncome : existing.monthlyIncome,
-        downPaymentAvailable: contact.downPaymentAvailable !== undefined ? contact.downPaymentAvailable : existing.downPaymentAvailable,
-        maxPropertyValue: contact.maxPropertyValue !== undefined ? contact.maxPropertyValue : existing.maxPropertyValue,
-        targetBedrooms: contact.targetBedrooms !== undefined ? contact.targetBedrooms : existing.targetBedrooms,
-        preferredPropertyType: contact.preferredPropertyType !== undefined ? contact.preferredPropertyType : existing.preferredPropertyType,
-        purchasePurpose: contact.purchasePurpose !== undefined ? contact.purchasePurpose : existing.purchasePurpose,
-        purchaseTimeline: contact.purchaseTimeline !== undefined ? contact.purchaseTimeline : existing.purchaseTimeline,
-        householdIncome: contact.householdIncome !== undefined ? contact.householdIncome : existing.householdIncome,
-        estimatedFinancing: contact.estimatedFinancing !== undefined ? contact.estimatedFinancing : existing.estimatedFinancing,
-        targetRegions: Array.from(new Set([...(existing.targetRegions || []), ...(contact.targetRegions || [])])),
-        tags: Array.from(new Set([...(existing.tags || []), ...(contact.tags || [])])),
-        email: contact.email !== undefined ? contact.email : existing.email,
-        assignedUserId: contact.assignedUserId !== undefined ? contact.assignedUserId : existing.assignedUserId,
-        updatedAt: contact.updatedAt || existing.updatedAt || new Date().toISOString(),
-      };
-
-      if (typeof window !== 'undefined' && chosenLid && chosenPhone && !isLidIdentifier(chosenPhone)) {
-        try {
-          const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-          storedMap[chosenLid] = chosenPhone.replace(/\D/g, '');
-          localStorage.setItem('brokiva_lid_phone_map', JSON.stringify(storedMap));
-        } catch {}
-      }
-
-      const realPKey = canonicalPhoneKey(chosenPhone);
-      if (realPKey && !isLidIdentifier(chosenPhone)) phoneMap.set(`${tenantKey}::${realPKey}`, merged);
-      if (chosenLid) lidMap.set(`${tenantKey}::${chosenLid}`, merged);
-      if (normName) nameMap.set(`${tenantKey}::${normName}`, merged);
-      idMap.set(`${tenantKey}::${merged.id}`, merged);
-      if (existing.id) idMap.set(`${tenantKey}::${existing.id}`, merged);
-      if (contact.id) idMap.set(`${tenantKey}::${contact.id}`, merged);
-
-      const idx = result.findIndex(c => (c.tenantId === contact.tenantId) && (c.id === existing.id || c.id === contact.id || c.id === merged.id));
-      if (idx >= 0) result[idx] = merged;
-    } else {
-      const finalLid = pureLid || (isPhoneLid ? cleanLid(contact.phone) : undefined);
-      const withTimestamps: Contact = {
-        ...contact,
-        lid: finalLid,
-        isPersonal: contact.isPersonal ?? false,
-        firstSyncedAt: contact.firstSyncedAt || new Date().toISOString(),
-        lastSyncedAt: contact.lastSyncedAt || new Date().toISOString(),
-      };
-
-      if (typeof window !== 'undefined' && finalLid && contact.phone && !isLidIdentifier(contact.phone)) {
-        try {
-          const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-          storedMap[finalLid] = contact.phone.replace(/\D/g, '');
-          localStorage.setItem('brokiva_lid_phone_map', JSON.stringify(storedMap));
-        } catch {}
-      }
-
-      if (pKey) phoneMap.set(`${tenantKey}::${pKey}`, withTimestamps);
-      if (finalLid) lidMap.set(`${tenantKey}::${finalLid}`, withTimestamps);
-      if (normName) nameMap.set(`${tenantKey}::${normName}`, withTimestamps);
-      idMap.set(`${tenantKey}::${contact.id}`, withTimestamps);
-      result.push(withTimestamps);
-    }
-  });
-
-  return result;
+  return reconcileIdentities(list);
 }
 
 export function getDefaultGoalsConfig(tenantId: string = 'tenant-amabile-barbarotti'): TenantGoalsConfig {
@@ -1681,33 +1550,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           let parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const initialDel = getStoredDeletedChatKeys();
-            parsed = parsed.filter((m: Message) => {
-              if (isChatKeyDeleted(m.conversationId, initialDel)) return false;
-              if (!m.content) return false;
-              const clean = m.content.trim().toLowerCase();
-              if (isWhatsAppSystemMessage(m.content)) return false;
-              if (/^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(clean) || clean === '1,0×' || clean === '1,0x') return false;
-              if (clean.includes('mensagem apagada') || clean.includes('esta mensagem foi apagada') || clean.includes('message was deleted')) return false;
-              if (clean === 'tail-out' || clean === 'tail-in' || clean === 'ic-fast-forward') return false;
-              // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
-              if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) return false;
-              return true;
-            }).map((m: Message) => {
-              const isAmabileMsg = !m.tenantId || m.tenantId === 'tenant-amabile-barbarotti' || m.tenantId === 'tenant-vanguard-01' || m.tenantId.includes('amabile');
-              let senderType = m.senderType;
-              let senderName = m.senderName;
-              // Auto-correção para mensagens enviadas pelo corretor via celular em conversas ativas
-              if (m.conversationId?.includes('99516041') && ['okay', 'tabom', 'ok'].includes((m.content || '').toLowerCase().trim()) && senderType === 'CONTACT') {
-                senderType = 'USER';
-                senderName = 'Amábile Barbarotti';
-              }
-              return {
-                ...m,
-                tenantId: isAmabileMsg ? 'tenant-amabile-barbarotti' : m.tenantId,
-                senderType,
-                senderName,
-              };
-            });
+            parsed = reconcileMessageHistory(parsed.filter((m: Message) => !isChatKeyDeleted(m.conversationId, initialDel)));
             try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(parsed)); } catch {}
             return parsed;
           }
@@ -1717,238 +1560,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return MOCK_MESSAGES;
   });
 
-  // Função para remover mensagens duplicadas, higienizar avisos de sistema e unificar mensagens de LID e Telefone Canônico
-  const deduplicateMessages = (msgs: Message[], contactList?: Contact[]): Message[] => {
-    const map = new Map<string, Message>();
-    const currentContacts = contactList || contacts || [];
-
-    // Mapeamento de LID -> Telefone Canônico para unificar as mensagens sob a mesma conversa
-    const lidToPhone = new Map<string, string>();
-    currentContacts.forEach(c => {
-      if (c.lid && c.phone && !isLidIdentifier(c.phone)) {
-        const clean = c.phone.replace(/\D/g, '');
-        lidToPhone.set(cleanLid(c.lid), clean.startsWith('55') ? clean : `55${clean}`);
-      }
-    });
-
-    msgs.forEach(m => {
-      const content = (m.content || '').trim();
-      if (
-        !content ||
-        isWhatsAppSystemMessage(content) ||
-        content === 'Mensagem recebida pelo WhatsApp' ||
-        content === 'Olá! Conversa sincronizada do WhatsApp.' ||
-        content === 'Conversa sincronizada do WhatsApp.' ||
-        content === 'Conversa ativa no WhatsApp' ||
-        content.includes('Gostaria de receber mais informações sobre os imóveis disponíveis') ||
-        content.includes('Temos excelentes oportunidades residenciais e comerciais') ||
-        content.includes('Separei opções que atendem exatamente ao seu perfil') ||
-        content.includes('Busco apartamento de 2 a 3 dormitórios')
-      ) {
-        return;
-      }
-
-      const cleanLower = content.toLowerCase();
-      if (
-        /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(content) ||
-        /^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(cleanLower) ||
-        cleanLower === '1,0×' ||
-        cleanLower === '1,0x' ||
-        cleanLower.includes('mensagem apagada') ||
-        cleanLower.includes('esta mensagem foi apagada') ||
-        cleanLower.includes('message was deleted') ||
-        cleanLower === 'tail-out' ||
-        cleanLower === 'tail-in' ||
-        cleanLower === 'ic-fast-forward'
-      ) {
-        return;
-      }
-
-      // Descarta mensagens com timestamp no futuro em relação ao momento atual (anomalias de parse)
-      if (m.timestamp && new Date(m.timestamp).getTime() > Date.now() + 300000) {
-        return;
-      }
-
-      // Reatribui conversationId padronizando para conv-zapi-55...
-      let convId = m.conversationId;
-      const rawDigits = convId.replace(/\D/g, '');
-      if (isLidIdentifier(rawDigits)) {
-        let mapped = lidToPhone.get(cleanLid(rawDigits));
-        if (!mapped && typeof window !== 'undefined') {
-          try {
-            const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-            if (stored[cleanLid(rawDigits)]) mapped = stored[cleanLid(rawDigits)];
-          } catch {}
-        }
-        if (mapped) {
-          const fullMapped = mapped.startsWith('55') ? mapped : `55${mapped}`;
-          convId = `conv-zapi-${fullMapped}`;
-        }
-      } else if (rawDigits && !isLidIdentifier(rawDigits)) {
-        const full = (!rawDigits.startsWith('55') && (rawDigits.length === 10 || rawDigits.length === 11)) ? `55${rawDigits}` : rawDigits;
-        convId = `conv-zapi-${full}`;
-      }
-
-      const normalizedMsg: Message = convId !== m.conversationId ? { ...m, conversationId: convId } : m;
-      const isNativeWppId = Boolean(
-        m.id && (
-          m.id.startsWith('true_') || 
-          m.id.startsWith('false_') || 
-          m.id.startsWith('3A') || 
-          m.id.startsWith('3E') || 
-          m.id.startsWith('zmsg-') ||
-          m.id.length >= 16 ||
-          (m.externalId && m.externalId.length >= 16)
-        )
-      );
-      const effectiveId = m.externalId || (isNativeWppId ? m.id : null);
-      const timeKey = m.timestamp ? m.timestamp.slice(0, 19) : '';
-
-      const tenantKey = m.tenantId || 'default-tenant';
-      const key = effectiveId ? `${tenantKey}::${convId}-${effectiveId}` : `${tenantKey}::${convId}-${content.slice(0, 80)}`;
-
-      // Reconciliação inteligente: se já existir mensagem da mesma conversa com conteúdo idêntico no localStorage
-      let matchedOldKey: string | null = null;
-      for (const [k, v] of Array.from(map.entries())) {
-        if (
-          k.startsWith(`${tenantKey}::${convId}-`) &&
-          (v.content || '').trim() === content
-        ) {
-          matchedOldKey = k;
-          break;
-        }
-      }
-
-      if (matchedOldKey && matchedOldKey !== key) {
-        // Substitui a versão prévia do localStorage pelo registro atualizado com timestamp calibrado da extensão
-        const oldMsg = map.get(matchedOldKey);
-        map.delete(matchedOldKey);
-        map.set(key, {
-          ...(oldMsg || {}),
-          ...normalizedMsg,
-          timestamp: normalizedMsg.timestamp || oldMsg?.timestamp || new Date().toISOString(),
-          senderType: normalizedMsg.senderType === 'USER' ? 'USER' : (oldMsg?.senderType || normalizedMsg.senderType),
-          senderName: normalizedMsg.senderName || oldMsg?.senderName,
-        });
-      } else {
-        const existing = map.get(key);
-        if (!existing) {
-          map.set(key, normalizedMsg);
-        } else {
-          map.set(key, {
-            ...existing,
-            ...normalizedMsg,
-            // Sempre prioriza o timestamp calibrado mais recente
-            timestamp: normalizedMsg.timestamp || existing.timestamp,
-            senderType: normalizedMsg.senderType === 'USER' ? 'USER' : existing.senderType,
-            senderName: normalizedMsg.senderName || existing.senderName,
-            attachments: normalizedMsg.attachments || existing.attachments,
-          });
-        }
-      }
-    });
-
-    return Array.from(map.values()).sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
-  };
-
-  // Função para deduplicar e fundir conversas particionadas estritamente por Tenant
-  const deduplicateConversations = (convList: Conversation[], contactList?: Contact[]): Conversation[] => {
-    const map = new Map<string, Conversation>();
-    const currentContacts = contactList || contacts || [];
-
-    const contactByPhone = new Map<string, Contact>();
-    const contactByLid = new Map<string, Contact>();
-    const contactById = new Map<string, Contact>();
-
-    currentContacts.forEach(c => {
-      const tKey = c.tenantId || 'default-tenant';
-      contactById.set(`${tKey}::${c.id}`, c);
-      if (c.phone && !isLidIdentifier(c.phone)) {
-        contactByPhone.set(`${tKey}::${canonicalPhoneKey(c.phone)}`, c);
-      }
-      if (c.lid) {
-        contactByLid.set(`${tKey}::${cleanLid(c.lid)}`, c);
-      }
-    });
-
-    convList.forEach(conv => {
-      if (!conv) return;
-      const tenantKey = conv.tenantId || 'default-tenant';
-      const rawDigits = conv.id.replace(/\D/g, '');
-      const isLid = isLidIdentifier(rawDigits);
-      const lidClean = cleanLid(rawDigits);
-
-      let contact = contactById.get(`${tenantKey}::${conv.contactId}`);
-      if (!contact && isLid) {
-        contact = contactByLid.get(`${tenantKey}::${lidClean}`);
-      }
-      if (!contact && rawDigits) {
-        contact = contactByPhone.get(`${tenantKey}::${canonicalPhoneKey(rawDigits)}`);
-      }
-
-      // Consulta no mapa local brokiva_lid_phone_map se não achou contato direto
-      if (!contact && isLid && typeof window !== 'undefined') {
-        try {
-          const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-          if (stored[lidClean]) {
-            contact = contactByPhone.get(`${tenantKey}::${canonicalPhoneKey(stored[lidClean])}`);
-          }
-        } catch {}
-      }
-
-      let canonicalPhone = contact?.phone && !isLidIdentifier(contact.phone)
-        ? contact.phone.replace(/\D/g, '')
-        : '';
-
-      if (!canonicalPhone && isLid && typeof window !== 'undefined') {
-        try {
-          const stored = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-          if (stored[lidClean]) canonicalPhone = stored[lidClean];
-        } catch {}
-      }
-
-      if (!canonicalPhone) canonicalPhone = rawDigits;
-      if (canonicalPhone && !isLidIdentifier(canonicalPhone) && !canonicalPhone.startsWith('55') && (canonicalPhone.length === 10 || canonicalPhone.length === 11)) {
-        canonicalPhone = `55${canonicalPhone}`;
-      }
-
-      const canonicalConvId = canonicalPhone && !isLidIdentifier(canonicalPhone) ? `conv-zapi-${canonicalPhone}` : conv.id;
-      const cleanPreview = (conv.lastMessagePreview && isWhatsAppSystemMessage(conv.lastMessagePreview))
-        ? 'Conversa sincronizada via WhatsApp'
-        : conv.lastMessagePreview;
-
-      const scopedConvKey = `${tenantKey}::${canonicalConvId}`;
-      let existing = map.get(scopedConvKey);
-      if (existing) {
-        const timeA = parseWhatsAppTimestamp(existing.lastMessageAt);
-        const timeB = parseWhatsAppTimestamp(conv.lastMessageAt);
-        const useNewer = timeB > timeA;
-
-        map.set(scopedConvKey, {
-          ...existing,
-          ...conv,
-          id: canonicalConvId,
-          contactId: contact?.id || existing.contactId || conv.contactId,
-          lastMessagePreview: useNewer ? (cleanPreview || existing.lastMessagePreview) : existing.lastMessagePreview,
-          lastMessageAt: useNewer ? conv.lastMessageAt : existing.lastMessageAt,
-          unreadCount: Math.max(existing.unreadCount || 0, conv.unreadCount || 0),
-        });
-      } else {
-        map.set(scopedConvKey, {
-          ...conv,
-          id: canonicalConvId,
-          contactId: contact?.id || conv.contactId,
-          lastMessagePreview: cleanPreview,
-        });
-      }
-    });
-
-    return Array.from(map.values()).sort((a, b) => {
-      const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
-      const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
-      return timeB - timeA;
-    });
-  };
+  // Preserva IDs, datas, autoria e conteúdo confirmados no servidor.
+  const deduplicateMessages = (records: Message[], _contactList?: Contact[]) => reconcileMessageHistory(records);
+  const deduplicateConversations = (records: Conversation[], _contactList?: Contact[]) => reconcileConversationHistory(records);
 
   // Salva no localStorage de forma assíncrona/debounced em segundo plano (evita congelamentos de UI e estouro de cota)
   const storageTimeoutMap = useRef<Record<string, NodeJS.Timeout>>({});
@@ -2080,8 +1694,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const localTenantContacts = (Array.isArray(parsedLocalContacts) ? parsedLocalContacts : []).filter(c => !c.tenantId || c.tenantId === currentTenant.id);
 
         const combinedContacts = [
-          ...serverTenantContacts,
           ...localTenantContacts,
+          ...serverTenantContacts,
           ...otherTenantContacts,
         ].map((c: any) => ({
           ...c,
@@ -2098,8 +1712,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         const localTenantConvs = (Array.isArray(parsedLocalConvs) ? parsedLocalConvs : []).filter(cv => !cv.tenantId || cv.tenantId === currentTenant.id);
 
         const combinedConvs = [
-          ...serverTenantConvs,
           ...localTenantConvs,
+          ...serverTenantConvs,
           ...otherTenantConvs,
         ].map((cv: any) => ({
           ...cv,
@@ -2113,9 +1727,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         // 6. Mescla mensagens
         const activeConvIds = new Set(localTenantConvs.map(cv => cv.id));
         const combinedMsgs = [
-          ...(Array.isArray(serverData?.messages) ? serverData.messages : []),
           ...(Array.isArray(parsedLocalMsgs) ? parsedLocalMsgs : []),
-        ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted) && !isWhatsAppSystemMessage(m.content))
+          ...(Array.isArray(serverData?.messages) ? serverData.messages : []),
+        ].filter(m => !isChatKeyDeleted(m.conversationId, combinedDeleted))
 ;
 
         const finalMsgs = deduplicateMessages(combinedMsgs, finalContacts);
@@ -4807,386 +4421,78 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentTenant.id, currentUser.id, activeInstanceId, instances.length]);
 
-  // Polling inteligente e não-bloqueante de novos eventos do Webhook Z-API em tempo real com deduplicação rigorosa
-  const lastPollTimeRef = useRef<number>(Date.now() - 120000);
-  const initialSyncDoneRef = useRef<boolean>(false);
-  const processedMsgIdsRef = useRef<Set<string>>(new Set());
+  // O servidor recebe mesmo sem navegador. A tela retoma pelo cursor persistido e
+  // reconcilia o snapshot completo ao abrir, voltar à aba ou recuperar a rede.
   const activeConversationIdRef = useRef<string | null>(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
 
-  // Popula os IDs de mensagens existentes na memória para evitar reprocessamento
   useEffect(() => {
-    if (messages && messages.length > 0) {
-      messages.forEach(m => {
-        if (m.id) processedMsgIdsRef.current.add(m.id);
-        if (m.externalId) processedMsgIdsRef.current.add(m.externalId);
-      });
-    }
-  }, [messages.length]);
-
-  useEffect(() => {
+    if (!isAuthenticated || !isAuthReady || !currentTenant.id) return;
     let isMounted = true;
+    let inFlight = false;
+    let fullSyncPending = true;
+    let cursor = 0;
+    const tenantId = currentTenant.id;
+    const storageKey = `vanguard_crm_last_sync_timestamp:${tenantId}`;
+    try {
+      const saved = Number(localStorage.getItem(storageKey));
+      if (Number.isFinite(saved) && saved >= 0) cursor = saved;
+    } catch {}
 
-    const pollWebhookMessages = async () => {
-      if (!isMounted) return;
-      // Pausa polling se a aba do navegador estiver oculta/segundo plano (economia de CPU e AWS)
-      if (typeof document !== 'undefined' && document.hidden) return;
+    const applyServerState = (data: any) => {
+      const incomingContacts: Contact[] = Array.isArray(data.contacts) ? data.contacts : [];
+      const incomingConversations: Conversation[] = (Array.isArray(data.conversations) ? data.conversations : [])
+        .filter((c: Conversation) => !isChatKeyDeleted(c.id, deletedChatKeys) && !isChatKeyDeleted(c.contactId, deletedChatKeys))
+        .map((c: Conversation) => c.id === activeConversationIdRef.current ? { ...c, unreadCount: 0 } : c);
+      const conversationIds = new Set(incomingConversations.map(c => c.id));
+      const incomingMessages: Message[] = data.messages.filter((m: Message) => conversationIds.has(m.conversationId))
+        .map(({ phone, instanceId, lid, fromMe, mediaUrl, mediaType, ...message }: any) => message);
+      setContacts(prev => mergeSyncedRecords(prev, incomingContacts, tenantId));
+      setConversations(prev => mergeSyncedRecords(prev, incomingConversations, tenantId));
+      setMessages(prev => mergeSyncedRecords(prev, incomingMessages, tenantId));
+      if (Array.isArray(data.deals)) setDeals(prev => mergeSyncedRecords(prev, data.deals, tenantId));
+    };
 
+    const refresh = async (full = false) => {
+      if (full) fullSyncPending = true;
+      if (!isMounted || inFlight || document.hidden) return;
+      inFlight = true;
+      const readSnapshot = fullSyncPending;
       try {
-        // Lookback dinâmico: na primeira requisição após ligar o computador ou abrir o CRM,
-        // consulta desde o último sincronismo gravado no localStorage ou a mensagem mais recente.
-        // Garante que NENHUMA mensagem recebida enquanto o computador estava desligado seja perdida!
-        let lookbackTime = 0;
-        if (!initialSyncDoneRef.current) {
-          initialSyncDoneRef.current = true;
-          let savedSync = 0;
-          try {
-            savedSync = Number(localStorage.getItem(`vanguard_crm_last_sync_timestamp:${currentTenant.id}`) || '0');
-          } catch {}
-
-          if (savedSync > 0) {
-            lookbackTime = Math.max(0, savedSync - 120000); // 2 minutos de margem
-          } else {
-            const latestMsgTime = messages.reduce((max, m) => {
-              const t = m.timestamp ? new Date(m.timestamp).getTime() : 0;
-              return t > max ? t : max;
-            }, 0);
-            lookbackTime = latestMsgTime > 0 ? Math.max(0, latestMsgTime - 120000) : Math.max(0, Date.now() - 7 * 86400000);
-          }
-        } else {
-          lookbackTime = Math.max(0, Date.now() - 180000);
-        }
-
-        const res = await fetch(`/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(currentTenant?.id || 'tenant-amabile-barbarotti')}&since=${lookbackTime}`, {
-          credentials: 'include',
-          headers: {
-            'x-tenant-id': currentTenant?.id || 'tenant-amabile-barbarotti',
-            'x-user-id': currentUser?.id || 'user-1',
-            'x-user-email': currentUser?.email || 'admin@amabile.com',
-          }
-        });
-        if (!res.ok) return;
+        const url = readSnapshot ? '/api/v1/crm/state'
+          : `/api/v1/webhooks/zapi/events?tenantId=${encodeURIComponent(tenantId)}&since=${cursor}`;
+        const res = await fetchCRMState(url, { credentials: 'include', cache: 'no-store', headers: { 'x-tenant-id': tenantId } });
+        if (!res.ok || !isMounted) return;
         const data = await res.json();
-
-        // Atualiza a marca de tempo de sincronismo bem-sucedido no localStorage
-        try {
-          localStorage.setItem(`vanguard_crm_last_sync_timestamp:${currentTenant.id}`, String(data.serverTime));
-        } catch {}
-
-        if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          // Filtra mensagens novas ou mensagens enviadas pelo corretor para reclassificação
-          const freshMessages = data.messages.filter((incoming: any) => {
-            if (!incoming || !incoming.id) return false;
-            if (isWhatsAppChannelOrGroup(incoming)) return false;
-            if (processedMsgIdsRef.current.has(incoming.id)) {
-              if (incoming.fromMe) return true;
-              return false;
-            }
-            return true;
-          });
-
-          // Se não há mensagens novas, encerra imediatamente sem disparar re-render do React
-          if (freshMessages.length === 0) return;
-
-          freshMessages.forEach((incoming: any) => {
-            processedMsgIdsRef.current.add(incoming.id);
-
-            let resolvedPhone = incoming.phone ? incoming.phone.replace(/\D/g, '') : '';
-            const isLid = isLidIdentifier(incoming.phone) || (incoming.lid && isLidIdentifier(incoming.lid));
-            const lidClean = cleanLid(incoming.lid || (isLidIdentifier(incoming.phone) ? incoming.phone : ''));
-
-            if (isLid && lidClean) {
-              if (KNOWN_LID_PHONE_MAP[lidClean]) {
-                resolvedPhone = KNOWN_LID_PHONE_MAP[lidClean];
-              } else if (typeof window !== 'undefined') {
-                try {
-                  const storedMap = JSON.parse(localStorage.getItem('brokiva_lid_phone_map') || '{}');
-                  if (storedMap[lidClean]) resolvedPhone = storedMap[lidClean];
-                } catch {}
-              }
-              if (isLidIdentifier(resolvedPhone)) {
-                const matchCnt = contacts.find(c => c.lid && cleanLid(c.lid) === lidClean);
-                if (matchCnt?.phone && !isLidIdentifier(matchCnt.phone)) {
-                  resolvedPhone = matchCnt.phone.replace(/\D/g, '');
-                }
-              }
-            }
-
-            if (resolvedPhone && !isLidIdentifier(resolvedPhone) && !resolvedPhone.startsWith('55') && (resolvedPhone.length === 10 || resolvedPhone.length === 11)) {
-              resolvedPhone = `55${resolvedPhone}`;
-            }
-
-            const rawPhone = resolvedPhone;
-            if (!rawPhone || rawPhone === '0') return;
-            const KNOWN_CONNECTED_PHONES = ['554888774408', '4888774408'];
-            if (KNOWN_CONNECTED_PHONES.some(p => arePhonesEquivalent(p, rawPhone))) return;
-            if (isChatKeyDeleted(rawPhone, deletedChatKeys) || (lidClean && isChatKeyDeleted(lidClean, deletedChatKeys))) return;
-
-            const formattedPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
-
-            // Localiza conversa e contato existentes para unificação consistente
-            const existingContact = contacts.find(c => {
-              if (lidClean && c.lid && cleanLid(c.lid) === lidClean) return true;
-              if (!isLidIdentifier(rawPhone)) {
-                return arePhonesEquivalent(c.phone, rawPhone);
-              }
-              return false;
-            });
-
-            const matchedConv = conversations.find(c => {
-              if (c.id === `conv-zapi-${rawPhone}` || c.contactId === `contact-zapi-${rawPhone}`) return true;
-              if (existingContact && c.contactId === existingContact.id) return true;
-              if (lidClean && isLidIdentifier(c.contactId) && cleanLid(c.contactId) === lidClean) return true;
-              const cDigits = (c.id + (c.contactId || '')).replace(/\D/g, '');
-              return cDigits && rawPhone && arePhonesEquivalent(cDigits, rawPhone);
-            });
-
-            const targetConvId = matchedConv ? matchedConv.id : `conv-zapi-${rawPhone}`;
-            const targetContactId = existingContact ? existingContact.id : (matchedConv?.contactId || `contact-zapi-${rawPhone}`);
-
-            // 1. Encontra ou cria contato
-            setContacts(prevContacts => {
-              const existing = prevContacts.find(c => c.id === targetContactId || (lidClean && c.lid && cleanLid(c.lid) === lidClean) || (!isLidIdentifier(rawPhone) && arePhonesEquivalent(c.phone, rawPhone)));
-
-              if (existing) {
-                return prevContacts.map(c => c.id === existing.id ? {
-                  ...c,
-                  lid: lidClean || c.lid,
-                  name: incoming.fromMe
-                    ? ((existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.chatName || existing.name))
-                    : ((existing.name && !existing.name.startsWith('WhatsApp') && !existing.name.startsWith('+') && existing.name !== 'Cliente') ? existing.name : (incoming.senderName || existing.name)),
-                  avatarUrl: incoming.senderPhoto || c.avatarUrl,
-                  lastClientInteractionAt: incoming.fromMe ? c.lastClientInteractionAt : (incoming.timestamp || new Date().toISOString()),
-                  lastTeamInteractionAt: incoming.fromMe ? (incoming.timestamp || new Date().toISOString()) : c.lastTeamInteractionAt,
-                  updatedAt: new Date().toISOString(),
-                } : c);
-              }
-
-              const contactName = (incoming.fromMe ? (incoming.chatName || incoming.senderName) : incoming.senderName) || `WhatsApp ${rawPhone.slice(-4)}`;
-
-              const newContact: Contact = {
-                id: targetContactId,
-                tenantId: currentTenant.id,
-                name: contactName,
-                phone: formattedPhone,
-                lid: lidClean || undefined,
-                avatarUrl: incoming.senderPhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`,
-                source: 'WHATSAPP',
-                temperature: 'HOT',
-                aiPriorityScore: 85,
-                tags: ['Novo Lead WhatsApp', 'Z-API Live'],
-                targetRegions: [],
-                notesCount: 0,
-                consentGiven: true,
-                hasOptedOut: false,
-                isPersonal: false,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                lastClientInteractionAt: incoming.fromMe ? undefined : (incoming.timestamp || new Date().toISOString()),
-                lastTeamInteractionAt: incoming.fromMe ? (incoming.timestamp || new Date().toISOString()) : undefined,
-              };
-
-              return [newContact, ...prevContacts];
-            });
-
-            // 2. Encontra ou cria conversa
-            setConversations(prevConvs => {
-              const existingConv = prevConvs.find(c => c.id === targetConvId || c.contactId === targetContactId);
-              const currentActive = activeConversationIdRef.current;
-              const isChatCurrentlyOpen = Boolean(
-                currentActive && (
-                  currentActive === targetConvId || 
-                  (existingConv && currentActive === existingConv.id) ||
-                  (rawPhone && arePhonesEquivalent(currentActive.replace(/\D/g, ''), rawPhone))
-                )
-              );
-
-              if (existingConv) {
-                const updatedStatus: 'PENDING_CLIENT' | 'PENDING_TEAM' = incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM';
-                // Incrementa unreadCount uma única vez se o chat NÃO estiver aberto na tela
-                const newUnreadCount = incoming.fromMe
-                  ? 0
-                  : (isChatCurrentlyOpen ? 0 : ((existingConv.unreadCount || 0) + 1));
-
-                return prevConvs.map(c => c.id === existingConv.id ? {
-                  ...c,
-                  lastMessagePreview: incoming.content || c.lastMessagePreview,
-                  lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                  unreadCount: newUnreadCount,
-                  status: updatedStatus,
-                } : c).sort((a, b) => {
-                  const timeA = parseWhatsAppTimestamp(a.lastMessageAt);
-                  const timeB = parseWhatsAppTimestamp(b.lastMessageAt);
-                  return timeB - timeA;
-                });
-              }
-
-              const newConv: Conversation = {
-                id: targetConvId,
-                tenantId: currentTenant.id,
-                contactId: targetContactId,
-                assignedUserId: currentUser.id,
-                instanceId: '3F8144490C66805B4E3FD64A35E2F2DC',
-                status: incoming.fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
-                unreadCount: (incoming.fromMe || isChatCurrentlyOpen) ? 0 : 1,
-                lastMessagePreview: incoming.content || 'Mensagem recebida',
-                lastMessageAt: incoming.timestamp || new Date().toISOString(),
-                isArchived: false,
-                isPinned: false,
-                isPersonal: false,
-                slaBreached: false,
-              };
-
-              return [newConv, ...prevConvs];
-            });
-
-            // 3. Adiciona mensagem de forma atômica na conversa correta
-            setMessages(prevMessages => {
-              const rekeyed = prevMessages.map(m => {
-                if (lidClean && (m.conversationId.includes(lidClean) || isLidIdentifier(m.conversationId))) {
-                  return { ...m, conversationId: targetConvId };
-                }
-                return m;
-              });
-
-              const newMsg: Message = {
-                id: incoming.id || `wpp-${rawPhone}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                externalId: incoming.id || undefined,
-                tenantId: currentTenant.id,
-                conversationId: targetConvId,
-                senderType: incoming.fromMe ? 'USER' : 'CONTACT',
-                senderName: incoming.fromMe ? 'Corretor' : (incoming.senderName || 'Cliente'),
-                messageType: incoming.mediaType || 'TEXT',
-                content: incoming.content || '',
-                attachments: incoming.mediaUrl ? [{
-                  id: `att-${Date.now()}`,
-                  url: incoming.mediaUrl,
-                  fileName: incoming.mediaType || 'file',
-                  fileSize: 0,
-                  mimeType: incoming.mediaType === 'IMAGE' ? 'image/jpeg' : incoming.mediaType === 'AUDIO' ? 'audio/ogg' : 'application/octet-stream',
-                }] : undefined,
-                status: 'DELIVERED',
-                isInternalNote: false,
-                timestamp: incoming.timestamp || new Date().toISOString(),
-              };
-
-              // Evita duplicatas por ID nativo ou externalId
-              if (newMsg.id && !newMsg.id.startsWith('wpp-')) {
-                const existingIdx = rekeyed.findIndex(m => m.id === newMsg.id || (m.externalId && m.externalId === newMsg.id));
-                if (existingIdx >= 0) {
-                  const existingMsg = rekeyed[existingIdx];
-                  if (newMsg.senderType === 'USER' && existingMsg.senderType === 'CONTACT') {
-                    const correctedList = [...rekeyed];
-                    correctedList[existingIdx] = {
-                      ...existingMsg,
-                      senderType: 'USER',
-                      senderName: newMsg.senderName || 'Amábile Barbarotti',
-                    };
-                    return correctedList;
-                  }
-                  return rekeyed;
-                }
-              }
-
-              // Se já existir uma mensagem com o mesmo conteúdo nessa conversa enviada como CONTACT e agora veio como USER, atualiza
-              if (newMsg.senderType === 'USER') {
-                const misclassifiedIdx = rekeyed.findIndex(m =>
-                  m.conversationId === newMsg.conversationId &&
-                  m.senderType === 'CONTACT' &&
-                  (m.content || '').trim().toLowerCase() === (newMsg.content || '').trim().toLowerCase() &&
-                  Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 180000
-                );
-                if (misclassifiedIdx >= 0) {
-                  const correctedList = [...rekeyed];
-                  correctedList[misclassifiedIdx] = {
-                    ...correctedList[misclassifiedIdx],
-                    senderType: 'USER',
-                    senderName: newMsg.senderName || 'Amábile Barbarotti',
-                  };
-                  return correctedList;
-                }
-              }
-
-              // Evita duplicatas de mesmo conteúdo e remetente na mesma conversa em menos de 60s
-              const isDuplicateContent = rekeyed.some(m =>
-                m.conversationId === newMsg.conversationId &&
-                m.senderType === newMsg.senderType &&
-                (m.content || '').trim() === (newMsg.content || '').trim() &&
-                Math.abs(new Date(m.timestamp || 0).getTime() - new Date(newMsg.timestamp || 0).getTime()) < 60000
-              );
-              if (isDuplicateContent) return rekeyed;
-
-              return [...rekeyed, newMsg];
-            });
-          });
+        if (!isMounted || !data.success || data.tenantId !== tenantId || !Array.isArray(data.messages)) return;
+        applyServerState(data);
+        const nextCursor = readSnapshot ? crmEventCursor(data) : Number(data.serverTime);
+        if (Number.isFinite(nextCursor) && nextCursor >= 0) {
+          cursor = nextCursor;
+          try { localStorage.setItem(storageKey, String(cursor)); } catch {}
         }
-      } catch {}
+        if (readSnapshot) fullSyncPending = false;
+      } catch {
+        // Mantém o cursor e repete após a falha, incluindo toda a pausa.
+      } finally { inFlight = false; }
     };
 
-    // Sincronização periódica suave com o estado do servidor a cada 2 minutos (em vez de loop agressivo de 5s)
-    const syncServerState = async () => {
-      if (!isMounted) return;
-      if (typeof document !== 'undefined' && document.hidden) return;
-
-      try {
-        const stateRes = await fetchCRMState('/api/v1/crm/state', {
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-tenant-id': currentTenant.id,
-            'x-user-id': currentUser.id,
-            'x-user-email': currentUser.email,
-          },
-        });
-        if (!stateRes.ok) return;
-        const stateData = await stateRes.json();
-        if (stateData && stateData.success && isMounted) {
-          if (Array.isArray(stateData.contacts) && stateData.contacts.length > 0) {
-            setContacts(prev => {
-              const merged = deduplicateContactList([...stateData.contacts, ...prev]);
-              try { localStorage.setItem('vanguard_crm_contacts', JSON.stringify(merged)); } catch {}
-              return merged;
-            });
-          }
-          if (Array.isArray(stateData.conversations) && stateData.conversations.length > 0) {
-            setConversations(prev => {
-              const merged = deduplicateConversations([...stateData.conversations, ...prev]);
-              try { localStorage.setItem('vanguard_crm_conversations', JSON.stringify(merged)); } catch {}
-              return merged;
-            });
-          }
-          if (Array.isArray(stateData.messages) && stateData.messages.length > 0) {
-            setMessages(prev => {
-              const merged = deduplicateMessages([...stateData.messages, ...prev]);
-              try { localStorage.setItem('vanguard_crm_messages', JSON.stringify(merged)); } catch {}
-              return merged;
-            });
-          }
-          if (Array.isArray(stateData.deals) && stateData.deals.length > 0) {
-            setDeals(prev => {
-              const dealMap = new Map<string, Deal>();
-              prev.forEach(d => dealMap.set(d.id, d));
-              stateData.deals.forEach((d: Deal) => dealMap.set(d.id, d));
-              const merged = Array.from(dealMap.values());
-              try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(merged)); } catch {}
-              return merged;
-            });
-          }
-        }
-      } catch {}
-    };
-
-    pollWebhookMessages();
-    syncServerState();
-    const webhookInterval = setInterval(pollWebhookMessages, 3000);
-    const syncInterval = setInterval(syncServerState, 60000);
-
+    const resume = () => { if (!document.hidden) void refresh(true); };
+    void refresh(true);
+    const webhookInterval = setInterval(() => void refresh(), 3000);
+    const syncInterval = setInterval(() => void refresh(true), 60000);
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('focus', resume);
+    window.addEventListener('online', resume);
     return () => {
       isMounted = false;
       clearInterval(webhookInterval);
       clearInterval(syncInterval);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('focus', resume);
+      window.removeEventListener('online', resume);
     };
-  }, [currentTenant.id, instances, deletedChatKeys]);
+  }, [currentTenant.id, isAuthenticated, isAuthReady, deletedChatKeys]);
 
   // -------------------------------------------------------------
   // PROPOSTAS COMERCIAIS & ACEITE DIGITAL

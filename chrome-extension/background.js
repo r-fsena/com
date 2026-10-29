@@ -1,3 +1,4 @@
+importScripts('import-core.js');
 /**
  * Background Service Worker - Brokiva CRM Sync
  */
@@ -12,7 +13,7 @@ function crmOrigin(raw = DEFAULT_CRM_URL) {
 async function requireSession() {
   const config = await chrome.storage.local.get(['crmUrl', 'extensionSessionToken', 'extensionSessionExpiresAt', 'tenantId', 'brokerUserId', 'brokerName', 'brokerEmail']);
   if (!config.extensionSessionToken || (!Number.isFinite(config.extensionSessionExpiresAt) || config.extensionSessionExpiresAt <= Date.now() / 1000) || !config.tenantId || !config.brokerUserId) {
-    await chrome.storage.local.remove(SESSION_KEYS);
+    await chrome.storage.local.remove(['extensionSessionToken', 'extensionSessionExpiresAt', 'isPaired']);
     throw new Error('Sessão expirada. Entre e pareie novamente pelo CRM.');
   }
   config.crmUrl = crmOrigin(config.crmUrl);
@@ -37,6 +38,7 @@ async function pairFromCrm(data, sender) {
   await chrome.storage.local.set({ crmUrl: origin, extensionSessionToken: data.token, extensionSessionExpiresAt: user.expiresAt,
     brokerUserId: user.userId, brokerName: user.userName, brokerEmail: user.userEmail,
     tenantId: user.tenantId, tenantName: data.user.tenantName || user.tenantId, isPaired: true });
+  void retryImports().catch(() => {});
   return { success: true };
 }
 
@@ -50,14 +52,14 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  const actions = { PAIR_FROM_CRM: () => pairFromCrm(request.data, sender), OPEN_CRM_PAIRING: () => openPairing(request.data), UNPAIR: unpair };
+  const actions = { RETRY_IMPORTS: () => retryImports(true), IMPORT_STATUS: importStatus, PAIR_FROM_CRM: () => pairFromCrm(request.data, sender), OPEN_CRM_PAIRING: () => openPairing(request.data), UNPAIR: unpair };
   if (actions[request.action]) {
     actions[request.action]().then(sendResponse).catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
   if (request.action === 'SYNC_BATCH_CHATS') {
     handleBatchSync(request.data)
-      .then(result => sendResponse({ success: true, result }))
+      .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true; // Mantém porta aberta para resposta assíncrona
   }
@@ -136,105 +138,95 @@ async function handleForwardLog(logData) {
   } catch {}
 }
 
-async function handleBatchSync(data) {
-  const config = await requireSession();
-  const crmUrl = (config.crmUrl || DEFAULT_CRM_URL).replace(/\/+$/, '');
-  
-  const tenantId = config.tenantId;
-  if (!data.context || data.context.tenantId !== tenantId || data.context.brokerUserId !== config.brokerUserId || data.context.crmUrl !== config.crmUrl) throw new Error('O contexto do CRM mudou. Inicie a sincronização novamente.');
-
-  const endpoint = `${crmUrl}/api/v1/sync/extension-history`;
-
-  const payload = {
-    tenantId,
-    brokerUserId: config.brokerUserId,
-    brokerName: config.brokerName,
-    chats: data.chats || [],
-  };
-
-  handleForwardLog({
-    level: 'INFO',
-    event: 'DISPATCHING_BATCH_SYNC',
-    details: {
-      tenantId,
-      chatsCount: (data.chats || []).length,
-      samplePhone: data.chats?.[0]?.phone,
-      sampleName: data.chats?.[0]?.name,
-      sampleMsgs: data.chats?.[0]?.messages?.length,
-    }
-  });
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-tenant-id': tenantId,
-  };
-  if (config.extensionSessionToken) {
-    headers['Authorization'] = `Bearer ${config.extensionSessionToken}`;
-  }
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    handleForwardLog({
-      level: 'ERROR',
-      event: 'BATCH_SYNC_HTTP_ERROR',
-      details: { status: response.status, errorText }
-    });
-    if (response.status === 401) await unpair();
-    throw new Error(`HTTP ${response.status}: ${errorText}`);
-  }
-
-  const result = await response.json();
-  handleForwardLog({
-    level: 'INFO',
-    event: 'BATCH_SYNC_SUCCESS_ACK',
-    details: result
-  });
-
-  const current = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']);
-  if (current.tenantId !== tenantId || current.brokerUserId !== config.brokerUserId || current.crmUrl !== crmUrl) return result;
-
-  // Salva no storage local da extensão como lote recente para entrega resiliente ao CRM
-  try {
-    await chrome.storage.local.set({
-      brokivaPendingCrmSync: {
-        timestamp: Date.now(),
-        tenantId,
-        messages: result.resultMessages || [],
-        contacts: result.resultContacts || [],
-        conversations: result.resultConversations || [],
-      }
-    });
-  } catch (err) {}
-
-  // Notifica abas do CRM abertas para injetar as mensagens instantaneamente na tela
-  try {
-    chrome.tabs.query({}, (tabs) => {
-      if (!Array.isArray(tabs)) return;
-      tabs.forEach(tab => {
-        try {
-          if (tab.url && new URL(tab.url).origin === crmUrl) {
-            chrome.tabs.sendMessage(tab.id, {
-              action: 'BROKIVA_NEW_SYNCED_MESSAGES',
-              data: {
-                tenantId,
-                messages: result.resultMessages || [],
-                contacts: result.resultContacts || [],
-                conversations: result.resultConversations || [],
-              }
-            }).catch(() => {});
-          }
-        } catch (_) {}
-      });
-    });
-  } catch (err) {}
-
+const OUTBOX_KEY = 'brokivaImportOutboxV2';
+let importLock = Promise.resolve();
+function serialImport(task) {
+  const result = importLock.then(task, task);
+  importLock = result.catch(() => {});
   return result;
+}
+async function importStatus() {
+  const config = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl', OUTBOX_KEY, 'brokivaLastImportReport']);
+  const items = (config[OUTBOX_KEY] || []).filter(item => BrokivaImport.sameContext(item.context, config));
+  return { success: true, report: BrokivaImport.sameContext(config.brokivaLastImportReport?.context, config) ? config.brokivaLastImportReport : null, pendingBatches: items.length, pendingMessages: items.reduce((n, item) => n + item.payload.chats.reduce((total, chat) => total + chat.messages.length, 0), 0), lastError: items.find(item => item.error)?.error || '' };
+}
+async function sendPendingImports(force = false) {
+  let queue = (await chrome.storage.local.get([OUTBOX_KEY]))[OUTBOX_KEY] || [];
+  const config = await requireSession();
+  const results = new Map();
+  for (const item of queue.slice()) {
+    if (!BrokivaImport.sameContext(item.context, config) || (!force && item.nextAttemptAt > Date.now())) continue;
+    const current = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']);
+    if (!BrokivaImport.sameContext(item.context, current)) break;
+    try {
+      const response = await fetch(`${config.crmUrl}/api/v1/sync/extension-history`, {
+        method: 'POST', signal: AbortSignal.timeout(20000),
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': config.tenantId, Authorization: `Bearer ${config.extensionSessionToken}` },
+        body: JSON.stringify(item.payload),
+      });
+      if (!response.ok) {
+        if (response.status === 401) await chrome.storage.local.remove(['extensionSessionToken', 'extensionSessionExpiresAt', 'isPaired']);
+        throw new Error(`CRM HTTP ${response.status}. Lote preservado para nova tentativa.`);
+      }
+      const result = await response.json();
+      BrokivaImport.verifyReceipt(result, item);
+      queue = queue.filter(candidate => candidate.id !== item.id);
+      // Se o worker parar depois do commit remoto, repetir é seguro pelo ID original.
+      await chrome.storage.local.set({ [OUTBOX_KEY]: queue });
+      results.set(item.id, result);
+      const active = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']);
+      if (BrokivaImport.sameContext(item.context, active)) {
+        const pending = { timestamp: Date.now(), tenantId: config.tenantId, messages: result.resultMessages || [], contacts: result.resultContacts || [], conversations: result.resultConversations || [] };
+        // A notificação à tela é opcional; o recibo de gravação já foi validado.
+        await chrome.storage.local.set({ brokivaPendingCrmSync: pending }).catch(() => {});
+        chrome.tabs.query({}, tabs => (tabs || []).forEach(tab => {
+          try { if (new URL(tab.url).origin === config.crmUrl) chrome.tabs.sendMessage(tab.id, { action: 'BROKIVA_NEW_SYNCED_MESSAGES', data: pending }).catch(() => {}); } catch {}
+        }));
+      }
+    } catch (error) {
+      item.attempts = (item.attempts || 0) + 1;
+      item.error = error.message;
+      item.nextAttemptAt = Date.now() + Math.min(300000, 5000 * 2 ** Math.min(item.attempts, 6));
+      await chrome.storage.local.set({ [OUTBOX_KEY]: queue });
+      break; // Preserva ordem e evita uma sequência de erros durante indisponibilidade.
+    }
+  }
+  return results;
+}
+function retryImports(force = false) {
+  return serialImport(async () => { await sendPendingImports(force); return importStatus(); });
+}
+async function handleBatchSync(data) {
+  return serialImport(async () => {
+    // Identidade é fixada no início da leitura; nunca se adota a conta que apareceu depois.
+    const config = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl', OUTBOX_KEY]);
+    config.crmUrl = crmOrigin(config.crmUrl);
+    if (!config.tenantId || !config.brokerUserId || !BrokivaImport.sameContext(data.context, config)) throw new Error('O contexto do CRM mudou. Refaça o pareamento na conta original.');
+    const chunks = BrokivaImport.chunkChats(data.chats);
+    const items = chunks.map(chats => {
+      const id = crypto.randomUUID();
+      const context = { tenantId: config.tenantId, brokerUserId: config.brokerUserId, crmUrl: config.crmUrl };
+      return { id, context, createdAt: Date.now(), payload: { protocol: 2, batchId: id, tenantId: config.tenantId, chats } };
+    });
+    const queue = [...(config[OUTBOX_KEY] || []), ...items];
+    if (BrokivaImport.bytes(queue) > 6 * 1024 * 1024) throw new Error('A fila local está cheia. Retome os envios pendentes antes de ler mais conversas.');
+    await chrome.storage.local.set({ [OUTBOX_KEY]: queue });
+    let results = new Map();
+    try { results = await sendPendingImports(); } catch {}
+    const remaining = (await chrome.storage.local.get([OUTBOX_KEY]))[OUTBOX_KEY] || [];
+    const pendingIds = new Set(remaining.map(item => item.id));
+    const confirmedMessages = items.filter(item => !pendingIds.has(item.id)).reduce((n, item) => n + item.payload.chats.reduce((sum, c) => sum + c.messages.length, 0), 0);
+    return { success: items.every(item => !pendingIds.has(item.id)), queued: true, confirmedMessages,
+      confirmedIds: items.filter(item => !pendingIds.has(item.id)).flatMap(item => item.payload.chats.flatMap(chat => chat.messages.map(message => message.id))),
+      pendingMessages: items.reduce((n, item) => n + item.payload.chats.reduce((sum, c) => sum + c.messages.length, 0), 0) - confirmedMessages,
+      error: remaining.find(item => items.some(own => own.id === item.id))?.error || 'Entre no CRM para retomar os envios pendentes.',
+      results: Array.from(results.values()) };
+  });
+}
+chrome.alarms?.onAlarm.addListener(alarm => { if (alarm.name === 'brokiva-import-retry') void retryImports().catch(() => {}); });
+if (chrome.alarms) {
+  chrome.alarms.create('brokiva-import-retry', { periodInMinutes: 1 });
+  void retryImports().catch(() => {});
 }
 
 async function handleGetAiSuggestion(data) {

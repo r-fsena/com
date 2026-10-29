@@ -223,54 +223,41 @@
   }
 
   // 4. Extração de Mensagens de um Chat Específico em Memória
-  function extractChatMessages(targetPhone, limit = 50) {
-    const results = [];
-    if (!Store || !Store.Chat) return results;
-
-    const clean = String(targetPhone).replace(/\D/g, '');
-    const chatModels = getModels(Store.Chat);
-    const chat = chatModels.find(c => {
-      const jid = c.id?._serialized || c.id || '';
-      return jid.includes(clean);
-    });
-
-    if (!chat || !chat.msgs) return results;
-
-    const msgModels = getModels(chat.msgs);
-    const sliced = msgModels.slice(-limit);
-
-    sliced.forEach(m => {
-      if (!m) return;
-      const isFromMe = Boolean(m.id?.fromMe || m.fromMe || m.__x_fromMe);
-      const text = m.body || m.__x_body || m.caption || m.__x_caption || '';
-      const type = m.type || m.__x_type || 'chat';
-      const timestamp = (m.t || m.__x_t || 0) * 1000 || Date.now();
-
-      let messageType = 'TEXT';
-      if (type === 'audio' || type === 'ptt') messageType = 'AUDIO';
-      else if (type === 'image') messageType = 'IMAGE';
-      else if (type === 'document') messageType = 'DOCUMENT';
-      else if (type === 'video') messageType = 'VIDEO';
-
-      results.push({
-        id: m.id?._serialized || m.id || `wa-msg-${Date.now()}-${Math.random()}`,
-        fromMe: isFromMe,
-        content: text,
-        messageType,
-        timestamp,
-        mediaUrl: m.mediaData?.url || null,
-        fileName: m.filename || m.__x_filename || null,
-      });
-    });
-
-    return results;
+  function canonicalJid(value) {
+    const match = String(value || '').match(/(\d+)@(c\.us|s\.whatsapp\.net|lid)/);
+    return match ? `${match[1]}@${match[2] === 's.whatsapp.net' ? 'c.us' : match[2]}` : '';
+  }
+  function extractChatMessages(targetJid) {
+    const messages = [];
+    const jid = canonicalJid(targetJid);
+    let unreadable = 0;
+    if (!jid || !Store?.Chat) return { jid, messages, unreadable };
+    const chat = getModels(Store.Chat).find(chat => canonicalJid(chat.id?._serialized || chat.id) === jid);
+    for (const message of getModels(chat?.msgs)) {
+      const type = message.type || message.__x_type || 'chat';
+      if (['e2e_notification', 'notification_template', 'gp2', 'ciphertext', 'revoked', 'protocol'].includes(type)) continue;
+      const id = message.id?._serialized || (typeof message.id === 'string' ? message.id : '');
+      const idMatch = id.match(/^(true|false)_([^_]+)_(.+)$/);
+      const rawTime = Number(message.t || message.__x_t || 0);
+      const time = rawTime < 1e12 ? rawTime * 1000 : rawTime;
+      if (!idMatch || canonicalJid(idMatch[2]) !== jid || !Number.isFinite(time) || time <= 0) { unreadable++; continue; }
+      const types = { chat: 'TEXT', audio: 'AUDIO', ptt: 'AUDIO', image: 'IMAGE', document: 'DOCUMENT', video: 'VIDEO', sticker: 'STICKER', location: 'LOCATION' };
+      const messageType = types[type];
+      if (!messageType) { unreadable++; continue; }
+      const content = message.body || message.__x_body || message.caption || message.__x_caption || '';
+      if (!content && messageType === 'TEXT') { unreadable++; continue; }
+      // Blobs locais e URLs de arquivos cifrados não são anexos utilizáveis no CRM.
+      messages.push({ id, fromMe: idMatch[1] === 'true', content, messageType, timestamp: new Date(time).toISOString(), fileName: message.filename || message.__x_filename || undefined });
+    }
+    return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
   }
 
   // -------------------------------------------------------------
   // RECEPTOR DE MENSAGENS DO CONTENT SCRIPT
   // -------------------------------------------------------------
   window.addEventListener('message', (event) => {
-    if (!event.data || !event.data.type) return;
+    if (event.source !== window || event.origin !== location.origin || !event.data || !event.data.type) return;
+    if (!isReady) initStore();
 
     if (event.data.type === 'BROKIVA_PING_BRIDGE') {
       window.postMessage({
@@ -299,13 +286,12 @@
     }
 
     if (event.data.type === 'BROKIVA_GET_CHAT_MESSAGES') {
-      const messages = extractChatMessages(event.data.phone, event.data.limit || 50);
+      const data = extractChatMessages(event.data.jid);
       window.postMessage({
         type: 'BROKIVA_GET_CHAT_MESSAGES_RESPONSE',
         requestId: event.data.requestId,
-        phone: event.data.phone,
         success: isReady,
-        messages,
+        ...data,
       }, '*');
     }
   });

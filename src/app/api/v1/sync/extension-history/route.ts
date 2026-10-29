@@ -1,406 +1,128 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { serverCRMStore } from '@/lib/server-crm-store';
 import { Contact, Conversation, Message, MessageType } from '@/types/crm';
-import { isWhatsAppChannelOrGroup, arePhonesEquivalent, canonicalPhoneKey, isWhatsAppSystemMessage, isLidIdentifier, cleanLid, formatCanonicalPhone } from '@/lib/whatsapp-filter';
-import { recordExtensionLog } from '@/lib/cloudwatch-logger';
+import { arePhonesEquivalent, cleanLid, isWhatsAppChannelOrGroup } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
-
-import { readCRMState, writeCRMState } from '@/lib/crm-repository';
+import { mutateCRMState, mergeTenantState } from '@/lib/crm-repository';
 
 export const dynamic = 'force-dynamic';
-
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-extension-token, x-tenant-id',
+  'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-tenant-id',
+  'Access-Control-Expose-Headers': 'X-Brokiva-Import-Protocol', 'X-Brokiva-Import-Protocol': '2',
 };
-
-function jsonWithCors(data: any, init?: ResponseInit) {
-  const headers = new Headers(init?.headers);
-  Object.entries(CORS_HEADERS).forEach(([k, v]) => headers.set(k, v));
-  return NextResponse.json(data, { ...init, headers });
+function json(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: CORS_HEADERS }); }
+export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: CORS_HEADERS }); }
+const messageTypes = ['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE', 'VIDEO', 'STICKER'] as const;
+const MessageSchema = z.object({
+  id: z.string().min(1).max(2048).optional(), content: z.string().default(''), fromMe: z.boolean().default(false),
+  timestamp: z.string().or(z.number()).optional(), messageType: z.string().optional(),
+  mediaUrl: z.string().nullish(), fileName: z.string().nullish(), senderName: z.string().optional(),
+});
+const BatchSchema = z.object({
+  protocol: z.literal(2).optional(), batchId: z.string().uuid().optional(), tenantId: z.string().optional(),
+  brokerUserId: z.string().optional(), brokerName: z.string().optional(), instanceId: z.string().optional(),
+  chats: z.array(z.object({ phone: z.string().min(1), name: z.string().optional(), lid: z.string().optional(),
+    avatarUrl: z.string().nullish(), tags: z.array(z.string()).optional(), labels: z.array(z.string()).optional(),
+    messages: z.array(MessageSchema).max(1000).default([]), lastMessagePreview: z.string().optional(), lastMessageAt: z.string().or(z.number()).optional(),
+  })).min(1).max(100),
+});
+class InvalidImport extends Error {}
+function timestamp(value: string | number | undefined): string | undefined {
+  if (value === undefined) return;
+  const ms = parseWhatsAppTimestamp(value);
+  return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : undefined;
 }
-
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: CORS_HEADERS,
-  });
-}
-
-const IngestMessageSchema = z.object({
-  id: z.string().optional(),
-  content: z.string().default(''),
-  fromMe: z.boolean().default(false),
-  timestamp: z.string().or(z.number()).optional(),
-  senderName: z.string().optional(),
-  messageType: z.string().optional().transform(v => {
-    const norm = (v || 'TEXT').toUpperCase();
-    if (['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE', 'VIDEO', 'STICKER'].includes(norm)) {
-      return norm as MessageType;
-    }
-    return 'TEXT' as MessageType;
-  }).default('TEXT'),
-  mediaUrl: z.string().optional(),
-  fileName: z.string().optional(),
-});
-
-const IngestChatSchema = z.object({
-  phone: z.string(),
-  name: z.string().optional(),
-  avatarUrl: z.string().optional(),
-  lid: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  labels: z.array(z.string()).optional(),
-  messages: z.array(IngestMessageSchema).default([]),
-  lastMessagePreview: z.string().optional(),
-  lastMessageAt: z.string().or(z.number()).optional(),
-});
-
-const BatchSyncSchema = z.object({
-  tenantId: z.string().optional(),
-  brokerUserId: z.string().optional(),
-  brokerName: z.string().optional(),
-  chats: z.array(IngestChatSchema).max(100),
-  instanceId: z.string().optional(),
-});
-
 export async function POST(req: NextRequest) {
-  // 1. Rate Limiting (Máx 60 lotes por minuto por IP)
-  const clientIp = getClientIp(req.headers);
-  const rateCheck = checkRateLimit(`ext-sync:${clientIp}`, 60, 60);
-  if (!rateCheck.allowed) {
-    return jsonWithCors({
-      success: false,
-      error: `Limite de requisições excedido. Aguarde ${rateCheck.resetInSeconds}s.`,
-    }, { status: 429 });
-  }
-
-  // 2. Validação de Sessão ou Token da Extensão
+  const rate = checkRateLimit(`ext-sync:${getClientIp(req.headers)}`, 60, 60);
+  if (!rate.allowed) return json({ success: false, error: `Limite excedido. Aguarde ${rate.resetInSeconds}s.` }, 429);
   const { session, errorResponse } = validateApiSession(req);
-  if (errorResponse) {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => errorResponse.headers.set(k, v));
-    return errorResponse;
-  }
-
+  if (errorResponse) { Object.entries(CORS_HEADERS).forEach(([k, v]) => errorResponse.headers.set(k, v)); return errorResponse; }
   try {
-    const body = await req.json().catch(() => ({}));
-    const parsed = BatchSyncSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return jsonWithCors({
-        success: false,
-        error: 'Estrutura de dados inválida',
-        details: parsed.error.format(),
-      }, { status: 400 });
-    }
-
-    const { tenantId, brokerUserId, brokerName, chats } = parsed.data;
-
-    if (tenantId && tenantId !== session!.tenantId && !session!.isSuperAdmin) return jsonWithCors({ success: false, error: 'Imobiliária não autorizada.' }, { status: 403 });
-    const effectiveTenantId = authorizedTenant(session!, tenantId);
-    const effectiveBrokerUserId = session!.userId;
-    const effectiveBrokerName = session!.userName;
-    const currentState = await readCRMState(effectiveTenantId);
-    // A importação via WhatsApp Web não implica uma conexão Z-API existente.
-    const targetInstanceId = parsed.data.instanceId || `extension-${session!.userId}`;
-
-    let importedContactsCount = 0;
-    let importedMessagesCount = 0;
-
-    const newContacts: Contact[] = [];
-    const newConversations: Conversation[] = [];
-    const newMessages: Message[] = [];
-
-    const nowIso = new Date().toISOString();
-
-    for (const chat of chats) {
-      let rawDigits = chat.phone.replace(/\D/g, '');
-      if (!rawDigits || rawDigits.length < 8) continue;
-      if (isWhatsAppChannelOrGroup({ phone: rawDigits, name: chat.name, lid: chat.lid })) continue;
-
-      const isInputLid = isLidIdentifier(rawDigits) || isLidIdentifier(chat.phone);
-      const incomingLid = cleanLid(chat.lid || (isInputLid ? rawDigits : ''));
-
-      // Tenta resolver para o telefone canônico caso seja um LID
-      let cleanPhone = rawDigits;
-      if (isInputLid) {
-        const resolvedFromStore = currentState.contacts.find(c => c.lid === (incomingLid || rawDigits))?.phone?.replace(/\D/g, '');
-        if (resolvedFromStore) {
-          cleanPhone = resolvedFromStore;
+    const raw = await req.json();
+    if (raw?.tenantId && raw.tenantId !== session!.tenantId && !session!.isSuperAdmin) return json({ success: false, error: 'Imobiliária não autorizada.' }, 403);
+    const parsed = BatchSchema.safeParse(raw);
+    if (!parsed.success) return json({ success: false, error: 'Estrutura de importação inválida.', details: parsed.error.format() }, 400);
+    const input = parsed.data;
+    if (input.tenantId && input.tenantId !== session!.tenantId && !session!.isSuperAdmin) return json({ success: false, error: 'Imobiliária não autorizada.' }, 403);
+    const tenantId = authorizedTenant(session!, input.tenantId);
+    if (input.protocol === 2 && !input.batchId) throw new InvalidImport('Identificador de lote obrigatório.');
+    const resultContacts: Contact[] = [], resultConversations: Conversation[] = [], resultMessages: Message[] = [];
+    const messageIds: string[] = [];
+    const requestIds = new Set<string>();
+    const now = new Date().toISOString();
+    await mutateCRMState(tenantId, previous => {
+      let state = previous;
+      for (const chat of input.chats) {
+        if (isWhatsAppChannelOrGroup({ phone: chat.phone, lid: chat.lid })) throw new InvalidImport('Grupos e canais não são importados como conversas individuais.');
+        const phoneDigits = chat.phone.replace(/\D/g, '');
+        const lid = cleanLid(chat.lid || (chat.phone.includes('@lid') ? chat.phone : ''));
+        const existingByLid = lid ? state.contacts.find(c => c.lid && cleanLid(c.lid) === lid) : undefined;
+        const phone = chat.phone.includes('@lid') ? existingByLid?.phone?.replace(/\D/g, '') || '' : phoneDigits;
+        if (!/^\d{8,15}$/.test(phone) || /^(4400|5500)/.test(phone)) throw new InvalidImport('Telefone não confirmado. Identifique o contato no WhatsApp e tente novamente; nenhuma mensagem deste lote foi gravada.');
+        const existingContact = state.contacts.find(c => arePhonesEquivalent(c.phone, phone) || (lid && c.lid && cleanLid(c.lid) === lid));
+        const contactId = existingContact?.id || `contact-zapi-${phone}`;
+        const existingConv = state.conversations.find(c => c.contactId === contactId || c.id === `conv-zapi-${phone}`);
+        const conversationId = existingConv?.id || `conv-zapi-${phone}`;
+        const messages: Message[] = [];
+        for (let index = 0; index < chat.messages.length; index++) {
+          const message = chat.messages[index];
+          const date = timestamp(message.timestamp);
+          if (input.protocol === 2 && (!message.id || !date)) throw new InvalidImport('Mensagem sem ID ou data válida. Releia a conversa.');
+          const sourceId = message.id || `ext-${crypto.createHash('sha256').update(JSON.stringify([conversationId, message.content, message.timestamp || '', message.fromMe, index])).digest('hex')}`;
+          if (requestIds.has(sourceId)) throw new InvalidImport('ID repetido no mesmo lote.');
+          requestIds.add(sourceId);
+          const nativeId = sourceId.match(/^(true|false)_(\d+)@(c\.us|s\.whatsapp\.net|lid)_(.+)$/);
+          if (input.protocol === 2 && (!nativeId || (nativeId[1] === 'true') !== message.fromMe
+            || (nativeId[3] === 'lid' ? cleanLid(chat.lid || '') !== nativeId[2] : !arePhonesEquivalent(nativeId[2], phone)))) {
+            throw new InvalidImport('Mensagem e contato não pertencem à mesma conversa.');
+          }
+          const externalId = nativeId?.[4] || sourceId;
+          const old = state.messages.find(m => m.conversationId === conversationId && (m.id === sourceId || m.externalId === sourceId || m.externalId === externalId));
+          const type = (message.messageType || 'TEXT').toUpperCase();
+          if (!messageTypes.includes(type as MessageType)) throw new InvalidImport(`Tipo de mensagem não suportado: ${type}.`);
+          const messageType = type as MessageType;
+          // Texto do usuário é preservado: números, horários, quebras de linha e nomes de arquivos são conteúdo válido.
+          const content = message.content || (messageType === 'TEXT' ? '' : `[${messageType}]`);
+          if (!content && !message.mediaUrl) throw new InvalidImport('Balão sem conteúdo legível. Releia a conversa.');
+          const mediaUrl = message.mediaUrl || undefined;
+          if (mediaUrl && !/^(https:\/\/|data:image\/)/i.test(mediaUrl)) throw new InvalidImport('Mídia temporária ou URL inválida. Reabra o arquivo no WhatsApp antes de importar.');
+          const id = old?.id || sourceId;
+          messages.push({ ...old, id, externalId, tenantId, conversationId,
+            senderType: message.fromMe ? 'USER' : 'CONTACT', senderUserId: message.fromMe ? session!.userId : undefined,
+            senderName: message.fromMe ? session!.userName : (existingContact?.name || chat.name || `Contato ${phone.slice(-4)}`),
+            messageType, content, timestamp: date || old?.timestamp || now,
+            attachments: mediaUrl ? [{ id: `att-${id}`, url: mediaUrl, fileName: message.fileName || 'Arquivo', fileSize: 0,
+              mimeType: messageType === 'AUDIO' ? 'audio/ogg' : messageType === 'IMAGE' ? 'image/jpeg' : messageType === 'VIDEO' ? 'video/mp4' : 'application/octet-stream' }] : old?.attachments,
+            status: old?.status || 'DELIVERED', isInternalNote: false });
+          messageIds.push(sourceId);
         }
+        const latest = messages.reduce<Message | undefined>((last, m) => !last || Date.parse(m.timestamp) >= Date.parse(last.timestamp) ? m : last, undefined);
+        const latestIncoming = messages.filter(m => m.senderType === 'CONTACT').reduce((max, m) => Date.parse(m.timestamp) > Date.parse(max || '1970-01-01') ? m.timestamp : max, existingContact?.lastClientInteractionAt);
+        const latestOutgoing = messages.filter(m => m.senderType === 'USER').reduce((max, m) => Date.parse(m.timestamp) > Date.parse(max || '1970-01-01') ? m.timestamp : max, existingContact?.lastTeamInteractionAt);
+        const contact: Contact = { assignedUserId: session!.userId, source: 'WHATSAPP', temperature: 'COLD', aiPriorityScore: 0, targetRegions: [], notesCount: 0,
+          consentGiven: false, hasOptedOut: false, isPersonal: false, createdAt: now, ...existingContact,
+          id: contactId, tenantId, phone: `+${phone}`, name: existingContact?.name || chat.name || `Contato ${phone.slice(-4)}`,
+          lid: lid || existingContact?.lid, avatarUrl: chat.avatarUrl || existingContact?.avatarUrl,
+          tags: Array.from(new Set([...(existingContact?.tags || []), ...(chat.tags || []), ...(chat.labels || []), 'WhatsApp Web Sincronizado'])),
+          lastClientInteractionAt: latestIncoming, lastTeamInteractionAt: latestOutgoing, updatedAt: now };
+        const replacePreview = latest && (!existingConv || Date.parse(latest.timestamp) >= Date.parse(existingConv.lastMessageAt));
+        const conversation: Conversation = { assignedUserId: session!.userId, status: 'UNASSIGNED', unreadCount: 0, slaBreached: false, isPersonal: false,
+          lastMessagePreview: '', lastMessageAt: latest?.timestamp || timestamp(chat.lastMessageAt) || now, ...existingConv,
+          id: conversationId, tenantId, contactId, instanceId: existingConv?.instanceId || `extension-${session!.userId}`,
+          ...(replacePreview ? { lastMessagePreview: latest.content.slice(0, 100), lastMessageAt: latest.timestamp,
+            status: latest.senderType === 'USER' ? 'PENDING_CLIENT' as const : 'PENDING_TEAM' as const } : {}) };
+        state = mergeTenantState(tenantId, state, { contacts: [contact], conversations: [conversation], messages });
+        resultContacts.push(contact); resultConversations.push(conversation); resultMessages.push(...messages);
       }
-
-      if (!cleanPhone.startsWith('55') && (cleanPhone.length === 10 || cleanPhone.length === 11)) {
-        cleanPhone = `55${cleanPhone}`;
-      }
-
-      // Localiza se já existe contato ou conversa prévia DENTRO DO MESMO TENANT (Isolamento Estrito)
-      const cleanIncomingName = (chat.name || '').trim().toLowerCase();
-
-      const existingContact = currentState.contacts.find(c => {
-        if (c.tenantId !== effectiveTenantId) return false;
-
-        const matchPhone = arePhonesEquivalent(c.phone, rawDigits) || 
-                           arePhonesEquivalent(c.phone, cleanPhone) ||
-                           arePhonesEquivalent(c.phone, chat.phone);
-        const matchLid = (incomingLid && c.lid && cleanLid(c.lid) === incomingLid) ||
-                         (c.lid && rawDigits && cleanLid(c.lid) === cleanLid(rawDigits));
-        if (matchPhone || matchLid) return true;
-
-        // Unificação Inteligente por Nome Exato: se o contato existente possui um identificador corrompido/LID
-        // (ex: LID, 4400..., 5500... sintético) e o novo registro traz o telefone real da mesma pessoa:
-        const cleanNameA = (c.name || '').trim().toLowerCase();
-        if (cleanNameA && cleanIncomingName && cleanNameA === cleanIncomingName && cleanNameA !== 'contato whatsapp') {
-          const cHasInvalidPhone = isLidIdentifier(c.phone) || !c.phone || c.phone.includes('4400') || c.phone.includes('5500') || !c.phone.startsWith('+55');
-          const incomingIsReal = cleanPhone.startsWith('55') && cleanPhone.length >= 10 && cleanPhone.length <= 13 && !isLidIdentifier(cleanPhone);
-          if (cHasInvalidPhone && incomingIsReal) {
-            return true;
-          }
-        }
-        return false;
-      });
-
-      // Se o contato existente possuir telefone real válido, adota-o como canônico
-      // MAS se o contato existente tinha um identificador inválido/LID e o novo dado traz um telefone real, o telefone real tem precedência!
-      const existingHasValidPhone = existingContact?.phone && !isLidIdentifier(existingContact.phone) && existingContact.phone.startsWith('+55');
-      const incomingHasValidPhone = cleanPhone.startsWith('55') && !isLidIdentifier(cleanPhone) && cleanPhone.length >= 10 && cleanPhone.length <= 13;
-
-      if (existingHasValidPhone && !incomingHasValidPhone) {
-        cleanPhone = existingContact.phone.replace(/\D/g, '');
-      }
-
-      // Registra a correlação LID <-> Telefone se ambos estiverem presentes
-      if (incomingLid && cleanPhone && !isLidIdentifier(cleanPhone)) {
-        serverCRMStore.registerLidPhone(incomingLid, cleanPhone);
-      }
-
-      // ID canônico padronizado para conv-zapi- e contact-zapi- (unificado com Inbox e Webhooks)
-      const defaultContactId = `contact-zapi-${cleanPhone}`;
-      const defaultConversationId = `conv-zapi-${cleanPhone}`;
-
-      const existingConv = currentState.conversations.find(cv => {
-        if (cv.tenantId !== effectiveTenantId) return false;
-        const convDigits = cv.id.replace(/\D/g, '') || cv.contactId.replace(/\D/g, '');
-        const matchConvPhone = arePhonesEquivalent(convDigits, cleanPhone) ||
-                               arePhonesEquivalent(convDigits, rawDigits);
-        return cv.id === defaultConversationId || 
-               matchConvPhone || 
-               (existingContact && (cv.contactId === existingContact.id || cv.id.includes(existingContact.id)));
-      });
-
-      const contactId = existingContact ? existingContact.id : defaultContactId;
-      const conversationId = existingConv ? existingConv.id : defaultConversationId;
-
-      let contactName = (chat.name || '').trim();
-      if (existingContact?.name && !existingContact.name.startsWith('+') && !existingContact.name.startsWith('WhatsApp') && existingContact.name !== 'Contato WhatsApp') {
-        contactName = existingContact.name;
-      } else if (!contactName || contactName === 'Contato WhatsApp' || contactName.toLowerCase() === 'whatsapp') {
-        contactName = existingContact?.name || formatCanonicalPhone(cleanPhone) || `Contato ${cleanPhone.slice(-4)}`;
-      } else if (contactName.startsWith('+')) {
-        contactName = formatCanonicalPhone(cleanPhone) || contactName;
-      }
-
-      // 1. Processa mensagens do chat
-      let lastMsgText = chat.lastMessagePreview || '';
-      if (isWhatsAppSystemMessage(lastMsgText)) {
-        lastMsgText = '';
-      }
-      let lastMsgTime = nowIso;
-      if (chat.lastMessageAt) {
-        const ms = parseWhatsAppTimestamp(chat.lastMessageAt);
-        if (ms > 0) lastMsgTime = new Date(ms).toISOString();
-      }
-
-      if (Array.isArray(chat.messages) && chat.messages.length > 0) {
-        const seenInBatch = new Set<string>();
-        chat.messages.forEach((m, idx) => {
-          let cleanContent = (m.content || '').trim();
-
-          // Remove horários residuais colados no final (ex: " 14:32", "\n14:32", " 2:30 PM", " 14:32✓")
-          cleanContent = cleanContent.replace(/[\s\u00a0\u200e\u200f\n\r]+(\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?)\s*$/i, '').trim();
-
-          // Remove menções de tamanho de arquivo (ex: " (42 KB)", " 42 KB", "1.2 MB", etc.)
-          cleanContent = cleanContent.replace(/\s*\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)/gi, '');
-          cleanContent = cleanContent.replace(/\b\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\b/gi, '').trim();
-
-          // Remove nomes de ícones SVG do WhatsApp Web (tail-out, tail-in, ic-fast-forward)
-          cleanContent = cleanContent.replace(/\b(tail-in|tail-out|ic-fast-forward|fast-forward)\b/gi, '').trim();
-
-          // Limpa múltiplos espaços
-          cleanContent = cleanContent.replace(/\s{2,}/g, ' ').trim();
-
-          // Se o conteúdo for puramente vazio, horário ou ruído, atribui fallback limpo ou descarta
-          if (!cleanContent || /^\d{1,2}:\d{2}$/.test(cleanContent) || /^\d+([.,]\d+)?\s*(KB|MB|GB|B)$/i.test(cleanContent)) {
-            if (m.messageType === 'AUDIO') cleanContent = '🎵 Mensagem de Voz';
-            else if (m.messageType === 'IMAGE') cleanContent = '📷 Foto';
-            else if (m.messageType === 'DOCUMENT') cleanContent = '📄 Documento';
-            else if (!m.mediaUrl) return; // Descarta balão de ruído/sistema sem conteúdo
-          }
-
-          // Se foi enviado como AUDIO mas contém texto real digitado pelo usuário, é uma mensagem de TEXTO legítima
-          if (m.messageType === 'AUDIO' && cleanContent && !cleanContent.includes('Mensagem de Voz') && !cleanContent.includes('[Áudio]')) {
-            m.messageType = 'TEXT';
-          }
-
-          if (isWhatsAppSystemMessage(cleanContent)) return;
-
-          let mTimestamp = nowIso;
-          if (m.timestamp) {
-            const ms = parseWhatsAppTimestamp(m.timestamp);
-            if (ms > 0) mTimestamp = new Date(ms).toISOString();
-          }
-
-          const mId = m.id || `ext-msg-${crypto.createHash('sha256').update(JSON.stringify([conversationId, cleanContent, m.timestamp || '', m.fromMe, idx])).digest('hex').slice(0, 32)}`;
-          const isFromMe = Boolean(m.fromMe);
-          const batchDedupeKey = m.id || `${conversationId}-${cleanContent}-${mTimestamp.slice(0, 19)}-${isFromMe}`;
-          if (seenInBatch.has(batchDedupeKey)) return;
-          seenInBatch.add(batchDedupeKey);
-
-          newMessages.push({
-            id: mId,
-            externalId: m.id || mId,
-            tenantId: effectiveTenantId,
-            conversationId,
-            senderType: isFromMe ? 'USER' : 'CONTACT',
-            senderUserId: isFromMe ? effectiveBrokerUserId : undefined,
-            senderName: isFromMe ? (effectiveBrokerName || 'Corretor') : contactName,
-            messageType: (m.messageType || 'TEXT') as MessageType,
-            content: cleanContent || (m.messageType === 'AUDIO' ? '🎵 Mensagem de Voz' : m.messageType === 'IMAGE' ? '📷 Foto' : m.messageType === 'VIDEO' ? '🎥 Vídeo' : 'Mensagem'),
-            attachments: m.mediaUrl ? [{
-              id: `att-${mId}`,
-              url: m.mediaUrl,
-              fileName: m.fileName || (m.messageType === 'AUDIO' ? 'Audio.ogg' : m.messageType === 'IMAGE' ? 'Foto.jpg' : m.messageType === 'VIDEO' ? 'Video.mp4' : 'Documento.pdf'),
-              fileSize: 1024,
-              mimeType: m.messageType === 'AUDIO' ? 'audio/ogg' : m.messageType === 'IMAGE' ? 'image/jpeg' : m.messageType === 'VIDEO' ? 'video/mp4' : 'application/pdf',
-            }] : undefined,
-            status: 'DELIVERED',
-            isInternalNote: false,
-            timestamp: mTimestamp,
-            phone: cleanPhone,
-          } as any);
-
-          importedMessagesCount++;
-          lastMsgText = cleanContent;
-          lastMsgTime = mTimestamp;
-        });
-      }
-
-      // 2. Contato: Garante separação estrita entre telefone e LID
-      const isCleanPhoneLid = isLidIdentifier(cleanPhone);
-      const resolvedPhoneFromStore = isCleanPhoneLid ? currentState.contacts.find(c => c.lid === cleanPhone)?.phone?.replace(/\D/g, '') : null;
-      const resolvedPhone = existingContact?.phone && !isLidIdentifier(existingContact.phone)
-        ? existingContact.phone
-        : (resolvedPhoneFromStore ? `+${resolvedPhoneFromStore}` : `+${cleanPhone}`);
-      
-      const resolvedLid = cleanLid(chat.lid || existingContact?.lid || (isCleanPhoneLid ? cleanPhone : '')) || undefined;
-      if (resolvedLid && resolvedPhone && !isLidIdentifier(resolvedPhone)) {
-        serverCRMStore.registerLidPhone(resolvedLid, resolvedPhone);
-      }
-
-      const existingAvatar = existingContact?.avatarUrl;
-      const isExistingHd = Boolean(existingAvatar && existingAvatar.startsWith('http') && !existingAvatar.includes('ui-avatars.com'));
-      const finalAvatar = isExistingHd
-        ? existingAvatar
-        : (chat.avatarUrl || existingAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=059669&color=fff`);
-
-      newContacts.push({
-        id: contactId,
-        tenantId: effectiveTenantId,
-        name: contactName,
-        phone: resolvedPhone,
-        lid: resolvedLid,
-        avatarUrl: finalAvatar,
-        assignedUserId: effectiveBrokerUserId || undefined,
-        source: 'WHATSAPP',
-        temperature: existingContact?.temperature || 'COLD',
-        aiPriorityScore: existingContact?.aiPriorityScore !== undefined ? existingContact.aiPriorityScore : 0,
-        tags: Array.from(new Set([
-          ...(chat.tags || []),
-          ...(chat.labels || []),
-          ...(existingContact?.tags || []),
-          'WhatsApp Web Sincronizado',
-        ])).filter(Boolean),
-        targetRegions: existingContact?.targetRegions || [],
-        preferredPropertyType: existingContact?.preferredPropertyType,
-        maxPropertyValue: existingContact?.maxPropertyValue,
-        downPaymentAvailable: existingContact?.downPaymentAvailable,
-        monthlyIncome: existingContact?.monthlyIncome,
-        notesCount: existingContact?.notesCount || 0,
-        consentGiven: true,
-        consentDate: lastMsgTime,
-        hasOptedOut: false,
-        isPersonal: existingContact?.isPersonal ?? false,
-        lastClientInteractionAt: lastMsgTime,
-        createdAt: existingContact?.createdAt || lastMsgTime,
-        updatedAt: nowIso,
-      });
-      importedContactsCount++;
-
-      // 3. Conversa
-      const cleanPreview = (lastMsgText && !isWhatsAppSystemMessage(lastMsgText)) 
-        ? lastMsgText 
-        : 'Conversa sincronizada via Extensão Chrome';
-
-      const lastMsgObj = chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null;
-      const lastIsFromMe = lastMsgObj ? Boolean(lastMsgObj.fromMe) : false;
-
-      newConversations.push({
-        id: conversationId,
-        tenantId: effectiveTenantId,
-        instanceId: targetInstanceId,
-        contactId,
-        assignedUserId: effectiveBrokerUserId || undefined,
-        status: lastIsFromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
-        unreadCount: 0,
-        lastMessagePreview: cleanPreview,
-        lastMessageAt: lastMsgTime,
-        slaBreached: false,
-        isPersonal: false,
-        aiEnabled: lastIsFromMe ? false : undefined,
-        humanTakeoverAt: lastIsFromMe ? lastMsgTime : undefined,
-        autoFollowupCount: 0,
-      });
-    }
-
-
-    // O ACK só é devolvido depois de contatos, conversas e mensagens terem sido confirmados juntos.
-    await writeCRMState(effectiveTenantId, { contacts: newContacts, conversations: newConversations, messages: newMessages });
-
-    // Registra log estruturado no CloudWatch
-    await recordExtensionLog({
-      timestamp: Date.now(),
-      level: 'INFO',
-      event: 'BATCH_SYNC_INGESTED',
-      tenantId: effectiveTenantId,
-      brokerName: effectiveBrokerName,
-      messagesCount: importedMessagesCount,
-      details: {
-        contactsCount: importedContactsCount,
-        chatsReceived: chats.length,
-        contactsSample: newContacts.slice(0, 5).map(c => ({ name: c.name, phone: c.phone })),
-      },
-    }).catch(() => {});
-
-    return jsonWithCors({
-      tenantId: effectiveTenantId,
-      success: true,
-      message: `Sincronização concluída: ${importedContactsCount} contatos e ${importedMessagesCount} mensagens ingeridas com sucesso!`,
-      contactsCount: importedContactsCount,
-      messagesCount: importedMessagesCount,
-      resultContacts: newContacts,
-      resultConversations: newConversations,
-      resultMessages: newMessages,
+      return state;
     });
+    return json({ success: true, tenantId, contactsCount: resultContacts.length, messagesCount: messageIds.length,
+      receipt: { protocol: 2, batchId: input.batchId || null, messageIds }, resultContacts, resultConversations, resultMessages });
   } catch (error: any) {
-    console.error('Erro na sincronização da extensão:', error);
-    return jsonWithCors({
-      success: false,
-      error: error.message || 'Falha ao processar histórico da extensão',
-    }, { status: 500 });
+    return json({ success: false, error: error.message || 'Falha ao gravar importação.' }, error instanceof InvalidImport ? 400 : 500);
   }
 }

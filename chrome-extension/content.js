@@ -6,6 +6,7 @@
 (function() {
   'use strict';
 
+  if (!globalThis.BrokivaImport) return;
   console.log('[Brokiva] Extension loaded on WhatsApp Web.');
 
   let isSyncing = false;
@@ -36,7 +37,7 @@
       let resolved = false;
 
       const handler = (event) => {
-        if (!event.data || event.data.requestId !== requestId) return;
+        if (event.source !== window || event.origin !== location.origin || !event.data || event.data.requestId !== requestId || event.data.type !== `${type}_RESPONSE`) return;
         resolved = true;
         window.removeEventListener('message', handler);
         resolve(event.data);
@@ -69,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.43';
+    let extVersion = '1.0.52';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.43';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.52';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -349,10 +350,10 @@
 
             <div>
               <button id="sovereign-batch-sync-full-btn" class="sovereign-btn-sync" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border:1px solid #334155;">
-                <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg> Carteira Completa (Todos os Tempos)</span>
+                <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg> Importar Lista de Conversas</span>
               </button>
               <p style="font-size:10px; color:#64748b; margin-top:3px; margin-left:2px; line-height:1.3;">
-                🌐 Rola até o fim sem corte de data. Leads inativos/antigos recebem a etiqueta "Base Antiga / Reativação".
+                Percorre a lista aberta sem corte de data. Confira também as conversas arquivadas e os filtros do WhatsApp.
               </p>
             </div>
           </div>
@@ -566,7 +567,7 @@ ${isDeveloperMode ? `
     if (!raw) return true;
     const digits = String(raw).replace(/\D/g, '');
     if (!digits || digits.length < 10) return true;
-    if (digits.length >= 14) return true; // LID
+    if (digits.length > 15) return true;
     if (digits.startsWith('4400') || digits.startsWith('5500')) return true; // Hashes / IDs sintéticos
     if (digits.startsWith('55') && digits.slice(2, 4) === '00') return true; // DDD 00 inválido
     if (String(raw).includes('@lid')) return true;
@@ -771,44 +772,35 @@ ${isDeveloperMode ? `
   }
 
   // 1.5 Aguarda confirmação ativa de troca de conversa no #main (evita contaminação entre chats)
-  async function waitForChatToOpen(expectedTitle, previousTitle, timeoutMs = 3500) {
+  function activeChatIdentity() {
+    const main = document.querySelector('#main');
+    const titleEl = main?.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
+    const title = (titleEl?.getAttribute('title') || titleEl?.innerText || '').normalize('NFKC').trim();
+    const jids = new Set(Array.from(main?.querySelectorAll('[data-id]') || []).map(el => BrokivaImport.messageIdentity(el.getAttribute('data-id'))?.jid).filter(Boolean));
+    if (jids.size > 1) throw new Error('Foram encontradas mensagens de conversas diferentes. Leitura interrompida.');
+    return { main, title, jid: Array.from(jids)[0] || '' };
+  }
+  function assertActiveChat(expected) {
+    const current = activeChatIdentity();
+    if (!current.main || current.title !== expected.title || !current.jid || current.jid !== expected.jid) throw new Error('A conversa mudou durante a leitura. Nenhuma mensagem foi associada ao novo contato.');
+  }
+  async function waitForChatToOpen(row, previous, timeoutMs = 10000) {
     const start = Date.now();
-    const cleanStr = (s) => (s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
-    const normExpected = cleanStr(expectedTitle);
-    const normPrev = cleanStr(previousTitle);
-
+    let stable = '';
     while (Date.now() - start < timeoutMs) {
-      const main = document.querySelector('#main');
-      if (main) {
-        const headerSpan = main.querySelector('header span[title], header div[role="button"] span, header span[dir="auto"]');
-        const rawTitle = (headerSpan ? (headerSpan.getAttribute('title') || headerSpan.innerText) : '').trim();
-        const currentTitle = cleanStr(rawTitle);
-
-        // 1. Checa se o título é igual ou contém o esperado (ou as primeiras palavras coincidem)
-        const firstExpectedWord = normExpected.split(' ')[0];
-        const matchesExpected = currentTitle && normExpected && (
-          currentTitle === normExpected ||
-          normExpected.includes(currentTitle) ||
-          currentTitle.includes(normExpected) ||
-          (firstExpectedWord.length >= 3 && currentTitle.startsWith(firstExpectedWord))
-        );
-
-        // 2. Ou se comprovadamente mudou em relação ao chat anterior
-        const changedFromPrev = normPrev && currentTitle && currentTitle !== normPrev;
-
-        // 3. Fallback: Se decorreu mais de 1.2s e o #main já tem balões de mensagens renderizados
-        const elapsed = Date.now() - start;
-        const hasMessages = main.querySelectorAll('div[data-id], div[role="row"]').length > 0;
-
-        if (matchesExpected || (changedFromPrev && currentTitle.length >= 2) || (elapsed >= 1200 && hasMessages && currentTitle.length >= 2)) {
-          // Pequena pausa para garantir que o Virtual DOM montou as mensagens da nova conversa
-          await new Promise(r => setTimeout(r, 250));
-          return true;
-        }
-      }
-      await new Promise(r => setTimeout(r, 120));
+      const current = activeChatIdentity();
+      const expectedTitle = row.title.normalize('NFKC').trim();
+      const selected = row.clickable.getAttribute('aria-selected') === 'true' || Boolean(row.clickable.querySelector('[aria-selected="true"]'));
+      const identityMatches = row.jid ? current.jid === row.jid
+        : (previous.title !== expectedTitle || current.jid !== previous.jid || selected);
+      if (current.title === expectedTitle && current.jid && identityMatches) {
+        const signature = `${current.title}:${current.jid}`;
+        if (stable === signature) return current;
+        stable = signature;
+      } else stable = '';
+      await new Promise(resolve => setTimeout(resolve, 250));
     }
-    return false;
+    throw new Error('Não foi possível confirmar a abertura da conversa selecionada. Tente novamente.');
   }
 
   // Extrai Etiquetas do WhatsApp Business em um elemento de linha da lista lateral
@@ -1034,10 +1026,10 @@ ${isDeveloperMode ? `
     if (messagesMap._orderedKeys && messagesMap._orderedKeys.length > 0) {
       validContentMsgs = messagesMap._orderedKeys
         .map(k => messagesMap.get(k))
-        .filter(m => m && m.content && !isWhatsAppSystemMessage(m.content));
+        .filter(m => m && m.content);
     } else {
       validContentMsgs = Array.from(messagesMap.values())
-        .filter(m => m.content && !isWhatsAppSystemMessage(m.content));
+        .filter(m => m.content);
     }
 
     // 1. Ordenação estritamente cronológica preservando a sequência unificada do chat
@@ -1049,20 +1041,6 @@ ${isDeveloperMode ? `
       const ordB = b.domOrder !== undefined ? b.domOrder : 0;
       return ordA - ordB;
     });
-
-    // 2. Garantia de Monotonicidade Rigorosa (Offset sutil de milissegundos):
-    let lastSeqMs = 0;
-    for (let i = 0; i < validContentMsgs.length; i++) {
-      const m = validContentMsgs[i];
-      let currMs = new Date(m.timestamp).getTime();
-      if (isNaN(currMs)) currMs = Date.now();
-      if (currMs <= lastSeqMs) {
-        currMs = lastSeqMs + 10;
-        m.timestamp = new Date(currMs).toISOString();
-      }
-      lastSeqMs = currMs;
-      m.domOrder = i;
-    }
 
     const lastMsg = validContentMsgs.length > 0 ? validContentMsgs[validContentMsgs.length - 1] : null;
 
@@ -1233,132 +1211,28 @@ ${isDeveloperMode ? `
   };
 
     // Parser Universal de Timestamps do WhatsApp Web (suporta dias da semana em PT e EN, datas com/sem ano, por extenso, relativos como 'ontem', US, etc.)
-  function parseWhatsAppTimestamp(rawPre, fallbackDate = null) {
-    if (!rawPre) return null;
-    const clean = rawPre.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ').trim();
-    const timeMatch = clean.match(/\[(.*?)\]/);
-    if (!timeMatch || !timeMatch[1]) return null;
-    const rawTime = timeMatch[1].trim();
-    const upper = rawTime.toUpperCase();
-
-    const now = new Date();
-    const currentYear = now.getFullYear();
-
-    // 1. Extração rigorosa de horas e minutos
-    const timePartMatch = rawTime.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?(?:\s*(AM|PM))?\b/i);
-    let h = 12, m = 0, s = 0;
-    let hasExplicitHour = false;
-    if (timePartMatch) {
-      hasExplicitHour = true;
-      h = Number(timePartMatch[1]);
-      m = Number(timePartMatch[2]);
-      s = timePartMatch[3] ? Number(timePartMatch[3]) : 0;
-      if (timePartMatch[4]) {
-        const isPm = timePartMatch[4].toUpperCase() === 'PM';
-        if (isPm && h < 12) h += 12;
-        if (!isPm && h === 12) h = 0;
-      }
+  function parseWhatsAppTimestamp(rawPre) {
+    if (typeof rawPre !== 'string') return null;
+    const raw = rawPre.replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, ' ');
+    const hour = raw.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?(?:\s*(AM|PM))?\b/i);
+    const iso = raw.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    const numeric = raw.match(/\b(\d{1,2})[/.](\d{1,2})[/.](\d{2}|\d{4})\b/);
+    if (!hour || (!iso && !numeric)) return null;
+    let year, month, day;
+    if (iso) { year = Number(iso[1]); month = Number(iso[2]); day = Number(iso[3]); }
+    else {
+      const language = (document.documentElement.lang || 'pt-BR').toLowerCase();
+      const monthFirst = language === 'en-us' || language === 'en';
+      year = Number(numeric[3]); if (year < 100) year += 2000;
+      day = Number(numeric[monthFirst ? 2 : 1]); month = Number(numeric[monthFirst ? 1 : 2]);
     }
-
-    // 2. Relativos diretos: hoje / ontem
-    if (/\b(HOJE|TODAY)\b/i.test(upper)) {
-      const dt = new Date(now);
-      dt.setHours(h, m, s, 0);
-      return dt;
-    }
-    if (/\b(ONTEM|YESTERDAY)\b/i.test(upper)) {
-      const dt = new Date(now);
-      dt.setDate(dt.getDate() - 1);
-      dt.setHours(h, m, s, 0);
-      return dt;
-    }
-
-    // 3. Dias da semana (ex: [16:50, quarta-feira], [17:02, terça-feira], [quarta, 16:50])
-    const weekdays = [
-      { name: 'DOMINGO', day: 0 }, { name: 'SUNDAY', day: 0 },
-      { name: 'SEGUNDA-FEIRA', day: 1 }, { name: 'SEGUNDA', day: 1 }, { name: 'MONDAY', day: 1 },
-      { name: 'TERÇA-FEIRA', day: 2 }, { name: 'TERCA-FEIRA', day: 2 }, { name: 'TERÇA', day: 2 }, { name: 'TERCA', day: 2 }, { name: 'TUESDAY', day: 2 },
-      { name: 'QUARTA-FEIRA', day: 3 }, { name: 'QUARTA', day: 3 }, { name: 'WEDNESDAY', day: 3 },
-      { name: 'QUINTA-FEIRA', day: 4 }, { name: 'QUINTA', day: 4 }, { name: 'THURSDAY', day: 4 },
-      { name: 'SEXTA-FEIRA', day: 5 }, { name: 'SEXTA', day: 5 }, { name: 'FRIDAY', day: 5 },
-      { name: 'SÁBADO', day: 6 }, { name: 'SABADO', day: 6 }, { name: 'SATURDAY', day: 6 }
-    ];
-
-    for (const w of weekdays) {
-      if (upper.includes(w.name)) {
-        const dt = new Date(now);
-        const currentDay = dt.getDay();
-        let diff = currentDay - w.day;
-        if (diff <= 0) diff += 7;
-        dt.setDate(dt.getDate() - diff);
-        dt.setHours(h, m, s, 0);
-        return dt;
-      }
-    }
-
-    // 4. Formato numérico de data: DD/MM/YYYY ou DD/MM ou YYYY-MM-DD
-    const numDateMatch = rawTime.match(/\b(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\b/);
-    if (numDateMatch) {
-      const day = Number(numDateMatch[1]);
-      const mo = Number(numDateMatch[2]) - 1;
-      let y = numDateMatch[3] ? Number(numDateMatch[3]) : currentYear;
-      if (y < 100) y += 2000;
-      if (y > currentYear) y = currentYear;
-      let dt = new Date(y, mo, day, h, m, s);
-      if (!numDateMatch[3] && dt.getTime() > now.getTime() + 60000) {
-        y = currentYear - 1;
-        dt = new Date(y, mo, day, h, m, s);
-      }
-      return dt;
-    }
-
-    // 5. Formato com mês em texto: 30 de set. [de 2026] ou 30 de setembro
-    const monthsMap = {
-      'JAN': 0, 'JANEIRO': 0, 'JANUARY': 0,
-      'FEV': 1, 'FEVEREIRO': 1, 'FEB': 1, 'FEBRUARY': 1,
-      'MAR': 2, 'MARÇO': 2, 'MARCO': 2, 'MARCH': 2,
-      'ABR': 3, 'ABRIL': 3, 'APR': 3, 'APRIL': 3,
-      'MAI': 4, 'MAIO': 4, 'MAY': 4,
-      'JUN': 5, 'JUNHO': 5, 'JUNE': 5,
-      'JUL': 6, 'JULHO': 6, 'JULY': 6,
-      'AGO': 7, 'AGOSTO': 7, 'AUG': 7, 'AUGUST': 7,
-      'SET': 8, 'SETEMBRO': 8, 'SEP': 8, 'SEPTEMBER': 8,
-      'OUT': 9, 'OUTUBRO': 9, 'OCT': 9, 'OCTOBER': 9,
-      'NOV': 10, 'NOVEMBRO': 10, 'NOVEMBER': 10,
-      'DEZ': 11, 'DEZEMBRO': 11, 'DEC': 11, 'DECEMBER': 11
-    };
-
-    const monthMatch = rawTime.match(/\b(\d{1,2})\s+DE\s+([A-ZÇ]+)\.?(?:\s+DE\s+(\d{2,4}))?\b/i) ||
-                       rawTime.match(/\b([A-Z]+)\.?\s+(\d{1,2})(?:,?\s+(\d{2,4}))?\b/i);
-    if (monthMatch) {
-      const isDayFirst = !isNaN(Number(monthMatch[1]));
-      const day = isDayFirst ? Number(monthMatch[1]) : Number(monthMatch[2]);
-      const mStr = (isDayFirst ? monthMatch[2] : monthMatch[1]).toUpperCase().replace('.', '');
-      const yStr = isDayFirst ? monthMatch[3] : monthMatch[3];
-      let y = yStr ? Number(yStr) : currentYear;
-      if (y < 100) y += 2000;
-      if (y > currentYear) y = currentYear;
-      const mo = monthsMap[mStr] !== undefined ? monthsMap[mStr] : 0;
-      let dt = new Date(y, mo, day, h, m, s);
-      if (!yStr && dt.getTime() > now.getTime() + 60000) {
-        y = currentYear - 1;
-        dt = new Date(y, mo, day, h, m, s);
-      }
-      return dt;
-    }
-
-    // 6. Se tiver apenas o horário
-    if (hasExplicitHour) {
-      const ref = fallbackDate || now;
-      const dt = new Date(ref.getTime());
-      dt.setHours(h, m, s, 0);
-      return dt;
-    }
-
-    return null;
+    let h = Number(hour[1]);
+    if (hour[4]) { if (h > 12) return null; h = h % 12 + (hour[4].toUpperCase() === 'PM' ? 12 : 0); }
+    const date = new Date(year, month - 1, day, h, Number(hour[2]), Number(hour[3] || 0));
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return date;
   }
 
-  // Extrai data pura (Date com meio-dia) de string data-pre-plain-text
   function extractDateFromPrePlain(rawPre) {
     const dt = parseWhatsAppTimestamp(rawPre);
     if (dt) {
@@ -1553,34 +1427,7 @@ ${isDeveloperMode ? `
     const msgs = orderedKeys.map(k => messagesMap.get(k)).filter(Boolean);
     if (msgs.length === 0) return;
 
-    const now = Date.now();
-
-    // 0. Garante que nenhuma mensagem ultrapasse o momento presente
-    for (const m of msgs) {
-      let t = new Date(m.timestamp).getTime();
-      if (isNaN(t) || t > now + 60000) {
-        m.timestamp = new Date(now).toISOString();
-      }
-    }
-
-    // 1. FORWARD SWEEP MONOTÔNICO (Do início para o fim do chat):
-    // Como orderedKeys é construído seguindo rigorosamente o fluxo físico do WhatsApp Web
-    // (mensagens superiores são mais antigas, inferiores são mais novas),
-    // garantimos que cada mensagem subsequente tenha timestamp estritamente posterior (+10ms).
-    // NUNCA subtrai dias por mensagens no mesmo minuto!
-    let lastSeqMs = 0;
-    for (let i = 0; i < msgs.length; i++) {
-      const curr = msgs[i];
-      let currMs = new Date(curr.timestamp).getTime();
-      if (isNaN(currMs)) currMs = Date.now();
-
-      if (currMs <= lastSeqMs) {
-        currMs = lastSeqMs + 10;
-        curr.timestamp = new Date(currMs).toISOString();
-      }
-      lastSeqMs = currMs;
-      curr.domOrder = i;
-    }
+    msgs.forEach((message, index) => { message.domOrder = index; });
   }
 
   function harvestDomMessages(messagesMap, fallbackPhone = '', orderTracker = null, scrollDirection = 'INIT') {
@@ -1597,8 +1444,9 @@ ${isDeveloperMode ? `
       if (el.getAttribute('role') === 'row' && el.querySelector('.message-in, .message-out')) {
         continue;
       }
-      if (seenElements.has(el)) continue;
-      seenElements.add(el);
+      const bubble = el.matches('.message-in, .message-out') ? el : (el.querySelector('.message-in, .message-out') || el);
+      if (seenElements.has(bubble)) continue;
+      seenElements.add(bubble);
       uniqueElements.push(el);
     }
 
@@ -1666,6 +1514,15 @@ ${isDeveloperMode ? `
       const isDataIdFromContact = actualDataId.startsWith('false_');
       const isRealMsgKey = isDataIdFromMe || isDataIdFromContact;
       const rawDataId = isRealMsgKey ? actualDataId : '';
+
+      const structuredNodes = Array.from(container.querySelectorAll('.selectable-text, [data-testid="msg-text"]'))
+        .filter(node => !node.closest('[data-testid*="quote"], .quoted-mention') && !node.parentElement?.closest('.selectable-text'));
+      const structuredText = structuredNodes.map(node => {
+        const copy = node.cloneNode(true);
+        copy.querySelectorAll('[data-testid*="quote"], .quoted-mention').forEach(node => node.remove());
+        copy.querySelectorAll('img[alt]').forEach(img => img.replaceWith(document.createTextNode(img.getAttribute('alt'))));
+        return copy.innerText || copy.textContent || '';
+      }).join('\n').trim();
 
       // 3. Extração de texto isolando citação/resposta anterior (Quote) e metadados de hora
       const clone = container.cloneNode(true);
@@ -1840,27 +1697,17 @@ ${isDeveloperMode ? `
         content = userTypedText;
       }
 
-      // Descarta mensagens puramente vazias ou ruído de sistema
-      if (!content || isWhatsAppSystemMessage(content)) return;
-      if ((content === '📷 Foto' || content === 'Foto') && !hasImg) return;
-
-      // Converte qualquer resíduo puramente numérico ou de velocidade em áudio ou descarta
-      if (/^\d+([.,]\d+)?\s*[xX\u00d7\u2715\u2716]?$/i.test(content)) {
-        if (isVoiceOrAudio) {
-          messageType = 'AUDIO';
-          content = '🎵 Mensagem de Voz';
-          fileName = 'Audio.ogg';
-        } else {
-          return;
-        }
+      if (structuredText) {
+        content = structuredText;
+        if (!hasImg && !hasVideo && !hasDoc && !hasAudio) messageType = 'TEXT';
       }
-
-      if (
-        /^\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)$/i.test(content) ||
-        /^\(\s*\d+([.,]\d+)?\s*(KB|MB|GB|B|bytes?)\s*\)$/i.test(content) ||
-        /^\d{1,2}:\d{2}\s+(\d[.,]\d[xX\u00d7]|\d[xX\u00d7])$/i.test(content) ||
-        content === 'tail-out' || content === 'tail-in' || content === 'ic-fast-forward'
-      ) {
+      if (!content) {
+        if (isRealMsgKey) { messagesMap._issues ||= new Set(); messagesMap._issues.add('UNREADABLE_MESSAGE'); }
+        return;
+      }
+      if (!isRealMsgKey) {
+        messagesMap._issues ||= new Set();
+        messagesMap._issues.add('MESSAGE_ID_UNAVAILABLE');
         return;
       }
 
@@ -2028,35 +1875,24 @@ ${isDeveloperMode ? `
         }
       }
 
-      // GARANTIA DE MONOTONICIDADE CRONOLÓGICA:
-      // Se não for uma data explícita de data-pre-plain-text e o horário cair antes da mensagem anterior,
-      // herda o timestamp imediatamente posterior (+10ms) para manter a ordem física estrita.
-      const currentParsedMs = new Date(msgTime).getTime();
-      if (!isNaN(currentParsedMs)) {
-        if (!isHardPrePlainDate && lastSeenValidTimeMs > 0 && currentParsedMs < lastSeenValidTimeMs) {
-          msgTime = new Date(lastSeenValidTimeMs + 10).toISOString();
-          lastSeenValidTimeMs = lastSeenValidTimeMs + 10;
-        } else {
-          lastSeenValidTimeMs = Math.max(lastSeenValidTimeMs, currentParsedMs);
-        }
-        currentWalkingDateIso = msgTime;
-      }
-
-            // 9. Deduplicação e armazenamento no Map
-      const effectiveDataId = isRealMsgKey ? rawDataId : '';
-      const safeSnippet = (content || '').trim().slice(0, 80).replace(/\s+/g, ' ');
-      // CHAVE ESTÁVEL: NUNCA USAR ${index} NEM timeMinuteKey QUE MUDE ENTRE PASSADAS!
-      const uniqueMsgKey = effectiveDataId || `${isFromMe ? 'OUT' : 'IN'}::${safeSnippet}`;
+      const uniqueMsgKey = rawDataId;
+      const identity = BrokivaImport.messageIdentity(rawDataId);
+      if (!identity) { messagesMap._issues ||= new Set(); messagesMap._issues.add('MESSAGE_ID_UNAVAILABLE'); return; }
+      const isTimestampEstimated = !isHardPrePlainDate;
+      currentWalkingDateIso = msgTime;
+      lastSeenValidTimeMs = Date.parse(msgTime) || lastSeenValidTimeMs;
 
       currentBatchKeys.push(uniqueMsgKey);
 
       if (!messagesMap.has(uniqueMsgKey)) {
-        const p = fallbackPhone || currentActivePhone || 'chat';
         messagesMap.set(uniqueMsgKey, {
-          id: effectiveDataId || `wpp-ext-${p}-${messagesMap.size}-${Date.now()}`,
+          id: rawDataId,
           content,
-          fromMe: isFromMe,
+          fromMe: identity.fromMe,
           timestamp: msgTime,
+          timestampEstimated: isTimestampEstimated,
+          hasPrePlain: isHardPrePlainDate,
+          mediaIsPreview: messageType === 'IMAGE' && mediaUrl.startsWith('data:image/'),
           messageType,
           mediaUrl: mediaUrl || undefined,
           fileName: fileName || undefined,
@@ -2069,6 +1905,7 @@ ${isDeveloperMode ? `
         if (cleanPrePlain && !existing.hasPrePlain) {
           existing.timestamp = msgTime;
           existing.hasPrePlain = true;
+          existing.timestampEstimated = false;
         }
       }
     });
@@ -2100,7 +1937,7 @@ ${isDeveloperMode ? `
           const topSyncBtn = document.createElement('button');
           topSyncBtn.id = 'brokiva-header-sync-btn';
           topSyncBtn.type = 'button';
-          topSyncBtn.title = 'Sincronizar histórico completo desta conversa no CRM Brokiva';
+          topSyncBtn.title = 'Importar mensagens disponíveis desta conversa no CRM Brokiva';
           topSyncBtn.innerHTML = `
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -2268,140 +2105,83 @@ ${isDeveloperMode ? `
 
   // Detecta e clica automaticamente em botões/banners de "Clique para carregar conversas mais antigas"
   async function checkAndClickLoadMoreButton() {
-    try {
-      const main = document.querySelector('#main');
-      if (!main) return false;
-
-      // Procura botões, links ou banners interativos de carregamento de histórico
-      const candidates = Array.from(main.querySelectorAll(
-        'button, div[role="button"], span[role="button"], div[data-testid*="banner"], div[data-testid*="system"], div[data-testid*="load"]'
-      ));
-
-      for (const el of candidates) {
-        const text = (el.innerText || el.getAttribute('aria-label') || '').toLowerCase().trim();
-        if (
-          (text.includes('clique') && (text.includes('carregar') || text.includes('antig') || text.includes('anterior') || text.includes('baixar'))) ||
-          (text.includes('carregar') && (text.includes('mensagem') || text.includes('conversa') || text.includes('antig') || text.includes('anterior'))) ||
-          (text.includes('load') && text.includes('older') && text.includes('message')) ||
-          (text.includes('click') && text.includes('load'))
-        ) {
-          console.log('[Brokiva] Botão/Banner de carregamento de histórico detectado:', text);
-          const clickTarget = el.closest('button, div[role="button"], span[role="button"]') || el;
-          clickTarget.click();
-          clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-          return true;
-        }
-      }
-    } catch (e) {}
+    const main = document.querySelector('#main');
+    if (!main) return false;
+    for (const button of main.querySelectorAll('button, [role="button"], [data-testid*="history"], [data-testid*="load"]')) {
+      if (button.closest('.message-in, .message-out, [data-id]')) continue;
+      const text = (button.innerText || button.getAttribute('aria-label') || '').trim();
+      if (text.length > 180 || !/^(?:clique (?:aqui )?para (?:carregar|baixar)|carregar (?:mais |as )?(?:mensagens|conversas)|load (?:more|older) messages|click (?:here )?to load)/i.test(text)) continue;
+      button.click(); return true;
+    }
     return false;
   }
 
-  async function deepScrollChatHistory(targetScrolls = 25, onProgress = null) {
-    const main = document.querySelector('#main');
-    const scrollContainer = findChatScrollContainer();
-    const accumulatedMessages = new Map();
-    const orderTracker = {
-      orderedKeys: [],
-      seenKeys: new Set(),
-      knownAnchorDateIso: '',
+  async function deepScrollChatHistory(_legacyLimit, onProgress = null, checkpoint = null) {
+    const identity = activeChatIdentity();
+    if (!identity.jid) throw new Error('WhatsApp ainda não disponibilizou a identidade das mensagens. Aguarde o carregamento e tente novamente.');
+    const main = identity.main;
+    const scroller = findChatScrollContainer();
+    const messages = new Map();
+    const tracker = { orderedKeys: [], seenKeys: new Set(), knownAnchorDateIso: '' };
+    const wait = () => new Promise(resolve => setTimeout(resolve, 750));
+    const capture = direction => {
+      assertActiveChat(identity);
+      harvestDomMessages(messages, identity.jid, tracker, direction);
+      return `${messages.size}:${Array.from(main.querySelectorAll('[data-id]')).map(el => el.getAttribute('data-id')).join('|')}`;
     };
-
-    if (!scrollContainer || !main) {
-      harvestDomMessages(accumulatedMessages, '', orderTracker, 'INIT');
-      calibratePhysicalChatSequence(orderTracker.orderedKeys, accumulatedMessages);
-      accumulatedMessages._orderedKeys = orderTracker.orderedKeys;
-      return accumulatedMessages;
+    if (!scroller) {
+      capture('INIT');
+      messages._coverage = { complete: false, reason: 'NO_SCROLL_CONTAINER' };
+    } else {
+      // Desce com sobreposição antes de subir: saltar ao fundo pode pular páginas virtualizadas.
+      for (let step = 0; step < 800; step++) {
+        capture('DOWN');
+        if (cancelSyncRequested) break;
+        if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 3) break;
+        const previous = scroller.scrollTop;
+        scroller.scrollTop += Math.max(50, scroller.clientHeight * 0.65);
+        scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait();
+        if (Math.abs(scroller.scrollTop - previous) < 1) break;
+      }
+      messages._coverage = await BrokivaImport.walkHistory({
+        cancelled: () => cancelSyncRequested,
+        assertChat: () => assertActiveChat(identity),
+        capture: () => capture('UP'),
+        atStart: () => scroller.scrollTop <= 3,
+        startConfirmed: () => Boolean(main.querySelector('[data-testid="chat-history-start"], [data-testid="conversation-start"]')),
+        loading: () => Boolean(main.querySelector('[data-testid="chat-history-loader"], [role="progressbar"]')),
+        moveUp: async () => {
+          scroller.scrollTop -= Math.max(50, scroller.clientHeight * 0.65);
+          scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+          if (scroller.scrollTop <= 3) await checkAndClickLoadMoreButton();
+        }, wait,
+        checkpoint: checkpoint ? () => checkpoint(messages) : undefined,
+      }, { onProgress });
     }
-
-    const badge = document.getElementById('sovereign-sync-badge');
-
-    // 1. Coleta inicial das mensagens mais recentes visíveis agora (no fundo do chat)
-    harvestDomMessages(accumulatedMessages, '', orderTracker, 'INIT');
-    let lastCount = accumulatedMessages.size;
-    let unchangedAttempts = 0;
-
-    for (let i = 0; i < targetScrolls; i++) {
-      // Rola o container para o topo absoluto
-      scrollContainer.scrollTop = 0;
-      scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-
-      // Força a primeira mensagem visível a entrar no topo do viewport para disparar o IntersectionObserver do WhatsApp
-      const firstRow = main.querySelector('div.message-in, div.message-out, div[role="row"]');
-      if (firstRow) {
-        try {
-          firstRow.scrollIntoView({ block: 'start', behavior: 'instant' });
-        } catch (e) {}
-      }
-
-      // Dispara evento de roda do mouse (wheel) para cima
-      const wheelEvt = new WheelEvent('wheel', {
-        deltaY: -1200,
-        deltaMode: 0,
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      });
-      scrollContainer.dispatchEvent(wheelEvt);
-      if (firstRow) firstRow.dispatchEvent(wheelEvt);
-
-      // Detecta e clica automaticamente em "Clique aqui para carregar conversas mais antigas"
-      const clickedLoadMore = await checkAndClickLoadMoreButton();
-      if (clickedLoadMore) {
-        if (badge) badge.innerText = `Baixando antigas (${i + 1}/${targetScrolls})...`;
-        await new Promise(r => setTimeout(r, 1200));
-      }
-
-      if (badge) badge.innerText = `Lendo antigas (${i + 1}/${targetScrolls})...`;
-      if (typeof onProgress === 'function') onProgress(i + 1, targetScrolls);
-
-      // Aguarda 900ms para o WhatsApp buscar no IndexedDB e renderizar os nós no DOM
-      await new Promise(r => setTimeout(r, 900));
-
-      // Se houver spinner/loader ativo no topo, aguarda mais 500ms
-      const loader = main.querySelector('[data-testid="chat-history-loader"], [role="progressbar"], span[data-icon="refresh"]');
-      if (loader) {
-        await new Promise(r => setTimeout(r, 500));
-      }
-
-      // Coleta mensagens subindo (direção UP)
-      harvestDomMessages(accumulatedMessages, '', orderTracker, 'UP');
-
-      const currentCount = accumulatedMessages.size;
-      if (currentCount === lastCount) {
-        unchangedAttempts++;
-        // Encerra precocemente se já acumulou mensagens suficientes e não surgem novas
-        if (unchangedAttempts >= 4 && (currentCount >= 15 || i >= 8)) {
-          console.log(`[Brokiva] Início da conversa atingido após ${i + 1} rolagens (${currentCount} msgs).`);
-          break;
-        }
-      } else {
-        unchangedAttempts = 0;
-        lastCount = currentCount;
+    assertActiveChat(identity);
+    // O Store é apenas complemento do que está carregado; nunca prova de histórico completo.
+    const native = await queryNativeStore('BROKIVA_GET_CHAT_MESSAGES', { jid: identity.jid }, 2500);
+    if (native.success && native.jid === identity.jid && Array.isArray(native.messages)) {
+      for (const message of native.messages) {
+        const key = BrokivaImport.messageIdentity(message.id);
+        if (!key || key.jid !== identity.jid || !Number.isFinite(Date.parse(message.timestamp))) continue;
+        const old = messages.get(message.id);
+        messages.set(message.id, { ...old, ...message, content: message.content || old?.content || `[${message.messageType}]`,
+          mediaUrl: message.mediaUrl || old?.mediaUrl, timestampEstimated: false, hasPrePlain: true });
+        if (!tracker.seenKeys.has(message.id)) { tracker.seenKeys.add(message.id); tracker.orderedKeys.push(message.id); }
       }
     }
-
-    // Retorna a rolagem para o final com passagens progressivas para re-renderizar nós intermediários e de hoje
-    for (let s = 0; s < 4; s++) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-      scrollContainer.dispatchEvent(new WheelEvent('wheel', { deltaY: 2500, bubbles: true, view: window }));
-      const allRows = Array.from(main.querySelectorAll('div.message-in, div.message-out, div[role="row"]'));
-      const lastRow = allRows.length > 0 ? allRows[allRows.length - 1] : null;
-      if (lastRow) {
-        try { lastRow.scrollIntoView({ block: 'end', behavior: 'instant' }); } catch (e) {}
-      }
-      await new Promise(r => setTimeout(r, 600));
-      harvestDomMessages(accumulatedMessages, '', orderTracker, 'DOWN');
-    }
-
-    // Calibra monotonicamente todos os timestamps com base na ordem física estrita
-    calibratePhysicalChatSequence(orderTracker.orderedKeys, accumulatedMessages);
-    accumulatedMessages._orderedKeys = orderTracker.orderedKeys;
-
-    return accumulatedMessages;
+    calibratePhysicalChatSequence(tracker.orderedKeys, messages);
+    messages._orderedKeys = tracker.orderedKeys;
+    messages._identity = identity;
+    if (Array.from(messages.values()).some(message => message.timestampEstimated)) { messages._issues ||= new Set(); messages._issues.add('TIMESTAMP_ESTIMATED'); }
+    if (Array.from(messages.values()).some(message => message.messageType !== 'TEXT' && !message.mediaUrl)) { messages._issues ||= new Set(); messages._issues.add('MEDIA_FILE_UNAVAILABLE'); }
+    if (Array.from(messages.values()).some(message => message.mediaIsPreview)) { messages._issues ||= new Set(); messages._issues.add('MEDIA_PREVIEW_ONLY'); }
+    if (native.unreadable) { messages._issues ||= new Set(); messages._issues.add('NATIVE_UNREADABLE'); }
+    if (messages._issues?.size) messages._coverage = { complete: false, reason: Array.from(messages._issues).join(', ') };
+    return messages;
   }
-
-  
 
   async function extractContactDetailsFromDrawer() {
     try {
@@ -2427,24 +2207,19 @@ ${isDeveloperMode ? `
       for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise(r => setTimeout(r, 120));
         const sidePanel = document.querySelector(
-          'div[tabindex="-1"] section, div[tabindex="-1"] aside, div[data-testid="contact-info-drawer"], div[data-testid="chat-info-drawer"], div[tabindex="-1"] div[role="region"], div[role="region"][aria-label*="Dados" i], div[role="region"][aria-label*="Contact" i]'
+          '[data-testid="contact-info-drawer"], [data-testid="chat-info-drawer"], [role="region"][aria-label*="Dados do contato" i], [role="region"][aria-label*="Contact info" i]'
         );
         if (sidePanel) {
           const text = sidePanel.innerText || '';
 
-          // 1. Busca telefone formatado na gaveta
-          if (!foundPhone) {
-            const phoneMatch = text.match(/\+?55\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/) ||
-                               text.match(/\+?55\s?\d{2}\s?9?\d{8}/) ||
-                               text.match(/\+?\d{1,3}\s?\(?\d{2,3}\)?\s?\d{4,5}[-\s]?\d{4}/) ||
-                               text.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
-            if (phoneMatch) {
-              const digits = phoneMatch[0].replace(/\D/g, '');
-              if (digits.length >= 10 && digits.length <= 13) {
-                foundPhone = digits.startsWith('55') ? digits : `55${digits}`;
-              }
-            }
-          }
+          // Só aceita campos inteiros de telefone no painel identificado, nunca números no texto da conversa.
+          const candidates = Array.from(sidePanel.querySelectorAll('a[href^="tel:"], [data-testid*="phone"], span[dir="auto"]'))
+            .map(node => node.getAttribute('href')?.replace(/^tel:/, '') || node.innerText || '')
+            .filter(text => /^\+?[\d\s().-]{8,25}$/.test(text.trim()))
+            .map(text => text.replace(/\D/g, ''))
+            .filter(phone => phone.length >= 8 && phone.length <= 15);
+          const unique = [...new Set(candidates)];
+          if (unique.length === 1) foundPhone = unique[0];
 
           // 2. Busca pushName (~ Nome)
           if (!foundPushName) {
@@ -2506,179 +2281,111 @@ ${isDeveloperMode ? `
 
   const extractPhoneFromContactDrawer = extractContactDetailsFromDrawer;
 
-  async function resolvePhoneFromCrmIfLid(contactName, phoneOrLid, allowDrawer = false, outDetails = null) {
-    const phoneStr = String(phoneOrLid || '').trim();
-
-    // Se já é um telefone canônico brasileiro válido
-    if (!isWhatsAppSyntheticOrInvalidPhone(phoneStr) && phoneStr.length >= 10 && phoneStr.length <= 13 && phoneStr.startsWith('55')) {
-      return phoneStr;
-    }
-
-    // 1. Abre gaveta de contato do WhatsApp Web para ler o telefone oficial da agenda e etiquetas
-    if (allowDrawer) {
-      try {
-        const details = await extractContactDetailsFromDrawer();
-        if (details && outDetails) {
-          if (details.labels && details.labels.length > 0) outDetails.labels = details.labels;
-          if (details.pushName) outDetails.pushName = details.pushName;
-        }
-        const drawerPhone = details?.phone;
-        if (drawerPhone && typeof drawerPhone === 'string' && drawerPhone.length >= 8) {
-          const fullPhone = (drawerPhone.startsWith('55') || drawerPhone.length > 11) ? drawerPhone : `55${drawerPhone}`;
-          if (phoneStr) rememberLidPhone(phoneStr, fullPhone);
-          console.log(`[Brokiva] Telefone extraído da gaveta lateral do WhatsApp Web para "${contactName}": ${fullPhone}`);
-          return fullPhone;
-        }
-      } catch (e) {}
-    }
-
-    // 2. Consulta cache local diretamente no storage sincronizado pelo crm-bridge
-    try {
-      const storage = await chrome.storage.local.get(['brokivaCrmContacts']);
-      const list = storage.brokivaCrmContacts || [];
-      if (Array.isArray(list) && contactName) {
-        const norm = String(contactName).toLowerCase().trim();
-        const found = list.find(c => c && c.name && String(c.name).toLowerCase().trim() === norm);
-        if (found && found.phone) {
-          const clean = String(found.phone).replace(/\D/g, '');
-          if (clean.length >= 10 && clean.length <= 13 && !isWhatsAppSyntheticOrInvalidPhone(clean)) {
-            console.log(`[Brokiva] Telefone extraído do cache de contatos CRM para "${contactName}": ${clean}`);
-            return clean;
-          }
-        }
+  async function resolvePhoneFromCrmIfLid(contactName, phoneStr, forceDrawer = false, details = {}) {
+    const jid = BrokivaImport.canonicalJid(phoneStr);
+    let phone = String(phoneStr || '').replace(/@.*$/, '').replace(/\D/g, '');
+    const isLid = jid.endsWith('@lid') || isWhatsAppSyntheticOrInvalidPhone(phone);
+    if (forceDrawer || isLid || !phone) {
+      const drawer = await extractContactDetailsFromDrawer().catch(() => null);
+      if (drawer) {
+        if (drawer.labels) details.labels = drawer.labels;
+        const verified = String(drawer.phone || '').replace(/\D/g, '');
+        if (verified && !isWhatsAppSyntheticOrInvalidPhone(verified)) phone = verified;
       }
-    } catch (e) {}
-
-    // 3. Pergunta ao background worker (que consulta abas abertas do CRM e storage local)
-    try {
-      const res = await new Promise(resolve => {
-        safeSendMessage({
-          action: 'RESOLVE_CONTACT_BY_NAME',
-          data: { name: contactName, lid: phoneStr }
-        }, resp => {
-          resolve(resp?.result);
-        });
-      });
-      if (res && res.phone && typeof res.phone === 'string' && !isWhatsAppSyntheticOrInvalidPhone(res.phone)) {
-        console.log(`[Brokiva] Telefone resolvido pelo CRM para "${contactName}": ${res.phone}`);
-        return res.phone;
-      }
-    } catch (e) {}
-
-    // 4. Se tiver LID numérico, usa o LID (a menos que seja hash 4400/5500)
-    if (phoneStr && phoneStr.length >= 8 && !phoneStr.startsWith('4400') && !phoneStr.startsWith('5500')) {
-      return phoneStr;
     }
-
-    // 5. Fallback final determinístico: se o contato não tem telefone exposto nem LID,
-    // gera identificador numérico único para NUNCA descartar a conversa
-    if (contactName && contactName !== 'Contato WhatsApp') {
-      let hash = 0;
-      for (let i = 0; i < contactName.length; i++) {
-        hash = ((hash << 5) - hash) + contactName.charCodeAt(i);
-        hash |= 0;
-      }
-      const cleanHash = String(Math.abs(hash)).padStart(8, '0').slice(0, 8);
-      return `5500${cleanHash}`;
-    }
-
-    return '';
+    if (!phone || isWhatsAppSyntheticOrInvalidPhone(phone)) return '';
+    if (jid.endsWith('@lid') && phone === jid.split('@')[0]) return '';
+    return phone;
   }
 
   // 4. Sincroniza apenas a conversa atual com carregamento paginado
-  // Despacho Resiliente de Sincronização: tenta worker e faz fallback autônomo via fetch() direto
-  async function dispatchSyncBatchChats(chats) {
-    if (!Array.isArray(chats) || !chats.length) return { success: true, count: 0 };
+  // Os envios passam pela fila durável do worker e pelo recibo do CRM.
+  async function importContext() {
+    const context = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']);
+    if (!context.tenantId || !context.brokerUserId) throw new Error('Entre e pareie no CRM antes de iniciar a leitura.');
+    return context;
+  }
+  async function dispatchSyncBatchChats(chats, context) {
+    if (!context) throw new Error('O contexto da leitura não foi confirmado.');
+    return chrome.runtime.sendMessage({ action: 'SYNC_BATCH_CHATS', data: { chats, context } });
+  }
+  function describeCoverage(coverage) {
+    const reasons = {
+      AVAILABLE_START: 'Início do histórico disponível confirmado.',
+      UNCONFIRMED_BOUNDARY: 'O WhatsApp não confirmou o início do histórico disponível.',
+      NO_SCROLL_CONTAINER: 'Não foi possível percorrer o histórico anterior.',
+      TIME_LIMIT: 'O limite de tempo de leitura foi atingido. Releia a conversa para continuar a conferência.',
+      STEP_LIMIT: 'O limite de etapas de leitura foi atingido.',
+      CANCELLED: 'Leitura interrompida pelo usuário.',
+      TIMESTAMP_ESTIMATED: 'Algumas mensagens não têm data verificável e precisam ser relidas.',
+      MEDIA_FILE_UNAVAILABLE: 'Há arquivos de mídia indisponíveis; somente o registro da mensagem foi salvo.',
+      MEDIA_PREVIEW_ONLY: 'Algumas imagens possuem apenas miniatura; o arquivo original não foi importado.',
+      NATIVE_UNREADABLE: 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
+      UNREADABLE_MESSAGE: 'Há balões sem conteúdo legível.',
+      MESSAGE_ID_UNAVAILABLE: 'Há balões sem identificador verificável.',
+    };
+    return String(coverage?.reason || 'UNCONFIRMED_BOUNDARY').split(', ').map(reason => reasons[reason] || 'Uma parte do histórico precisa ser conferida.').join(' ');
+  }
+  async function readAndImportActiveChat(context, labels = []) {
+    const identity = activeChatIdentity();
+    if (!identity.jid) throw new Error('A identidade da conversa ainda não foi carregada.');
+    const details = {};
+    const phone = await resolvePhoneFromCrmIfLid(identity.title, identity.jid, identity.jid.endsWith('@lid'), details);
+    assertActiveChat(identity);
+    if (!phone) throw new Error('Telefone da conversa não confirmado. Abra os dados do contato e tente novamente.');
+    const base = { phone, name: identity.title, labels: [...new Set([...labels, ...(details.labels || [])])], ...(identity.jid.endsWith('@lid') ? { lid: identity.jid } : {}) };
+    const persisted = new Set();
+    const confirmed = new Set();
+    const save = async (messages, final = false) => {
+      const readable = Array.from(messages.values()).filter(message => !message.timestampEstimated && (final || !persisted.has(message.id)));
+      if (!readable.length) return;
+      const response = await dispatchSyncBatchChats([{ ...base, messages: readable }], context);
+      (response.confirmedIds || []).forEach(id => confirmed.add(id));
+      if (response.queued) readable.forEach(message => persisted.add(message.id));
+      if (!response.success) {
+        const error = new Error(response.error || 'Envio pendente de confirmação.');
+        error.importResponse = { ...response, confirmedMessages: confirmed.size };
+        throw error;
+      }
+    };
+    let messages;
     try {
-      const config = await chrome.storage.local.get(['tenantId', 'brokerUserId', 'crmUrl']);
-      return await chrome.runtime.sendMessage({ action: 'SYNC_BATCH_CHATS', data: { chats, context: config } });
+      messages = await deepScrollChatHistory(null, step => {
+        const badge = document.getElementById('sovereign-sync-badge');
+        if (badge) badge.innerText = `Lendo histórico: ${messagesReadLabel(step)}...`;
+      }, map => save(map));
+      assertActiveChat(identity);
+      const readableCount = Array.from(messages.values()).filter(message => !message.timestampEstimated).length;
+      if (!readableCount) throw new Error('Nenhuma mensagem com ID e data verificável foi disponibilizada. Leitura pendente.');
+      await save(messages, true);
+      return { response: { success: true, confirmedMessages: confirmed.size }, chat: base, coverage: { ...messages._coverage, reason: describeCoverage(messages._coverage) } };
     } catch (error) {
-      return { success: false, error: 'Não foi possível contatar a extensão. Recarregue o WhatsApp Web e entre novamente no CRM.' };
+      if (error.importResponse) return { response: error.importResponse, chat: base, coverage: { complete: false, reason: 'Envio interrompido; lotes preservados na fila local.' } };
+      // Uma troca de conversa ou interrupção pode ocorrer depois de checkpoints já confirmados.
+      if (confirmed.size) return { response: { success: true, confirmedMessages: confirmed.size }, chat: base, coverage: { complete: false, reason: error.message } };
+      throw error;
     }
   }
-
+  const messagesReadLabel = step => `${step} etapas`;
   async function syncCurrentActiveChat() {
-    if (isCurrentChatGroupOrChannel()) {
-      alert('Grupos, canais e comunidades não são importados para o CRM como leads comerciais.');
-      return;
-    }
-
+    if (isSyncing) return;
+    isSyncing = true; cancelSyncRequested = false;
     const badge = document.getElementById('sovereign-sync-badge');
-    if (badge) badge.innerText = 'Carregando histórico...';
-
-    logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_START', 'Iniciando leitura da conversa aberta...');
-
-    // Rola para cima profundamente para carregar todo o histórico anterior (até 15 rolagens)
-    const accumulatedMap = await deepScrollChatHistory(15, (step, total) => {
-      if (badge) badge.innerText = `Lendo antigas (${step}/${total})...`;
-    });
-
-    const chatData = extractActiveChatData(accumulatedMap);
-    if (!chatData || chatData.messages.length === 0) {
-      logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_EMPTY', `Conversa sem mensagens. (Msgs: ${chatData?.messages?.length || 0})`);
-      alert('Abra uma conversa com mensagens no WhatsApp antes de sincronizar.');
-      if (badge) badge.innerText = 'Pronto';
-      return;
-    }
-
-    // Garante extração e conversão da foto de perfil em Data URL base64 autônomo
-    const headerImg = document.querySelector('#main header img[src]');
-    if (headerImg) {
-      try {
-        const avatarDataUrl = await getContactAvatarDataUrl(headerImg);
-        if (avatarDataUrl) {
-          chatData.avatarUrl = avatarDataUrl;
-        }
-      } catch (e) {}
-    }
-
-    // Resolve o telefone ANTES de validar (abre gaveta lateral para contatos salvos por apelido como "Amor" ou agenda)
-    const drawerDetails = {};
-    chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, true, drawerDetails);
-    if (drawerDetails.labels && drawerDetails.labels.length > 0) {
-      chatData.labels = Array.from(new Set([...(chatData.labels || []), ...drawerDetails.labels]));
-      chatData.tags = Array.from(new Set([...(chatData.tags || []), ...drawerDetails.labels]));
-    }
-
-    if (!chatData.phone || chatData.phone.length < 8) {
-      logToConsoleAndCloudWatch('WARN', 'SYNC_SINGLE_NO_PHONE', `Telefone de ${chatData.name} não identificado`);
-      alert(`Não foi possível identificar o telefone de ${chatData.name}.`);
-      if (badge) badge.innerText = 'Pronto';
-      return;
-    }
-
-    if (isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
-      alert('Este chat foi identificado como grupo ou canal e não será importado para o CRM.');
-      if (badge) badge.innerText = 'Ignorado';
-      return;
-    }
-
-    const isOldLead = checkAndTagOldChat(chatData);
-
-    logToConsoleAndCloudWatch('INFO', 'SYNC_SINGLE_EXTRACTED', `Lidas ${chatData.messages.length} mensagens de ${chatData.name} (${chatData.phone})${isOldLead ? ' [Base Antiga / Reativação]' : ''}`);
-    if (badge) badge.innerText = 'Salvando...';
-
-    const response = await dispatchSyncBatchChats([chatData]);
-        if (response && response.success) {
-          logToConsoleAndCloudWatch("INFO", "SYNC_SINGLE_SUCCESS", `✓ Sucesso! ${chatData.messages.length} msgs enviadas para Brokiva`);
-          if (badge) {
-            badge.innerText = `✓ ${chatData.messages.length} msgs${isOldLead ? ' (Reativação)' : ''}`;
-            badge.style.background = isOldLead ? "#fef3c7" : "#dcfce7";
-            badge.style.color = isOldLead ? "#b45309" : "#15803d";
-          }
-          const oldNote = isOldLead ? '\n\n🏷️ Identificado como "Base Antiga / Reativação" (última mensagem com mais de 60 dias).' : '';
-          alert(`🎉 Sucesso! Histórico com ${chatData.messages.length} mensagens de ${chatData.name} (+${chatData.phone}) sincronizado no CRM!${oldNote}`);
-        } else {
-          const err = response?.error || "Erro desconhecido na sincronização.";
-          logToConsoleAndCloudWatch("WARN", "SYNC_SINGLE_FAILED", `Falha ao sincronizar: ${err}`);
-          if (badge) badge.innerText = "Erro";
-          console.log("[Brokiva] Aviso ao sincronizar conversa atual:", err);
-          if (err.includes("recarregue") || err.includes("Recarregue") || err.includes("Atualize") || err.includes("invalidated")) {
-            alert(`⚠️ Conexão reiniciada:\n\nA extensão Brokiva foi recarregada no navegador. Por favor, dê F5 (ou Cmd+R) na página do WhatsApp Web para reconectar.`);
-          } else {
-            alert(`Erro ao sincronizar: ${err}`);
-          }
-        }
+    try {
+      if (isCurrentChatGroupOrChannel()) throw new Error('Selecione uma conversa individual.');
+      const context = await importContext();
+      const { response, chat, coverage } = await readAndImportActiveChat(context);
+      const saved = response.confirmedMessages || 0;
+      const complete = response.success && coverage?.complete;
+      if (badge) badge.innerText = complete ? `✓ ${saved} confirmadas` : `${saved} confirmadas • revisar pendências`;
+      alert(`${saved} mensagens confirmadas no CRM para ${chat.name}.` +
+        (response.pendingMessages ? `\n${response.pendingMessages} mensagens guardadas na fila local. Entre no CRM e use Retomar envios no popup.` : '') +
+        (!coverage?.complete ? `\nLeitura parcial: ${coverage?.reason || 'limite do histórico não confirmado'}. Reabra a conversa e execute novamente para conferir mensagens anteriores.` : '') +
+        (!response.success ? `\n${response.error}` : ''));
+    } catch (error) {
+      if (badge) badge.innerText = 'Importação pendente';
+      alert(`Importação pendente: ${error.message}`);
+    } finally { isSyncing = false; }
   }
 
   // 4.1 Diagnóstico passo a passo e isolado da conversa ativa com cópia automática para o clipboard
@@ -2961,7 +2668,9 @@ ${isDeveloperMode ? `
 
       seenContainers.add(rowContainer);
 
-      const key = contactTitle.toLowerCase().trim();
+      const rowJid = BrokivaImport.canonicalJid(decodeURIComponent([rowContainer.getAttribute('data-id'), rowContainer.getAttribute('data-jid'), rowAvatarSrc].filter(Boolean).join(' ')));
+      const position = rowContainer.getAttribute('aria-rowindex') || Math.round((rowRect.top - paneRect.top + pane.scrollTop) / 2);
+      const key = rowJid || `row:${position}:${contactTitle}`;
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
 
@@ -3005,6 +2714,7 @@ ${isDeveloperMode ? `
 
         rows.push({
           title: contactTitle,
+          jid: rowJid,
           key,
           span: contactTitleSpan,
           clickable: rowContainer,
@@ -3044,7 +2754,7 @@ ${isDeveloperMode ? `
 
           <h2 class="brokiva-modal-title" id="brokiva-modal-title">Sincronizando com a Brokiva CRM</h2>
           <p class="brokiva-modal-subtitle" id="brokiva-modal-subtitle">
-            Importando histórico completo de conversas e mensagens com segurança...
+            Lendo as mensagens disponíveis e conferindo a gravação de cada lote...
           </p>
 
           <div class="brokiva-stats-grid">
@@ -3117,7 +2827,7 @@ ${isDeveloperMode ? `
     if (titleEl) {
       titleEl.innerText = syncMode === 'RECENT'
         ? '⚡ Sincronizando Conversas Recentes'
-        : '🌐 Sincronizando Carteira Completa (Todos os Tempos)';
+        : '🌐 Sincronizando Importar Lista de Conversas';
     }
     if (subtitleEl) {
       subtitleEl.innerText = syncMode === 'RECENT'
@@ -3197,51 +2907,20 @@ ${isDeveloperMode ? `
     if (leadAction && actionText) leadAction.innerText = actionText;
   }
 
-  function finishSyncModal({ totalChats, totalMessages }) {
-    const titleEl = document.getElementById('brokiva-modal-title');
-    const subtitleEl = document.getElementById('brokiva-modal-subtitle');
-    const statChats = document.getElementById('brokiva-stat-chats');
-    const statMsgs = document.getElementById('brokiva-stat-msgs');
-    const statPct = document.getElementById('brokiva-stat-pct');
-    const leadName = document.getElementById('brokiva-lead-name');
-    const leadAction = document.getElementById('brokiva-lead-action');
-    const bar = document.getElementById('brokiva-modal-progress-bar');
-    const iconWrap = document.getElementById('brokiva-modal-icon');
+  function finishSyncModal({ totalChats, totalMessages, issues = [], cancelled = false }) {
+    const set = (id, text) => { const element = document.getElementById(id); if (element) element.innerText = text; };
+    const complete = !issues.length && !cancelled;
+    set('brokiva-modal-title', complete ? 'Importação confirmada' : 'Importação com pendências');
+    set('brokiva-modal-subtitle', `${totalChats} conversas e ${totalMessages} mensagens confirmadas no CRM.`);
+    set('brokiva-stat-chats', String(totalChats)); set('brokiva-stat-msgs', String(totalMessages));
+    set('brokiva-stat-pct', complete ? 'Conferido' : 'Parcial');
+    set('brokiva-lead-name', cancelled ? 'Leitura interrompida pelo usuário' : complete ? 'Histórico disponível conferido' : 'Confira as pendências');
+    set('brokiva-lead-action', issues.map(item => `${item.name}: ${item.reason}`).join('\n') || 'Envios confirmados pelo CRM.');
     const footer = document.getElementById('brokiva-modal-footer');
-
-    if (titleEl) titleEl.innerText = '🎉 Sincronização Concluída!';
-    if (subtitleEl) subtitleEl.innerText = `${totalChats} conversas e ${totalMessages.toLocaleString('pt-BR')} mensagens importadas com sucesso!`;
-    if (statChats) statChats.innerText = `${totalChats}`;
-    if (statMsgs) statMsgs.innerText = `${totalMessages.toLocaleString('pt-BR')}`;
-    if (statPct) statPct.innerText = '100%';
-    if (bar) bar.style.width = '100%';
-    if (leadName) leadName.innerText = 'Processo concluído com êxito';
-    if (leadAction) leadAction.innerText = 'Histórico sincronizado e pronto no CRM.';
-
-    if (iconWrap) {
-      iconWrap.innerHTML = `
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-      `;
-      iconWrap.style.borderColor = '#10b981';
-      iconWrap.style.color = '#10b981';
-    }
-
     if (footer) {
-      footer.innerHTML = `
-        <button type="button" id="brokiva-close-modal-btn" class="brokiva-done-btn">
-          Concluir e Fechar
-        </button>
-      `;
-      const closeBtn = footer.querySelector('#brokiva-close-modal-btn');
-      closeBtn?.addEventListener('click', closeSyncModal);
+      footer.innerHTML = '<button type="button" id="brokiva-close-modal-btn" class="brokiva-done-btn">Fechar resumo</button>';
+      footer.querySelector('button').addEventListener('click', closeSyncModal);
     }
-
-    // Auto fecha após 5 segundos
-    setTimeout(() => {
-      closeSyncModal();
-    }, 5000);
   }
 
   function closeSyncModal() {
@@ -3254,401 +2933,70 @@ ${isDeveloperMode ? `
   // 5. Varredura Automática Paginada com Carregamento Profundo e Tela de Bloqueio
   async function executeBatchHistoryScan(options = {}) {
     if (isSyncing) return;
-    isSyncing = true;
-
-    const syncMode = options?.mode || 'FULL'; // 'RECENT' ou 'FULL'
-    const MAX_TARGET_CHATS = syncMode === 'RECENT' ? 60 : Infinity;
-
-    const btnRecent = document.getElementById('sovereign-batch-sync-recent-btn');
-    const btnFull = document.getElementById('sovereign-batch-sync-full-btn');
-    const btnOld = document.getElementById('sovereign-batch-sync-btn');
-    const progressBar = document.getElementById('sovereign-progress-bar');
-    const progressFill = document.getElementById('sovereign-progress-fill');
-    const progressStatus = document.getElementById('sovereign-progress-status');
-
-    if (btnRecent) btnRecent.disabled = true;
-    if (btnFull) btnFull.disabled = true;
-    if (btnOld) btnOld.disabled = true;
-    if (progressBar) progressBar.style.display = 'block';
-    if (progressStatus) {
-      progressStatus.style.display = 'block';
-      progressStatus.innerText = syncMode === 'RECENT'
-        ? 'Iniciando sincronização rápida (conversas ativas no topo)...'
-        : 'Iniciando varredura da carteira completa (sem limite de data)...';
-    }
-
-    let totalMessagesSynced = 0;
-    let consecutiveOldChatsInRecentMode = 0;
-
-    // Abre a tela de carregamento (modal com blur) cobrindo o WhatsApp Web
-    openSyncModal(MAX_TARGET_CHATS, syncMode);
-
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_INITIATED', `Varredura iniciada em modo: ${syncMode} (Max chats: ${MAX_TARGET_CHATS})`);
-
-    // 1. TENTA PRIMEIRO A SINCRONIZAÇÃO NATIVA INSTANTÂNEA VIA STORE BRIDGE (O(1))
+    isSyncing = true; cancelSyncRequested = false;
+    const mode = options.mode || 'FULL';
+    const limit = mode === 'RECENT' ? 60 : Infinity;
+    const report = { startedAt: Date.now(), mode, totalChats: 0, totalMessages: 0, issues: [], cancelled: false };
+    const buttons = ['sovereign-batch-sync-recent-btn', 'sovereign-batch-sync-full-btn', 'sovereign-batch-sync-btn'].map(id => document.getElementById(id)).filter(Boolean);
+    buttons.forEach(button => { button.disabled = true; });
+    openSyncModal(limit, mode);
+    let context;
     try {
-      logToConsoleAndCloudWatch('INFO', 'NATIVE_STORE_ATTEMPT', 'Consultando WhatsApp Native Bridge...');
-      const bridgeData = await queryNativeStore('BROKIVA_GET_ALL_DATA', {}, 3000);
-
-      if (bridgeData && bridgeData.success && bridgeData.data && Array.isArray(bridgeData.data.chats) && bridgeData.data.chats.length > 0) {
-        const rawChats = bridgeData.data.chats;
-        const nativeChats = syncMode === 'RECENT' ? rawChats.slice(0, MAX_TARGET_CHATS) : rawChats;
-        const nativeContacts = bridgeData.data.contacts || [];
-        const nativeLabels = bridgeData.data.labels || [];
-
-        logToConsoleAndCloudWatch('INFO', 'NATIVE_STORE_SUCCESS', `Store Bridge respondeu com ${nativeChats.length} chats, ${nativeContacts.length} contatos e ${nativeLabels.length} etiquetas!`);
-
-        // Mapeia fotos de contatos em alta resolução
-        const picMap = new Map();
-        nativeContacts.forEach(c => {
-          if (c.phone && c.profilePicUrl) picMap.set(c.phone, c.profilePicUrl);
-        });
-
-        const chatsToIngest = nativeChats.map(c => {
-          const rawLabels = c.labels || [];
-          return {
-            phone: c.phone,
-            name: c.name || `WhatsApp ${c.phone.slice(-4)}`,
-            avatarUrl: picMap.get(c.phone) || null,
-            labels: rawLabels,
-            tags: rawLabels.map(l => `[Etiqueta] ${l}`),
-            lastMessagePreview: c.lastMessagePreview || '📱 Conversa sincronizada via WhatsApp',
-            lastMessageAt: c.lastMessageTimestamp ? new Date(c.lastMessageTimestamp).toISOString() : new Date().toISOString(),
-            messages: [],
-          };
-        });
-
-        // Para os 25 chats mais recentes, extrai mensagens direto da memória do WhatsApp Web
-        for (let i = 0; i < Math.min(25, chatsToIngest.length); i++) {
-          const target = chatsToIngest[i];
-          try {
-            const msgsRes = await queryNativeStore('BROKIVA_GET_CHAT_MESSAGES', { phone: target.phone, limit: 30 }, 1000);
-            if (msgsRes && msgsRes.success && Array.isArray(msgsRes.messages) && msgsRes.messages.length > 0) {
-              target.messages = msgsRes.messages;
-            }
-          } catch {}
-        }
-
-        updateSyncModalProgress({
-          syncedCount: 0,
-          maxChats: chatsToIngest.length,
-          contactName: 'Pré-carregando contatos...',
-          actionText: `Registrando ${chatsToIngest.length} contatos e etiquetas no CRM...`,
-          totalMessages: 0,
-        });
-        const sendRes = await dispatchSyncBatchChats(chatsToIngest);
-
-        if (sendRes && sendRes.success) {
-          logToConsoleAndCloudWatch('INFO', 'NATIVE_CONTACTS_INGESTED', `✓ ${chatsToIngest.length} contatos e etiquetas pré-salvos no CRM. Continuando para leitura física de mensagens no chat...`);
-          if (progressStatus) {
-            progressStatus.innerText = `✓ ${chatsToIngest.length} contatos pré-salvos! Lendo mensagens das conversas...`;
-          }
-          updateSyncModalProgress({
-            syncedCount: 0,
-            maxChats: MAX_TARGET_CHATS,
-            contactName: 'Iniciando leitura de mensagens...',
-            actionText: `✓ ${chatsToIngest.length} contatos pré-cadastrados. Lendo mensagens de cada conversa...`,
-            totalMessages: 0,
-          });
-          await new Promise(r => setTimeout(r, 600));
-        }
-      }
-    } catch (bridgeErr) {
-      logToConsoleAndCloudWatch('WARN', 'NATIVE_STORE_FALLBACK', 'Ponte nativa indisponível. Continuando via varredura visual...');
-    }
-
-    const scrollContainer = findPaneSideScrollContainer() || document.querySelector('#pane-side');
-    if (!scrollContainer) {
-      logToConsoleAndCloudWatch('WARN', 'NO_PANE_SIDE', 'Container #pane-side não encontrado');
-      closeSyncModal();
-      alert('Nenhum chat visível no WhatsApp Web. Certifique-se de que o WhatsApp Web está aberto.');
-      isSyncing = false;
-      if (btnRecent) btnRecent.disabled = false;
-      if (btnFull) btnFull.disabled = false;
-      if (btnOld) btnOld.disabled = false;
-      return;
-    }
-
-    // Rola suavemente para o topo antes de iniciar para garantir a varredura a partir do início
-    try {
-      scrollContainer.scrollTop = 0;
-      scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 450));
-    } catch (e) {}
-
-    const processedChatKeys = new Set();
-    const syncedChats = [];
-    let consecutiveScrollsWithoutNew = 0;
-    let totalAttempts = 0;
-
-    while (syncedChats.length < MAX_TARGET_CHATS && consecutiveScrollsWithoutNew < 5) {
-      if (cancelSyncRequested) {
-        logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_CANCELLED', 'Sincronização cancelada pelo corretor');
-        break;
-      }
-
-      const visibleRows = getVisibleChatRows();
-      // Localiza a próxima conversa visível que ainda não foi sincronizada nesta rodada
-      const nextRow = visibleRows.find(r => !processedChatKeys.has(r.key));
-
-      if (nextRow) {
-        consecutiveScrollsWithoutNew = 0;
-        processedChatKeys.add(nextRow.key);
-        totalAttempts++;
-
-        const currentName = nextRow.title;
-
-        updateSyncModalProgress({
-          syncedCount: syncedChats.length,
-          maxChats: MAX_TARGET_CHATS,
-          contactName: currentName,
-          actionText: 'Abrindo conversa...',
-          totalMessages: totalMessagesSynced,
-        });
-
-        if (progressStatus) {
-          progressStatus.innerText = `Lendo chat ${totalAttempts} (${syncedChats.length} salvos): ${currentName}...`;
-        }
-
-        logToConsoleAndCloudWatch('DEBUG', 'OPENING_CHAT', `Abrindo chat #${syncedChats.length + 1}: ${currentName}`);
-
-        const headerTitleEl = document.querySelector('#main header span[title], #main header div[role="button"] span, #main header span[dir="auto"]');
-        const previousHeaderTitle = (headerTitleEl ? (headerTitleEl.getAttribute('title') || headerTitleEl.innerText) : '').trim();
-
-        // Rola o item para o centro da lista antes do clique
-        try {
-          nextRow.clickable.scrollIntoView({ block: 'center', behavior: 'auto' });
-          await new Promise(r => setTimeout(r, 100));
-        } catch (e) {}
-
-        // Dispara cliques nativos e eventos de ponteiro/mouse para o WhatsApp Web abrir o chat
-        try { nextRow.clickable.click(); } catch (e) {}
-        try { nextRow.span.click(); } catch (e) {}
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-          try {
-            nextRow.clickable.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-            nextRow.span.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-          } catch (e) {}
-        });
-
-        // Aguarda confirmação ativa de abertura do chat para evitar contaminação
-        const transitionOk = await waitForChatToOpen(currentName, previousHeaderTitle, 3500);
-        if (!transitionOk) {
-          logToConsoleAndCloudWatch('WARN', 'CHAT_OPEN_TIMEOUT', `Chat "${currentName}" demorou a responder ou não abriu. Pulando para evitar contaminação.`);
-          continue;
-        }
-
+      context = await importContext();
+      await chrome.runtime.sendMessage({ action: 'RETRY_IMPORTS' });
+      const pane = findPaneSideScrollContainer() || document.querySelector('#pane-side');
+      if (!pane) throw new Error('Lista de conversas não encontrada. Abra o WhatsApp Web e tente novamente.');
+      pane.scrollTop = 0; pane.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 750));
+      const visited = new Set();
+      let bottomStable = 0;
+      let listFinished = false;
+      for (let step = 0; step < 4000 && visited.size < limit; step++) {
         if (cancelSyncRequested) break;
-
-        // Se o chat aberto for grupo ou canal, ignora imediatamente
-        if (isCurrentChatGroupOrChannel()) {
-          logToConsoleAndCloudWatch('INFO', 'GROUP_OR_CHANNEL_IGNORED', `Chat "${currentName}" identificado como grupo ou canal no #main. Pulando.`);
-          continue;
-        }
-
-        // CARREGAMENTO PROFUNDO: Rola para cima na conversa aberta para carregar mensagens antigas!
-        updateSyncModalProgress({
-          syncedCount: syncedChats.length,
-          maxChats: MAX_TARGET_CHATS,
-          contactName: currentName,
-          actionText: 'Carregando mensagens anteriores...',
-          totalMessages: totalMessagesSynced,
-        });
-
-        const scrollTarget = syncMode === 'RECENT' ? 5 : 8;
-        const accumulatedMap = await deepScrollChatHistory(scrollTarget, (step, total) => {
-          updateSyncModalProgress({
-            syncedCount: syncedChats.length,
-            maxChats: MAX_TARGET_CHATS,
-            contactName: currentName,
-            actionText: `Carregando histórico anterior (${step}/${total})...`,
-            totalMessages: totalMessagesSynced,
-          });
-        });
-
-        if (cancelSyncRequested) break;
-
-        // Extrai dados completos da conversa aberta com todo o histórico acumulado
-        let chatData = extractActiveChatData(accumulatedMap, nextRow?.labels || []);
-        if (!chatData || !chatData.messages || chatData.messages.length === 0) {
-          await new Promise(r => setTimeout(r, 350));
-          chatData = extractActiveChatData(accumulatedMap, nextRow?.labels || []);
-        }
-
-        if (chatData) {
-          // Se chatData não capturou mensagens do DOM mas nextRow no #pane-side possui preview
-          if ((!chatData.messages || chatData.messages.length === 0) && nextRow?.rowPreview) {
-            const cleanSnippet = nextRow.rowPreview.replace(/^(você|voce|you)\s*:\s*/i, '').trim();
-            if (cleanSnippet && !isWhatsAppSystemMessage(cleanSnippet)) {
-              chatData.lastMessagePreview = cleanSnippet;
-              let rowTimeIso = new Date().toISOString();
-              if (nextRow?.rowDateText) {
-                const parsedDate = parsePortugueseWhatsAppDate(nextRow.rowDateText);
-                if (parsedDate) rowTimeIso = parsedDate.toISOString();
-              }
-              chatData.lastMessageAt = rowTimeIso;
-              chatData.messages = [{
-                id: `wpp-row-${chatData.phone}-${Date.now()}`,
-                content: cleanSnippet,
-                fromMe: Boolean(nextRow.isOutgoing),
-                timestamp: rowTimeIso,
-                messageType: 'TEXT',
-              }];
+        const currentContext = await importContext();
+        if (!BrokivaImport.sameContext(context, currentContext)) throw new Error('O ambiente mudou. Retome a importação na conta original.');
+        const row = getVisibleChatRows().find(candidate => !visited.has(candidate.key));
+        if (row) {
+          visited.add(row.key); bottomStable = 0;
+          updateSyncModalProgress({ syncedCount: report.totalChats, maxChats: limit, totalMessages: report.totalMessages, contactName: row.title, actionText: 'Abrindo e conferindo a conversa...' });
+          try {
+            const previous = activeChatIdentity();
+            row.clickable.click();
+            await waitForChatToOpen(row, previous);
+            const result = await readAndImportActiveChat(context, row.labels);
+            const saved = result.response.confirmedMessages || 0;
+            report.totalMessages += saved;
+            if (result.response.success) report.totalChats++;
+            if (!result.coverage?.complete) report.issues.push({ name: row.title, reason: `Leitura parcial: ${result.coverage?.reason || 'limite não confirmado'}` });
+            if (!result.response.success) {
+              report.issues.push({ name: row.title, reason: `${result.response.pendingMessages || 0} mensagens pendentes na fila. ${result.response.error || ''}` });
+              break; // Não acumula mais dados durante falha de envio, sessão ou quota.
             }
+          } catch (error) {
+            report.issues.push({ name: row.title, reason: error.message });
           }
-
-          // Se a lista lateral (#pane-side) indicar expressamente uma data anterior (ex: 2024 ou dias atrás)
-          // e o lastMessageAt tiver caído em fallback de hoje, ancora na data oficial da lista lateral
-          if (nextRow?.rowDateText) {
-            const parsedRowDate = parsePortugueseWhatsAppDate(nextRow.rowDateText);
-            if (parsedRowDate && parsedRowDate.getTime() < (Date.now() - 86400000)) {
-              const currentLastTime = new Date(chatData.lastMessageAt || 0).getTime();
-              if (currentLastTime > (parsedRowDate.getTime() + 86400000)) {
-                chatData.lastMessageAt = parsedRowDate.toISOString();
-                if (chatData.messages && chatData.messages.length > 0) {
-                  chatData.messages[chatData.messages.length - 1].timestamp = parsedRowDate.toISOString();
-                }
-              }
-            }
-          }
-
-          // Garante foto de perfil via header ou item da lista lateral convertido para base64 autônomo
-          const headerImg = document.querySelector('#main header img[src]');
-          const targetImgOrSrc = (headerImg && headerImg.getAttribute('src')) ? headerImg : (nextRow?.rowImg || nextRow?.rowAvatarSrc || chatData.avatarUrl);
-          if (targetImgOrSrc) {
-            try {
-              const avatarDataUrl = await getContactAvatarDataUrl(targetImgOrSrc);
-              if (avatarDataUrl) {
-                chatData.avatarUrl = avatarDataUrl;
-              }
-            } catch (e) {}
-          }
-
-          // Abre a gaveta de contato caso o contato não possua telefone direto no header (salvo na agenda / LID)
-          const phoneNeedsDrawer = !chatData.phone ||
-            isWhatsAppSyntheticOrInvalidPhone(chatData.phone) ||
-            (!chatData.phone.startsWith('55') && chatData.phone.length <= 11);
-
-          const drawerDetails = {};
-          chatData.phone = await resolvePhoneFromCrmIfLid(chatData.name, chatData.phone, phoneNeedsDrawer, drawerDetails);
-          if (drawerDetails.labels && drawerDetails.labels.length > 0) {
-            chatData.labels = Array.from(new Set([...(chatData.labels || []), ...drawerDetails.labels]));
-            chatData.tags = Array.from(new Set([...(chatData.tags || []), ...drawerDetails.labels]));
-          }
-        }
-
-        if (chatData && chatData.phone && !isWhatsAppChannelOrGroup({ phone: chatData.phone, name: chatData.name, lid: chatData.lid })) {
-          const isOldLead = checkAndTagOldChat(chatData);
-
-          if (isOldLead) {
-            consecutiveOldChatsInRecentMode++;
-          } else {
-            consecutiveOldChatsInRecentMode = 0;
-          }
-
-          syncedChats.push(chatData);
-          const msgsCount = chatData.messages ? chatData.messages.length : 0;
-          totalMessagesSynced += msgsCount;
-
-          logToConsoleAndCloudWatch('INFO', 'CHAT_INGEST_PAYLOAD', `Ingerindo ${msgsCount} msgs de ${chatData.name} (${chatData.phone})${isOldLead ? ' [Base Antiga / Reativação]' : ''}`);
-
-          // Envia imediatamente cada chat usando o despacho resiliente com fallback fetch
-          const res = await dispatchSyncBatchChats([chatData]);
-          if (res && res.success) {
-            logToConsoleAndCloudWatch("INFO", "CHAT_SAVED_OK", `✓ Chat ${chatData.name} salvo com sucesso no CRM`);
-          } else {
-            logToConsoleAndCloudWatch("WARN", "CHAT_SAVE_FAIL", `Falha ao salvar ${chatData.name}: ${res?.error || "sem resposta"}`);
-          }
-
-          updateSyncModalProgress({
-            syncedCount: syncedChats.length,
-            maxChats: MAX_TARGET_CHATS,
-            contactName: `${chatData.name} (${formatPhoneDisplay(chatData.phone)})`,
-            actionText: `✓ ${msgsCount} mensagens sincronizadas${isOldLead ? ' • Base Antiga / Reativação' : ''}`,
-            totalMessages: totalMessagesSynced,
-          });
-
-          // Se estiver no modo RECENT e já atingiu 4 conversas inativas consecutivas (>60 dias ou ano anterior), conclui a varredura rápida
-          if (syncMode === 'RECENT' && consecutiveOldChatsInRecentMode >= 4) {
-            logToConsoleAndCloudWatch('INFO', 'RECENT_MODE_CUTOFF', 'Atingido limite de 4 conversas consecutivas inativas no modo Recentes. Concluindo rotina rápida.');
-            break;
-          }
+          await chrome.storage.local.set({ brokivaLastImportReport: { ...report, context } });
         } else {
-          logToConsoleAndCloudWatch('WARN', 'CHAT_SKIPPED', `Chat "${currentName}": Ignorado (grupo, canal ou sem identificador válido)`);
-        }
-
-        // Atualiza barra de progresso na sidebar
-        const paneForPct = findPaneSideScrollContainer() || document.querySelector('#pane-side');
-        let currentPct = 10;
-        if (paneForPct && paneForPct.scrollHeight > paneForPct.clientHeight) {
-          currentPct = Math.min(98, Math.max(5, Math.round(((paneForPct.scrollTop + paneForPct.clientHeight) / paneForPct.scrollHeight) * 100)));
-        } else {
-          currentPct = Math.min(95, Math.max(5, syncedChats.length * 2));
-        }
-        if (progressFill) progressFill.style.width = `${currentPct}%`;
-
-        // Pausa breve entre conversas
-        await new Promise(r => setTimeout(r, 200));
-
-      } else {
-        // Todas as conversas visíveis no viewport atual já foram processadas.
-        // Rola o #pane-side para baixo para forçar a montagem do próximo lote virtual
-        const pane = findPaneSideScrollContainer() || document.querySelector('#pane-side');
-        if (!pane) break;
-
-        const prevScrollTop = pane.scrollTop;
-        const scrollStep = Math.max(320, Math.round(pane.clientHeight * 0.75));
-
-        updateSyncModalProgress({
-          syncedCount: syncedChats.length,
-          maxChats: MAX_TARGET_CHATS,
-          contactName: 'Rolando lista de conversas...',
-          actionText: 'Buscando próximas conversas do WhatsApp...',
-          totalMessages: totalMessagesSynced,
-        });
-
-        if (progressStatus) {
-          progressStatus.innerText = `Rolando conversas para baixo (${syncedChats.length} lidos)...`;
-        }
-
-        pane.scrollTop += scrollStep;
-        pane.dispatchEvent(new Event('scroll', { bubbles: true }));
-        pane.dispatchEvent(new WheelEvent('wheel', { deltaY: scrollStep, bubbles: true }));
-
-        // Aguarda a janela virtual do React/WhatsApp montar os novos elementos
-        await new Promise(r => setTimeout(r, 700));
-
-        const currentScrollTop = pane.scrollTop;
-        const isAtBottom = (pane.scrollTop + pane.clientHeight) >= (pane.scrollHeight - 20);
-
-        if (Math.abs(currentScrollTop - prevScrollTop) < 5 || isAtBottom) {
-          consecutiveScrollsWithoutNew++;
-          logToConsoleAndCloudWatch('DEBUG', 'SCROLL_BOTTOM_CHECK', `Atingiu fim de rolagem ou repetição (tentativa ${consecutiveScrollsWithoutNew}/5)`);
+          const previous = pane.scrollTop;
+          const before = getVisibleChatRows().map(row => row.key).join('|');
+          pane.scrollTop += Math.max(50, pane.clientHeight * 0.65);
+          pane.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const after = getVisibleChatRows().map(row => row.key).join('|');
+          const atBottom = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 3;
+          bottomStable = atBottom && Math.abs(previous - pane.scrollTop) < 2 && before === after ? bottomStable + 1 : 0;
+          if (bottomStable >= 6) { listFinished = true; break; }
         }
       }
+      if (mode === 'FULL' && !listFinished && !cancelSyncRequested) report.issues.push({ name: 'Lista de conversas', reason: 'Varredura interrompida antes de conferir o final da lista.' });
+      if (mode === 'FULL') report.issues.push({ name: 'Escopo', reason: 'A lista visível pode excluir conversas arquivadas, bloqueadas por filtros ou não disponibilizadas pelo WhatsApp. Confira essas listas separadamente.' });
+    } catch (error) { report.issues.push({ name: 'Importação', reason: error.message }); }
+    finally {
+      report.cancelled = cancelSyncRequested; report.finishedAt = Date.now();
+      isSyncing = false; buttons.forEach(button => { button.disabled = false; });
+      await chrome.storage.local.set({ brokivaLastImportReport: { ...report, context } }).catch(() => {});
+      finishSyncModal(report);
     }
-
-    isSyncing = false;
-    if (btnRecent) btnRecent.disabled = false;
-    if (btnFull) btnFull.disabled = false;
-    if (btnOld) btnOld.disabled = false;
-    if (progressFill) progressFill.style.width = '100%';
-    if (progressStatus) {
-      if (syncedChats.length === 0) {
-        progressStatus.innerText = `⚠️ Nenhuma conversa 1:1 elegível encontrada na lista. (Grupos e canais foram ignorados).`;
-        progressStatus.style.color = '#e11d48';
-      } else {
-        progressStatus.innerText = `🎉 Sucesso! ${syncedChats.length} conversas e ${totalMessagesSynced.toLocaleString('pt-BR')} mensagens sincronizadas com a Brokiva!`;
-        progressStatus.style.color = '#059669';
-      }
-    }
-
-    finishSyncModal({
-      totalChats: syncedChats.length,
-      totalMessages: totalMessagesSynced,
-    });
-
-    logToConsoleAndCloudWatch('INFO', 'BATCH_SCAN_COMPLETE', `Varredura profunda finalizada: ${syncedChats.length} chats e ${totalMessagesSynced} mensagens sincronizadas`);
   }
 
   // 6. Brok.ia: Sugere e insere resposta com 1 clique no WhatsApp Web

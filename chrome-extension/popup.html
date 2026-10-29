@@ -317,7 +317,7 @@
     <div style="flex:1;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h1>Brokiva</h1>
-        <span class="badge-v" id="versionBadge">v1.0.51</span>
+        <span class="badge-v" id="versionBadge">v1.0.52</span>
       </div>
       <p class="sub">Relacionamentos que viram negócios</p>
     </div>
@@ -389,5 +389,10 @@
   </div>
 
   <script src="popup.js"></script>
+  <div style="padding:12px 20px;font-size:12px;line-height:1.5">
+    <p id="importStatus" role="status">Conferindo envios pendentes...</p>
+    <details style="margin:8px 0"><summary>Última importação</summary><pre id="importReport" style="white-space:pre-wrap;max-height:200px;overflow:auto">Nenhuma importação registrada nesta conta.</pre></details>
+    <button id="retryImportsBtn" type="button" style="margin-top:8px;padding:8px 12px">Retomar envios</button>
+  </div>
 </body>
 </html>

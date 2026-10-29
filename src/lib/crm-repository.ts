@@ -2,8 +2,9 @@ import { db } from '@/db';
 import { crmTenantState } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { serverCRMStore, ServerCRMState } from '@/lib/server-crm-store';
+import { crmEventCursor } from '@/lib/crm-event-cursor';
 
-export type PersistedCRMState = ServerCRMState & { deletedKeys?: string[] };
+export type PersistedCRMState = ServerCRMState & { deletedKeys?: string[]; eventCursor?: number };
 const collections = ['contacts', 'conversations', 'messages', 'deals', 'quickReplies'] as const;
 export function emptyCRMState(): PersistedCRMState {
   return { contacts: [], conversations: [], messages: [], deals: [], quickReplies: [], aiInsights: {}, deletedKeys: [] };
@@ -11,6 +12,7 @@ export function emptyCRMState(): PersistedCRMState {
 export function mergeTenantState(tenantId: string, previous: PersistedCRMState, patch: Partial<PersistedCRMState>): PersistedCRMState {
   if (!tenantId || tenantId === 'all') throw new Error('Imobiliária obrigatória.');
   const next = { ...previous };
+  const revision = Math.max(Date.now(), crmEventCursor(previous) + 1);
   for (const key of collections) {
     const incoming = patch[key];
     if (incoming !== undefined && !Array.isArray(incoming)) throw new Error(`Coleção inválida: ${key}.`);
@@ -18,7 +20,18 @@ export function mergeTenantState(tenantId: string, previous: PersistedCRMState, 
     for (const item of previous[key] || []) if (item.tenantId === tenantId) map.set(item.id, item);
     for (const item of incoming || []) {
       if (!item || typeof item.id !== 'string' || !item.id || item.tenantId !== tenantId) throw new Error('Registro de outra imobiliária ou sem identificação.');
-      map.set(item.id, { ...map.get(item.id), ...item, ...(key === 'messages' ? { receivedAt: Date.now() } : {}) });
+      const existing = map.get(item.id);
+      if (key === 'messages') {
+        // O navegador não define o cursor e reenviar o mesmo histórico não cria eventos novos.
+        const { receivedAt: ignored, ...incomingMessage } = item as any;
+        const { receivedAt: previousReceipt, ...previousMessage } = existing || {};
+        const merged = { ...previousMessage, ...incomingMessage };
+        const changed = !existing || JSON.stringify(previousMessage) !== JSON.stringify(merged);
+        map.set(item.id, { ...merged, receivedAt: changed ? revision : previousReceipt });
+        if (changed) next.eventCursor = revision;
+      } else {
+        map.set(item.id, { ...existing, ...item });
+      }
     }
     (next as any)[key] = Array.from(map.values());
   }

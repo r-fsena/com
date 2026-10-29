@@ -67,9 +67,9 @@ test('ingestão rejeita tenant do corpo diferente do token antes de gravar', asy
   assert.equal(response.status, 403); assert.equal(writes, 0);
 });
 test('falha de persistência impede ACK de sincronização', async () => {
-  const h = harness({ '@/lib/crm-repository': { readCRMState: async () => ({ contacts: [], conversations: [] }), writeCRMState: async () => { throw new Error('simulated database outage'); } } });
+  const h = harness({ '@/lib/crm-repository': { mutateCRMState: async () => { throw new Error('simulated database outage'); } } });
   const token = h.load('src/lib/api-auth.ts').signSessionPayload(broker);
-  const response = await h.load('src/app/api/v1/sync/extension-history/route.ts').POST(h.request('/api/sync', { tenantId: 'tenant-a', chats: [] }, { authorization: `Bearer ${token}` }));
+  const response = await h.load('src/app/api/v1/sync/extension-history/route.ts').POST(h.request('/api/sync', { tenantId: 'tenant-a', chats: [{ phone: '5511998765432', messages: [{ id: 'test-msg', content: 'Synthetic', fromMe: false, timestamp: '2024-01-01T10:00:00Z' }] }] }, { authorization: `Bearer ${token}` }));
   assert.ok(response.status >= 500); assert.equal((await response.json()).success, false);
 });
 test('autenticação real exige hash válido e vínculo ativo, sem senha mestre ou vínculo Cognito arbitrário', async () => {

@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Brokiva — CRM Imobiliário & WhatsApp Sync",
-  "version": "1.0.51",
-  "description": "Extensão oficial Brokiva: Sincronização de histórico completo, gestão de leads e Brok.ia para corretores no WhatsApp Web.",
+  "version": "1.0.52",
+  "description": "Extensão oficial Brokiva: importação verificada de conversas disponíveis no WhatsApp Web, gestão de leads e Brok.ia.",
   "permissions": [
     "storage",
     "activeTab",
-    "tabs"
+    "tabs",
+    "alarms"
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",
@@ -24,6 +25,7 @@
         "https://web.whatsapp.com/*"
       ],
       "js": [
+        "import-core.js",
         "content.js"
       ],
       "css": [

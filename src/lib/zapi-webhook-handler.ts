@@ -1,9 +1,8 @@
 import { webhookToken } from '@/lib/zapi-webhook-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { readCRMState, writeCRMState } from '@/lib/crm-repository';
+import { readCRMState, mutateCRMState, mergeTenantState } from '@/lib/crm-repository';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
-import { webhookStore } from '@/lib/webhook-store';
 import { serverCRMStore } from '@/lib/server-crm-store';
 import { isWhatsAppChannelOrGroup, isWhatsAppSystemMessage, cleanLid, isLidIdentifier, arePhonesEquivalent, KNOWN_LID_PHONE_MAP, resolveKnownPhone } from '@/lib/whatsapp-filter';
 
@@ -43,7 +42,7 @@ export async function processZapiWebhookRequest(
     // 0.1 Tratamento do Webhook de Status de Mensagem (MessageStatusCallback - Oficial Z-API)
     // Mensagens normais (recebidas ou enviadas) NUNCA devem ser tratadas como status callback
     const isStatusCallback = Boolean(
-      body.type === 'MessageStatusCallback' || 
+      body.type === 'MessageStatusCallback' ||
       (Array.isArray(body.ids) && body.ids.length > 0 && !body.phone && !body.chatPhone && !body.chatId && !body.text && !body.message && !body.body && !body.audio && !body.image && !body.document)
     );
 
@@ -59,12 +58,15 @@ export async function processZapiWebhookRequest(
       }
 
       const rawIds = Array.isArray(body.ids) ? body.ids : (body.id ? [body.id] : []);
-      const current = await readCRMState(tenantId);
       const rank = { PENDING: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: -1 };
-      const updates = current.messages.filter(m => rawIds.includes(m.externalId || m.id) && rank[crmStatus] > rank[m.status])
-        .map(m => ({ ...m, status: crmStatus }));
-      await writeCRMState(tenantId, { messages: updates });
-      const updatedCount = updates.length;
+      let updatedCount = 0;
+      await mutateCRMState(tenantId, current => {
+        const updates = current.messages.filter(m => rawIds.includes(m.externalId || m.id)
+          && current.conversations.some(c => c.id === m.conversationId && c.instanceId === instanceId)
+          && rank[crmStatus] > rank[m.status]).map(m => ({ ...m, status: crmStatus }));
+        updatedCount = updates.length;
+        return mergeTenantState(tenantId, current, { messages: updates });
+      });
 
       return NextResponse.json({
         received: true,
@@ -110,7 +112,7 @@ export async function processZapiWebhookRequest(
 
     // 1. Detecção robusta de direção (fromMe)
     let fromMe = Boolean(
-      body.fromMe === true || 
+      body.fromMe === true ||
       body.fromMe === 'true' ||
       body.isSentByMe === true ||
       body.sentByMe === true ||
@@ -119,7 +121,7 @@ export async function processZapiWebhookRequest(
       body.key?.fromMe === 'true' ||
       body.message?.key?.fromMe === true ||
       body.message?.fromMe === true ||
-      (body.data && (body.data.fromMe || body.data.isSentByMe || body.data.sentByMe || body.data.key?.fromMe)) ||
+      [body.data?.fromMe, body.data?.isSentByMe, body.data?.sentByMe, body.data?.key?.fromMe].some(value => value === true || value === 'true') ||
       body.type === 'MessageSend' ||
       body.type === 'SentMessage' ||
       body.type === 'SentCallback' ||
@@ -224,8 +226,8 @@ export async function processZapiWebhookRequest(
       }
     } else {
       // Quando recebido do cliente, o cliente é o REMETENTE
-      realPhoneCandidate = 
-        body.chatPhone 
+      realPhoneCandidate =
+        body.chatPhone
         || (!isLidIdentifier(body.phone) ? body.phone : '')
         || (!isLidIdentifier(body.senderPhone) ? body.senderPhone : '')
         || (!isLidIdentifier(body.from) ? body.from : '')
@@ -285,9 +287,9 @@ export async function processZapiWebhookRequest(
         // Tenta localizar contato por pushName/chatName se não tiver mapeamento
         const serverState = await readCRMState(tenantId);
         const targetName = (body.chatName || body.senderName || '').toLowerCase().trim();
-        const contactByName = serverState.contacts.find(c => 
-          c.name && targetName && 
-          !c.name.startsWith('+') && 
+        const contactByName = serverState.contacts.find(c =>
+          c.name && targetName &&
+          !c.name.startsWith('+') &&
           (c.name.toLowerCase().trim() === targetName || c.name.toLowerCase().includes(targetName) || targetName.includes(c.name.toLowerCase())) &&
           c.phone && !isLidIdentifier(c.phone)
         );
@@ -310,20 +312,21 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    const senderName = body.senderName 
-      || body.chatName 
-      || body.pushName 
-      || body.name 
+    const senderName = body.senderName
+      || body.chatName
+      || body.pushName
+      || body.name
       || (fromMe ? 'Corretor' : `WhatsApp ${cleanPhone ? cleanPhone.slice(-4) : 'Cliente'}`);
-    
+
     const senderPhoto = body.photo || body.senderPhoto || body.avatar || '';
-    const messageId = body.messageId || body.id || body.zaapId || body.data?.key?.id || body.key?.id || body.message?.key?.id || `zmsg-${Date.now()}`;
+    const messageId = String(body.messageId || body.id || body.zaapId || body.data?.key?.id || body.key?.id || body.message?.key?.id
+      || `zmsg-${crypto.createHash('sha256').update(`${instanceId}:${JSON.stringify(body)}`).digest('hex')}`);
 
     // 2. Detecção de Visualização Única (View-Once)
     const isViewOnce = Boolean(
-      body.isViewOnce || 
-      body.viewOnce || 
-      (body.image && body.image.viewOnce) || 
+      body.isViewOnce ||
+      body.viewOnce ||
+      (body.image && body.image.viewOnce) ||
       (body.video && body.video.viewOnce) ||
       body.viewOnceMessage
     );
@@ -413,124 +416,118 @@ export async function processZapiWebhookRequest(
       });
     }
 
-    // Se temos um telefone e conteúdo válido, registra no buffer global de eventos
+    // Confirma somente depois do commit. O recebimento não depende de abas abertas.
     if (cleanPhone && cleanPhone !== '0') {
-      const serverState = await readCRMState(tenantId);
-      
-      // Localiza contato existente por equivalência de telefone ou LID
-      const existingContact = serverState.contacts.find(c => 
-        (cleanPhone && arePhonesEquivalent(c.phone, cleanPhone)) ||
-        (lid && c.lid && cleanLid(c.lid) === cleanLid(lid))
-      );
+      await mutateCRMState(tenantId, serverState => {
+        // Reentregas do provedor não incrementam não lidas nem alteram o resumo da conversa.
+        if (serverState.messages.some(m => (m.externalId || m.id) === messageId)) return serverState;
 
-      const canonicalConvId = `conv-zapi-${cleanPhone}`;
-      const existingConv = serverState.conversations.find(conv => 
-        (existingContact && conv.contactId === existingContact.id) ||
-        conv.id === canonicalConvId ||
-        (cleanPhone && arePhonesEquivalent((conv.id + (conv.contactId || '')).replace(/\D/g, ''), cleanPhone))
-      );
+        // Localiza contato existente por equivalência de telefone ou LID
+        const existingContact = serverState.contacts.find(c =>
+          (cleanPhone && arePhonesEquivalent(c.phone, cleanPhone)) ||
+          (lid && c.lid && cleanLid(c.lid) === cleanLid(lid))
+        );
 
-      const targetConvId = existingConv ? existingConv.id : canonicalConvId;
-      const targetContactId = existingContact ? existingContact.id : (existingConv?.contactId || `contact-zapi-${cleanPhone}`);
+        const legacyConvId = `conv-zapi-${cleanPhone}`;
+        const canonicalConvId = serverState.conversations.some(c => c.id === legacyConvId && c.instanceId && c.instanceId !== instanceId)
+          ? `conv-zapi-${instanceId}-${cleanPhone}` : legacyConvId;
+        const existingConv = serverState.conversations.find(conv => (!conv.instanceId || conv.instanceId === instanceId) && (
+          (existingContact && conv.contactId === existingContact.id) ||
+          conv.id === canonicalConvId ||
+          (cleanPhone && arePhonesEquivalent((conv.id + (conv.contactId || '')).replace(/\D/g, ''), cleanPhone))
+        ));
 
-      // Extrai o carimbo de data/hora real em milissegundos enviado pela Z-API
-      let messageTimestampIso = new Date().toISOString();
-      const rawMoment = body.momment || body.timestamp || body.messageTimestamp || body.message?.messageTimestamp || body.data?.messageTimestamp;
-      if (rawMoment) {
-        let ms = Number(rawMoment);
-        if (!isNaN(ms) && ms > 0) {
-          if (ms < 10000000000) {
-            ms = ms * 1000; // Converte segundos para milissegundos
-          }
-          if (ms > 946684800000 && ms < Date.now() + 86400000) {
-            messageTimestampIso = new Date(ms).toISOString();
-          }
-        } else if (typeof rawMoment === 'string') {
-          const parsed = new Date(rawMoment);
-          if (!isNaN(parsed.getTime())) {
-            messageTimestampIso = parsed.toISOString();
+        const targetConvId = existingConv ? existingConv.id : canonicalConvId;
+        const targetContactId = existingContact ? existingContact.id : (existingConv?.contactId || `contact-zapi-${cleanPhone}`);
+
+        // Extrai o carimbo de data/hora real em milissegundos enviado pela Z-API
+        let messageTimestampIso = new Date().toISOString();
+        const rawMoment = body.momment || body.timestamp || body.messageTimestamp || body.message?.messageTimestamp || body.data?.messageTimestamp;
+        if (rawMoment) {
+          let ms = Number(rawMoment);
+          if (!isNaN(ms) && ms > 0) {
+            if (ms < 10000000000) {
+              ms = ms * 1000; // Converte segundos para milissegundos
+            }
+            if (ms > 946684800000 && ms < Date.now() + 86400000) {
+              messageTimestampIso = new Date(ms).toISOString();
+            }
+          } else if (typeof rawMoment === 'string') {
+            const parsed = new Date(rawMoment);
+            if (!isNaN(parsed.getTime())) {
+              messageTimestampIso = parsed.toISOString();
+            }
           }
         }
-      }
 
-      const savedMsg = webhookStore.addMessage({
-        id: messageId,
-        tenantId,
-        instanceId,
-        phone: cleanPhone,
-        lid: lid || undefined,
-        senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
-        chatName: body.chatName || undefined,
-        senderPhoto: existingContact?.avatarUrl || senderPhoto,
-        content,
-        mediaType,
-        mediaUrl,
-        fromMe,
-        timestamp: messageTimestampIso,
+        const isLatest = !existingConv || Date.parse(messageTimestampIso) >= (Date.parse(existingConv.lastMessageAt) || 0);
+        return mergeTenantState(tenantId, serverState, {
+          contacts: existingContact ? [{
+            ...existingContact,
+            lastClientInteractionAt: !fromMe && Date.parse(messageTimestampIso) > (Date.parse(existingContact.lastClientInteractionAt || '') || 0)
+              ? messageTimestampIso : existingContact.lastClientInteractionAt,
+            lastTeamInteractionAt: fromMe && Date.parse(messageTimestampIso) > (Date.parse(existingContact.lastTeamInteractionAt || '') || 0)
+              ? messageTimestampIso : existingContact.lastTeamInteractionAt,
+          }] : (cleanPhone && !isLidIdentifier(cleanPhone)) ? [{
+            id: targetContactId,
+            tenantId,
+            name: fromMe ? (body.chatName || `Contato ${cleanPhone.slice(-4)}`) : senderName,
+            phone: `+${cleanPhone}`,
+            lid: lid || undefined,
+            avatarUrl: senderPhoto,
+            source: 'WHATSAPP',
+            temperature: 'HOT',
+            aiPriorityScore: 85,
+            tags: ['Novo Lead WhatsApp'],
+            targetRegions: [],
+            notesCount: 0,
+            consentGiven: true,
+            hasOptedOut: false,
+            isPersonal: false,
+            lastClientInteractionAt: fromMe ? undefined : messageTimestampIso,
+            lastTeamInteractionAt: fromMe ? messageTimestampIso : undefined,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }] : [],
+          conversations: [{
+            ...existingConv,
+            id: targetConvId,
+            tenantId,
+            instanceId,
+            contactId: targetContactId,
+            status: isLatest ? (fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM') : existingConv!.status,
+            unreadCount: fromMe ? (isLatest ? 0 : existingConv?.unreadCount || 0) : ((existingConv?.unreadCount || 0) + 1),
+            lastMessagePreview: isLatest ? content.substring(0, 100) : existingConv!.lastMessagePreview,
+            lastMessageAt: isLatest ? messageTimestampIso : existingConv!.lastMessageAt,
+            slaBreached: false,
+            isPersonal: false,
+            aiEnabled: fromMe && isLatest ? false : existingConv?.aiEnabled,
+            humanTakeoverAt: fromMe && isLatest ? new Date().toISOString() : existingConv?.humanTakeoverAt,
+            inactivityFollowupAt: fromMe && isLatest ? undefined : existingConv?.inactivityFollowupAt,
+            autoFollowupCount: existingConv?.autoFollowupCount || 0,
+          }],
+          messages: [{
+            id: messageId,
+            externalId: messageId,
+            tenantId,
+            conversationId: targetConvId,
+            senderType: fromMe ? 'USER' : 'CONTACT',
+            senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
+            messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
+            content,
+            attachments: mediaUrl ? [{
+              id: `att-${messageId}`,
+              url: mediaUrl,
+              fileName: mediaType === 'audio' ? 'Audio.mp3' : mediaType === 'image' ? 'Foto.jpg' : (content.replace(/^📄\s*/, '') || 'Documento.pdf'),
+              fileSize: 1024,
+              mimeType: mediaType === 'audio' ? 'audio/mpeg' : mediaType === 'image' ? 'image/jpeg' : 'application/pdf',
+            }] : undefined,
+            status: 'DELIVERED',
+            isInternalNote: false,
+            timestamp: messageTimestampIso,
+          }],
+        });
       });
-
-      // Atualiza também no serverCRMStore unificando conversa e mensagem
-      await writeCRMState(tenantId, {
-        contacts: (!existingContact && cleanPhone && !isLidIdentifier(cleanPhone)) ? [{
-          id: targetContactId,
-          tenantId,
-          name: fromMe ? (body.chatName || `Contato ${cleanPhone.slice(-4)}`) : senderName,
-          phone: `+${cleanPhone}`,
-          lid: lid || undefined,
-          avatarUrl: senderPhoto,
-          source: 'WHATSAPP',
-          temperature: 'HOT',
-          aiPriorityScore: 85,
-          tags: ['Novo Lead WhatsApp'],
-          targetRegions: [],
-          notesCount: 0,
-          consentGiven: true,
-          hasOptedOut: false,
-          isPersonal: false,
-          lastClientInteractionAt: fromMe ? undefined : new Date().toISOString(),
-          lastTeamInteractionAt: fromMe ? new Date().toISOString() : undefined,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }] : [],
-        conversations: [{
-          id: targetConvId,
-          tenantId,
-          instanceId,
-          contactId: targetContactId,
-          status: fromMe ? 'PENDING_CLIENT' : 'PENDING_TEAM',
-          unreadCount: fromMe ? 0 : ((existingConv?.unreadCount || 0) + 1),
-          lastMessagePreview: content.substring(0, 100),
-          lastMessageAt: messageTimestampIso,
-          slaBreached: false,
-          isPersonal: false,
-          aiEnabled: fromMe ? false : undefined,
-          humanTakeoverAt: fromMe ? new Date().toISOString() : undefined,
-          inactivityFollowupAt: fromMe ? undefined : undefined,
-          autoFollowupCount: 0,
-        }],
-        messages: [{
-          id: messageId,
-          externalId: messageId,
-          tenantId,
-          conversationId: targetConvId,
-          senderType: fromMe ? 'USER' : 'CONTACT',
-          senderName: fromMe ? (body.senderName || 'Amábile Barbarotti') : (existingContact?.name || senderName),
-          messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
-          content,
-          attachments: mediaUrl ? [{
-            id: `att-${messageId}`,
-            url: mediaUrl,
-            fileName: mediaType === 'audio' ? 'Audio.mp3' : mediaType === 'image' ? 'Foto.jpg' : (content.replace(/^📄\s*/, '') || 'Documento.pdf'),
-            fileSize: 1024,
-            mimeType: mediaType === 'audio' ? 'audio/mpeg' : mediaType === 'image' ? 'image/jpeg' : 'application/pdf',
-          }] : undefined,
-          status: 'DELIVERED',
-          isInternalNote: false,
-          timestamp: messageTimestampIso,
-        }],
-      });
-
-
     }
 
     return NextResponse.json({

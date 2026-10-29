@@ -180,6 +180,14 @@ export class ZApiClient {
     });
   }
 
+  /** Recebidas e enviadas pelo celular; esta URL tem prioridade sobre o recebimento comum. */
+  async configureWebhookReceivedAndSent(webhookUrl: string): Promise<ZApiResponse> {
+    return this.request('update-webhook-received-delivery', {
+      method: 'PUT',
+      body: JSON.stringify({ value: webhookUrl }),
+    });
+  }
+
   /**
    * Configuração atômica de todos os webhooks na Z-API (Moderno / Recomendado)
    */
@@ -247,7 +255,7 @@ export class ZApiClient {
   async configureNotifySentByMe(): Promise<ZApiResponse> {
     return this.request('update-notify-sent-by-me', {
       method: 'PUT',
-      body: JSON.stringify({ notifySentByMe: true, value: true }),
+      body: JSON.stringify({ notifySentByMe: true }),
     });
   }
 
@@ -270,6 +278,7 @@ export class ZApiClient {
 
     const results = await Promise.allSettled([
       this.configureWebhookReceived(webhookUrl),
+      this.configureWebhookReceivedAndSent(webhookUrl),
       this.configureWebhookDelivery(webhookUrl),
       this.configureWebhookMessageStatus(webhookUrl),
       this.configureWebhookChatPresence(webhookUrl),

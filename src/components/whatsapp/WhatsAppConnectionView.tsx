@@ -757,7 +757,7 @@ export function WhatsAppConnectionView() {
                 </div>
 
                 <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Sua conta do WhatsApp está 100% pareada e operacional. Mensagens, fotos e áudios são sincronizados em tempo real com o CRM.
+                  WhatsApp conectado à Z-API. Para receber com o CRM e o navegador fechados, mantenha a instância ativa e os webhooks de recebidas e enviadas configurados.
                 </p>
 
                 <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">

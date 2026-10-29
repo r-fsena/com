@@ -430,10 +430,10 @@ export function WhatsAppImportView({ onGoToInbox }: WhatsAppImportViewProps) {
                   )}
                 </div>
                 <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Sincronização Completa em Segundo Plano
+                  Importação do Histórico Disponível
                 </h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Varre 100% das páginas de conversas e contatos do WhatsApp de uma só vez no servidor, sem risco de perder clientes. Você não precisa ficar esperando nesta tela: navegue livremente pelo CRM enquanto o Brokiva importa tudo.
+                  Importa as conversas e os contatos disponibilizados pelo provedor. Mantenha o CRM aberto para a importação avançar; se fechar, o progresso salvo poderá ser retomado ao reabrir. A captura contínua de novas mensagens depende da conexão WhatsApp e dos webhooks.
                 </p>
 
                 {/* Barra de Progresso Ativa em Tempo Real */}

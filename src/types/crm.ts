@@ -294,6 +294,7 @@ export interface Attachment {
 }
 
 export interface Message {
+  receivedAt?: number;
   id: string;
   tenantId: string;
   conversationId: string;

@@ -22,6 +22,8 @@ export async function GET(req: NextRequest) {
       logoUrl: row.logoUrl || undefined, primaryColor: row.primaryColor || '#3742AC', timezone: row.timezone || 'America/Sao_Paulo',
       status: ['ACTIVE', 'TRIAL', 'SUSPENDED', 'INACTIVE'].includes(row.status || '') ? row.status as TenantCatalogEntry['status'] : 'INACTIVE',
       businessHours: row.businessHours as TenantCatalogEntry['businessHours'] || { start: '08:30', end: '19:00', workDays: [1, 2, 3, 4, 5, 6] },
+      // Compatibilidade com abas abertas; preferências próprias do mesmo ambiente são preservadas pelo cliente.
+      settings: { slaFirstResponseMinutes: 15, slaInactivityHours: 24, autoAssignRule: 'ROUND_ROBIN', aiCopilotEnabled: true, requireHumanApprovalForAI: true },
     }));
     return NextResponse.json({ success: true, tenants: catalog }, { headers: { 'Cache-Control': 'no-store' } });
   } catch {

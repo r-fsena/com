@@ -1,6 +1,6 @@
 import type { Tenant } from '@/types/crm';
 
-export type TenantCatalogEntry = Pick<Tenant, 'id' | 'name' | 'slug' | 'documentCnpj' | 'logoUrl' | 'primaryColor' | 'timezone' | 'status' | 'businessHours'>;
+export type TenantCatalogEntry = Pick<Tenant, 'id' | 'name' | 'slug' | 'documentCnpj' | 'logoUrl' | 'primaryColor' | 'timezone' | 'status' | 'businessHours'> & { settings?: Tenant['settings'] };
 
 export function tenantForAuthenticatedSession(tenantId: string, cached: Tenant[]): Tenant {
   const slug = tenantId.replace(/^tenant-/, '');
@@ -22,9 +22,9 @@ export function reconcileTenantCatalog(catalog: TenantCatalogEntry[], cached: Te
       maxBrokers: previous?.maxBrokers ?? 0,
       maxInstances: previous?.maxInstances ?? 0,
       featureFlags: previous?.featureFlags,
-      settings: previous?.settings || { slaFirstResponseMinutes: 15, slaInactivityHours: 24, autoAssignRule: 'ROUND_ROBIN', aiCopilotEnabled: true, requireHumanApprovalForAI: true },
       catalogMetadataOnly: !previous?.plan || previous.catalogMetadataOnly === true,
       ...entry,
+      settings: previous?.settings || entry.settings || { slaFirstResponseMinutes: 15, slaInactivityHours: 24, autoAssignRule: 'ROUND_ROBIN', aiCopilotEnabled: true, requireHumanApprovalForAI: true },
     };
   });
 }

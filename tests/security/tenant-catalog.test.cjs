@@ -34,7 +34,7 @@ test('catálogo lê PostgreSQL sem tabela auxiliar, inclui todos os status e nã
     const data = await result.json();
     assert.equal(data.tenants.length, 3);
     const target = data.tenants.find(tenant => tenant.slug === 'ambiente-teste-rafael-sena');
-    assert.equal(target.id, 'tenant-ambiente-teste-rafael-sena'); assert.equal(target.settings, undefined);
+    assert.equal(target.id, 'tenant-ambiente-teste-rafael-sena'); assert.equal(target.settings.slaFirstResponseMinutes, 15);
     assert.equal(data.tenants.find(tenant => tenant.slug === '1790857269847').id, 'tenant-1790857269847');
     assert.equal(data.tenants.find(tenant => tenant.slug === 'suspended').status, 'SUSPENDED');
     assert.equal(JSON.stringify(data).includes('secret-not-for-catalog'), false); assert.equal(JSON.stringify(data).includes('private-ai-key'), false);
@@ -44,13 +44,14 @@ test('catálogo lê PostgreSQL sem tabela auxiliar, inclui todos os status e nã
 
 test('reconciliação inclui ambiente ausente e não mistura Teste e Vanguard por um ID legado reutilizado', () => {
   const { reconcileTenantCatalog, catalogTenantForSelection } = harness().load('src/lib/tenant-catalog.ts');
-  const cached = [{ id: 'tenant-1790857269847', slug: 'ambiente-teste-rafael-sena', name: 'Old name', plan: 'ENTERPRISE', monthlyFee: 0, maxBrokers: 50, maxInstances: 10, asaasApiKey: 'not-to-copy' }];
+  const cached = [{ id: 'tenant-1790857269847', slug: 'ambiente-teste-rafael-sena', name: 'Old name', plan: 'ENTERPRISE', monthlyFee: 0, maxBrokers: 50, maxInstances: 10, asaasApiKey: 'not-to-copy', settings: { slaFirstResponseMinutes: 7 } }];
   const catalog = [
     { id: 'tenant-ambiente-teste-rafael-sena', slug: 'ambiente-teste-rafael-sena', name: 'Ambiente Teste Rafael Sena', status: 'ACTIVE' },
     { id: 'tenant-1790857269847', slug: '1790857269847', name: 'Vanguard', status: 'ACTIVE' },
   ];
   const result = reconcileTenantCatalog(catalog, cached);
   assert.equal(result.length, 2); assert.equal(new Set(result.map(item=>item.id)).size, 2);
+  assert.equal(result[0].settings.slaFirstResponseMinutes, 7);
   assert.equal(result[0].plan, 'ENTERPRISE'); assert.equal(result[0].id, 'tenant-ambiente-teste-rafael-sena');
   assert.equal(result[1].name, 'Vanguard'); assert.equal(result[1].catalogMetadataOnly, true);
   assert.equal(result[0].asaasApiKey, undefined);

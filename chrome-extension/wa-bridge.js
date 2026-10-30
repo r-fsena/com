@@ -280,11 +280,21 @@
         const rawTime = Number(message.t || message.__x_t || 0);
         const time = rawTime < 1e12 ? rawTime * 1000 : rawTime;
         if (!Number.isFinite(time) || time <= 0 || !Number.isFinite(new Date(time).getTime())) { unread('NATIVE_DATE_INVALID'); continue; }
-        const types = { chat: 'TEXT', audio: 'AUDIO', ptt: 'AUDIO', image: 'IMAGE', document: 'DOCUMENT', video: 'VIDEO', sticker: 'STICKER', location: 'LOCATION' };
+        const types = { chat: 'TEXT', audio: 'AUDIO', ptt: 'AUDIO', image: 'IMAGE', document: 'DOCUMENT', video: 'VIDEO', sticker: 'STICKER', location: 'LOCATION',
+          call_log: 'CALL', vcard: 'CONTACT_CARD', multi_vcard: 'CONTACT_CARD' };
         const messageType = types[type];
         if (!messageType) { unread('NATIVE_TYPE_UNSUPPORTED'); const safeType = /^[a-z_]{1,40}$/.test(type) ? type : 'unknown'; unsupportedTypes[safeType] = (unsupportedTypes[safeType] || 0) + 1; continue; }
-        const content = message.body || message.__x_body || message.caption || message.__x_caption || '';
+        let content = message.body || message.__x_body || message.caption || message.__x_caption || '';
         if (typeof content !== 'string') { unread('NATIVE_CONTENT_INVALID'); continue; }
+        if (type === 'multi_vcard') {
+          const cards = message.vcardList || message.__x_vcardList;
+          if (!Array.isArray(cards) || !cards.length || cards.some(card => typeof card?.vcard !== 'string' || !/^BEGIN:VCARD[\s\S]*END:VCARD\s*$/i.test(card.vcard))) {
+            unread('NATIVE_VCARD_INVALID'); continue;
+          }
+          content = cards.map(card => card.vcard).join('\n\n');
+        }
+        if (messageType === 'CONTACT_CARD' && !/^BEGIN:VCARD[\s\S]*END:VCARD\s*$/i.test(content)) { unread('NATIVE_VCARD_INVALID'); continue; }
+        if (messageType === 'CALL' && !content) content = '📞 Registro de chamada no WhatsApp';
         if (!content && messageType === 'TEXT') { unread('NATIVE_EMPTY_TEXT'); continue; }
         // Blobs locais e URLs de arquivos cifrados não são anexos utilizáveis no CRM.
         messages.push({ id, fromMe: directions[0], content, messageType, timestamp: new Date(time).toISOString(), fileName: message.filename || message.__x_filename || undefined });

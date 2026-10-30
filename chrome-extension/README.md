@@ -1,10 +1,10 @@
 # Brokiva — extensão para WhatsApp Web
 
-Versão **1.0.58**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
+Versão **1.0.59**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
 
 ## Instalação e pareamento
 
-1. Publique primeiro o backend com o protocolo de recibos de importação 2. `OPTIONS /api/v1/sync/extension-history` deve retornar `X-Brokiva-Import-Protocol: 2`.
+1. Publique primeiro o backend com o protocolo de recibos de importação 2. `OPTIONS /api/v1/sync/extension-history` deve retornar `X-Brokiva-Import-Protocol: 2` e `X-Brokiva-Import-Revision: 20261029.3`, que aceita chamadas e cartões de contato.
 2. Em `chrome://extensions`, ative o modo de desenvolvedor e carregue esta pasta. Se já estiver instalada, recarregue a Brokiva.
 3. Recarregue também o WhatsApp Web e as abas do CRM já abertas para carregar os scripts novos.
 4. No popup, clique em **Entrar e parear no CRM**, autentique-se e confira a imobiliária e o corretor. A sessão dura 15 minutos e a aba autenticada do CRM a renova. Trocar de imobiliária exige pareamento explícito.
@@ -29,9 +29,11 @@ O parâmetro `pairExtension=1` só é removido da URL depois que o serviço da e
 
 ## Compatibilidade com o formato atual do WhatsApp
 
-A versão 1.0.58 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
+A versão 1.0.59 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
 
 A ponte nativa prioriza as instâncias de `WAWebCollections`, sem confundir classes antigas com coleções carregadas. Aceita WIDs com `_serialized`, `$1` ou `user/server`, e usa somente o mapeamento local do WhatsApp para relacionar LID e telefone. Direções conflitantes, outro destinatário e datas inválidas são rejeitados. A confirmação nativa remove apenas a pendência do mesmo ID recuperado; não apaga pendências de outras mensagens nem comprova o início do histórico.
+
+Chamadas (`call_log`) são importadas como `CALL`, com ID, direção e data do WhatsApp; o registro não presume atendimento, duração ou gravação. Cartões (`vcard` e `multi_vcard`) entram como `CONTACT_CARD`, preservando o conteúdo completo de cada vCard. Cartões incompletos continuam pendentes. Esses registros não são contados como arquivos de mídia. O CRM exibe cartões em uma seção expansível e mantém a deduplicação por ID.
 
 O controle “Clique neste aviso para carregar mensagens mais antigas do seu celular” é acionado com espera e tentativas limitadas. O resultado da importação individual também fica salvo em **Última importação**, no popup e na barra da Brokiva no WhatsApp, incluindo os motivos de pendência. Ele é recuperado ao renovar a sessão e não depende de um alerta transitório.
 

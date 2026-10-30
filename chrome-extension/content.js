@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.58';
+    let extVersion = '1.0.59';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.58';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.59';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -2391,7 +2391,7 @@ ${isDeveloperMode ? `
     const counted = (count, fallback, label) => count ? `${label}: ${count}.` : fallback;
     const nativeLabels = { ENCRYPTED_MESSAGE: 'ainda não descriptografados', NATIVE_IDENTITY_INVALID: 'sem identidade/autoria verificável',
       NATIVE_DATE_INVALID: 'sem data verificável', NATIVE_TYPE_UNSUPPORTED: 'em formatos ainda não suportados', NATIVE_EMPTY_TEXT: 'sem texto legível',
-      NATIVE_CONTENT_INVALID: 'com conteúdo não interpretável', NATIVE_READ_ERROR: 'com falha de leitura' };
+      NATIVE_CONTENT_INVALID: 'com conteúdo não interpretável', NATIVE_VCARD_INVALID: 'com cartão de contato incompleto', NATIVE_READ_ERROR: 'com falha de leitura' };
     const nativeDetails = Object.entries(audit.nativeReasons || {}).filter(([, count]) => count > 0)
       .map(([reason, count]) => `${count} ${nativeLabels[reason] || 'pendentes'}`).join('; ');
     const reasons = {

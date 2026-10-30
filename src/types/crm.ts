@@ -74,6 +74,7 @@ export interface TenantAIConfig {
 }
 
 export interface Tenant {
+  catalogMetadataOnly?: boolean;
   id: string;
   name: string;
   slug: string;

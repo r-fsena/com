@@ -78,6 +78,7 @@ import {
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { reconcileIdentities, reconcileMessageHistory, reconcileConversationHistory, tenantSnapshotRecords } from '@/lib/crm-history';
 import { crmEventCursor, mergeSyncedRecords } from '@/lib/crm-event-cursor';
+import { reconcileTenantCatalog, catalogTenantForSelection, tenantForAuthenticatedSession, TenantCatalogEntry } from '@/lib/tenant-catalog';
 
 interface CRMContextType {
   // Autenticação & Sessão Cognito
@@ -88,6 +89,9 @@ interface CRMContextType {
 
   // Gestão de Ambientes SaaS (SuperAdmin) & Tenant
   tenants: Tenant[];
+  tenantCatalogLoading: boolean;
+  tenantCatalogError: string | null;
+  refreshTenantCatalog: () => void;
   currentTenant: Tenant;
   setCurrentTenant: (tenant: Tenant) => void;
   updateTenant: (updates: Partial<Tenant>) => void;
@@ -436,7 +440,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (!seenIds.has('tenant-amabile-barbarotti')) {
-              cleanList.unshift(MOCK_TENANTS[0]);
+              const amabile = MOCK_TENANTS.find(tenant => tenant.slug === 'amabile-barbarotti');
+              if (amabile) cleanList.unshift(amabile);
             }
 
             if (cleanList.length > 0) {
@@ -449,6 +454,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
     return MOCK_TENANTS;
   });
+  const [tenantCatalogLoading, setTenantCatalogLoading] = useState(true);
+  const [tenantCatalogError, setTenantCatalogError] = useState<string | null>(null);
+  const [tenantCatalogRevision, setTenantCatalogRevision] = useState(0);
+  const refreshTenantCatalog = useCallback(() => setTenantCatalogRevision(value => value + 1), []);
 
   const [pipelines, setPipelines] = useState<Pipeline[]>(() => {
     if (typeof window !== 'undefined') {
@@ -569,12 +578,10 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       const raw = typeof tenantOrFn === 'function' ? tenantOrFn(prev) : tenantOrFn;
       if (!raw) return prev;
 
-      const isAmabile = raw.id === 'tenant-amabile-barbarotti' || 
-                        raw.slug === 'amabile-barbarotti' || 
-                        (raw.name && raw.name.toLowerCase().includes('amabile'));
+      const isAmabile = raw.id === 'tenant-amabile-barbarotti' || raw.slug === 'amabile-barbarotti';
       
-      const canonicalId = isAmabile ? 'tenant-amabile-barbarotti' : raw.id;
-      const foundInList = tenants.find(t => t.id === canonicalId) || (isAmabile ? MOCK_TENANTS[0] : null);
+      const foundInList = catalogTenantForSelection(raw, tenants) || (isAmabile ? MOCK_TENANTS.find(tenant => tenant.slug === 'amabile-barbarotti') : null);
+      const canonicalId = foundInList?.id === `tenant-${raw.slug}` ? foundInList.id : isAmabile ? 'tenant-amabile-barbarotti' : raw.id;
 
       const resolvedFlags = isAmabile ? {
         ...(foundInList?.featureFlags || raw.featureFlags || DEFAULT_FEATURE_FLAGS),
@@ -1324,8 +1331,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       phone: '', role: session.role, tenantId: session.tenantId, isActive: true };
     setCurrentUser(authenticatedUser);
     setUsers(prev => [...prev.filter(user => user.id !== authenticatedUser.id), authenticatedUser]);
-    setCurrentTenant(tenants.find(t => t.id === session.tenantId) || { ...currentTenant, id: session.tenantId,
-      slug: session.tenantId.replace(/^tenant-/, ''), name: session.tenantId.replace(/^tenant-/, '') });
+    setCurrentTenant(tenantForAuthenticatedSession(session.tenantId, tenants));
     localStorage.setItem('vanguard_auth_session', JSON.stringify({ userEmail: session.userEmail, userId: session.userId, tenantId: session.tenantId }));
     setIsAuthenticated(true);
   };
@@ -1341,6 +1347,36 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       .finally(() => { if (!cancelled) setIsAuthReady(true); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || currentUser?.role !== 'SUPERADMIN') { setTenantCatalogLoading(false); return; }
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    setTenantCatalogLoading(true); setTenantCatalogError(null);
+    fetch('/api/v1/master/tenants', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const data = await response.json();
+        if (cancelled) return;
+        if (!response.ok || !data.success || !Array.isArray(data.tenants)) throw new Error('Não foi possível atualizar a lista de ambientes do servidor.');
+        const catalog = data.tenants as TenantCatalogEntry[];
+        setTenants(previous => {
+          const next = reconcileTenantCatalog(catalog, previous);
+          try { localStorage.setItem('vanguard_crm_tenants', JSON.stringify(next)); } catch {}
+          return next;
+        });
+        setCurrentTenantState(previous => {
+          const entry = catalogTenantForSelection(previous, catalog) || catalog.find(tenant => tenant.id === currentUser.tenantId);
+          if (!entry) return previous;
+          const next = reconcileTenantCatalog([entry], [previous])[0];
+          try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(next)); } catch {}
+          return next;
+        });
+      })
+      .catch(() => { if (!cancelled) setTenantCatalogError('Não foi possível atualizar a lista de ambientes do servidor.'); })
+      .finally(() => { clearTimeout(timeout); if (!cancelled) setTenantCatalogLoading(false); });
+    return () => { cancelled = true; clearTimeout(timeout); controller.abort(); };
+  }, [isAuthenticated, currentUser?.id, currentUser?.role, currentUser?.tenantId, tenantCatalogRevision]);
 
   const login = async (_email: string, _role?: string) => {
     const response = await fetch('/api/v1/auth/session', { credentials: 'include', cache: 'no-store' });
@@ -5328,6 +5364,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       tenants,
+      tenantCatalogLoading,
+      tenantCatalogError,
+      refreshTenantCatalog,
       currentTenant,
       setCurrentTenant,
       updateTenant,

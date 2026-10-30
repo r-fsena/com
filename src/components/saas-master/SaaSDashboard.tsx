@@ -32,7 +32,7 @@ export function SaaSDashboard({ onNavigateToTab }: SaaSDashboardProps) {
 
   // Métricas de Receita e Assinaturas
   const totalMRR = tenants
-    .filter(t => t.status === 'ACTIVE')
+    .filter(t => t.status === 'ACTIVE' && !t.catalogMetadataOnly)
     .reduce((acc, t) => acc + (t.monthlyFee || 0), 0);
 
   const totalARR = totalMRR * 12;
@@ -40,7 +40,8 @@ export function SaaSDashboard({ onNavigateToTab }: SaaSDashboardProps) {
   const trialTenantsCount = tenants.filter(t => t.status === 'TRIAL').length;
   const suspendedTenantsCount = tenants.filter(t => t.status === 'SUSPENDED').length;
 
-  const averageTicket = activeTenantsCount > 0 ? (totalMRR / activeTenantsCount) : 0;
+  const knownActiveContracts = tenants.filter(t => t.status === 'ACTIVE' && !t.catalogMetadataOnly).length;
+  const averageTicket = knownActiveContracts > 0 ? (totalMRR / knownActiveContracts) : 0;
 
   // Capacidade e Ocupação de Licenças
   const totalBrokerCapacity = tenants
@@ -57,6 +58,7 @@ export function SaaSDashboard({ onNavigateToTab }: SaaSDashboardProps) {
 
   return (
     <div className="flex-1 overflow-y-auto p-6 sm:p-8 max-w-7xl w-full mx-auto space-y-6 animate-fadeIn">
+      {tenants.some(tenant => tenant.catalogMetadataOnly) && <p className="text-xs text-slate-500">Indicadores financeiros parciais: há ambientes sem dados contratuais informados.</p>}
       {/* Header Estratégico Sovereign */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-[#3742AC] p-6 sm:p-7 rounded-3xl text-white shadow-xl shadow-indigo-950/20 border border-indigo-900/40 flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -305,7 +307,7 @@ export function SaaSDashboard({ onNavigateToTab }: SaaSDashboardProps) {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-900">{tenant.name}</p>
-                  <p className="text-[11px] text-slate-500">Plano {tenant.plan} • R$ {tenant.monthlyFee}/mês</p>
+                  <p className="text-[11px] text-slate-500">{tenant.catalogMetadataOnly ? 'Dados contratuais não informados' : `Plano ${tenant.plan} • R$ ${tenant.monthlyFee}/mês`}</p>
                 </div>
               </div>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${

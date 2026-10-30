@@ -72,6 +72,14 @@ Os lotes são persistidos antes da transmissão na fila da extensão, limitados 
 
 A fila retoma envios após falha/reinício, dentro da mesma conta e com sessão válida. A leitura interrompida precisa ser reiniciada. Arquivadas, filtros, datas não disponibilizadas e arquivos de mídia ausentes ficam explícitos como pendência, sem declaração de importação integral. Instruções completas em `../brokiva-chrome-extension/README.md`.
 
+## Catálogo do Portal Master
+
+O Portal Master consulta `GET /api/v1/master/tenants` após autenticar o administrador global. A lista vem de `tenants`/`tenant_settings` no PostgreSQL, inclui todos os status e usa `tenant-<slug>`, igual ao contexto autenticado e aos snapshots do CRM. O endpoint rejeita usuários comuns e sessões limitadas da extensão; não retorna chaves Asaas, configurações de IA ou tokens.
+
+O catálogo substitui a lista de identidades armazenada no navegador. A reconciliação usa o slug para preservar preferências locais da mesma imobiliária, sem confundir o ID legado de Teste Rafael com Vanguard. O botão **Atualizar lista** repete a consulta; falhas são exibidas em vez de um falso catálogo vazio. A seleção existente é reconciliada pelo cadastro, sem migrar ou fundir contatos/conversas.
+
+As informações contratuais e os fluxos legados de criação/edição administrativa ainda usam armazenamento local. Esta etapa corrige a consulta do catálogo e o acesso aos ambientes já cadastrados no banco. Valores e capacidades não informados aparecem como tais, e indicadores financeiros ficam parciais quando há cadastros sem contrato local.
+
 ## Integrações externas
 
 - **Asaas:** chamadas reais para cliente, cobrança e QR Code. O ambiente padrão é `sandbox`; a produção exige `ASAAS_ENVIRONMENT=production`. A chave vem do tenant no banco, sem reutilizar a chave master como fallback para outra empresa. A requisição exige `externalReference`, reutilizada nas tentativas de recuperação; em caso de timeout, consulte a referência antes de repetir. Não há resposta de cobrança simulada.

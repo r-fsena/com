@@ -26,7 +26,8 @@ import {
   Palette,
   Bot,
   Zap,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 
 interface SaaSProductionTenantsProps {
@@ -35,7 +36,7 @@ interface SaaSProductionTenantsProps {
 }
 
 export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: SaaSProductionTenantsProps) {
-  const { tenants, currentTenant, updateTenantStatus, updateTenantById, deleteTenant, saasPlans } = useCRM();
+  const { tenants, currentTenant, updateTenantStatus, updateTenantById, deleteTenant, saasPlans, tenantCatalogLoading, tenantCatalogError, refreshTenantCatalog } = useCRM();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | TenantStatus>('ALL');
@@ -75,7 +76,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
     lgpdCompliance: true,
   });
 
-  const filteredTenants = tenants.filter(t => {
+  const filteredTenants = tenantCatalogLoading || tenantCatalogError ? [] : tenants.filter(t => {
     const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           t.slug.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (t.documentCnpj && t.documentCnpj.includes(searchTerm));
@@ -139,6 +140,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
     if (!editingTenant) return;
 
     const updates: Partial<Tenant> = {
+      catalogMetadataOnly: false,
       name: formName.trim() || editingTenant.name,
       slug: formSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-') || editingTenant.slug,
       documentCnpj: formDocumentCnpj.trim(),
@@ -190,7 +192,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
             </div>
             <h2 className="text-lg font-extrabold text-slate-900">Ambientes Produtivos & Imobiliárias</h2>
             <span className="text-xs font-bold font-mono bg-indigo-50 text-[#3742AC] border border-indigo-200/60 px-2.5 py-0.5 rounded-full">
-              {tenants.length} cadastradas
+              {tenantCatalogLoading ? 'Atualizando…' : `${tenants.length} cadastradas`}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
@@ -198,6 +200,10 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
           </p>
         </div>
 
+        <button type="button" onClick={refreshTenantCatalog} disabled={tenantCatalogLoading}
+          className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold disabled:opacity-50">
+          <RefreshCw className={`h-4 w-4 ${tenantCatalogLoading ? 'animate-spin' : ''}`} /> Atualizar lista
+        </button>
         <button
           type="button"
           onClick={onNavigateToNewTenant}
@@ -269,8 +275,10 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
       </div>
 
       {/* Grid de Cards dos Ambientes */}
+      {tenantCatalogLoading && <p role="status" className="text-sm text-slate-500">Consultando os ambientes cadastrados no servidor...</p>}
+      {tenantCatalogError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{tenantCatalogError} Use “Atualizar lista” para tentar novamente.</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredTenants.length === 0 ? (
+        {tenantCatalogLoading || tenantCatalogError ? null : filteredTenants.length === 0 ? (
           <div className="col-span-full bg-white rounded-3xl border border-slate-200/80 p-12 text-center text-slate-400 space-y-2">
             <Building2 className="w-10 h-10 text-slate-300 mx-auto" />
             <p className="font-bold text-slate-700 text-sm">Nenhum ambiente encontrado</p>
@@ -335,14 +343,14 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 font-medium">Plano Contratado:</span>
                       <span className="font-extrabold text-[#3742AC] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md text-[11px]">
-                        {tenant.plan}
+                        {tenant.catalogMetadataOnly ? 'Não informado' : tenant.plan}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 font-medium">Mensalidade Asaas:</span>
                       <span className="font-extrabold text-emerald-700">
-                        R$ {tenant.monthlyFee?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês
+                        {tenant.catalogMetadataOnly ? 'Não informada' : `R$ ${tenant.monthlyFee?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês`}
                       </span>
                     </div>
 
@@ -350,7 +358,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
                       <span className="text-slate-400 font-medium">Capacidade Corretores:</span>
                       <span className="font-semibold text-slate-800 flex items-center gap-1">
                         <Users className="w-3.5 h-3.5 text-[#3742AC]" />
-                        <span>Até {tenant.maxBrokers} corretores</span>
+                        <span>{tenant.catalogMetadataOnly ? 'Não informada' : `Até ${tenant.maxBrokers} corretores`}</span>
                       </span>
                     </div>
 
@@ -358,7 +366,7 @@ export function SaaSProductionTenants({ onEnterTenant, onNavigateToNewTenant }: 
                       <span className="text-slate-400 font-medium">Linhas WhatsApp Z-API:</span>
                       <span className="font-semibold text-slate-800 flex items-center gap-1">
                         <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{tenant.maxInstances} conexões</span>
+                        <span>{tenant.catalogMetadataOnly ? 'Não informadas' : `${tenant.maxInstances} conexões`}</span>
                       </span>
                     </div>
 

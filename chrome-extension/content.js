@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.57';
+    let extVersion = '1.0.58';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.57';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.58';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -269,6 +269,16 @@
     if (!box) return;
     if (!report || !BrokivaImport.sameContext(report.context, context)) { box.textContent = ''; box.hidden = true; return; }
     box.textContent = `Última importação: ${report.totalMessages || 0} mensagens confirmadas.\n` + (report.issues || []).map(issue => `${issue.name}: ${issue.reason}`).join('\n');
+    if (report.audit) {
+      box.textContent += '\nUm item pode aparecer em mais de uma categoria; não some as pendências.';
+      const formats = Object.entries(report.audit.unsupportedTypes || {}).filter(([, count]) => count > 0);
+      if (formats.length) {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary'); summary.textContent = 'Formatos pendentes — detalhes para suporte';
+        const text = document.createElement('p'); text.textContent = formats.map(([type, count]) => `${type}: ${count}`).join('; ');
+        details.append(summary, text); box.append(details);
+      }
+    }
     box.hidden = false;
   }
 
@@ -1470,6 +1480,18 @@ ${isDeveloperMode ? `
       if (!tracker.seenKeys.has(message.id)) { tracker.seenKeys.add(message.id); tracker.orderedKeys.push(message.id); }
     }
   }
+  function buildImportAudit(messages, native = {}) {
+    const values = [...messages.values()];
+    const countIssue = reason => [...(messages._messageIssues?.values() || [])].filter(reasons => reasons.has(reason)).length;
+    const files = values.filter(message => ['IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'STICKER'].includes(message.messageType));
+    return {
+      unconfirmedAuthors: countIssue('AUTHOR_UNCONFIRMED'), unreadableBubbles: countIssue('UNREADABLE_MESSAGE'),
+      estimatedDates: values.filter(message => message.timestampEstimated).length,
+      filesNotImported: files.filter(message => !message.mediaUrl || message.mediaIsPreview).length,
+      previewOnly: files.filter(message => message.mediaIsPreview).length,
+      nativeUnreadable: native.unreadable || 0, nativeReasons: native.unreadableReasons || {}, unsupportedTypes: native.unsupportedTypes || {},
+    };
+  }
 
   function harvestDomMessages(messagesMap, fallbackPhone = '', orderTracker = null, scrollDirection = 'INIT') {
     const main = document.querySelector('#main');
@@ -1944,7 +1966,8 @@ ${isDeveloperMode ? `
           timestamp: msgTime,
           timestampEstimated: isTimestampEstimated,
           hasPrePlain: isHardPrePlainDate,
-          mediaIsPreview: messageType === 'IMAGE' && mediaUrl.startsWith('data:image/'),
+          // Toda imagem obtida deste balão vem do elemento de prévia, mesmo com URL HTTPS.
+          mediaIsPreview: messageType === 'IMAGE' && Boolean(mediaUrl),
           messageType,
           mediaUrl: mediaUrl || undefined,
           fileName: fileName || undefined,
@@ -2225,9 +2248,10 @@ ${isDeveloperMode ? `
     calibratePhysicalChatSequence(tracker.orderedKeys, messages);
     messages._orderedKeys = tracker.orderedKeys;
     messages._identity = identity;
-    if (Array.from(messages.values()).some(message => message.timestampEstimated)) { messages._issues ||= new Set(); messages._issues.add('TIMESTAMP_ESTIMATED'); }
-    if (Array.from(messages.values()).some(message => message.messageType !== 'TEXT' && !message.mediaUrl)) { messages._issues ||= new Set(); messages._issues.add('MEDIA_FILE_UNAVAILABLE'); }
-    if (Array.from(messages.values()).some(message => message.mediaIsPreview)) { messages._issues ||= new Set(); messages._issues.add('MEDIA_PREVIEW_ONLY'); }
+    messages._audit = buildImportAudit(messages, native);
+    if (messages._audit.estimatedDates) { messages._issues ||= new Set(); messages._issues.add('TIMESTAMP_ESTIMATED'); }
+    if (messages._audit.filesNotImported) { messages._issues ||= new Set(); messages._issues.add('MEDIA_FILE_UNAVAILABLE'); }
+    if (messages._audit.previewOnly) { messages._issues ||= new Set(); messages._issues.add('MEDIA_PREVIEW_ONLY'); }
     if (native.unreadable) { messages._issues ||= new Set(); messages._issues.add('NATIVE_UNREADABLE'); }
     if (messages._issues?.size) {
       const reasons = new Set(messages._coverage?.complete ? [] : String(messages._coverage?.reason || '').split(', ').filter(Boolean));
@@ -2363,7 +2387,13 @@ ${isDeveloperMode ? `
     if (!context) throw new Error('O contexto da leitura não foi confirmado.');
     return chrome.runtime.sendMessage({ action: 'SYNC_BATCH_CHATS', data: { chats, context } });
   }
-  function describeCoverage(coverage) {
+  function describeCoverage(coverage, audit = {}) {
+    const counted = (count, fallback, label) => count ? `${label}: ${count}.` : fallback;
+    const nativeLabels = { ENCRYPTED_MESSAGE: 'ainda não descriptografados', NATIVE_IDENTITY_INVALID: 'sem identidade/autoria verificável',
+      NATIVE_DATE_INVALID: 'sem data verificável', NATIVE_TYPE_UNSUPPORTED: 'em formatos ainda não suportados', NATIVE_EMPTY_TEXT: 'sem texto legível',
+      NATIVE_CONTENT_INVALID: 'com conteúdo não interpretável', NATIVE_READ_ERROR: 'com falha de leitura' };
+    const nativeDetails = Object.entries(audit.nativeReasons || {}).filter(([, count]) => count > 0)
+      .map(([reason, count]) => `${count} ${nativeLabels[reason] || 'pendentes'}`).join('; ');
     const reasons = {
       AVAILABLE_START: 'Início do histórico disponível confirmado.',
       UNCONFIRMED_BOUNDARY: 'O WhatsApp não confirmou o início do histórico disponível.',
@@ -2371,13 +2401,13 @@ ${isDeveloperMode ? `
       TIME_LIMIT: 'O limite de tempo de leitura foi atingido. Releia a conversa para continuar a conferência.',
       STEP_LIMIT: 'O limite de etapas de leitura foi atingido.',
       CANCELLED: 'Leitura interrompida pelo usuário.',
-      TIMESTAMP_ESTIMATED: 'Algumas mensagens não têm data verificável e precisam ser relidas.',
-      MEDIA_FILE_UNAVAILABLE: 'Há mídias cujo arquivo original não foi importado; somente o registro da mensagem foi salvo.',
-      MEDIA_PREVIEW_ONLY: 'Algumas imagens possuem apenas miniatura; o arquivo original não foi importado.',
-      NATIVE_UNREADABLE: 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
-      UNREADABLE_MESSAGE: 'Há balões sem conteúdo legível.',
+      TIMESTAMP_ESTIMATED: counted(audit.estimatedDates, 'Algumas mensagens não têm data verificável e precisam ser relidas.', 'Mensagens sem data verificável, não enviadas'),
+      MEDIA_FILE_UNAVAILABLE: counted(audit.filesNotImported, 'Há mídias cujo arquivo original não foi importado; somente o registro da mensagem foi salvo.', 'Mídias sem arquivo original importado (o registro pode estar salvo)'),
+      MEDIA_PREVIEW_ONLY: counted(audit.previewOnly, 'Algumas imagens possuem apenas miniatura; o arquivo original não foi importado.', 'Imagens com apenas miniatura'),
+      NATIVE_UNREADABLE: audit.nativeUnreadable ? `Itens do WhatsApp não interpretados: ${audit.nativeUnreadable}${nativeDetails ? ` (${nativeDetails})` : ''}.` : 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
+      UNREADABLE_MESSAGE: counted(audit.unreadableBubbles, 'Há balões sem conteúdo legível.', 'Balões sem conteúdo legível'),
       MESSAGE_ID_UNAVAILABLE: 'Há balões sem identificador verificável.',
-      AUTHOR_UNCONFIRMED: 'Há mensagens cuja autoria não pôde ser confirmada.',
+      AUTHOR_UNCONFIRMED: counted(audit.unconfirmedAuthors, 'Há mensagens cuja autoria não pôde ser confirmada.', 'Mensagens sem autoria confirmada'),
       MESSAGE_METADATA_CONFLICT: 'A autoria divergiu entre as fontes; essa mensagem precisa de conferência.',
     };
     return String(coverage?.reason || 'UNCONFIRMED_BOUNDARY').split(', ').map(reason => reasons[reason] || 'Uma parte do histórico precisa ser conferida.').join(' ');
@@ -2416,7 +2446,8 @@ ${isDeveloperMode ? `
       const readableCount = Array.from(messages.values()).filter(message => !message.timestampEstimated).length;
       if (!readableCount) throw new Error('Nenhuma mensagem com ID e data verificável foi disponibilizada. Leitura pendente.');
       await save(messages, true);
-      return { response: { success: true, confirmedMessages: confirmed.size }, chat: base, coverage: { ...messages._coverage, reason: describeCoverage(messages._coverage) } };
+      return { response: { success: true, confirmedMessages: confirmed.size }, chat: base, audit: messages._audit,
+        coverage: { ...messages._coverage, reason: describeCoverage(messages._coverage, messages._audit) } };
     } catch (error) {
       if (error.importResponse) return { response: error.importResponse, chat: base, coverage: { complete: false, reason: 'Envio interrompido; lotes preservados na fila local.' } };
       // Uma troca de conversa ou interrupção pode ocorrer depois de checkpoints já confirmados.
@@ -2435,7 +2466,7 @@ ${isDeveloperMode ? `
       if (badge) badge.innerText = 'Conferindo contato...';
       if (isCurrentChatGroupOrChannel()) throw new Error('Selecione uma conversa individual.');
       context = await importContext();
-      const { response, chat, coverage } = await readAndImportActiveChat(context);
+      const { response, chat, coverage, audit } = await readAndImportActiveChat(context);
       badge = document.getElementById('sovereign-sync-badge');
       const saved = response.confirmedMessages || 0;
       const complete = response.success && coverage?.complete;
@@ -2444,11 +2475,11 @@ ${isDeveloperMode ? `
         ...(!coverage?.complete ? [{ name: chat.name, reason: coverage?.reason || 'Leitura incompleta.' }] : []),
         ...(!response.success ? [{ name: chat.name, reason: response.error || 'Envio pendente.' }] : []),
       ];
-      await chrome.storage.local.set({ brokivaLastImportReport: { context, mode: 'SINGLE', startedAt, finishedAt: Date.now(), totalChats: saved ? 1 : 0, totalMessages: saved, issues } }).catch(() => {});
+      await chrome.storage.local.set({ brokivaLastImportReport: { context, mode: 'SINGLE', startedAt, finishedAt: Date.now(), totalChats: saved ? 1 : 0, totalMessages: saved, issues, audit } }).catch(() => {});
       if (badge) badge.title = issues.map(issue => issue.reason).join(' ');
       alert(`${saved} mensagens confirmadas no CRM para ${chat.name}.` +
         (response.pendingMessages ? `\n${response.pendingMessages} mensagens guardadas na fila local. Entre no CRM e use Retomar envios no popup.` : '') +
-        (!coverage?.complete ? `\nLeitura parcial: ${coverage?.reason || 'limite do histórico não confirmado'}. Reabra a conversa e execute novamente para conferir mensagens anteriores.` : '') +
+        (!coverage?.complete ? '\nLeitura parcial. Consulte os motivos e quantidades em “Última importação”, na barra da Brokiva. Repetir a leitura pode não recuperar itens que o WhatsApp ainda não disponibilizou.' : '') +
         (!response.success ? `\n${response.error}` : ''));
       return { complete, saved };
     } catch (error) {

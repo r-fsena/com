@@ -1,6 +1,6 @@
 # Brokiva — extensão para WhatsApp Web
 
-Versão **1.0.57**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
+Versão **1.0.58**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
 
 ## Instalação e pareamento
 
@@ -29,11 +29,13 @@ O parâmetro `pairExtension=1` só é removido da URL depois que o serviço da e
 
 ## Compatibilidade com o formato atual do WhatsApp
 
-A versão 1.0.57 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
+A versão 1.0.58 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
 
 A ponte nativa prioriza as instâncias de `WAWebCollections`, sem confundir classes antigas com coleções carregadas. Aceita WIDs com `_serialized`, `$1` ou `user/server`, e usa somente o mapeamento local do WhatsApp para relacionar LID e telefone. Direções conflitantes, outro destinatário e datas inválidas são rejeitados. A confirmação nativa remove apenas a pendência do mesmo ID recuperado; não apaga pendências de outras mensagens nem comprova o início do histórico.
 
 O controle “Clique neste aviso para carregar mensagens mais antigas do seu celular” é acionado com espera e tentativas limitadas. O resultado da importação individual também fica salvo em **Última importação**, no popup e na barra da Brokiva no WhatsApp, incluindo os motivos de pendência. Ele é recuperado ao renovar a sessão e não depende de um alerta transitório.
+
+O relatório informa quantidades por ID nas pendências visuais e classifica as falhas da leitura nativa (identidade, data, formato, conteúdo e itens ainda cifrados). Um item pode aparecer em mais de uma categoria: as quantidades de pendência não são somadas como mensagens únicas. A seção **Formatos pendentes — detalhes para suporte** identifica os tipos não suportados, sem incluir conteúdo ou telefone. Miniaturas, inclusive com URL HTTPS, continuam marcadas como prévia; localização não é contada como arquivo de mídia ausente. A confirmação de registros não equivale ao arquivamento dos arquivos originais. O alerta final direciona ao relatório persistente, sem afirmar que uma nova leitura resolverá toda pendência.
 
 Quebras de linha representadas por elementos `br` são preservadas antes de copiar o texto do balão. O teste de regressão cobre mensagens em múltiplas linhas.
 

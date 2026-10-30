@@ -14,7 +14,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const status = await chrome.runtime.sendMessage({ action: 'IMPORT_STATUS' });
     byId('importStatus').textContent = status.pendingMessages ? `${status.pendingMessages} mensagens aguardam confirmação no CRM. ${status.lastError || ''}` : 'Nenhum envio pendente nesta conta.';
     byId('retryImportsBtn').disabled = !connected || !status.pendingMessages;
-    if (status.report) byId('importReport').textContent = `${status.report.totalMessages} mensagens confirmadas.\n` + status.report.issues.map(item => `${item.name}: ${item.reason}`).join('\n');
+    byId('importReport').textContent = status.report ? `${status.report.totalMessages} mensagens confirmadas.\n` + status.report.issues.map(item => `${item.name}: ${item.reason}`).join('\n') : 'Nenhuma importação registrada nesta conta.';
+    if (status.report?.audit) {
+      byId('importReport').textContent += '\nUm item pode aparecer em mais de uma categoria; não some as pendências.';
+      const formats = Object.entries(status.report.audit.unsupportedTypes || {}).filter(([, count]) => count > 0);
+      if (formats.length) byId('importReport').textContent += '\nFormatos pendentes (suporte): ' + formats.map(([type, count]) => `${type}: ${count}`).join('; ');
+    }
   }
   byId('retryImportsBtn').addEventListener('click', async () => {
     byId('retryImportsBtn').disabled = true;

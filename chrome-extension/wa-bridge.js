@@ -254,6 +254,8 @@
     const messages = [];
     const jid = canonicalJid(targetJid);
     let unreadable = 0;
+    const unreadableReasons = {}, unsupportedTypes = Object.create(null);
+    const unread = reason => { unreadable++; unreadableReasons[reason] = (unreadableReasons[reason] || 0) + 1; };
     if (!jid || !Store?.Chat) return { jid, messages, unreadable };
     const candidates = getModels(Store.Chat).filter(chat => canonicalJid(chat.id) === jid || phoneJid(chat.id) === jid);
     if (candidates.length !== 1) return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
@@ -262,7 +264,8 @@
     for (const message of getModels(chat?.msgs)) {
       try {
         const type = message.type || message.__x_type || 'chat';
-        if (['e2e_notification', 'notification_template', 'gp2', 'ciphertext', 'revoked', 'protocol'].includes(type)) continue;
+        if (['e2e_notification', 'notification_template', 'gp2', 'revoked', 'protocol'].includes(type)) continue;
+        if (type === 'ciphertext') { unread('ENCRYPTED_MESSAGE'); continue; }
         const sourceKey = message.id || message.__x_id;
         const serialized = typeof sourceKey === 'string' ? sourceKey : sourceKey?._serialized || sourceKey?.$1 || '';
         const serializedMatch = serialized.match(/^(true|false)_([^_]+)_([^_]+)(?:_(?:in|out))?$/);
@@ -272,21 +275,22 @@
         const remotes = [sourceKey?.remote, serializedMatch?.[2]].filter(value => value != null);
         if (!rawId || typeof rawId !== 'string' || /[\s_]/.test(rawId) || !directions.length || new Set(directions).size !== 1 ||
             (serializedMatch && serializedMatch[3] !== rawId) ||
-            remotes.some(remote => ![chatJid, jid].includes(canonicalJid(remote)))) { unreadable++; continue; }
+            remotes.some(remote => ![chatJid, jid].includes(canonicalJid(remote)))) { unread('NATIVE_IDENTITY_INVALID'); continue; }
         const id = `${directions[0]}_${jid}_${rawId}`;
         const rawTime = Number(message.t || message.__x_t || 0);
         const time = rawTime < 1e12 ? rawTime * 1000 : rawTime;
-        if (!Number.isFinite(time) || time <= 0 || !Number.isFinite(new Date(time).getTime())) { unreadable++; continue; }
+        if (!Number.isFinite(time) || time <= 0 || !Number.isFinite(new Date(time).getTime())) { unread('NATIVE_DATE_INVALID'); continue; }
         const types = { chat: 'TEXT', audio: 'AUDIO', ptt: 'AUDIO', image: 'IMAGE', document: 'DOCUMENT', video: 'VIDEO', sticker: 'STICKER', location: 'LOCATION' };
         const messageType = types[type];
-        if (!messageType) { unreadable++; continue; }
+        if (!messageType) { unread('NATIVE_TYPE_UNSUPPORTED'); const safeType = /^[a-z_]{1,40}$/.test(type) ? type : 'unknown'; unsupportedTypes[safeType] = (unsupportedTypes[safeType] || 0) + 1; continue; }
         const content = message.body || message.__x_body || message.caption || message.__x_caption || '';
-        if (!content && messageType === 'TEXT') { unreadable++; continue; }
+        if (typeof content !== 'string') { unread('NATIVE_CONTENT_INVALID'); continue; }
+        if (!content && messageType === 'TEXT') { unread('NATIVE_EMPTY_TEXT'); continue; }
         // Blobs locais e URLs de arquivos cifrados não são anexos utilizáveis no CRM.
         messages.push({ id, fromMe: directions[0], content, messageType, timestamp: new Date(time).toISOString(), fileName: message.filename || message.__x_filename || undefined });
-      } catch { unreadable++; }
+      } catch { unread('NATIVE_READ_ERROR'); }
     }
-    return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
+    return { jid, messages, unreadable, unreadableReasons, unsupportedTypes, coverage: 'LOADED_CACHE_ONLY' };
   }
 
   // -------------------------------------------------------------

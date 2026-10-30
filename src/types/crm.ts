@@ -281,7 +281,7 @@ export interface LeadSource {
 }
 
 export type MessageSenderType = 'CONTACT' | 'USER' | 'SYSTEM' | 'AI_BOT';
-export type MessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'TEMPLATE' | 'VIDEO' | 'STICKER';
+export type MessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'DOCUMENT' | 'LOCATION' | 'TEMPLATE' | 'VIDEO' | 'STICKER' | 'CALL' | 'CONTACT_CARD';
 export type MessageStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
 
 export interface Attachment {

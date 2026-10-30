@@ -45,6 +45,20 @@ test('importação: recibo após commit, reentrega, texto intacto, concorrência
     assert.equal((await repo.readCRMState('tenant-a')).messages.length, 5);
     await Promise.all(['A', 'B', 'C'].map(id => send({ chats: [{ phone, messages: [message(id, `Concurrent ${id}`)] }] })));
     assert.equal((await repo.readCRMState('tenant-a')).messages.length, 8);
+    const special = [
+      { ...message('CALL', '📞 Registro de chamada no WhatsApp'), messageType: 'CALL' },
+      { ...message('CARD', 'BEGIN:VCARD\nVERSION:3.0\nFN:Synthetic\nTEL:+5511000000000\nEND:VCARD'), messageType: 'CONTACT_CARD' },
+    ];
+    const importedSpecial = await send({ chats: [{ phone, messages: special }] });
+    assert.equal(importedSpecial.status, 200); assert.equal(importedSpecial.body.receipt.messageIds.length, 2);
+    await send({ chats: [{ phone, messages: special }] });
+    state = await repo.readCRMState('tenant-a');
+    assert.equal(state.messages.length, 10);
+    assert.equal(state.messages.find(m => m.externalId === 'CARD').content, special[1].content);
+    assert.equal(state.messages.find(m => m.externalId === 'CARD').messageType, 'CONTACT_CARD');
+    assert.equal(state.messages.find(m => m.externalId === 'CALL').messageType, 'CALL');
+    const emptyCard = await send({ chats: [{ phone, messages: [{ ...message('EMPTY_CARD', ''), messageType: 'CONTACT_CARD' }] }] });
+    assert.equal(emptyCard.status, 400);
     const before = await repo.readCRMState('tenant-a');
     const invalid = await send({ chats: [{ phone, messages: [message('ROLLBACK', 'Must not persist')] }, { phone: '550012345678', name: 'Synthetic', messages: [message('WRONG', 'Must not persist')] }] });
     assert.equal(invalid.status, 400);

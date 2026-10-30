@@ -13,11 +13,11 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-tenant-id',
   'Access-Control-Expose-Headers': 'X-Brokiva-Import-Protocol, X-Brokiva-Import-Revision',
-  'X-Brokiva-Import-Protocol': '2', 'X-Brokiva-Import-Revision': '20261029.2',
+  'X-Brokiva-Import-Protocol': '2', 'X-Brokiva-Import-Revision': '20261029.3',
 };
 function json(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: CORS_HEADERS }); }
 export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: CORS_HEADERS }); }
-const messageTypes = ['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE', 'VIDEO', 'STICKER'] as const;
+const messageTypes = ['TEXT', 'IMAGE', 'AUDIO', 'DOCUMENT', 'LOCATION', 'TEMPLATE', 'VIDEO', 'STICKER', 'CALL', 'CONTACT_CARD'] as const;
 const MessageSchema = z.object({
   id: z.string().min(1).max(2048).optional(), content: z.string().default(''), fromMe: z.boolean().default(false),
   timestamp: z.string().or(z.number()).optional(), messageType: z.string().optional(),
@@ -87,8 +87,8 @@ export async function POST(req: NextRequest) {
           if (!messageTypes.includes(type as MessageType)) throw new InvalidImport(`Tipo de mensagem não suportado: ${type}.`);
           const messageType = type as MessageType;
           // Texto do usuário é preservado: números, horários, quebras de linha e nomes de arquivos são conteúdo válido.
-          const content = message.content || (messageType === 'TEXT' ? '' : `[${messageType}]`);
-          if (!content && !message.mediaUrl) throw new InvalidImport('Balão sem conteúdo legível. Releia a conversa.');
+          const content = message.content || (messageType === 'TEXT' || messageType === 'CONTACT_CARD' ? '' : `[${messageType}]`);
+          if (!content && (messageType === 'CONTACT_CARD' || !message.mediaUrl)) throw new InvalidImport('Balão sem conteúdo legível. Releia a conversa.');
           const mediaUrl = message.mediaUrl || undefined;
           if (mediaUrl && !/^(https:\/\/|data:image\/)/i.test(mediaUrl)) throw new InvalidImport('Mídia temporária ou URL inválida. Reabra o arquivo no WhatsApp antes de importar.');
           const id = old?.id || sourceId;

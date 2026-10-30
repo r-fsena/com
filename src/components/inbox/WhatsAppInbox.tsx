@@ -2440,8 +2440,15 @@ export function WhatsAppInbox() {
                         );
                       })()}
 
+                      {msg.messageType === 'CONTACT_CARD' && (
+                        <details className="rounded-lg border border-slate-200 bg-white/60 p-3">
+                          <summary className="cursor-pointer font-medium">👤 Cartão de contato compartilhado</summary>
+                          <pre className="mt-2 whitespace-pre-wrap break-words text-xs font-sans">{msg.content}</pre>
+                        </details>
+                      )}
                       {Boolean(
                         msg.content &&
+                        msg.messageType !== 'CONTACT_CARD' &&
                         !msg.content.startsWith('🎵 Mensagem de Voz') &&
                         !msg.content.startsWith('🎵 Mensagem de voz') &&
                         !(msg.messageType === 'DOCUMENT' && (msg.content.startsWith('📄') || msg.content === msg.attachments?.[0]?.fileName)) &&

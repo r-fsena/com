@@ -250,20 +250,37 @@
       return canonicalJid(window.require('WAWebLidMigrationUtils').toPn(value));
     } catch { return ''; }
   }
-  function extractChatMessages(targetJid) {
+  function findChat(jid) {
+    const candidates = getModels(Store?.Chat).filter(chat => canonicalJid(chat.id) === jid || phoneJid(chat.id) === jid);
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+  function rawSourceId(message) {
+    const key = message.id || message.__x_id;
+    const serialized = typeof key === 'string' ? key : key?._serialized || key?.$1 || '';
+    const id = key?.id || serialized.match(/^(?:true|false)_[^_]+_([^_]+)(?:_(?:in|out))?$/)?.[1] || serialized;
+    return typeof id === 'string' && id.length <= 256 && !id.includes('@') ? id : '';
+  }
+  function extractChatMessages(targetJid, pageModels = null) {
     const messages = [];
     const jid = canonicalJid(targetJid);
     let unreadable = 0;
-    const unreadableReasons = {}, unsupportedTypes = Object.create(null);
-    const unread = reason => { unreadable++; unreadableReasons[reason] = (unreadableReasons[reason] || 0) + 1; };
+    const unreadableReasons = {}, unsupportedTypes = Object.create(null), unreadableItems = [], sourceIds = new Set();
+    let currentId = '', currentType = '';
+    const unread = reason => {
+      unreadable++; unreadableReasons[reason] = (unreadableReasons[reason] || 0) + 1;
+      unreadableItems.push({ id: currentId || undefined, reason, type: currentType });
+    };
     if (!jid || !Store?.Chat) return { jid, messages, unreadable };
-    const candidates = getModels(Store.Chat).filter(chat => canonicalJid(chat.id) === jid || phoneJid(chat.id) === jid);
-    if (candidates.length !== 1) return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
-    const chat = candidates[0];
+    const chat = findChat(jid);
+    if (!chat) return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
     const chatJid = canonicalJid(chat.id);
-    for (const message of getModels(chat?.msgs)) {
+    for (const message of pageModels || getModels(chat.msgs)) {
+      currentId = ''; currentType = 'unknown';
       try {
+        currentId = rawSourceId(message);
+        if (currentId) sourceIds.add(currentId);
         const type = message.type || message.__x_type || 'chat';
+        currentType = /^[a-z_]{1,40}$/.test(type) ? type : 'unknown';
         if (['e2e_notification', 'notification_template', 'gp2', 'revoked', 'protocol'].includes(type)) continue;
         if (type === 'ciphertext') { unread('ENCRYPTED_MESSAGE'); continue; }
         const sourceKey = message.id || message.__x_id;
@@ -300,7 +317,28 @@
         messages.push({ id, fromMe: directions[0], content, messageType, timestamp: new Date(time).toISOString(), fileName: message.filename || message.__x_filename || undefined });
       } catch { unread('NATIVE_READ_ERROR'); }
     }
-    return { jid, messages, unreadable, unreadableReasons, unsupportedTypes, coverage: 'LOADED_CACHE_ONLY' };
+    return { jid, messages, unreadable, unreadableReasons, unreadableItems, sourceIds: [...sourceIds], unsupportedTypes, coverage: 'LOADED_CACHE_ONLY' };
+  }
+
+  const historyInFlight = new Set(), phoneHistoryRequests = new Map();
+  async function requestEarlierHistory(type, targetJid) {
+    const jid = canonicalJid(targetJid), chat = jid && findChat(jid);
+    if (!chat) return { success: false, jid, status: 'CHAT_UNAVAILABLE' };
+    if (historyInFlight.has(jid)) return { success: false, jid, status: 'BUSY' };
+    historyInFlight.add(jid);
+    try {
+      if (type === 'BROKIVA_LOAD_EARLIER_MESSAGES') {
+        const loaded = await window.require('WAWebChatLoadMessages').loadEarlierMsgs({ chat });
+        return { success: true, ...extractChatMessages(jid, Array.isArray(loaded) ? loaded : []), loadedCount: Array.isArray(loaded) ? loaded.length : 0 };
+      }
+      // Pedido de dados ao próprio dispositivo vinculado. Não envia mensagem ao contato.
+      if (chat.endOfHistoryTransferType !== 0) return { success: true, jid, status: 'NOT_AVAILABLE' };
+      if (phoneHistoryRequests.has(jid) && Date.now() - phoneHistoryRequests.get(jid) < 60000) return { success: true, jid, status: 'ALREADY_REQUESTED' };
+      await window.require('WAWebSendNonMessageDataRequest').sendPeerDataOperationRequest(3, { chatId: chat.id });
+      phoneHistoryRequests.set(jid, Date.now());
+      return { success: true, jid, status: 'REQUESTED' };
+    } catch { return { success: false, jid, status: 'MODULE_UNAVAILABLE' }; }
+    finally { historyInFlight.delete(jid); }
   }
 
   // -------------------------------------------------------------
@@ -309,6 +347,12 @@
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== location.origin || !event.data || !event.data.type) return;
     initStore();
+
+    if (['BROKIVA_LOAD_EARLIER_MESSAGES', 'BROKIVA_REQUEST_PHONE_HISTORY'].includes(event.data.type)) {
+      const { type, requestId, jid } = event.data;
+      void requestEarlierHistory(type, jid).then(data => window.postMessage({ ...data, type: `${type}_RESPONSE`, requestId }, '*'));
+      return;
+    }
 
     if (event.data.type === 'BROKIVA_PING_BRIDGE') {
       window.postMessage({

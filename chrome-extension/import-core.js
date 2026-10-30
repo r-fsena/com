@@ -95,5 +95,38 @@
     }
     return { complete: false, reason: 'STEP_LIMIT', steps: maxSteps };
   }
-  return { canonicalJid, messageIdentity, rawMessageIdentity, bytes, chunkChats, verifyReceipt, sameContext, walkHistory };
+  /** Busca páginas anteriores e, uma vez, pede dados ao telefone. Resposta vazia não prova início. */
+  async function recoverEarlierHistory(adapter, options = {}) {
+    const started = Date.now(), maxPages = options.maxPages || 200;
+    const maxDurationMs = options.maxDurationMs || 20 * 60 * 1000;
+    let phoneStatus = 'NOT_REQUESTED', idle = 0, added = 0;
+    for (let page = 0; page < maxPages; page++) {
+      if (adapter.cancelled()) return { complete: false, reason: 'CANCELLED', phoneStatus, pages: page, added };
+      if (Date.now() - started >= maxDurationMs) return { complete: false, reason: 'TIME_LIMIT', phoneStatus, pages: page, added };
+      adapter.assertChat();
+      const response = await adapter.load();
+      if (adapter.cancelled()) return { complete: false, reason: 'CANCELLED', phoneStatus, pages: page, added };
+      if (Date.now() - started >= maxDurationMs) return { complete: false, reason: 'TIME_LIMIT', phoneStatus, pages: page, added };
+      adapter.assertChat();
+      if (!response.success) return { complete: false, reason: response.timeout ? 'NATIVE_HISTORY_TIMEOUT' : 'NATIVE_HISTORY_UNAVAILABLE', phoneStatus, pages: page, added };
+      const fresh = await adapter.apply(response);
+      adapter.assertChat();
+      if (fresh > 0) {
+        added += fresh; idle = 0;
+        await adapter.checkpoint(); adapter.onProgress?.(page + 1); await adapter.wait();
+        continue;
+      }
+      if (phoneStatus === 'NOT_REQUESTED') {
+        const request = await adapter.requestPhone();
+        adapter.assertChat();
+        phoneStatus = request.status || 'UNAVAILABLE';
+        if (!request.success) return { complete: false, reason: 'PHONE_HISTORY_UNCONFIRMED', phoneStatus, pages: page + 1, added };
+        if (!['REQUESTED', 'ALREADY_REQUESTED'].includes(phoneStatus)) return { complete: false, reason: 'PHONE_HISTORY_UNAVAILABLE', phoneStatus, pages: page + 1, added };
+      }
+      if (++idle >= (options.phoneWaitAttempts || 15)) return { complete: false, reason: 'PHONE_HISTORY_WAIT', phoneStatus, pages: page + 1, added };
+      adapter.onProgress?.(page + 1); await adapter.wait();
+    }
+    return { complete: false, reason: 'STEP_LIMIT', phoneStatus, pages: maxPages, added };
+  }
+  return { canonicalJid, messageIdentity, rawMessageIdentity, bytes, chunkChats, verifyReceipt, sameContext, walkHistory, recoverEarlierHistory };
 });

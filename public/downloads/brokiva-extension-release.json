@@ -1,6 +1,6 @@
 {
-  "version": "1.0.59",
-  "file": "brokiva-extension-v1.0.59.zip",
-  "sha256": "1ac0220b375e358cd6a0eb0fb64d440e2ab4bfcc65691dc6d28818e9fda4a1fa",
-  "sourceCommit": "0d4ecf16c3c7cb6a1cd965aa969c314e988dde49"
+  "version": "1.0.60",
+  "file": "brokiva-extension-v1.0.60.zip",
+  "sha256": "cc475ae7dc9b0db31c24beb4ac2901b749934b7d5a0fdc0b3f39f2ed42af1262",
+  "sourceCommit": "e0e1512f36229752883ccfe9d7908596a9b4989e"
 }

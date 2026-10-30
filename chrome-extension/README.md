@@ -1,6 +1,6 @@
 # Brokiva — extensão para WhatsApp Web
 
-Versão **1.0.59**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
+Versão **1.0.60**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
 
 ## Instalação e pareamento
 
@@ -29,7 +29,7 @@ O parâmetro `pairExtension=1` só é removido da URL depois que o serviço da e
 
 ## Compatibilidade com o formato atual do WhatsApp
 
-A versão 1.0.59 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
+A versão 1.0.60 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
 
 A ponte nativa prioriza as instâncias de `WAWebCollections`, sem confundir classes antigas com coleções carregadas. Aceita WIDs com `_serialized`, `$1` ou `user/server`, e usa somente o mapeamento local do WhatsApp para relacionar LID e telefone. Direções conflitantes, outro destinatário e datas inválidas são rejeitados. A confirmação nativa remove apenas a pendência do mesmo ID recuperado; não apaga pendências de outras mensagens nem comprova o início do histórico.
 
@@ -43,9 +43,17 @@ Quebras de linha representadas por elementos `br` são preservadas antes de copi
 
 O título vem prioritariamente de `conversation-info-header-chat-title`, excluindo controles injetados pela própria Brokiva. Isso impede que “Sincronizar Histórico” seja tratado como nome do cliente.
 
+## Histórico anterior ao que aparece na tela
+
+Depois da rolagem, a extensão tenta carregar páginas anteriores pelo `WAWebChatLoadMessages.loadEarlierMsgs({ chat })`, sempre no chat cujo telefone foi confirmado. Se não houver progresso, pode solicitar uma vez dados ao dispositivo vinculado por `WAWebSendNonMessageDataRequest.sendPeerDataOperationRequest(3, { chatId })`, somente quando o WhatsApp informa `endOfHistoryTransferType === 0`. O pedido é de sincronização de dados; não envia mensagem ao contato. Referências primárias: [paginação em Chat.fetchMessages](https://github.com/wwebjs/whatsapp-web.js/blob/main/src/structures/Chat.js) e [Client.syncHistory](https://github.com/wwebjs/whatsapp-web.js/blob/main/src/Client.js).
+
+As páginas têm sobreposição deduplicada, pausa entre consultas e checkpoint antes de avançar. A identidade continua sendo conferida após cada resposta. Há até 200 consultas nativas, orçamento de 20 minutos por conversa e reserva de tempo para a busca nativa após a rolagem. Um timeout encerra a espera sem iniciar outra operação concorrente; cancelamento não publica a página que chegou depois. O pedido ao dispositivo não é repetido continuamente.
+
+Resposta vazia, recusa ou pedido aceito sem entrega não comprovam o início do histórico. O relatório diferencia mecanismo indisponível, pedido não confirmado e histórico solicitado ainda pendente. A disponibilidade dos dados antigos continua dependendo do WhatsApp. A contagem de falhas nativas usa IDs entre páginas; quando um item não tem ID, é apresentada como contagem mínima.
+
 ## Gravação e retomada
 
-As mensagens verificadas são salvas em checkpoints durante a leitura. Cada envio é dividido em lotes de até 150 mensagens/384 KiB, guardados em `chrome.storage.local` **antes** da chamada ao servidor. A fila é limitada a 6 MiB; se não houver espaço, a importação para e informa a pendência, sem sobrescrever a fila anterior.
+As mensagens verificadas são salvas em checkpoints durante a leitura. Uma correção de data, tipo ou conteúdo do mesmo ID também é salva no próximo checkpoint; mensagens inalteradas não precisam ser reenviadas ao final. Cada envio é dividido em lotes de até 150 mensagens/384 KiB, guardados em `chrome.storage.local` **antes** da chamada ao servidor. A fila é limitada a 6 MiB; se não houver espaço, a importação para e informa a pendência, sem sobrescrever a fila anterior.
 
 O CRM precisa confirmar, após o commit, o identificador do lote, a imobiliária e todos os IDs enviados. HTTP 200 sem esse recibo não conta como sucesso. Reentregas usam os mesmos IDs e atualizam o mesmo histórico. Queda de rede, timeout, 401 e 429 preservam a fila. A extensão tenta novamente por alarme enquanto o navegador está funcionando e a sessão é válida; novo pareamento também permite retomar os envios da mesma conta. Lotes de outra conta permanecem retidos e não são transmitidos à imobiliária atual.
 

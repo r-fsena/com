@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.59';
+    let extVersion = '1.0.60';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.59';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.60';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -1492,6 +1492,24 @@ ${isDeveloperMode ? `
       nativeUnreadable: native.unreadable || 0, nativeReasons: native.unreadableReasons || {}, unsupportedTypes: native.unsupportedTypes || {},
     };
   }
+  function collectNativeEvidence(evidence, response) {
+    for (const message of response.messages || []) evidence.items.delete(sourceMessageId(message.id));
+    const unidentified = {};
+    for (const item of response.unreadableItems || []) {
+      if (item.id) evidence.items.set(sourceMessageId(item.id), item);
+      else unidentified[item.reason] = (unidentified[item.reason] || 0) + 1;
+    }
+    for (const [reason, count] of Object.entries(unidentified)) evidence.unidentified[reason] = Math.max(evidence.unidentified[reason] || 0, count);
+  }
+  function summarizeNativeEvidence(evidence) {
+    const unreadableReasons = { ...evidence.unidentified }, unsupportedTypes = Object.create(null);
+    for (const item of evidence.items.values()) {
+      unreadableReasons[item.reason] = (unreadableReasons[item.reason] || 0) + 1;
+      if (item.reason === 'NATIVE_TYPE_UNSUPPORTED') unsupportedTypes[item.type] = (unsupportedTypes[item.type] || 0) + 1;
+    }
+    return { unreadable: Object.values(unreadableReasons).reduce((total, count) => total + count, 0), unreadableReasons, unsupportedTypes,
+      unidentified: Object.keys(evidence.unidentified).length > 0 };
+  }
 
   function harvestDomMessages(messagesMap, fallbackPhone = '', orderTracker = null, scrollDirection = 'INIT') {
     const main = document.querySelector('#main');
@@ -2194,6 +2212,8 @@ ${isDeveloperMode ? `
   }
 
   async function deepScrollChatHistory(_legacyLimit, onProgress = null, checkpoint = null, expectedIdentity = null) {
+    const deadline = Date.now() + 20 * 60 * 1000;
+    const domDeadline = deadline - 5 * 60 * 1000;
     const identity = expectedIdentity || activeChatIdentity();
     if (!identity.jid) throw new Error('WhatsApp ainda não disponibilizou a identidade das mensagens. Aguarde o carregamento e tente novamente.');
     const main = identity.main;
@@ -2216,7 +2236,7 @@ ${isDeveloperMode ? `
       // Desce com sobreposição antes de subir: saltar ao fundo pode pular páginas virtualizadas.
       for (let step = 0; step < 800; step++) {
         capture('DOWN');
-        if (cancelSyncRequested) break;
+        if (cancelSyncRequested || Date.now() >= domDeadline) break;
         if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 3) break;
         const previous = scroller.scrollTop;
         scroller.scrollTop += Math.max(50, scroller.clientHeight * 0.65);
@@ -2239,20 +2259,61 @@ ${isDeveloperMode ? `
           }
         }, wait,
         checkpoint: checkpoint ? () => checkpoint(messages) : undefined,
-      }, { onProgress });
+      }, { onProgress, maxDurationMs: Math.max(1, domDeadline - Date.now()) });
     }
     assertActiveChat(identity);
     // O Store é apenas complemento do que está carregado; nunca prova de histórico completo.
     const native = await queryNativeStore('BROKIVA_GET_CHAT_MESSAGES', { jid: identity.jid }, 2500);
     mergeNativeMessages(messages, native, identity, tracker);
+    const evidence = { items: new Map(), unidentified: {} };
+    if (native.success && native.jid === identity.jid) collectNativeEvidence(evidence, native);
+    if (checkpoint && native.success && native.jid === identity.jid) await checkpoint(messages);
+    if (!messages._coverage?.complete && !cancelSyncRequested && Date.now() < deadline) {
+      const badge = document.getElementById('sovereign-sync-badge');
+      if (badge) badge.innerText = 'Buscando histórico anterior no WhatsApp...';
+      const knownSources = new Set([...messages.keys()].map(sourceMessageId));
+      if (native.success && native.jid === identity.jid) (native.sourceIds || []).forEach(id => knownSources.add(id));
+      messages._historyRecovery = await BrokivaImport.recoverEarlierHistory({
+        cancelled: () => cancelSyncRequested,
+        assertChat: () => assertActiveChat(identity),
+        load: async () => {
+          const response = await queryNativeStore('BROKIVA_LOAD_EARLIER_MESSAGES', { jid: identity.jid }, Math.min(30000, Math.max(1, deadline - Date.now())));
+          if (response.success && response.jid === identity.jid) {
+            (response.sourceIds || []).forEach(id => identity.anchors.add(id));
+            (response.messages || []).forEach(message => identity.anchors.add(message.id));
+          }
+          return response;
+        },
+        apply: async response => {
+          if (response.jid !== identity.jid) throw new Error('O histórico anterior não corresponde à conversa selecionada.');
+          let fresh = 0;
+          for (const id of response.sourceIds || []) if (!knownSources.has(id)) { knownSources.add(id); fresh++; }
+          mergeNativeMessages(messages, response, identity, tracker);
+          collectNativeEvidence(evidence, response);
+          return fresh;
+        },
+        requestPhone: async () => {
+          const response = await queryNativeStore('BROKIVA_REQUEST_PHONE_HISTORY', { jid: identity.jid }, Math.min(30000, Math.max(1, deadline - Date.now())));
+          return response.timeout ? { success: false, status: 'TIMEOUT' } : response.jid === identity.jid ? response : { success: false, status: 'SCOPE_MISMATCH' };
+        },
+        checkpoint: checkpoint ? () => checkpoint(messages) : async () => {},
+        wait: () => new Promise(resolve => setTimeout(resolve, 2000)),
+        onProgress: () => {
+          const badge = document.getElementById('sovereign-sync-badge');
+          if (badge) badge.innerText = `Buscando histórico anterior: ${messages.size} registros lidos...`;
+        },
+      }, { maxDurationMs: Math.max(1, deadline - Date.now()) });
+      messages._coverage = { complete: false, reason: [...new Set([messages._coverage?.reason, messages._historyRecovery.reason].filter(Boolean))].join(', ') };
+    }
+    const nativeSummary = summarizeNativeEvidence(evidence);
     calibratePhysicalChatSequence(tracker.orderedKeys, messages);
     messages._orderedKeys = tracker.orderedKeys;
     messages._identity = identity;
-    messages._audit = buildImportAudit(messages, native);
+    messages._audit = { ...buildImportAudit(messages, nativeSummary), olderHistory: messages._historyRecovery, unidentifiedNativeItems: nativeSummary.unidentified };
     if (messages._audit.estimatedDates) { messages._issues ||= new Set(); messages._issues.add('TIMESTAMP_ESTIMATED'); }
     if (messages._audit.filesNotImported) { messages._issues ||= new Set(); messages._issues.add('MEDIA_FILE_UNAVAILABLE'); }
     if (messages._audit.previewOnly) { messages._issues ||= new Set(); messages._issues.add('MEDIA_PREVIEW_ONLY'); }
-    if (native.unreadable) { messages._issues ||= new Set(); messages._issues.add('NATIVE_UNREADABLE'); }
+    if (nativeSummary.unreadable) { messages._issues ||= new Set(); messages._issues.add('NATIVE_UNREADABLE'); }
     if (messages._issues?.size) {
       const reasons = new Set(messages._coverage?.complete ? [] : String(messages._coverage?.reason || '').split(', ').filter(Boolean));
       messages._issues.forEach(reason => reasons.add(reason));
@@ -2401,10 +2462,15 @@ ${isDeveloperMode ? `
       TIME_LIMIT: 'O limite de tempo de leitura foi atingido. Releia a conversa para continuar a conferência.',
       STEP_LIMIT: 'O limite de etapas de leitura foi atingido.',
       CANCELLED: 'Leitura interrompida pelo usuário.',
+      NATIVE_HISTORY_TIMEOUT: 'A busca do histórico anterior não respondeu a tempo; a leitura continua parcial.',
+      NATIVE_HISTORY_UNAVAILABLE: 'O mecanismo de busca do histórico anterior não está disponível nesta sessão do WhatsApp.',
+      PHONE_HISTORY_UNAVAILABLE: 'O WhatsApp não disponibilizou o pedido de histórico adicional ao dispositivo vinculado.',
+      PHONE_HISTORY_UNCONFIRMED: 'O WhatsApp não confirmou o pedido de histórico ao dispositivo vinculado; a cobertura anterior permanece pendente.',
+      PHONE_HISTORY_WAIT: 'O histórico foi solicitado ao dispositivo vinculado, mas novas páginas não chegaram nesta tentativa. A cobertura anterior permanece pendente.',
       TIMESTAMP_ESTIMATED: counted(audit.estimatedDates, 'Algumas mensagens não têm data verificável e precisam ser relidas.', 'Mensagens sem data verificável, não enviadas'),
       MEDIA_FILE_UNAVAILABLE: counted(audit.filesNotImported, 'Há mídias cujo arquivo original não foi importado; somente o registro da mensagem foi salvo.', 'Mídias sem arquivo original importado (o registro pode estar salvo)'),
       MEDIA_PREVIEW_ONLY: counted(audit.previewOnly, 'Algumas imagens possuem apenas miniatura; o arquivo original não foi importado.', 'Imagens com apenas miniatura'),
-      NATIVE_UNREADABLE: audit.nativeUnreadable ? `Itens do WhatsApp não interpretados: ${audit.nativeUnreadable}${nativeDetails ? ` (${nativeDetails})` : ''}.` : 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
+      NATIVE_UNREADABLE: audit.nativeUnreadable ? `Itens do WhatsApp não interpretados: ${audit.unidentifiedNativeItems ? 'ao menos ' : ''}${audit.nativeUnreadable}${nativeDetails ? ` (${nativeDetails})` : ''}.` : 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
       UNREADABLE_MESSAGE: counted(audit.unreadableBubbles, 'Há balões sem conteúdo legível.', 'Balões sem conteúdo legível'),
       MESSAGE_ID_UNAVAILABLE: 'Há balões sem identificador verificável.',
       AUTHOR_UNCONFIRMED: counted(audit.unconfirmedAuthors, 'Há mensagens cuja autoria não pôde ser confirmada.', 'Mensagens sem autoria confirmada'),
@@ -2422,14 +2488,15 @@ ${isDeveloperMode ? `
     if (expectedRow?.jid && BrokivaImport.canonicalJid(expectedRow.jid) !== identity.jid) throw new Error('O contato aberto não corresponde ao item da lista.');
     if (!phone) throw new Error('Telefone da conversa não confirmado. Abra os dados do contato e tente novamente.');
     const base = { phone, name: identity.title, labels: [...new Set([...labels, ...(details.labels || [])])], ...(identity.jid.endsWith('@lid') ? { lid: identity.jid } : {}) };
-    const persisted = new Set();
+    const persisted = new Map();
     const confirmed = new Set();
-    const save = async (messages, final = false) => {
-      const readable = Array.from(messages.values()).filter(message => !message.timestampEstimated && (final || !persisted.has(message.id)));
+    const fingerprint = message => JSON.stringify([message.content, message.fromMe, message.timestamp, message.messageType, message.mediaUrl, message.fileName]);
+    const save = async messages => {
+      const readable = Array.from(messages.values()).filter(message => !message.timestampEstimated && persisted.get(message.id) !== fingerprint(message));
       if (!readable.length) return;
       const response = await dispatchSyncBatchChats([{ ...base, messages: readable }], context);
       (response.confirmedIds || []).forEach(id => confirmed.add(id));
-      if (response.queued) readable.forEach(message => persisted.add(message.id));
+      if (response.queued) readable.forEach(message => persisted.set(message.id, fingerprint(message)));
       if (!response.success) {
         const error = new Error(response.error || 'Envio pendente de confirmação.');
         error.importResponse = { ...response, confirmedMessages: confirmed.size };
@@ -2445,7 +2512,7 @@ ${isDeveloperMode ? `
       assertActiveChat(identity);
       const readableCount = Array.from(messages.values()).filter(message => !message.timestampEstimated).length;
       if (!readableCount) throw new Error('Nenhuma mensagem com ID e data verificável foi disponibilizada. Leitura pendente.');
-      await save(messages, true);
+      await save(messages);
       return { response: { success: true, confirmedMessages: confirmed.size }, chat: base, audit: messages._audit,
         coverage: { ...messages._coverage, reason: describeCoverage(messages._coverage, messages._audit) } };
     } catch (error) {

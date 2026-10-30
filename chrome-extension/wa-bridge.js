@@ -1,6 +1,6 @@
 /**
  * Brokiva — WA Native Bridge (Store & Memory Injection)
- * Permite extração em tempo constante O(1) de Contatos, Histórico de Mensagens e Etiquetas
+ * Permite leitura de Contatos, Histórico de Mensagens e Etiquetas
  * direto da memória interna do WhatsApp Web (WAWebCollections / Store / Webpack Modules).
  */
 (function() {
@@ -11,11 +11,24 @@
 
   let Store = null;
   let isReady = false;
+  const isCollection = value => Boolean(value && typeof value !== 'function' &&
+    (typeof value.getModelsArray === 'function' || Array.isArray(value.models) || Array.isArray(value._models)));
 
   // Busca e conecta aos módulos internos do WhatsApp Web
   function initStore() {
     try {
-      if (window.Store && window.Store.Chat) {
+      // Os módulos *Collection antigos podem exportar classes, sem os dados da sessão.
+      if (typeof window.require === 'function') {
+        try {
+          const collections = window.require('WAWebCollections');
+          if (isCollection(collections?.Chat)) {
+            Store = collections;
+            isReady = true;
+            return true;
+          }
+        } catch {}
+      }
+      if (isCollection(window.Store?.Chat)) {
         Store = window.Store;
         isReady = true;
         return true;
@@ -29,7 +42,7 @@
           const Msg = window.require('WAWebMsgCollection')?.MsgCollection;
           const Label = window.require('WAWebLabelCollection')?.LabelCollection;
 
-          if (Chat || Contact) {
+          if (isCollection(Chat)) {
             Store = {
               Chat: Chat || window.require('WAWebChatCollection'),
               Contact: Contact || window.require('WAWebContactCollection'),
@@ -81,7 +94,7 @@
             if (found.Chat && found.Contact) break;
           }
 
-          if (found.Chat || found.Contact) {
+          if (isCollection(found.Chat)) {
             Store = found;
             window.Store = found;
             isReady = true;
@@ -107,7 +120,7 @@
   setTimeout(() => clearInterval(initInterval), 60000); // 1 minuto de limite
 
   // -------------------------------------------------------------
-  // FUNÇÕES DE EXTRAÇÃO NATIVA EM O(1)
+  // FUNÇÕES DE EXTRAÇÃO NATIVA
   // -------------------------------------------------------------
 
   function getModels(collection) {
@@ -224,33 +237,54 @@
 
   // 4. Extração de Mensagens de um Chat Específico em Memória
   function canonicalJid(value) {
-    const match = String(value || '').match(/(\d+)@(c\.us|s\.whatsapp\.net|lid)/);
+    if (value && typeof value === 'object') value = value._serialized || value.$1 ||
+      (value.user && value.server ? `${value.user}@${value.server}` : '');
+    const match = String(value || '').match(/^(\d+)@(c\.us|s\.whatsapp\.net|lid)$/);
     return match ? `${match[1]}@${match[2] === 's.whatsapp.net' ? 'c.us' : match[2]}` : '';
+  }
+  function phoneJid(value) {
+    const jid = canonicalJid(value);
+    if (!jid.endsWith('@lid')) return jid;
+    try {
+      // Mapeamento local do próprio WhatsApp; nunca relaciona LID e telefone por nome.
+      return canonicalJid(window.require('WAWebLidMigrationUtils').toPn(value));
+    } catch { return ''; }
   }
   function extractChatMessages(targetJid) {
     const messages = [];
     const jid = canonicalJid(targetJid);
     let unreadable = 0;
     if (!jid || !Store?.Chat) return { jid, messages, unreadable };
-    const chat = getModels(Store.Chat).find(chat => canonicalJid(chat.id?._serialized || chat.id) === jid);
+    const candidates = getModels(Store.Chat).filter(chat => canonicalJid(chat.id) === jid || phoneJid(chat.id) === jid);
+    if (candidates.length !== 1) return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
+    const chat = candidates[0];
+    const chatJid = canonicalJid(chat.id);
     for (const message of getModels(chat?.msgs)) {
-      const type = message.type || message.__x_type || 'chat';
-      if (['e2e_notification', 'notification_template', 'gp2', 'ciphertext', 'revoked', 'protocol'].includes(type)) continue;
-      const sourceKey = message.id || message.__x_id;
-      const explicitDirection = [sourceKey?.fromMe, message.fromMe, message.__x_fromMe].find(value => typeof value === 'boolean');
-      const rawId = sourceKey?.id || (typeof sourceKey === 'string' ? sourceKey : '');
-      const id = sourceKey?._serialized || (typeof explicitDirection === 'boolean' && /^[a-f0-9]{16,128}$/i.test(rawId) ? `${explicitDirection}_${jid}_${rawId}` : rawId);
-      const idMatch = id.match(/^(true|false)_([^_]+)_(.+)$/);
-      const rawTime = Number(message.t || message.__x_t || 0);
-      const time = rawTime < 1e12 ? rawTime * 1000 : rawTime;
-      if (!idMatch || canonicalJid(idMatch[2]) !== jid || !Number.isFinite(time) || time <= 0) { unreadable++; continue; }
-      const types = { chat: 'TEXT', audio: 'AUDIO', ptt: 'AUDIO', image: 'IMAGE', document: 'DOCUMENT', video: 'VIDEO', sticker: 'STICKER', location: 'LOCATION' };
-      const messageType = types[type];
-      if (!messageType) { unreadable++; continue; }
-      const content = message.body || message.__x_body || message.caption || message.__x_caption || '';
-      if (!content && messageType === 'TEXT') { unreadable++; continue; }
-      // Blobs locais e URLs de arquivos cifrados não são anexos utilizáveis no CRM.
-      messages.push({ id, fromMe: idMatch[1] === 'true', content, messageType, timestamp: new Date(time).toISOString(), fileName: message.filename || message.__x_filename || undefined });
+      try {
+        const type = message.type || message.__x_type || 'chat';
+        if (['e2e_notification', 'notification_template', 'gp2', 'ciphertext', 'revoked', 'protocol'].includes(type)) continue;
+        const sourceKey = message.id || message.__x_id;
+        const serialized = typeof sourceKey === 'string' ? sourceKey : sourceKey?._serialized || sourceKey?.$1 || '';
+        const serializedMatch = serialized.match(/^(true|false)_([^_]+)_([^_]+)(?:_(?:in|out))?$/);
+        const directions = [sourceKey?.fromMe, message.fromMe, message.__x_fromMe,
+          ...(serializedMatch ? [serializedMatch[1] === 'true'] : [])].filter(value => typeof value === 'boolean');
+        const rawId = sourceKey?.id || serializedMatch?.[3] || (typeof sourceKey === 'string' && /^[a-f0-9]{16,128}$/i.test(sourceKey) ? sourceKey : '');
+        const remotes = [sourceKey?.remote, serializedMatch?.[2]].filter(value => value != null);
+        if (!rawId || typeof rawId !== 'string' || /[\s_]/.test(rawId) || !directions.length || new Set(directions).size !== 1 ||
+            (serializedMatch && serializedMatch[3] !== rawId) ||
+            remotes.some(remote => ![chatJid, jid].includes(canonicalJid(remote)))) { unreadable++; continue; }
+        const id = `${directions[0]}_${jid}_${rawId}`;
+        const rawTime = Number(message.t || message.__x_t || 0);
+        const time = rawTime < 1e12 ? rawTime * 1000 : rawTime;
+        if (!Number.isFinite(time) || time <= 0 || !Number.isFinite(new Date(time).getTime())) { unreadable++; continue; }
+        const types = { chat: 'TEXT', audio: 'AUDIO', ptt: 'AUDIO', image: 'IMAGE', document: 'DOCUMENT', video: 'VIDEO', sticker: 'STICKER', location: 'LOCATION' };
+        const messageType = types[type];
+        if (!messageType) { unreadable++; continue; }
+        const content = message.body || message.__x_body || message.caption || message.__x_caption || '';
+        if (!content && messageType === 'TEXT') { unreadable++; continue; }
+        // Blobs locais e URLs de arquivos cifrados não são anexos utilizáveis no CRM.
+        messages.push({ id, fromMe: directions[0], content, messageType, timestamp: new Date(time).toISOString(), fileName: message.filename || message.__x_filename || undefined });
+      } catch { unreadable++; }
     }
     return { jid, messages, unreadable, coverage: 'LOADED_CACHE_ONLY' };
   }
@@ -260,7 +294,7 @@
   // -------------------------------------------------------------
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== location.origin || !event.data || !event.data.type) return;
-    if (!isReady) initStore();
+    initStore();
 
     if (event.data.type === 'BROKIVA_PING_BRIDGE') {
       window.postMessage({

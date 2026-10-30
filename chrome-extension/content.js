@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.55';
+    let extVersion = '1.0.56';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.55';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.56';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome
@@ -1434,6 +1434,43 @@ ${isDeveloperMode ? `
     msgs.forEach((message, index) => { message.domOrder = index; });
   }
 
+  function sourceMessageId(id) { return String(id).replace(/^(?:true|false)_[^_]+_/, ''); }
+  function noteMessageIssue(messages, reason, id) {
+    messages._messageIssues ||= new Map();
+    const key = sourceMessageId(id);
+    const reasons = messages._messageIssues.get(key) || new Set();
+    reasons.add(reason); messages._messageIssues.set(key, reasons);
+    messages._issues ||= new Set(); messages._issues.add(reason);
+  }
+  function resolveMessageIssues(messages, id) {
+    const reasons = messages._messageIssues?.get(sourceMessageId(id));
+    if (!reasons) return;
+    messages._messageIssues.delete(sourceMessageId(id));
+    for (const reason of reasons) {
+      if (![...messages._messageIssues.values()].some(pending => pending.has(reason))) messages._issues?.delete(reason);
+    }
+  }
+  function mergeNativeMessages(messages, native, identity, tracker) {
+    if (!native.success || native.jid !== identity.jid || !Array.isArray(native.messages)) return;
+    const bySource = new Map([...messages.values()].map(message => [sourceMessageId(message.id), message]));
+    for (const message of native.messages) {
+      const key = BrokivaImport.messageIdentity(message.id);
+      if (!key || key.jid !== identity.jid || key.fromMe !== message.fromMe || !Number.isFinite(Date.parse(message.timestamp))) continue;
+      const sourceId = sourceMessageId(message.id);
+      const previous = bySource.get(sourceId);
+      // Não publica outra autoria para uma mensagem já enviada nos checkpoints.
+      if (previous && previous.fromMe !== message.fromMe) {
+        noteMessageIssue(messages, 'MESSAGE_METADATA_CONFLICT', message.id); continue;
+      }
+      const old = messages.get(message.id);
+      const merged = { ...old, ...message, content: message.content || old?.content || `[${message.messageType}]`,
+        mediaUrl: message.mediaUrl || old?.mediaUrl, timestampEstimated: false, hasPrePlain: true };
+      messages.set(message.id, merged); bySource.set(sourceId, merged);
+      resolveMessageIssues(messages, message.id);
+      if (!tracker.seenKeys.has(message.id)) { tracker.seenKeys.add(message.id); tracker.orderedKeys.push(message.id); }
+    }
+  }
+
   function harvestDomMessages(messagesMap, fallbackPhone = '', orderTracker = null, scrollDirection = 'INIT') {
     const main = document.querySelector('#main');
     if (!main) return;
@@ -1708,7 +1745,7 @@ ${isDeveloperMode ? `
         if (!hasImg && !hasVideo && !hasDoc && !hasAudio) messageType = 'TEXT';
       }
       if (!content) {
-        if (isRealMsgKey) { messagesMap._issues ||= new Set(); messagesMap._issues.add('UNREADABLE_MESSAGE'); }
+        if (isRealMsgKey) noteMessageIssue(messagesMap, 'UNREADABLE_MESSAGE', rawDataId);
         return;
       }
       if (!isRealMsgKey) {
@@ -1890,8 +1927,9 @@ ${isDeveloperMode ? `
         const explicit = tailOut || checked ? true : tailIn ? false : null;
         identity = BrokivaImport.rawMessageIdentity(rawDataId, messagesMap._identity.jid, sender, messagesMap._identity.title, currentBrokerName, explicit);
       }
-      if (!identity) { messagesMap._issues ||= new Set(); messagesMap._issues.add(isRawMessageKey ? 'AUTHOR_UNCONFIRMED' : 'MESSAGE_ID_UNAVAILABLE'); return; }
+      if (!identity) { noteMessageIssue(messagesMap, isRawMessageKey ? 'AUTHOR_UNCONFIRMED' : 'MESSAGE_ID_UNAVAILABLE', rawDataId); return; }
       const uniqueMsgKey = identity.id;
+      resolveMessageIssues(messagesMap, rawDataId);
       const isTimestampEstimated = !isHardPrePlainDate;
       currentWalkingDateIso = msgTime;
       lastSeenValidTimeMs = Date.parse(msgTime) || lastSeenValidTimeMs;
@@ -1916,7 +1954,7 @@ ${isDeveloperMode ? `
         const existing = messagesMap.get(uniqueMsgKey);
         if (mediaUrl && !existing.mediaUrl) existing.mediaUrl = mediaUrl;
         if (fileName && !existing.fileName) existing.fileName = fileName;
-        if (cleanPrePlain && !existing.hasPrePlain) {
+        if (isHardPrePlainDate && !existing.hasPrePlain) {
           existing.timestamp = msgTime;
           existing.hasPrePlain = true;
           existing.timestampEstimated = false;
@@ -2183,16 +2221,7 @@ ${isDeveloperMode ? `
     assertActiveChat(identity);
     // O Store é apenas complemento do que está carregado; nunca prova de histórico completo.
     const native = await queryNativeStore('BROKIVA_GET_CHAT_MESSAGES', { jid: identity.jid }, 2500);
-    if (native.success && native.jid === identity.jid && Array.isArray(native.messages)) {
-      for (const message of native.messages) {
-        const key = BrokivaImport.messageIdentity(message.id);
-        if (!key || key.jid !== identity.jid || !Number.isFinite(Date.parse(message.timestamp))) continue;
-        const old = messages.get(message.id);
-        messages.set(message.id, { ...old, ...message, content: message.content || old?.content || `[${message.messageType}]`,
-          mediaUrl: message.mediaUrl || old?.mediaUrl, timestampEstimated: false, hasPrePlain: true });
-        if (!tracker.seenKeys.has(message.id)) { tracker.seenKeys.add(message.id); tracker.orderedKeys.push(message.id); }
-      }
-    }
+    mergeNativeMessages(messages, native, identity, tracker);
     calibratePhysicalChatSequence(tracker.orderedKeys, messages);
     messages._orderedKeys = tracker.orderedKeys;
     messages._identity = identity;
@@ -2200,7 +2229,11 @@ ${isDeveloperMode ? `
     if (Array.from(messages.values()).some(message => message.messageType !== 'TEXT' && !message.mediaUrl)) { messages._issues ||= new Set(); messages._issues.add('MEDIA_FILE_UNAVAILABLE'); }
     if (Array.from(messages.values()).some(message => message.mediaIsPreview)) { messages._issues ||= new Set(); messages._issues.add('MEDIA_PREVIEW_ONLY'); }
     if (native.unreadable) { messages._issues ||= new Set(); messages._issues.add('NATIVE_UNREADABLE'); }
-    if (messages._issues?.size) messages._coverage = { complete: false, reason: Array.from(messages._issues).join(', ') };
+    if (messages._issues?.size) {
+      const reasons = new Set(messages._coverage?.complete ? [] : String(messages._coverage?.reason || '').split(', ').filter(Boolean));
+      messages._issues.forEach(reason => reasons.add(reason));
+      messages._coverage = { complete: false, reason: [...reasons].join(', ') };
+    }
     return messages;
   }
 
@@ -2339,12 +2372,13 @@ ${isDeveloperMode ? `
       STEP_LIMIT: 'O limite de etapas de leitura foi atingido.',
       CANCELLED: 'Leitura interrompida pelo usuário.',
       TIMESTAMP_ESTIMATED: 'Algumas mensagens não têm data verificável e precisam ser relidas.',
-      MEDIA_FILE_UNAVAILABLE: 'Há arquivos de mídia indisponíveis; somente o registro da mensagem foi salvo.',
+      MEDIA_FILE_UNAVAILABLE: 'Há mídias cujo arquivo original não foi importado; somente o registro da mensagem foi salvo.',
       MEDIA_PREVIEW_ONLY: 'Algumas imagens possuem apenas miniatura; o arquivo original não foi importado.',
       NATIVE_UNREADABLE: 'O WhatsApp disponibilizou itens que não puderam ser interpretados.',
       UNREADABLE_MESSAGE: 'Há balões sem conteúdo legível.',
       MESSAGE_ID_UNAVAILABLE: 'Há balões sem identificador verificável.',
       AUTHOR_UNCONFIRMED: 'Há mensagens cuja autoria não pôde ser confirmada.',
+      MESSAGE_METADATA_CONFLICT: 'A autoria divergiu entre as fontes; essa mensagem precisa de conferência.',
     };
     return String(coverage?.reason || 'UNCONFIRMED_BOUNDARY').split(', ').map(reason => reasons[reason] || 'Uma parte do histórico precisa ser conferida.').join(' ');
   }

@@ -18,16 +18,14 @@ test('catálogo master exige sessão global e não aceita sessão limitada da ex
   assert.equal(reads, 0);
 });
 
-test('catálogo usa cadastro PostgreSQL, IDs canônicos e todos os status sem expor credenciais', async () => {
+test('catálogo lê PostgreSQL sem tabela auxiliar, inclui todos os status e não expõe credenciais', async () => {
   const pg = new PGlite();
   try {
     await pg.exec(`CREATE TABLE tenants(id uuid PRIMARY KEY,name text NOT NULL,slug text NOT NULL UNIQUE,document_cnpj text,logo_url text,primary_color text,timezone text,status text,business_hours jsonb,asaas_api_key text,ai_config jsonb);
-      CREATE TABLE tenant_settings(tenant_id uuid PRIMARY KEY,sla_first_response_minutes integer,sla_inactivity_hours integer,auto_assign_rule text,ai_copilot_enabled boolean,require_human_approval_for_ai boolean);
       INSERT INTO tenants VALUES
       ('00000000-0000-0000-0000-000000000001','Ambiente Teste Rafael Sena','ambiente-teste-rafael-sena','','','#000000','America/Sao_Paulo','ACTIVE',NULL,'secret-not-for-catalog','{"apiKey":"private-ai-key"}'),
       ('00000000-0000-0000-0000-000000000002','Vanguard','1790857269847','','',NULL,NULL,'ACTIVE',NULL,NULL,NULL),
-      ('00000000-0000-0000-0000-000000000003','Suspended','suspended','','',NULL,NULL,'SUSPENDED',NULL,NULL,NULL);
-      INSERT INTO tenant_settings VALUES ('00000000-0000-0000-0000-000000000001',5,12,'ROUND_ROBIN',true,false);`);
+      ('00000000-0000-0000-0000-000000000003','Suspended','suspended','','',NULL,NULL,'SUSPENDED',NULL,NULL,NULL);`);
     const h = harness();
     h.mocks['@/db'].db = drizzle(pg, { schema: h.load('src/db/schema.ts') });
     const auth = h.load('src/lib/api-auth.ts');
@@ -36,7 +34,7 @@ test('catálogo usa cadastro PostgreSQL, IDs canônicos e todos os status sem ex
     const data = await result.json();
     assert.equal(data.tenants.length, 3);
     const target = data.tenants.find(tenant => tenant.slug === 'ambiente-teste-rafael-sena');
-    assert.equal(target.id, 'tenant-ambiente-teste-rafael-sena'); assert.equal(target.settings.slaFirstResponseMinutes, 5);
+    assert.equal(target.id, 'tenant-ambiente-teste-rafael-sena'); assert.equal(target.settings, undefined);
     assert.equal(data.tenants.find(tenant => tenant.slug === '1790857269847').id, 'tenant-1790857269847');
     assert.equal(data.tenants.find(tenant => tenant.slug === 'suspended').status, 'SUSPENDED');
     assert.equal(JSON.stringify(data).includes('secret-not-for-catalog'), false); assert.equal(JSON.stringify(data).includes('private-ai-key'), false);

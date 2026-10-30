@@ -74,7 +74,7 @@ A fila retoma envios após falha/reinício, dentro da mesma conta e com sessão 
 
 ## Catálogo do Portal Master
 
-O Portal Master consulta `GET /api/v1/master/tenants` após autenticar o administrador global. A lista vem de `tenants`/`tenant_settings` no PostgreSQL, inclui todos os status e usa `tenant-<slug>`, igual ao contexto autenticado e aos snapshots do CRM. O endpoint rejeita usuários comuns e sessões limitadas da extensão; não retorna chaves Asaas, configurações de IA ou tokens.
+O Portal Master consulta `GET /api/v1/master/tenants` após autenticar o administrador global. A lista vem de `tenants` no PostgreSQL, inclui todos os status e usa `tenant-<slug>`, igual ao contexto autenticado e aos snapshots do CRM. O endpoint rejeita usuários comuns e sessões limitadas da extensão; não retorna chaves Asaas, configurações de IA ou tokens.
 
 O catálogo substitui a lista de identidades armazenada no navegador. A reconciliação usa o slug para preservar preferências locais da mesma imobiliária, sem confundir o ID legado de Teste Rafael com Vanguard. O botão **Atualizar lista** repete a consulta; falhas são exibidas em vez de um falso catálogo vazio. A seleção existente é reconciliada pelo cadastro, sem migrar ou fundir contatos/conversas.
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { asc, eq } from 'drizzle-orm';
+import { asc } from 'drizzle-orm';
 import { db } from '@/db';
-import { tenants, tenantSettings } from '@/db/schema';
+import { tenants } from '@/db/schema';
 import { validateApiSession } from '@/lib/api-auth';
 import type { TenantCatalogEntry } from '@/lib/tenant-catalog';
 
@@ -16,18 +16,12 @@ export async function GET(req: NextRequest) {
       name: tenants.name, slug: tenants.slug, documentCnpj: tenants.documentCnpj,
       logoUrl: tenants.logoUrl, primaryColor: tenants.primaryColor, timezone: tenants.timezone,
       status: tenants.status, businessHours: tenants.businessHours,
-      slaFirstResponseMinutes: tenantSettings.slaFirstResponseMinutes,
-      slaInactivityHours: tenantSettings.slaInactivityHours, autoAssignRule: tenantSettings.autoAssignRule,
-      aiCopilotEnabled: tenantSettings.aiCopilotEnabled, requireHumanApprovalForAI: tenantSettings.requireHumanApprovalForAI,
-    }).from(tenants).leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id)).orderBy(asc(tenants.name));
+    }).from(tenants).orderBy(asc(tenants.name));
     const catalog: TenantCatalogEntry[] = rows.map(row => ({
       id: `tenant-${row.slug}`, name: row.name, slug: row.slug, documentCnpj: row.documentCnpj,
       logoUrl: row.logoUrl || undefined, primaryColor: row.primaryColor || '#3742AC', timezone: row.timezone || 'America/Sao_Paulo',
       status: ['ACTIVE', 'TRIAL', 'SUSPENDED', 'INACTIVE'].includes(row.status || '') ? row.status as TenantCatalogEntry['status'] : 'INACTIVE',
       businessHours: row.businessHours as TenantCatalogEntry['businessHours'] || { start: '08:30', end: '19:00', workDays: [1, 2, 3, 4, 5, 6] },
-      settings: { slaFirstResponseMinutes: row.slaFirstResponseMinutes ?? 15, slaInactivityHours: row.slaInactivityHours ?? 24,
-        autoAssignRule: ['ROUND_ROBIN', 'UNASSIGNED_QUEUE', 'BY_REGION'].includes(row.autoAssignRule || '') ? row.autoAssignRule as TenantCatalogEntry['settings']['autoAssignRule'] : 'ROUND_ROBIN',
-        aiCopilotEnabled: row.aiCopilotEnabled ?? true, requireHumanApprovalForAI: row.requireHumanApprovalForAI ?? true },
     }));
     return NextResponse.json({ success: true, tenants: catalog }, { headers: { 'Cache-Control': 'no-store' } });
   } catch {

@@ -1,13 +1,21 @@
 # Brokiva — extensão para WhatsApp Web
 
-Versão **1.0.56**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
+Versão **1.0.57**. Importa mensagens disponibilizadas pelo WhatsApp Web para a imobiliária pareada no CRM. A leitura exige o WhatsApp Web aberto; não substitui uma conexão de servidor para receber com o navegador fechado.
 
 ## Instalação e pareamento
 
 1. Publique primeiro o backend com o protocolo de recibos de importação 2. `OPTIONS /api/v1/sync/extension-history` deve retornar `X-Brokiva-Import-Protocol: 2`.
 2. Em `chrome://extensions`, ative o modo de desenvolvedor e carregue esta pasta. Se já estiver instalada, recarregue a Brokiva.
-3. Recarregue também a aba do WhatsApp Web para carregar o coletor novo.
+3. Recarregue também o WhatsApp Web e as abas do CRM já abertas para carregar os scripts novos.
 4. No popup, clique em **Entrar e parear no CRM**, autentique-se e confira a imobiliária e o corretor. A sessão dura 15 minutos e a aba autenticada do CRM a renova. Trocar de imobiliária exige pareamento explícito.
+
+## Atualização e renovação da sessão
+
+Ao recarregar uma extensão descompactada, o Chrome trata a operação como atualização ([documentação do runtime](https://developer.chrome.com/docs/extensions/reference/api/runtime)). As abas antigas do CRM precisam ser recarregadas. Se o contexto da extensão for invalidado, a ponte encerra temporizadores/listeners, aborta consultas em andamento e mostra **Recarregar CRM**, preservando os envios pendentes. A ponte antiga não continua tentando chamar APIs invalidadas.
+
+A atualização mantém a identidade da conta/imobiliária e a fila mesmo se o token expirou. Com uma aba autenticada do CRM visível na mesma identidade, a renovação pode retomar sem depender do marcador `isPaired` removido na expiração. **Sair** da extensão remove essa identidade e exige pareamento explícito. Outra conta ou imobiliária não toma o lugar da conexão automaticamente.
+
+O parâmetro `pairExtension=1` só é removido da URL depois que o serviço da extensão confirma o pareamento. Falha na confirmação mantém a solicitação para nova tentativa. A renovação tem timeout, confere o contexto novamente após a emissão do token e não sobrepõe execuções periódicas.
 
 ## Leitura e importação
 
@@ -21,7 +29,7 @@ Versão **1.0.56**. Importa mensagens disponibilizadas pelo WhatsApp Web para a 
 
 ## Compatibilidade com o formato atual do WhatsApp
 
-A versão 1.0.56 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
+A versão 1.0.57 também lê mensagens cujo `data-id` contém somente o ID hexadecimal e cujo balão não usa as classes antigas `message-in/message-out`. O telefone é confirmado na gaveta de dados do contato, e a continuidade entre páginas é conferida pelos IDs que se sobrepõem durante a rolagem. A direção usa o remetente dos metadados e indicadores explícitos do balão; autoria ambígua fica pendente. O ID original é mantido na chave normalizada usada para deduplicar no CRM.
 
 A ponte nativa prioriza as instâncias de `WAWebCollections`, sem confundir classes antigas com coleções carregadas. Aceita WIDs com `_serialized`, `$1` ou `user/server`, e usa somente o mapeamento local do WhatsApp para relacionar LID e telefone. Direções conflitantes, outro destinatário e datas inválidas são rejeitados. A confirmação nativa remove apenas a pendência do mesmo ID recuperado; não apaga pendências de outras mensagens nem comprova o início do histórico.
 

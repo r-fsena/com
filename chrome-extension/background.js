@@ -42,13 +42,13 @@ async function pairFromCrm(data, sender) {
   return { success: true };
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['crmUrl', 'tenantId'], (res) => {
-    if (!res.crmUrl) {
-      chrome.storage.local.set({ crmUrl: DEFAULT_CRM_URL });
-    }
-    chrome.storage.local.get(['extensionSessionExpiresAt'], current => { if (!current.extensionSessionExpiresAt) unpair(); });
-  });
+chrome.runtime.onInstalled.addListener(async () => {
+  const current = await chrome.storage.local.get(['crmUrl', 'extensionSessionExpiresAt']);
+  if (!current.crmUrl) await chrome.storage.local.set({ crmUrl: DEFAULT_CRM_URL });
+  // Recarregar conta como atualização. Não apaga identidade/fila quando a sessão expirou.
+  if (!Number.isFinite(current.extensionSessionExpiresAt) || current.extensionSessionExpiresAt <= Date.now() / 1000) {
+    await chrome.storage.local.remove(['extensionSessionToken', 'extensionSessionExpiresAt', 'isPaired']);
+  }
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

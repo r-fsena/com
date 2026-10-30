@@ -70,10 +70,10 @@
   function injectSidebar() {
     if (document.getElementById('sovereign-crm-root')) return;
 
-    let extVersion = '1.0.56';
+    let extVersion = '1.0.57';
     try {
       if (typeof chrome !== 'undefined' && chrome?.runtime?.id) {
-        extVersion = chrome.runtime.getManifest()?.version || '1.0.56';
+        extVersion = chrome.runtime.getManifest()?.version || '1.0.57';
       }
     } catch (_) {
       // Contexto da extensão anterior invalidado após reload no Chrome

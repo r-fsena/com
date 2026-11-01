@@ -1,4 +1,4 @@
-import { writeCRMState, readCRMState } from '@/lib/crm-repository';
+import { mutateCRMState, mergeTenantState } from '@/lib/crm-repository';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession } from '@/lib/api-auth';
@@ -217,16 +217,23 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // Atualiza o estado em memória do servidor
-    await writeCRMState(tenantId, {
-      contacts,
-      conversations,
-      messages,
+    // Reimportar histórico não deve substituir etiquetas ou preferências comerciais atuais.
+    const committed = await mutateCRMState(tenantId, state => {
+      const mergedContacts = contacts.map(incoming => {
+        const existing = state.contacts.find(contact => contact.id === incoming.id);
+        if (!existing) return incoming;
+        return { ...existing, tags: Array.from(new Set([...(existing.tags || []), ...incoming.tags])),
+          whatsappLabels: Array.from(new Set([...(existing.whatsappLabels || []), ...(incoming.whatsappLabels || [])])),
+          lastSyncedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      });
+      return mergeTenantState(tenantId, state, { contacts: mergedContacts, conversations, messages });
     });
+    const importedIds = new Set(contacts.map(contact => contact.id));
+    const confirmedContacts = committed.contacts.filter(contact => importedIds.has(contact.id));
 
     return NextResponse.json({
       success: true,
-      contacts,
+      contacts: confirmedContacts,
       conversations,
       messages,
       count: contacts.length,

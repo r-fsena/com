@@ -124,8 +124,8 @@ export async function listCampaigns(tenantId: string, userId: string, offset = 0
     return { ...row, counts, messageCounts, replies: new Set(matching.filter(group => group.replies > 0).map(group => group.phone)).size };
   }),
     connections, members: context.members, ownPhone, capabilities: campaignCapabilities(state),
-    permissions: state.marketingPermissions || {}, contacts: state.contacts.map(({ id, name, phone, temperature, source, tags, targetRegions, maxPropertyValue, assignedUserId, isPersonal, hasOptedOut }) =>
-      ({ id, name, phone, temperature, source, tags, targetRegions, maxPropertyValue, assignedUserId, isPersonal, hasOptedOut })),
+    permissions: state.marketingPermissions || {}, contacts: state.contacts.map(({ id, name, phone, temperature, source, tags, whatsappLabels, targetRegions, maxPropertyValue, assignedUserId, isPersonal, hasOptedOut }) =>
+      ({ id, name, phone, temperature, source, tags, whatsappLabels, targetRegions, maxPropertyValue, assignedUserId, isPersonal, hasOptedOut })),
     pipelines: state.commercial?.pipelines || [], offset, nextOffset: campaigns.length === 100 ? offset + 100 : null };
 }
 export async function campaignRecipients(tenantId: string, id: string, offset = 0, status?: string) {

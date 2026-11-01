@@ -1,3 +1,4 @@
+import { resolveWhatsAppLabels } from '@/lib/contact-labels';
 import { writeCRMState, readCRMState } from '@/lib/crm-repository';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
@@ -61,8 +62,9 @@ async function runBackgroundSyncWorker(params: {
     const tagsMap = new Map<string, string>();
     if (Array.isArray(tagsRes)) {
       tagsRes.forEach((t: any) => {
-        if (t && (t.name || t.id)) {
-          tagsMap.set(String(t.id || t.name), t.name);
+        const name = t?.name || t?.labelName;
+        if (typeof name === 'string' && name.trim()) {
+          tagsMap.set(String(t.id ?? t.labelId ?? name), name);
         }
       });
     }
@@ -193,15 +195,8 @@ async function runBackgroundSyncWorker(params: {
 
       // Mapeamento de Tags / Etiquetas do WhatsApp Business
       const contactTags: string[] = ['WhatsApp Lead', 'Importação Z-API'];
-      const chatTags = chat.tags || chat.labels || [];
-      if (Array.isArray(chatTags)) {
-        chatTags.forEach((tid: any) => {
-          const tagName = tagsMap.get(String(tid)) || String(tid);
-          if (tagName && !contactTags.includes(tagName)) {
-            contactTags.push(`[Etiqueta] ${tagName}`);
-          }
-        });
-      }
+      const resolvedLabels = resolveWhatsAppLabels([chat.tags, chat.labels, chat.labelIds, chat.label], tagsMap);
+      contactTags.push(...resolvedLabels.map(label => `[Etiqueta] ${label}`));
 
       const timestampMs = parseWhatsAppTimestamp(chat.lastMessageTime);
       const interactionIso = timestampMs > 0 ? new Date(timestampMs).toISOString() : nowIso;
@@ -217,6 +212,7 @@ async function runBackgroundSyncWorker(params: {
         updatedAt: nowIso,
         lastClientInteractionAt: interactionIso,
         tags: contactTags,
+        whatsappLabels: resolvedLabels,
         source: 'WHATSAPP',
         temperature: 'WARM',
         aiPriorityScore: 80,

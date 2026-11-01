@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Contact, Deal } from '@/types/crm';
 import { isBusinessTime, ruleConfigSchema } from '@/lib/automations';
+import { campaignLabelKey, contactCampaignLabels } from '@/lib/contact-labels';
 
 const ids = z.array(z.string().min(1).max(200)).max(5000).default([]);
 export const campaignAttachmentSchema = z.object({ key: z.string().min(1).max(500), fileName: z.string().min(1).max(150),
@@ -73,7 +74,7 @@ export function campaignFilterMatches(config: CampaignConfig, contact: Contact, 
   const norm = (value: string) => value.trim().toLocaleLowerCase('pt-BR');
   return (!a.temperatures.length || a.temperatures.includes(contact.temperature)) && (!a.sources.length || a.sources.includes(contact.source)) &&
     (!a.stageIds.length || deals.some(deal => deal.contactId === contact.id && a.stageIds.includes(deal.stageId))) &&
-    (!a.tags.length || (contact.tags || []).some(tag => a.tags.includes(tag))) &&
+    (!a.tags.length || contactCampaignLabels(contact).some(label => a.tags.some(tag => campaignLabelKey(tag) === label.id))) &&
     (!a.regions.length || (contact.targetRegions || []).some(region => a.regions.some(target => norm(target) === norm(region)))) &&
     (!a.assignedUserIds.length || a.assignedUserIds.includes(contact.assignedUserId || '')) &&
     (a.minValue === undefined || (contact.maxPropertyValue ?? -1) >= a.minValue) &&

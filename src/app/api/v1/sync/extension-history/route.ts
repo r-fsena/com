@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
           id: contactId, tenantId, phone: `+${phone}`, name: existingContact?.name || chat.name || `Contato ${phone.slice(-4)}`,
           lid: lid || existingContact?.lid, avatarUrl: chat.avatarUrl || existingContact?.avatarUrl,
           tags: Array.from(new Set([...(existingContact?.tags || []), ...(chat.tags || []), ...(chat.labels || []), 'WhatsApp Web Sincronizado'])),
+          whatsappLabels: Array.from(new Set([...(existingContact?.whatsappLabels || []), ...(chat.labels || [])])),
           lastClientInteractionAt: latestIncoming, lastTeamInteractionAt: latestOutgoing, updatedAt: now };
         const replacePreview = latest && (!existingConv || Date.parse(latest.timestamp) >= Date.parse(existingConv.lastMessageAt));
         const conversation: Conversation = { assignedUserId: session!.userId, status: 'UNASSIGNED', unreadCount: 0, slaBreached: false, isPersonal: false,

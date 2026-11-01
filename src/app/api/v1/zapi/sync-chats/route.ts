@@ -1,3 +1,4 @@
+import { resolveWhatsAppLabels } from '@/lib/contact-labels';
 import { writeCRMState, readCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { webhookStore } from '@/lib/webhook-store';
@@ -136,8 +137,9 @@ async function handleSyncChats(req: NextRequest) {
     const labelsMap = new Map<string, string>();
     if (Array.isArray(labelsRes)) {
       labelsRes.forEach((lbl: any) => {
-        if (lbl && lbl.name) {
-          labelsMap.set(String(lbl.id || lbl.labelId || lbl.name), lbl.name);
+        const name = lbl?.name || lbl?.labelName;
+        if (typeof name === 'string' && name.trim()) {
+          labelsMap.set(String(lbl.id ?? lbl.labelId ?? name), name);
         }
       });
     }
@@ -289,14 +291,7 @@ async function handleSyncChats(req: NextRequest) {
         ? new Date(msgMs).toISOString()
         : new Date().toISOString();
 
-      const rawLabels = Array.isArray(c.labels)
-        ? c.labels
-        : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
-
-      const resolvedLabels = rawLabels.map((lbl: any) => {
-        const lblStr = String(lbl);
-        return labelsMap.get(lblStr) || lblStr;
-      }).filter(Boolean);
+      const resolvedLabels = resolveWhatsAppLabels([c.labels, c.labelIds, c.tags, c.label], labelsMap);
 
       const generatedTags = Array.from(new Set([
         'WhatsApp Sync',
@@ -344,14 +339,7 @@ async function handleSyncChats(req: NextRequest) {
 
       const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=64748b&color=fff`;
 
-      const rawLabels = Array.isArray(c.labels)
-        ? c.labels
-        : (Array.isArray(c.labelIds) ? c.labelIds : (c.label ? [c.label] : []));
-
-      const resolvedLabels = rawLabels.map((lbl: any) => {
-        const lblStr = String(lbl);
-        return labelsMap.get(lblStr) || lblStr;
-      }).filter(Boolean);
+      const resolvedLabels = resolveWhatsAppLabels([c.labels, c.labelIds, c.tags, c.label], labelsMap);
 
       const generatedTags = Array.from(new Set([
         'WhatsApp Agenda',

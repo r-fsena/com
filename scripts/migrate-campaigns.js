@@ -7,6 +7,7 @@ async function main() {
   const sql = postgres(process.env.DATABASE_URL, { max: 1 });
   try {
     await sql.unsafe(fs.readFileSync(path.join(__dirname, '../database/04_campaigns.sql'), 'utf8'));
+    await sql.unsafe(fs.readFileSync(path.join(__dirname, '../database/05_campaign_sequences.sql'), 'utf8'));
     console.log('Estrutura de campanhas criada. Registros existentes preservados. Nenhum envio iniciado.');
   } finally { await sql.end(); }
 }

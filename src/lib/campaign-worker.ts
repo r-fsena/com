@@ -15,6 +15,11 @@ const pending = ['PENDING', 'PROCESSING', 'WAITING_CHANNEL'];
 async function recipientGuard(tenantId: string, recipient: typeof crmCampaignRecipients.$inferSelect) {
   const [campaign] = await db.select().from(crmCampaigns).where(and(eq(crmCampaigns.id, recipient.campaignId), eq(crmCampaigns.tenantKey, tenantId))).limit(1);
   if (!campaign || ['CANCELLED', 'COMPLETED'].includes(campaign.status)) return 'A campanha foi encerrada.';
+  if (recipient.payload.sequenceId && (recipient.payload.partIndex || 0) > 0) {
+    const previous = await db.select().from(crmCampaignRecipients).where(and(eq(crmCampaignRecipients.tenantKey, tenantId), eq(crmCampaignRecipients.campaignId, recipient.campaignId),
+      sql`${crmCampaignRecipients.payload}->>'sequenceId' = ${recipient.payload.sequenceId}`, sql`(${crmCampaignRecipients.payload}->>'partIndex')::integer < ${recipient.payload.partIndex}`));
+    if (previous.length !== recipient.payload.partIndex || previous.some(row => !['ACCEPTED','DELIVERED','READ'].includes(row.status))) return 'Uma parte anterior não foi confirmada. A sequência foi interrompida.';
+  }
   if (recipient.payload.isTest) {
     if (campaign.status !== 'DRAFT' || campaign.payload.revision !== recipient.payload.sourceRevision) return 'O rascunho foi alterado ou iniciado depois do pedido de teste.';
     if (await campaignSelfPhone(recipient.payload.userId!) !== recipient.phone) return 'O telefone do perfil mudou depois do pedido de teste.';
@@ -30,7 +35,9 @@ async function recipientGuard(tenantId: string, recipient: typeof crmCampaignRec
   if (state.marketingPermissions?.[recipient.phone]?.recordedAt !== recipient.payload.permissionAt) return 'A autorização mudou depois da revisão desta campanha.';
   const started = Date.parse(campaign.payload.startedAt || '');
   if (Date.parse(contact.lastClientInteractionAt || '') > started) return 'O cliente iniciou um atendimento após a confirmação da campanha.';
-  if (Date.parse(contact.lastTeamInteractionAt || '') > started) return 'A equipe já atendeu este contato após a confirmação da campanha.';
+  if (Date.parse(contact.lastTeamInteractionAt || '') > started && !state.messages.some(message => message.campaignId === recipient.campaignId
+    && Date.parse(message.timestamp) === Date.parse(contact.lastTeamInteractionAt || '')
+    && state.conversations.some(conversation => conversation.id === message.conversationId && conversation.contactId === contact.id))) return 'A equipe já atendeu este contato após a confirmação da campanha.';
   return null;
 }
 export async function runCampaignWorker(tenantId: string, deadline = Date.now() + 45000) {
@@ -41,6 +48,12 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
     .where(and(eq(crmCampaignRecipients.tenantKey, tenantId), eq(crmCampaignRecipients.status, 'PROCESSING'), lte(crmCampaignRecipients.leaseUntil, now)));
   await db.update(crmCampaignRecipients).set({ status: 'UNKNOWN', leaseUntil: null, reason: 'O envio foi iniciado, mas a confirmação não chegou. Confira no WhatsApp antes de reenviar.', updatedAt: now })
     .where(and(eq(crmCampaignRecipients.tenantKey, tenantId), eq(crmCampaignRecipients.status, 'DISPATCHING'), lte(crmCampaignRecipients.leaseUntil, now)));
+  await db.update(crmCampaignRecipients).set({ status: 'SKIPPED', leaseUntil: null, reason: 'Uma mensagem anterior não foi confirmada ou a sequência foi interrompida. As próximas partes não serão enviadas.', updatedAt: now })
+    .where(and(eq(crmCampaignRecipients.tenantKey, tenantId), inArray(crmCampaignRecipients.status, pending), sql`EXISTS (
+      SELECT 1 FROM crm_campaign_recipients previous WHERE previous.tenant_key = ${tenantId}
+      AND previous.campaign_id = ${crmCampaignRecipients.campaignId} AND previous.payload->>'sequenceId' = ${crmCampaignRecipients.payload}->>'sequenceId'
+      AND (previous.payload->>'partIndex')::integer < (${crmCampaignRecipients.payload}->>'partIndex')::integer
+      AND previous.status IN ('UNKNOWN','FAILED','SKIPPED','CANCELLED'))`));
   await db.update(crmCampaignRecipients).set({ status: 'SKIPPED', leaseUntil: null, reason: 'A campanha expirou antes deste envio.', updatedAt: now })
     .where(and(eq(crmCampaignRecipients.tenantKey, tenantId), inArray(crmCampaignRecipients.status, pending), sql`${crmCampaignRecipients.campaignId} IN
       (SELECT c.id FROM crm_campaigns c WHERE c.tenant_key = ${tenantId} AND c.status IN ('RUNNING','SCHEDULED') AND (c.payload->>'expiresAt')::timestamptz <= ${now.toISOString()}::timestamptz)`));
@@ -58,6 +71,12 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
         const [recipient] = await tx.select().from(crmCampaignRecipients).where(and(eq(crmCampaignRecipients.tenantKey, tenantId), eq(crmCampaignRecipients.campaignId, campaign.id),
           inArray(crmCampaignRecipients.status, ['PENDING', 'WAITING_CHANNEL']),
           testOnly ? sql`(${crmCampaignRecipients.payload}->>'isTest')::boolean = true` : sql`(${crmCampaignRecipients.payload}->>'isTest')::boolean = false`,
+          sql`(coalesce((${crmCampaignRecipients.payload}->>'partIndex')::integer, 0) = 0 OR EXISTS (
+            SELECT 1 FROM crm_campaign_recipients previous WHERE previous.tenant_key = ${tenantId} AND previous.campaign_id = ${crmCampaignRecipients.campaignId}
+            AND previous.payload->>'sequenceId' = ${crmCampaignRecipients.payload}->>'sequenceId'
+            AND (previous.payload->>'partIndex')::integer = (${crmCampaignRecipients.payload}->>'partIndex')::integer - 1
+            AND previous.status IN ('ACCEPTED','DELIVERED','READ')
+            AND (previous.payload->>'acceptedAt')::timestamptz + make_interval(secs => coalesce((${crmCampaignRecipients.payload}->>'intervalSeconds')::integer, 30)) <= ${at.toISOString()}::timestamptz))`,
           or(eq(crmCampaignRecipients.status, 'PENDING'), lte(crmCampaignRecipients.updatedAt, new Date(at.getTime() - 60000)))))
           .orderBy(asc(crmCampaignRecipients.updatedAt), asc(crmCampaignRecipients.id)).limit(1).for('update');
         if (!recipient) continue;
@@ -69,7 +88,7 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
       return null;
     });
     if (!claimed) break;
-    let acquired = false, attempted = false, checkingMedia = false;
+    let acquired = false, attempted = false, checkingMedia = false, laneInstanceId = claimed.payload.instanceId;
     let externalId: string | undefined;
     let result: RecipientStatus = 'SKIPPED', reason = '';
     const owner = `campaign:${claimed.id}`;
@@ -78,6 +97,7 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
       if (exclusion) { reason = exclusion; }
       else {
         const credentials = await ZapiCredentialsService.resolveCredentials({ tenantId, instanceId: claimed.payload.instanceId });
+        laneInstanceId = credentials.instanceId;
         const client = new ZApiClient({ ...credentials, requestTimeoutMs: 8000 });
         const status = await client.getStatus();
         if (!status.success || !status.data?.connected) { result = 'WAITING_CHANNEL'; reason = 'A linha está indisponível. O servidor verificará novamente, sem repetir envios confirmados.'; }
@@ -89,7 +109,7 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
             mediaUrl = await campaignMediaUrl(tenantId, claimed.payload.attachment.key);
             checkingMedia = false;
           }
-          const lane = await acquireOutboundLane(tenantId, credentials.instanceId, claimed.phone, owner, claimed.payload.isTest ? 'TEST' : 'CAMPAIGN');
+          const lane = await acquireOutboundLane(tenantId, credentials.instanceId, claimed.phone, owner, claimed.payload.isTest ? 'TEST' : 'CAMPAIGN', new Date(), claimed.payload.sequenceId);
           acquired = lane.acquired;
           if (!acquired) { result = lane.reason.includes('24 horas') || lane.reason.includes('outro ambiente') ? 'SKIPPED' : 'WAITING_CHANNEL'; reason = lane.reason; }
           else {
@@ -97,16 +117,26 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
             if (secondCheck) reason = secondCheck;
             else {
               const dispatching = await db.transaction(async tx => {
+                // A reply/revocation committed before dispatch must win over this part.
+                const [snapshot] = await tx.select().from(crmTenantState).where(eq(crmTenantState.tenantKey, tenantId)).for('update');
                 const [campaign] = await tx.select().from(crmCampaigns).where(eq(crmCampaigns.id, claimed.campaignId)).for('update');
                 const permitted = claimed.payload.isTest ? campaign.status === 'DRAFT' && campaign.payload.revision === claimed.payload.sourceRevision : campaign.status === 'RUNNING' && campaignBusinessTime(campaign.payload.config);
                 if (!permitted) return false;
+                if (!claimed.payload.isTest) {
+                  const latest = snapshot?.state as PersistedCRMState | undefined;
+                  const contact = latest?.contacts.find(contact => contact.id === claimed.contactId);
+                  if (!contact || campaignPhone(contact.phone) !== claimed.phone || contact.isPersonal || contact.hasOptedOut
+                    || latest?.marketingPermissions?.[claimed.phone]?.recordedAt !== claimed.payload.permissionAt
+                    || latest?.marketingPermissions?.[claimed.phone]?.status !== 'GRANTED'
+                    || Date.parse(contact.lastClientInteractionAt || '') > Date.parse(campaign.payload.startedAt || '')) return false;
+                }
                 const [row] = await tx.update(crmCampaignRecipients).set({ status: 'DISPATCHING', payload: { ...claimed.payload, attemptedAt: new Date().toISOString() }, reason: 'Envio iniciado. Aguardando confirmação do provedor.', updatedAt: new Date() })
                   .where(and(eq(crmCampaignRecipients.id, claimed.id), eq(crmCampaignRecipients.status, 'PROCESSING'))).returning();
                 return !!row;
               });
               if (!dispatching) { result = 'PENDING'; reason = 'A campanha foi pausada ou alterada antes do envio.'; }
               else {
-                await markOutboundAttempt(tenantId, credentials.instanceId, claimed.phone, owner, !claimed.payload.isTest);
+                await markOutboundAttempt(tenantId, credentials.instanceId, claimed.phone, owner, !claimed.payload.isTest, claimed.payload.sequenceId);
                 attempted = true;
                 const sent = claimed.payload.attachment ? claimed.payload.attachment.mimeType === 'application/pdf'
                   ? await client.sendDocument(claimed.phone, mediaUrl!, claimed.payload.attachment.fileName, claimed.payload.message)
@@ -146,8 +176,8 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
       if (state && externalId) {
         const contact = state.contacts.find(contact => contact.id === claimed.contactId);
         if (!contact) return;
-        const at = current.payload.attemptedAt || updated.updatedAt.toISOString();
         const existingMessage = state.messages.find(message => (message.externalId || message.id) === externalId);
+        const at = existingMessage?.timestamp || current.payload.attemptedAt || updated.updatedAt.toISOString();
         const existing = state.conversations.find(conversation => conversation.id === existingMessage?.conversationId)
           || state.conversations.find(conversation => conversation.contactId === contact.id && conversation.instanceId === claimed.payload.instanceId);
         const conversationId = existing?.id || `conv-campaign-${crypto.randomUUID()}`;
@@ -165,7 +195,7 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
         await tx.update(crmTenantState).set({ state: next, updatedAt: updated.updatedAt }).where(eq(crmTenantState.tenantKey, tenantId));
       }
     });
-    if (acquired) await releaseOutboundLane(tenantId, claimed.payload.instanceId, claimed.phone, owner, attempted);
+    if (acquired) await releaseOutboundLane(tenantId, laneInstanceId, claimed.phone, owner, attempted);
   }
   // "Completed" means every attempt has a recorded outcome, not that every message was delivered.
   await db.update(crmCampaigns).set({ status: 'COMPLETED', updatedAt: new Date() }).where(and(eq(crmCampaigns.tenantKey, tenantId), inArray(crmCampaigns.status, ['RUNNING', 'SCHEDULED']),

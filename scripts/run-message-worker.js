@@ -16,7 +16,9 @@ async function main() {
       console.log(JSON.stringify({ at: new Date().toISOString(), status: response.status, success: result.success === true, completed: result.completed, failed: result.failed }));
     } catch { console.error('O processador não confirmou a execução. Confira a disponibilidade do servidor.'); }
     if (process.argv.includes('--once') || stopped) break;
-    const delay = Math.max(1000, 60000 - (Date.now() - startedAt));
+    // Poll due parts frequently; the database enforces the configured minimum interval.
+    // Requests never overlap. Slow requests may increase the effective interval.
+    const delay = Math.max(1000, 5000 - (Date.now() - startedAt));
     await new Promise(resolve => setTimeout(resolve, delay));
   } while (!stopped);
 }

@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { crmCampaigns, crmCampaignRecipients, crmCampaignReceipts, crmTenantState, tenants, whatsappInstances, users } from '@/db/schema';
 import { readCRMState, mutateCRMState, emptyCRMState, mergeTenantState, type PersistedCRMState } from '@/lib/crm-repository';
 import { automationEnvironment, AutomationError, workerIsHealthy } from '@/lib/automation-service';
-import { campaignConfigSchema, buildCampaignAudience, campaignExclusion, campaignPhone, renderCampaignMessage, campaignBusinessTime, type CampaignConfig, type CampaignPayload, type MarketingPermission, type RecipientPayload, type RecipientStatus } from '@/lib/campaigns';
+import { campaignConfigSchema, buildCampaignAudience, campaignExclusion, campaignPhone, renderCampaignMessage, renderCampaignParts, campaignParts, campaignSequenceStatus, campaignBusinessTime, type CampaignConfig, type CampaignPayload, type MarketingPermission, type RecipientPayload, type RecipientStatus } from '@/lib/campaigns';
 import { verifyCampaignMedia, campaignMediaUrl } from '@/lib/campaign-media';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { ZApiClient } from '@/lib/zapi-client';
@@ -61,7 +61,7 @@ async function audienceFor(tenantId: string, state: PersistedCRMState, config: C
   if (audience.total > 5000) throw new AutomationError('Selecione até 5.000 contatos por campanha. Use os filtros para reduzir o público.');
   for (const row of audience.rows.filter(row => row.eligible)) {
     const contact = state.contacts.find(contact => contact.id === row.id)!;
-    if (renderCampaignMessage(config.message, row.name, company, memberNames[contact.assignedUserId || '']).length > (config.attachment ? 1024 : 4096)) {
+    if (renderCampaignParts(config, row.name, company, memberNames[contact.assignedUserId || '']).some(part => part.message.length > (part.attachment ? 1024 : 4096))) {
       row.eligible = false; row.reason = 'A mensagem personalizada ficou longa demais. Encurte o texto.';
     }
   }
@@ -71,7 +71,7 @@ async function audienceFor(tenantId: string, state: PersistedCRMState, config: C
 function audienceHash(audience: ReturnType<typeof buildCampaignAudience>, config: CampaignConfig, state: PersistedCRMState, members: Record<string, string>, company: string) {
   return hash({ config, recipients: audience.rows.filter(row => row.eligible).map(row => {
     const contact = state.contacts.find(contact => contact.id === row.id)!;
-    return [row.id, row.phone, row.permissionAt, renderCampaignMessage(config.message, row.name, company, members[contact.assignedUserId || ''])];
+    return [row.id, row.phone, row.permissionAt, renderCampaignParts(config, row.name, company, members[contact.assignedUserId || ''])];
   }).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) });
 }
 export async function previewCampaign(tenantId: string, input: unknown) {
@@ -79,7 +79,8 @@ export async function previewCampaign(tenantId: string, input: unknown) {
   const [state, context] = await Promise.all([readCRMState(tenantId), campaignContext(tenantId)]);
   const audience = await audienceFor(tenantId, state, config, context.memberNames, db, context.company);
   return { audience, sample: audience.rows.filter(row => row.eligible).slice(0, 3).map(row => ({ name: row.name,
-    message: renderCampaignMessage(config.message, row.name, context.company, context.memberNames[state.contacts.find(contact => contact.id === row.id)?.assignedUserId || '']) })), capabilities: campaignCapabilities(state) };
+    message: renderCampaignMessage(config.message, row.name, context.company, context.memberNames[state.contacts.find(contact => contact.id === row.id)?.assignedUserId || '']),
+    parts: renderCampaignParts(config, row.name, context.company, context.memberNames[state.contacts.find(contact => contact.id === row.id)?.assignedUserId || '']) })), capabilities: campaignCapabilities(state) };
 }
 export async function setMarketingPermission(tenantId: string, userId: string, input: { contactId: string; granted: boolean; source: string; notes: string; confirmed: true; obtainedAt?: string; expectedRecordedAt?: string }) {
   await campaignContext(tenantId);
@@ -107,12 +108,21 @@ export async function listCampaigns(tenantId: string, userId: string, offset = 0
   const [state, context, connections, ownPhone, campaigns] = await Promise.all([readCRMState(tenantId), campaignContext(tenantId), campaignConnections(tenantId), campaignSelfPhone(userId),
     db.select().from(crmCampaigns).where(eq(crmCampaigns.tenantKey, tenantId)).orderBy(desc(crmCampaigns.createdAt), desc(crmCampaigns.id)).limit(100).offset(offset)]);
   const ids = campaigns.map(row => row.id);
-  const groups = ids.length ? await db.select({ campaignId: crmCampaignRecipients.campaignId, status: crmCampaignRecipients.status,
+  const groups = ids.length ? await db.select({ campaignId: crmCampaignRecipients.campaignId, phone: crmCampaignRecipients.phone, status: crmCampaignRecipients.status,
     count: sql<number>`count(*)::integer`, replies: sql<number>`count(${crmCampaignRecipients.repliedAt})::integer` }).from(crmCampaignRecipients)
     .where(and(eq(crmCampaignRecipients.tenantKey, tenantId), inArray(crmCampaignRecipients.campaignId, ids), sql`(${crmCampaignRecipients.payload}->>'isTest')::boolean = false`))
-    .groupBy(crmCampaignRecipients.campaignId, crmCampaignRecipients.status) : [];
-  return { campaigns: campaigns.map(row => ({ ...row, counts: Object.fromEntries(groups.filter(group => group.campaignId === row.id).map(group => [group.status, group.count])),
-    replies: groups.filter(group => group.campaignId === row.id).reduce((sum, group) => sum + group.replies, 0) })),
+    .groupBy(crmCampaignRecipients.campaignId, crmCampaignRecipients.phone, crmCampaignRecipients.status) : [];
+  return { campaigns: campaigns.map(row => {
+    const matching = groups.filter(group => group.campaignId === row.id), counts: Record<string, number> = {}, messageCounts: Record<string, number> = {};
+    const byPhone = new Map<string, string[]>();
+    for (const group of matching) byPhone.set(group.phone, [...(byPhone.get(group.phone) || []), group.status]);
+    for (const statuses of Array.from(byPhone.values())) {
+      const status = campaignSequenceStatus(statuses);
+      counts[status] = (counts[status] || 0) + 1;
+    }
+    for (const group of matching) messageCounts[group.status] = (messageCounts[group.status] || 0) + group.count;
+    return { ...row, counts, messageCounts, replies: new Set(matching.filter(group => group.replies > 0).map(group => group.phone)).size };
+  }),
     connections, members: context.members, ownPhone, capabilities: campaignCapabilities(state),
     permissions: state.marketingPermissions || {}, contacts: state.contacts.map(({ id, name, phone, temperature, source, tags, targetRegions, maxPropertyValue, assignedUserId, isPersonal, hasOptedOut }) =>
       ({ id, name, phone, temperature, source, tags, targetRegions, maxPropertyValue, assignedUserId, isPersonal, hasOptedOut })),
@@ -123,15 +133,27 @@ export async function campaignRecipients(tenantId: string, id: string, offset = 
   if (!campaign) throw new AutomationError('Campanha não encontrada.', 404);
   const where = and(eq(crmCampaignRecipients.tenantKey, tenantId), eq(crmCampaignRecipients.campaignId, id), status ? eq(crmCampaignRecipients.status, status) : undefined);
   const [total] = await db.select({ count: sql<number>`count(*)::integer` }).from(crmCampaignRecipients).where(where);
-  const rows = await db.select().from(crmCampaignRecipients).where(where).orderBy(asc(crmCampaignRecipients.createdAt), asc(crmCampaignRecipients.id)).limit(100).offset(offset);
-  return { campaign, recipients: rows, total: total.count, offset, nextOffset: offset + rows.length < total.count ? offset + rows.length : null };
+  const rows = await db.select().from(crmCampaignRecipients).where(where).orderBy(asc(crmCampaignRecipients.createdAt), asc(crmCampaignRecipients.phone),
+    sql`coalesce((${crmCampaignRecipients.payload}->>'partIndex')::integer, 0)`, asc(crmCampaignRecipients.id)).limit(100).offset(offset);
+  const sequences = Array.from(new Set(rows.map(row => row.payload.sequenceId).filter((id): id is string => !!id)));
+  const parts = sequences.length ? await db.select().from(crmCampaignRecipients).where(and(eq(crmCampaignRecipients.tenantKey, tenantId), eq(crmCampaignRecipients.campaignId, id),
+    inArray(sql<string>`${crmCampaignRecipients.payload}->>'sequenceId'`, sequences))) : [];
+  return { campaign, recipients: rows.map(row => {
+    const previous = parts.find(part => part.payload.sequenceId === row.payload.sequenceId && part.payload.partIndex === (row.payload.partIndex || 0) - 1);
+    const nextMessageAt = previous?.payload.acceptedAt && ['ACCEPTED','DELIVERED','READ'].includes(previous.status)
+      ? new Date(Date.parse(previous.payload.acceptedAt) + (row.payload.intervalSeconds || 30) * 1000).toISOString() : undefined;
+    return { ...row, nextMessageAt };
+  }), total: total.count, offset, nextOffset: offset + rows.length < total.count ? offset + rows.length : null };
 }
 export async function changeCampaign(tenantId: string, userId: string, input: any) {
   const context = await campaignContext(tenantId);
   if (input.operation === 'save') {
     const config = campaignConfigSchema.parse(input.config);
     if (config.instanceId) await validateConnection(tenantId, config.instanceId);
-    if (config.attachment) config.attachment = await verifyCampaignMedia(tenantId, config.attachment);
+    if (config.parts) {
+      for (const part of config.parts) if (part.attachment) part.attachment = await verifyCampaignMedia(tenantId, part.attachment);
+      config.message = config.parts[0].message; config.attachment = config.parts[0].attachment;
+    } else if (config.attachment) config.attachment = await verifyCampaignMedia(tenantId, config.attachment);
     return db.transaction(async tx => {
       if (input.id && !Number.isInteger(input.revision)) throw new AutomationError('Informe a revisão atual do rascunho.', 409);
       const old = input.id ? await ownedCampaign(tx, tenantId, input.id, input.revision) : undefined;
@@ -151,7 +173,7 @@ export async function changeCampaign(tenantId: string, userId: string, input: an
     if (input.operation === 'start') {
       requireDelivery(await readCRMState(tenantId));
       await validateConnection(tenantId, candidate.payload.config.instanceId, true);
-      if (candidate.payload.config.attachment) await verifyCampaignMedia(tenantId, candidate.payload.config.attachment);
+      for (const part of campaignParts(candidate.payload.config)) if (part.attachment) await verifyCampaignMedia(tenantId, part.attachment);
     }
     return db.transaction(async tx => {
       const state = await lockedState(tx, tenantId);
@@ -166,7 +188,8 @@ export async function changeCampaign(tenantId: string, userId: string, input: an
         payload.audit.push({ operation: 'simulate', userId, at: now.toISOString(), revision: payload.revision });
         const [row] = await tx.update(crmCampaigns).set({ payload, updatedAt: now }).where(eq(crmCampaigns.id, campaign.id)).returning();
         return { campaign: row, simulation: { audience, sample: audience.rows.filter(row => row.eligible).slice(0, 3).map(row => ({ name: row.name,
-          message: renderCampaignMessage(config.message, row.name, context.company, context.memberNames[state.contacts.find(contact => contact.id === row.id)?.assignedUserId || '']) })),
+          message: renderCampaignMessage(config.message, row.name, context.company, context.memberNames[state.contacts.find(contact => contact.id === row.id)?.assignedUserId || '']),
+    parts: renderCampaignParts(config, row.name, context.company, context.memberNames[state.contacts.find(contact => contact.id === row.id)?.assignedUserId || '']) })),
           warning: 'Nenhuma mensagem foi enviada. A simulação verifica o público e a personalização.' } };
       }
       requireDelivery(state);
@@ -178,12 +201,20 @@ export async function changeCampaign(tenantId: string, userId: string, input: an
       payload.startedAt = now.toISOString(); payload.expiresAt = new Date(Math.max(now.getTime(), startsAt.getTime()) + config.schedule.expiresAfterHours * 3600_000).toISOString();
       payload.selectionSummary = { found: audience.total, selected: audience.eligible, excluded: audience.rows.filter(row => !row.eligible).map(({ id, name, reason }) => ({ id, name, reason })) };
       payload.audit.push({ operation: 'start', userId, at: now.toISOString(), revision: payload.revision });
+      const frozen: typeof crmCampaignRecipients.$inferInsert[] = [];
       for (const target of audience.rows.filter(row => row.eligible)) {
         const contact = state.contacts.find(contact => contact.id === target.id)!;
-        await tx.insert(crmCampaignRecipients).values({ id: crypto.randomUUID(), tenantKey: tenantId, campaignId: campaign.id, contactId: target.id,
-          phone: target.phone!, targetKey: `recipient:${target.phone}`, payload: { name: target.name, message: renderCampaignMessage(config.message, target.name, context.company, context.memberNames[contact.assignedUserId || '']),
-            permissionAt: target.permissionAt, instanceId: config.instanceId, attachment: config.attachment, company: context.company, isTest: false }, reason: 'Aguardando processamento no servidor.' });
+        const sequenceId = crypto.randomUUID();
+        const parts = renderCampaignParts(config, target.name, context.company, context.memberNames[contact.assignedUserId || '']);
+        for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+          const part = parts[partIndex];
+          frozen.push({ id: crypto.randomUUID(), tenantKey: tenantId, campaignId: campaign.id, contactId: target.id,
+            phone: target.phone!, targetKey: `recipient:${target.phone}:${partIndex}`, payload: { name: target.name, ...part,
+              sequenceId, partIndex, partCount: parts.length, intervalSeconds: config.intervalSeconds || 30,
+              permissionAt: target.permissionAt, instanceId: config.instanceId, company: context.company, isTest: false }, reason: partIndex ? 'Aguardando a mensagem anterior e o intervalo configurado.' : 'Aguardando processamento no servidor.' });
+        }
       }
+      for (let offset = 0; offset < frozen.length; offset += 500) await tx.insert(crmCampaignRecipients).values(frozen.slice(offset, offset + 500));
       const [row] = await tx.update(crmCampaigns).set({ payload, status: startsAt > now ? 'SCHEDULED' : 'RUNNING', scheduledAt: startsAt, updatedAt: now }).where(eq(crmCampaigns.id, campaign.id)).returning();
       return { campaign: row };
     });
@@ -195,7 +226,7 @@ export async function changeCampaign(tenantId: string, userId: string, input: an
     const [campaign] = await db.select().from(crmCampaigns).where(and(eq(crmCampaigns.id, input.id), eq(crmCampaigns.tenantKey, tenantId))).limit(1);
     if (!campaign || campaign.payload.revision !== input.revision || campaign.status !== 'DRAFT') throw new AutomationError('Atualize o rascunho antes do teste.', 409);
     await validateConnection(tenantId, campaign.payload.config.instanceId, true);
-    if (campaign.payload.config.attachment) await verifyCampaignMedia(tenantId, campaign.payload.config.attachment);
+    for (const part of campaignParts(campaign.payload.config)) if (part.attachment) await verifyCampaignMedia(tenantId, part.attachment);
     const id = hash([tenantId, userId, campaign.id, input.requestId]);
     return db.transaction(async tx => {
       // Serialize requests across drafts too, so concurrent clicks cannot bypass the hourly limit.
@@ -205,13 +236,16 @@ export async function changeCampaign(tenantId: string, userId: string, input: an
       const [existing] = await tx.select().from(crmCampaignRecipients).where(eq(crmCampaignRecipients.id, id)).limit(1);
       if (existing) return { test: existing };
       const recent = await tx.select({ count: sql<number>`count(*)::integer` }).from(crmCampaignRecipients).where(and(eq(crmCampaignRecipients.tenantKey, tenantId),
-        sql`${crmCampaignRecipients.payload}->>'userId' = ${userId}`, gt(crmCampaignRecipients.createdAt, new Date(Date.now() - 3600_000))));
+        sql`${crmCampaignRecipients.payload}->>'userId' = ${userId}`, sql`coalesce((${crmCampaignRecipients.payload}->>'partIndex')::integer, 0) = 0`, gt(crmCampaignRecipients.createdAt, new Date(Date.now() - 3600_000))));
       if (recent[0].count >= 10) throw new AutomationError('Limite de dez testes por hora atingido. Aguarde antes de testar novamente.', 429);
-      const message = renderCampaignMessage(current.payload.config.message, 'Cliente de exemplo', context.company, context.memberNames[userId]);
-      if (message.length > (current.payload.config.attachment ? 1024 : 4096)) throw new AutomationError('A mensagem personalizada ficou longa demais. Encurte o texto antes do teste.');
-      const [row] = await tx.insert(crmCampaignRecipients).values({ id, tenantKey: tenantId, campaignId: current.id, phone, targetKey: `test:${id}`, payload: { name: context.memberNames[userId] || 'Meu teste',
-        message, instanceId: current.payload.config.instanceId, attachment: current.payload.config.attachment, company: context.company, isTest: true, userId, sourceRevision: current.payload.revision },
-        reason: 'Teste solicitado explicitamente. Aguardando o servidor.' }).returning();
+      const parts = renderCampaignParts(current.payload.config, 'Cliente de exemplo', context.company, context.memberNames[userId]);
+      if (parts.some(part => part.message.length > (part.attachment ? 1024 : 4096))) throw new AutomationError('A mensagem personalizada ficou longa demais. Encurte o texto antes do teste.');
+      const rows = await tx.insert(crmCampaignRecipients).values(parts.map((part, partIndex) => ({ id: partIndex ? hash([id, partIndex]) : id, tenantKey: tenantId, campaignId: current.id, phone,
+        targetKey: `test:${id}:${partIndex}`, payload: { name: context.memberNames[userId] || 'Meu teste', ...part, instanceId: current.payload.config.instanceId,
+          sequenceId: id, partIndex, partCount: parts.length, intervalSeconds: current.payload.config.intervalSeconds || 30,
+          company: context.company, isTest: true, userId, sourceRevision: current.payload.revision },
+        reason: 'Sequência de teste solicitada explicitamente. Aguardando o servidor.' }))).returning();
+      const row = rows[0];
       return { test: row };
     });
   }

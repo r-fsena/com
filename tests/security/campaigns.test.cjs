@@ -299,3 +299,131 @@ test('anexos reais usam apenas o bucket e prefixo da imobiliária, com tamanho e
   const url = new URL(await media.campaignMediaUrl('tenant-a',attachment.key));
   assert.ok(url.hostname.startsWith('isolated-test-bucket')); assert.ok(url.searchParams.get('X-Amz-Signature'));
 });
+
+const sequenceConfig = (count = 3, overrides = {}) => {
+  const parts = Array.from({ length: count }, (_, index) => ({ message: `Parte ${index + 1} para {{primeiro_nome}}. Responda SAIR para interromper.` }));
+  return config({ message: parts[0].message, parts, intervalSeconds: 30, ...overrides });
+};
+async function releaseSequenceTimer(f, row) {
+  await f.h.mocks['@/db'].db.update(f.schema.crmCampaignRecipients).set({ payload: { ...row.payload, acceptedAt: new Date(Date.now() - (row.payload.intervalSeconds || 30) * 1000 - 1000).toISOString() } }).where(eq(f.schema.crmCampaignRecipients.id, row.id));
+  await f.ready();
+}
+
+test('sequências aceitam de uma a cinco partes, validam todos os textos e limitam o timer', async () => {
+  const engine = harness().load('src/lib/campaigns.ts');
+  assert.equal(engine.campaignConfigSchema.safeParse(sequenceConfig(5)).success, true);
+  assert.equal(engine.campaignConfigSchema.safeParse(sequenceConfig(6)).success, false);
+  for (const intervalSeconds of [0, 14, 3601, 15.5]) assert.equal(engine.campaignConfigSchema.safeParse(sequenceConfig(2, { intervalSeconds })).success, false);
+  for (const intervalSeconds of [15, 30, 3600]) assert.equal(engine.campaignConfigSchema.safeParse(sequenceConfig(2, { intervalSeconds })).success, true);
+  assert.equal(engine.campaignConfigSchema.parse(config()).intervalSeconds, 30);
+  const cfg = sequenceConfig(); cfg.parts[2].message = '{{senha}}'; assert.equal(engine.campaignConfigSchema.safeParse(cfg).success, false);
+  cfg.parts[2].message = ''; assert.equal(engine.campaignConfigSchema.safeParse(cfg).success, false);
+  assert.equal(engine.campaignConfigSchema.safeParse(sequenceConfig(2, { message: 'Cabeçalho divergente' })).success, false);
+});
+
+test('timer persistido mantém a ordem; retomadas e concorrência não repetem partes nem contam contatos em dobro', async () => {
+  const f = await fixture();
+  try {
+    await f.consent(contact('one')); const c = await f.start(await f.create(sequenceConfig()));
+    let rows = (await f.recipients(c.id)).sort((a,b) => a.payload.partIndex - b.payload.partIndex);
+    assert.equal(rows.length, 3); assert.equal(rows[0].payload.sequenceId, rows[2].payload.sequenceId);
+    await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length, 1); assert.match(f.sends[0].text, /^Parte 1/);
+    rows = (await f.recipients(c.id)).sort((a,b) => a.payload.partIndex - b.payload.partIndex);
+    assert.ok(rows[1].nextMessageAt); assert.ok(Date.parse(rows[1].nextMessageAt) > Date.now());
+    const restarted = harness({ ...f.h.mocks }, f.h.env).load('src/lib/campaign-worker.ts');
+    await f.ready(); await restarted.runCampaignWorker('tenant-a'); assert.equal(f.sends.length, 1, 'Um processador reiniciado e a linha livre não ignoram o timer persistido');
+    let summary = (await f.service.listCampaigns('tenant-a', USER)).campaigns[0]; assert.equal(summary.counts.PENDING, 1); assert.equal(summary.messageCounts.ACCEPTED, 1);
+    await f.service.recordCampaignReceipt('tenant-a','instance-a',[rows[0].externalId],'READ');
+    await releaseSequenceTimer(f, (await f.recipients(c.id)).find(row => row.payload.partIndex === 0));
+    await Promise.all([f.worker.runCampaignWorker('tenant-a'),f.worker.runCampaignWorker('tenant-a')]); assert.equal(f.sends.length, 2); assert.match(f.sends[1].text, /^Parte 2/);
+    rows = (await f.recipients(c.id)).sort((a,b) => a.payload.partIndex - b.payload.partIndex);
+    await releaseSequenceTimer(f, rows[1]); await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length, 3); assert.match(f.sends[2].text, /^Parte 3/);
+    await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length, 3);
+    summary = (await f.service.listCampaigns('tenant-a', USER)).campaigns[0]; assert.equal(summary.counts.ACCEPTED, 1); assert.equal(summary.status, 'COMPLETED');
+    const snapshot = await f.repo.readCRMState('tenant-a'); assert.equal(snapshot.messages.filter(message => message.campaignId === c.id).length, 3);
+    rows = await f.recipients(c.id);
+    for (const row of rows) await f.service.recordCampaignReceipt('tenant-a','instance-a',[row.externalId],'READ');
+    summary = (await f.service.listCampaigns('tenant-a', USER)).campaigns[0]; assert.equal(summary.counts.READ, 1); assert.equal(summary.messageCounts.READ, 3);
+    await f.service.recordCampaignReply('tenant-a','instance-a',rows[0].phone,new Date().toISOString());
+    await f.service.recordCampaignReply('tenant-a','instance-a',rows[0].phone,new Date(Date.now()+1000).toISOString());
+    assert.equal((await f.service.listCampaigns('tenant-a',USER)).campaigns[0].replies,1);
+  } finally { await f.client.close(); }
+});
+
+test('falha ou resultado incerto em uma parte impede as próximas; não há repetição automática', async () => {
+  for (const mode of ['timeout','failed']) {
+    const f = await fixture();
+    try {
+      await f.consent(contact('one')); const c = await f.start(await f.create(sequenceConfig()));
+      if (mode === 'timeout') f.mode('timeout');
+      else f.duringSend(id => f.service.recordCampaignReceipt('tenant-a','instance-a',[id],'FAILED'));
+      await f.worker.runCampaignWorker('tenant-a'); await f.ready(); await f.worker.runCampaignWorker('tenant-a');
+      const rows = await f.recipients(c.id); assert.equal(f.sends.length, 1); assert.equal(rows.filter(row => row.status === 'SKIPPED').length, 2);
+      assert.equal(rows.find(row => row.payload.partIndex === 0).status, mode === 'timeout' ? 'UNKNOWN' : 'FAILED');
+    } finally { await f.client.close(); }
+  }
+});
+
+test('resposta entre as partes interrompe a sequência sem desfazer a primeira mensagem', async () => {
+  const f = await fixture();
+  try {
+    await f.consent(contact('one')); const c = await f.start(await f.create(sequenceConfig()));
+    await f.worker.runCampaignWorker('tenant-a');
+    await f.repo.mutateCRMState('tenant-a', state => ({ ...state, contacts: state.contacts.map(item => ({ ...item, lastClientInteractionAt: new Date(Date.now()+1000).toISOString() })) }));
+    await releaseSequenceTimer(f, (await f.recipients(c.id)).find(row => row.payload.partIndex === 0));
+    await f.worker.runCampaignWorker('tenant-a'); await f.worker.runCampaignWorker('tenant-a');
+    const rows = await f.recipients(c.id); assert.equal(f.sends.length, 1); assert.equal(rows.filter(row => row.status === 'ACCEPTED').length, 1); assert.equal(rows.filter(row => row.status === 'SKIPPED').length, 2);
+  } finally { await f.client.close(); }
+});
+
+test('pausa preserva o timer, cancelamento afeta apenas partes pendentes e testes respeitam o mesmo intervalo', async () => {
+  const f = await fixture();
+  try {
+    await f.consent(contact('one')); let c = await f.start(await f.create(sequenceConfig(2)));
+    await f.worker.runCampaignWorker('tenant-a');
+    let response = await f.post({ operation:'pause',id:c.id,revision:c.payload.revision }); c = (await response.json()).campaign;
+    await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length,1);
+    response = await f.post({ operation:'resume',id:c.id,revision:c.payload.revision }); c = (await response.json()).campaign;
+    await f.ready(); await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length,1);
+    await f.post({ operation:'cancel',id:c.id,revision:c.payload.revision });
+    const rows=await f.recipients(c.id); assert.equal(rows.filter(row=>row.status==='ACCEPTED').length,1); assert.equal(rows.filter(row=>row.status==='CANCELLED').length,1);
+    c=await f.create(sequenceConfig(2)); const command={operation:'send-test',id:c.id,revision:1,confirmed:true,requestId:'40000000-0000-4000-8000-000000000001'};
+    await Promise.all([f.post(command),f.post(command)]); assert.equal((await f.recipients(c.id)).length,2);
+    await f.ready(); await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length,2);
+    await f.ready(); await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length,2);
+    await releaseSequenceTimer(f,(await f.recipients(c.id)).find(row=>row.payload.partIndex===0)); await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length,3);
+    assert.equal(f.sends[1].phone, '5511987654321'); assert.equal(f.sends[2].phone, '5511987654321');
+  } finally { await f.client.close(); }
+});
+
+test('cada parte congela seu anexo; personalização e autorização são revistas para a sequência inteira', async () => {
+  const f=await fixture();
+  try {
+    await f.consent(contact('one'));
+    const attachment={key:'tenants/tenant-a/attachments/sequence.jpg',fileName:'imovel.jpg',mimeType:'image/jpeg',size:100};
+    let cfg=sequenceConfig(2); cfg.parts[1].attachment=attachment;
+    let c=await f.create(cfg); c=await f.start(c);
+    await f.worker.runCampaignWorker('tenant-a'); await releaseSequenceTimer(f,(await f.recipients(c.id)).find(row=>row.payload.partIndex===0)); await f.worker.runCampaignWorker('tenant-a');
+    assert.deepEqual(f.sends.map(send=>send.kind),['TEXT','IMAGE']); assert.match(f.sends[1].text,/Parte 2/);
+    cfg=sequenceConfig(2); cfg.parts[1].message='A'.repeat(1025); cfg.parts[1].attachment=attachment;
+    assert.equal((await f.post({operation:'save',config:cfg})).status,400);
+    await f.client.exec(fs.readFileSync('database/05_campaign_sequences.sql','utf8')); await f.client.exec(fs.readFileSync('database/05_campaign_sequences.sql','utf8'));
+    assert.equal((await f.recipients(c.id)).length,2);
+  }finally{await f.client.close();}
+});
+
+test('alterar uma parte ou o timer exige nova simulação; revogação entre partes interrompe sem liberar outra campanha', async () => {
+  const f=await fixture();
+  try {
+    await f.consent(contact('one')); let cfg=sequenceConfig(2); let c=await f.create(cfg);
+    await f.post({operation:'simulate',id:c.id,revision:1});
+    cfg={...cfg,intervalSeconds:60,parts:[cfg.parts[0],{message:'Nova segunda mensagem'}]};
+    let response=await f.post({operation:'save',id:c.id,revision:1,config:cfg}); c=(await response.json()).campaign;
+    assert.equal((await f.post({operation:'start',id:c.id,revision:c.payload.revision,confirmed:true,confirmedCount:1})).status,409);
+    c=await f.start(c); await f.worker.runCampaignWorker('tenant-a'); assert.equal(f.sends.length,1);
+    const other=await f.create(sequenceConfig(2)); const preview=await f.service.previewCampaign('tenant-a',other.payload.config); assert.equal(preview.audience.eligible,0);
+    const engine=f.h.load('src/lib/campaigns.ts'); await f.repo.mutateCRMState('tenant-a',state=>engine.recordCampaignStop(state,'5511998765432','SAIR',false,new Date().toISOString()));
+    await releaseSequenceTimer(f,(await f.recipients(c.id)).find(row=>row.payload.partIndex===0)); await f.worker.runCampaignWorker('tenant-a');
+    assert.equal(f.sends.length,1); assert.equal((await f.recipients(c.id)).find(row=>row.payload.partIndex===1).status,'SKIPPED');
+  }finally{await f.client.close();}
+});

@@ -427,5 +427,5 @@ export const crmOutboundLanes = pgTable('crm_outbound_lanes', {
 });
 export const crmOutboundContacts = pgTable('crm_outbound_contacts', {
   id: text('id').primaryKey(), tenantKey: text('tenant_key').notNull(), phone: text('phone').notNull(), ownerKey: text('owner_key'), leaseUntil: timestamp('lease_until', { withTimezone: true }),
-  attemptedAt: timestamp('attempted_at', { withTimezone: true }), campaignAt: timestamp('campaign_at', { withTimezone: true }), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  attemptedAt: timestamp('attempted_at', { withTimezone: true }), campaignAt: timestamp('campaign_at', { withTimezone: true }), sequenceKey: text('sequence_key'), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({ phone: uniqueIndex('crm_outbound_contact_identity').on(table.tenantKey, table.phone) }));

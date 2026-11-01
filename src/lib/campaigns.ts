@@ -6,6 +6,12 @@ const ids = z.array(z.string().min(1).max(200)).max(5000).default([]);
 export const campaignAttachmentSchema = z.object({ key: z.string().min(1).max(500), fileName: z.string().min(1).max(150),
   mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']), size: z.number().int().positive().max(10 * 1024 * 1024), etag: z.string().max(200).optional() }).strict();
 export type CampaignAttachment = z.infer<typeof campaignAttachmentSchema>;
+const campaignTextSchema = z.string().trim().min(1, 'Escreva a mensagem.').max(4096).refine(value =>
+  !value.replace(/\{\{\s*(nome|primeiro_nome|empresa|corretor_nome)\s*\}\}/g, '').match(/\{\{|\}\}/),
+  'Use os botões Nome do cliente, Primeiro nome, Empresa e Corretor responsável.');
+export const campaignPartSchema = z.object({ message: campaignTextSchema, attachment: campaignAttachmentSchema.optional() }).strict()
+  .refine(value => !value.attachment || value.message.length <= 1024, 'Com imagem ou PDF, use uma legenda de até 1.024 caracteres.');
+export type CampaignPart = z.infer<typeof campaignPartSchema>;
 export const campaignConfigSchema = z.object({
   name: z.string().trim().min(1, 'Dê um nome à campanha.').max(120),
   objective: z.enum(['PROPERTY', 'VISIT', 'FOLLOW_UP', 'CUSTOM']), instanceId: z.string().max(200).default(''),
@@ -17,8 +23,11 @@ export const campaignConfigSchema = z.object({
     return !value.replace(/\{\{\s*(nome|primeiro_nome|empresa|corretor_nome)\s*\}\}/g, '').match(/\{\{|\}\}/);
   }, 'Use os botões Nome do cliente, Primeiro nome, Empresa e Corretor responsável.'),
   attachment: campaignAttachmentSchema.optional(),
+  parts: z.array(campaignPartSchema).min(1).max(5, 'Use até cinco mensagens por campanha.').optional(),
+  intervalSeconds: z.number().int().min(15, 'O intervalo mínimo é de 15 segundos.').max(3600, 'O intervalo máximo é de uma hora.').default(30),
   schedule: z.object({ startsAt: z.string().datetime().optional(), hours: ruleConfigSchema.shape.schedule, expiresAfterHours: z.number().int().min(24).max(168).default(48) }),
-}).strict().refine(value => !value.attachment || value.message.length <= 1024, 'Com imagem ou PDF, use uma legenda de até 1.024 caracteres.');
+}).strict().refine(value => !value.attachment || value.message.length <= 1024, 'Com imagem ou PDF, use uma legenda de até 1.024 caracteres.')
+  .refine(value => !value.parts || (value.message === value.parts[0].message && JSON.stringify(value.attachment) === JSON.stringify(value.parts[0].attachment)), 'Atualize a primeira mensagem da sequência antes de salvar.');
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
 export type RecipientStatus = 'PENDING' | 'PROCESSING' | 'WAITING_CHANNEL' | 'DISPATCHING' | 'ACCEPTED' | 'DELIVERED' | 'READ' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'UNKNOWN';
@@ -32,7 +41,18 @@ export interface CampaignPayload {
   selectionSummary?: { found: number; selected: number; excluded: { id: string; name: string; reason: string }[] };
 }
 export interface RecipientPayload { name: string; message: string; permissionAt?: string; instanceId: string; attachment?: CampaignAttachment; company: string;
-  isTest: boolean; userId?: string; sourceRevision?: number; attemptedAt?: string; acceptedAt?: string; trackingUntil?: string; }
+  isTest: boolean; userId?: string; sourceRevision?: number; attemptedAt?: string; acceptedAt?: string; trackingUntil?: string;
+  sequenceId?: string; partIndex?: number; partCount?: number; intervalSeconds?: number; }
+export const campaignParts = (config: Pick<CampaignConfig, 'message' | 'attachment' | 'parts'>): CampaignPart[] => config.parts || [{ message: config.message, ...(config.attachment ? { attachment: config.attachment } : {}) }];
+export function renderCampaignParts(config: CampaignConfig, name: string, company: string, broker = '') {
+  return campaignParts(config).map(part => ({ ...part, message: renderCampaignMessage(part.message, name, company, broker) }));
+}
+export function campaignSequenceStatus(statuses: string[]): RecipientStatus {
+  for (const status of ['UNKNOWN', 'FAILED', 'DISPATCHING', 'PROCESSING', 'WAITING_CHANNEL', 'PENDING', 'CANCELLED', 'SKIPPED', 'ACCEPTED', 'DELIVERED', 'READ'] as RecipientStatus[]) {
+    if (statuses.includes(status)) return status;
+  }
+  return 'PENDING';
+}
 export interface CampaignAudienceState { contacts: Contact[]; deals: Deal[]; marketingPermissions?: Record<string, MarketingPermission>; conversations?: { contactId: string; isPersonal?: boolean }[];
   marketingPermissionAudit?: (MarketingPermission & { phone: string })[];
   automation?: { jobs: { action: { type: string }; event: { contactId: string }; status: string }[] }; }
@@ -66,7 +86,7 @@ export function campaignExclusion(state: CampaignAudienceState, contact: Contact
   const permission = state.marketingPermissions?.[phone];
   if (contact.hasOptedOut || permission?.status === 'REVOKED') return 'Pediu para não receber mensagens';
   if (permission?.status !== 'GRANTED') return 'Autorização para campanhas não registrada';
-  if (/\{\{\s*corretor_nome\s*\}\}/.test(config.message) && !memberNames[contact.assignedUserId || '']) return 'Corretor responsável não identificado';
+  if (campaignParts(config).some(part => /\{\{\s*corretor_nome\s*\}\}/.test(part.message)) && !memberNames[contact.assignedUserId || '']) return 'Corretor responsável não identificado';
   if (state.automation?.jobs.some(job => job.event.contactId === contact.id && job.action.type === 'SEND_WHATSAPP_MESSAGE' && ['QUEUED', 'WAITING_CHANNEL', 'DISPATCHING', 'UNKNOWN'].includes(job.status))) return 'Há uma abordagem automática pendente para este contato';
   return null;
 }

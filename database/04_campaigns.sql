@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS crm_outbound_lanes (
 );
 CREATE TABLE IF NOT EXISTS crm_outbound_contacts (
   id text PRIMARY KEY, tenant_key text NOT NULL, phone text NOT NULL, owner_key text, lease_until timestamptz,
-  attempted_at timestamptz, campaign_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(tenant_key, phone)
+  attempted_at timestamptz, campaign_at timestamptz, sequence_key text, updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(tenant_key, phone)
 );
 ALTER TABLE IF EXISTS contacts ALTER COLUMN consent_given SET DEFAULT FALSE;
 ALTER TABLE IF EXISTS contacts ALTER COLUMN consent_date DROP DEFAULT;

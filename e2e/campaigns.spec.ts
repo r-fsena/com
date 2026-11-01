@@ -29,7 +29,7 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
           campaigns = [campaign, ...campaigns.filter(item => item.id !== campaign.id)]; return json({ success: true, tenantId, campaign });
         }
         const campaign = campaigns.find(item => item.id === body.id);
-        if (body.operation === 'simulate') return json({ success: true, tenantId, campaign, simulation: { audience, sample: [{ name: 'Marina Exemplo', message: 'Olá Marina, aqui é da Imobiliária de exemplo.' }], warning: 'Nenhuma mensagem foi enviada. A simulação verifica o público e a personalização.' } });
+        if (body.operation === 'simulate') return json({ success: true, tenantId, campaign, simulation: { audience, sample: [{ name: 'Marina Exemplo', message: 'Olá Marina, aqui é da Imobiliária de exemplo.', parts: campaign.payload.config.parts?.map((part: any) => ({ ...part, message: part.message.replace('{{primeiro_nome}}', 'Marina') })) }], warning: 'Nenhuma mensagem foi enviada. A simulação verifica o público e a personalização.' } });
         if (body.operation === 'start') campaign.status = 'RUNNING';
         if (body.operation === 'pause') campaign.status = 'PAUSED';
         if (body.operation === 'resume') campaign.status = 'RUNNING';
@@ -53,7 +53,7 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
     await expect(page.getByText('2 encontrados · 1 elegíveis · 1 não selecionados', { exact: true })).toBeVisible();
     await expect(page.getByText('Contato pessoal', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Próximo', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Mensagem', exact: true }).fill('Olá {{primeiro_nome}}, temos novidades. Responda SAIR para não receber mais.');
+    await page.getByRole('textbox', { name: 'Mensagem 1', exact: true }).fill('Olá {{primeiro_nome}}, temos novidades. Responda SAIR para não receber mais.');
     await page.getByRole('button', { name: 'Próximo', exact: true }).click();
     await page.getByRole('combobox', { name: 'Linha que enviará a campanha', exact: true }).selectOption('instance-one');
     await page.getByRole('button', { name: 'Verificar conexão', exact: true }).click();
@@ -62,7 +62,7 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
     await expect(page.getByRole('button', { name: 'Confirmar e iniciar campanha', exact: true })).toBeDisabled();
     await page.getByRole('button', { name: 'Testar sem enviar', exact: true }).click();
     await expect(page.getByText('Simulação concluída. Nenhuma mensagem foi enviada.', { exact: true })).toBeVisible();
-    await page.getByRole('checkbox', { name: /Confirmo o envio real desta mensagem para 1 contatos/ }).check();
+    await page.getByRole('checkbox', { name: /Confirmo o envio real de 1 mensagem.*por contato para 1 contato/ }).check();
     await page.screenshot({ path: '/tmp/brokiva-campanhas-conferencia.png', fullPage: true });
     await page.getByRole('button', { name: 'Confirmar e iniciar campanha', exact: true }).click();
     await expect(page.getByText('Em andamento', { exact: true })).toBeVisible();
@@ -95,9 +95,56 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
     await page.getByRole('button', { name: 'Criar campanha', exact: true }).click();
     await page.getByRole('button', { name: 'Convidar para uma visita', exact: true }).click();
     await page.getByRole('button', { name: '3. Mensagem', exact: true }).click();
-    await expect(page.getByRole('textbox', { name: 'Mensagem', exact: true })).toBeVisible();
-    await page.getByRole('textbox', { name: 'Mensagem', exact: true }).fill('Olá {{nome}}, gostaria de agendar uma visita?');
+    await expect(page.getByRole('textbox', { name: 'Mensagem 1', exact: true })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Mensagem 1', exact: true }).fill('Olá {{nome}}, gostaria de agendar uma visita?');
     await expect(page.getByText('Olá Marina Exemplo, gostaria de agendar uma visita?', { exact: true })).toBeVisible();
     await page.screenshot({ path: '/tmp/brokiva-campanhas-mobile.png', fullPage: true });
   });
+  test('monta cinco blocos, muda a ordem e o intervalo, salva e reabre sem perder a sequência', async ({ page }) => {
+    await page.getByRole('button', { name: 'Criar campanha', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Nome da campanha', exact: true }).fill('Sequência com timer');
+    await page.getByRole('button', { name: '3. Mensagem', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Mensagem 1', exact: true }).fill('Primeira parte para {{primeiro_nome}}');
+    for (let index=2; index<=5; index++) {
+      await page.getByRole('button', { name: 'Adicionar mensagem', exact: true }).click();
+      await page.getByRole('textbox', { name: `Mensagem ${index}`, exact: true }).fill(`Parte ${index}`);
+    }
+    await expect(page.getByRole('button', { name: 'Adicionar mensagem', exact: true })).toBeDisabled();
+    await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).fill('60');
+    await page.getByRole('button', { name: 'Mover mensagem 3 para cima', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toHaveValue('Parte 3');
+    await expect(page.getByRole('textbox', { name: 'Mensagem 3', exact: true })).toHaveValue('Parte 2');
+    await page.getByRole('button', { name: 'Salvar rascunho', exact: true }).click();
+    await expect(page.getByText('Rascunho salvo no servidor. Nenhum disparo foi iniciado.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Voltar à lista', exact: true }).click();
+    await page.getByRole('button', { name: 'Editar', exact: true }).click();
+    await page.getByRole('button', { name: '3. Mensagem', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toHaveValue('Parte 3');
+    await expect(page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true })).toHaveValue('60');
+    await page.getByRole('button', { name: '5. Conferir e enviar', exact: true }).click();
+    await expect(page.getByText(/5 mensagens por contato.*intervalo mínimo de 1 minuto/)).toBeVisible();
+    await page.screenshot({ path: '/tmp/brokiva-sequencia-conferencia.png', fullPage: true });
+  });
+  test('mensagem vazia e timer abaixo do mínimo impedem salvar; remover preserva as outras partes no celular', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: 'Criar campanha', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Nome da campanha', exact: true }).fill('Sequência móvel');
+    await page.getByRole('button', { name: '3. Mensagem', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Mensagem 1', exact: true }).fill('Olá {{primeiro_nome}}!');
+    await page.getByRole('button', { name: 'Adicionar mensagem', exact: true }).click();
+    await page.getByRole('button', { name: 'Salvar rascunho', exact: true }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Escreva a mensagem' })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Mensagem 2', exact: true }).fill('Posso enviar os detalhes?');
+    await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).fill('0');
+    await page.getByRole('button', { name: 'Salvar rascunho', exact: true }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'intervalo mínimo' })).toBeVisible();
+    await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).fill('30');
+    await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).click();
+    await page.mouse.wheel(0, 200);
+    await page.screenshot({ path: '/tmp/brokiva-sequencia-mobile.png', fullPage: true });
+    await page.getByRole('button', { name: 'Remover mensagem 1', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Mensagem 1', exact: true })).toHaveValue('Posso enviar os detalhes?');
+    await expect(page.getByRole('button', { name: 'Remover mensagem 1', exact: true })).toBeDisabled();
+  });
+
 });

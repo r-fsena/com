@@ -6,6 +6,7 @@ import { mutateCRMState, readCRMState, mergeTenantState, type PersistedCRMState 
 import { emptyAutomations, ruleConfigSchema, matchesRule, renderAutomationMessage, enqueueAutomationEvent, captureCRMTransition, runInternalJobs, queueInactivity, jobGuard, isBusinessTime, type AutomationEvent, type StoredRule, type RuleConfig } from '@/lib/automations';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { ZApiClient } from '@/lib/zapi-client';
+import { acquireOutboundLane, markOutboundAttempt, releaseOutboundLane } from '@/lib/outbound-lane';
 
 export class AutomationError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export async function automationEnvironment(tenantId: string) {
@@ -169,6 +170,9 @@ export async function runAutomationWorker(tenantId: string, deadline = Date.now(
     });
     if (!claimed) break;
     let attempted = false;
+    let laneAcquired = false;
+    let laneInstanceId = claimed.conversation.instanceId;
+    const laneOwner = `automation:${claimed.job.id}`;
     let externalId: string | undefined;
     let failure = '';
     try {
@@ -180,6 +184,13 @@ export async function runAutomationWorker(tenantId: string, deadline = Date.now(
       const current = await readCRMState(tenantId);
       const reason = jobGuard(current, claimed.job, new Date());
       if (reason) throw new AutomationError(reason);
+      if (process.env.CAMPAIGNS_ENABLED === 'true') {
+        const lane = await acquireOutboundLane(tenantId, credentials.instanceId, claimed.phone, laneOwner, 'AUTOMATION');
+        if (!lane.acquired) throw new AutomationError(`Conexão aguardando intervalo: ${lane.reason}`);
+        laneAcquired = true;
+        laneInstanceId = credentials.instanceId;
+        await markOutboundAttempt(tenantId, credentials.instanceId, claimed.phone, laneOwner, false);
+      }
       attempted = true;
       const sent = await client.sendText(claimed.phone, claimed.content);
       if (!sent.success || !sent.externalMessageId) throw new Error('Confirmação de envio ausente.');
@@ -200,6 +211,7 @@ export async function runAutomationWorker(tenantId: string, deadline = Date.now(
         senderType: 'SYSTEM', senderName: 'Automação', messageType: 'TEXT', content: claimed.content, status, isInternalNote: false, timestamp: now }],
         contacts: state.contacts.filter(contact => contact.id === job.event.contactId).map(contact => ({ ...contact, lastTeamInteractionAt: now })) });
     });
+    if (laneAcquired) await releaseOutboundLane(tenantId, laneInstanceId, claimed.phone, laneOwner, attempted);
   }
 }
 export async function automationTenantIds() {

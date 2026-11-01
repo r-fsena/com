@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       ...data,
       isPersonal: false,
       aiPriorityScore: 75,
-      consentGiven: true,
+      consentGiven: false,
       hasOptedOut: false,
       notesCount: 0,
       createdAt: new Date().toISOString(),

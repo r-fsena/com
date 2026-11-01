@@ -23,7 +23,6 @@ import {
   AIInsight, 
   Task, 
   SLAAlert, 
-  Campaign, 
   QuickReplyTemplate,
   Proposal,
   FinancialTransaction,
@@ -55,7 +54,6 @@ import {
   MOCK_AI_INSIGHTS, 
   MOCK_TASKS, 
   MOCK_ALERTS, 
-  MOCK_CAMPAIGNS, 
   MOCK_QUICK_REPLIES,
   MOCK_PROPOSALS,
   MOCK_FINANCIAL_TRANSACTIONS,
@@ -218,8 +216,6 @@ interface CRMContextType {
   dismissAlert: (alertId: string) => void;
 
   // Campanhas e Respostas Rápidas
-  campaigns: Campaign[];
-  createCampaign: (campaign: Partial<Campaign>) => void;
   quickReplies: QuickReplyTemplate[];
   createQuickReply: (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>) => Promise<QuickReplyTemplate>;
   updateQuickReply: (id: string, updates: Partial<QuickReplyTemplate>, expected?: { updatedAt?: string }) => Promise<void>;
@@ -430,7 +426,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                     ...(t.featureFlags || DEFAULT_FEATURE_FLAGS),
                     proposals: false,
                     asaasBilling: false,
-                    campaigns: false,
                   },
                 });
               } else {
@@ -561,7 +556,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 ...(parsed.featureFlags || DEFAULT_FEATURE_FLAGS),
                 proposals: false,
                 asaasBilling: false,
-                campaigns: false,
               };
               try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(parsed)); } catch {}
             }
@@ -587,7 +581,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         ...(foundInList?.featureFlags || raw.featureFlags || DEFAULT_FEATURE_FLAGS),
         proposals: false,
         asaasBilling: false,
-        campaigns: false,
       } : {
         ...DEFAULT_FEATURE_FLAGS,
         ...(foundInList?.featureFlags || raw.featureFlags || {}),
@@ -1941,7 +1934,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [aiInsights]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [alerts, setAlerts] = useState<SLAAlert[]>(MOCK_ALERTS);
-  const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
   const [quickReplies, setQuickReplies] = useState<QuickReplyTemplate[]>([]);
 
   const saveTemplateCommand = async (command: any) => {
@@ -2045,7 +2037,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         tags: data.tags || ['Novo Lead'],
         targetRegions: data.targetRegions || [],
         notesCount: 0,
-        consentGiven: true,
+        consentGiven: false,
         hasOptedOut: false,
         isPersonal: data.isPersonal !== undefined ? data.isPersonal : false,
         createdAt: new Date().toISOString(),
@@ -2172,7 +2164,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           tags: updates.tags || ['Lead Qualificado'],
           targetRegions: updates.targetRegions || [],
           notesCount: 0,
-          consentGiven: true,
+          consentGiven: false,
           hasOptedOut: false,
           isPersonal: updates.isPersonal ?? false,
           createdAt: new Date().toISOString(),
@@ -3574,28 +3566,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     setAlerts(prev => prev.filter(a => a.id !== alertId));
   };
 
-  const createCampaign = (data: Partial<Campaign>) => {
-    const newCamp: Campaign = {
-      id: `camp-${Date.now()}`,
-      tenantId: currentTenant.id,
-      name: data.name || 'Nova Campanha WhatsApp',
-      instanceId: instances[0].id,
-      targetSegment: data.targetSegment || 'Todos os contatos válidos',
-      totalRecipients: data.totalRecipients || 50,
-      sentCount: 0,
-      deliveredCount: 0,
-      readCount: 0,
-      repliedCount: 0,
-      optOutCount: 0,
-      status: 'RUNNING',
-      messageTemplate: data.messageTemplate || 'Olá {{nome}}!',
-      sendRatePerMinute: 20,
-      createdAt: new Date().toISOString(),
-      ...data,
-    };
-    setCampaigns(prev => [newCamp, ...prev]);
-  };
-
   const loadChatHistory = async (phone: string, conversationId: string, page = 1, historyDays = 15) => {
     try {
       const cleanPhone = phone.replace(/\D/g, '');
@@ -4048,7 +4018,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         aiPriorityScore: 75,
         tags: Array.from(new Set(['Importação de Arquivo', ...(rec.tags || [])])),
         notesCount: rec.notes ? 1 : 0,
-        consentGiven: true,
+        consentGiven: false,
         consentDate: new Date().toISOString(),
         hasOptedOut: false,
         isPersonal: false,
@@ -4647,10 +4617,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const scopedTransactions = useMemo(() => {
     return transactions.filter(t => t.tenantId === currentTenant.id);
   }, [transactions, currentTenant.id, isCurrentAmabile]);
-
-  const scopedCampaigns = useMemo(() => {
-    return campaigns.filter(c => c.tenantId === currentTenant.id);
-  }, [campaigns, currentTenant.id]);
 
   const scopedAlerts = useMemo(() => {
     return alerts.filter(a => a.tenantId === currentTenant.id);
@@ -5252,8 +5218,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       deleteTask,
       alerts: scopedAlerts,
       dismissAlert,
-      campaigns: scopedCampaigns,
-      createCampaign,
       quickReplies: scopedQuickReplies,
       createQuickReply,
       updateQuickReply,

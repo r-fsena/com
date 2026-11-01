@@ -3,6 +3,7 @@ import { crmTenantState } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { serverCRMStore, ServerCRMState } from '@/lib/server-crm-store';
 import { crmEventCursor } from '@/lib/crm-event-cursor';
+import { campaignPhone } from '@/lib/campaigns';
 
 export type PersistedCRMState = ServerCRMState & { deletedKeys?: string[]; eventCursor?: number };
 const collections = ['contacts', 'conversations', 'messages', 'deals', 'quickReplies'] as const;
@@ -33,7 +34,13 @@ export function mergeTenantState(tenantId: string, previous: PersistedCRMState, 
         map.set(item.id, { ...merged, receivedAt: changed ? revision : previousReceipt });
         if (changed) next.eventCursor = revision;
       } else {
-        map.set(item.id, { ...existing, ...item });
+        const merged = { ...existing, ...item };
+        if (key === 'contacts') {
+          const phone = campaignPhone(merged.phone || '');
+          if (phone && previous.marketingPermissions?.[phone]?.status === 'REVOKED') { merged.hasOptedOut = true; merged.consentGiven = false; }
+          if (existing?.phone && campaignPhone(existing.phone) !== phone) { merged.consentGiven = false; merged.consentDate = undefined; }
+        }
+        map.set(item.id, merged);
       }
     }
     (next as any)[key] = Array.from(map.values());

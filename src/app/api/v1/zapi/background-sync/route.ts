@@ -221,7 +221,7 @@ async function runBackgroundSyncWorker(params: {
         temperature: 'WARM',
         aiPriorityScore: 80,
         notesCount: 0,
-        consentGiven: true,
+        consentGiven: false,
         consentDate: interactionIso,
         hasOptedOut: false,
         isPersonal: false,

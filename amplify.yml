@@ -6,7 +6,7 @@ frontend:
         - npm ci
     build:
       commands:
-        - env | grep -E '^(NEXT_PUBLIC_|DATABASE_URL=|SESSION_SECRET=|ZAPI_|AWS_S3_|AWS_BEDROCK_|GEMINI_API_KEY=|GOOGLE_GEMINI_API_KEY=|OPENAI_API_KEY=|ASAAS_|AUTOMATIONS_)' > .env.production
+        - env | grep -E '^(NEXT_PUBLIC_|DATABASE_URL=|SESSION_SECRET=|ZAPI_|AWS_S3_|AWS_BEDROCK_|GEMINI_API_KEY=|GOOGLE_GEMINI_API_KEY=|OPENAI_API_KEY=|ASAAS_|AUTOMATIONS_|CAMPAIGNS_)' > .env.production
         - npm run build
   artifacts:
     baseDirectory: .next

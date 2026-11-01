@@ -9,7 +9,9 @@
     "lint": "next lint",
     "test:e2e": "playwright test",
     "test": "node --test tests/security/*.test.cjs",
-    "db:migrate:state": "node scripts/migrate-crm-state.js"
+    "db:migrate:state": "node scripts/migrate-crm-state.js",
+    "db:migrate:campaigns": "node scripts/migrate-campaigns.js",
+    "worker:messages": "node scripts/run-message-worker.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1160.0",

@@ -120,14 +120,16 @@ export class ZApiClient {
   /**
    * Envio de documento (PDF, proposta, contrato)
    */
-  async sendDocument(phone: string, documentUrl: string, fileName: string): Promise<ZApiResponse> {
+  async sendDocument(phone: string, documentUrl: string, fileName: string, caption?: string): Promise<ZApiResponse> {
     const cleanPhone = phone.replace(/\D/g, '');
-    return this.request('send-document', {
+    const extension = fileName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() || 'pdf';
+    return this.request(`send-document/${extension}`, {
       method: 'POST',
       body: JSON.stringify({
         phone: cleanPhone,
         document: documentUrl,
         fileName,
+        caption,
       }),
     });
   }

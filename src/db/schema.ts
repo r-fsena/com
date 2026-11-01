@@ -171,7 +171,7 @@ export const contacts = pgTable('contacts', {
   tags: jsonb('tags').default([]),
   
   // LGPD Consentimento
-  consentGiven: boolean('consent_given').default(true).notNull(),
+  consentGiven: boolean('consent_given').default(false).notNull(),
   consentDate: timestamp('consent_date', { withTimezone: true }).defaultNow(),
   hasOptedOut: boolean('has_opted_out').default(false).notNull(),
   
@@ -404,3 +404,28 @@ export const crmSyncJobs = pgTable('crm_sync_jobs', {
   leaseUntil: timestamp('lease_until', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, table => ({ tenantIdx: index('crm_sync_jobs_tenant_idx').on(table.tenantKey) }));
+
+export const crmCampaigns = pgTable('crm_campaigns', {
+  id: text('id').primaryKey(), tenantKey: text('tenant_key').notNull(), status: text('status').notNull().default('DRAFT'),
+  payload: jsonb('payload').notNull().$type<import('@/lib/campaigns').CampaignPayload>(), scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const crmCampaignRecipients = pgTable('crm_campaign_recipients', {
+  id: text('id').primaryKey(), tenantKey: text('tenant_key').notNull(), campaignId: text('campaign_id').notNull().references(() => crmCampaigns.id),
+  contactId: text('contact_id'), phone: text('phone').notNull(), targetKey: text('target_key').notNull(), status: text('status').notNull().default('PENDING'),
+  payload: jsonb('payload').notNull().$type<import('@/lib/campaigns').RecipientPayload>(), reason: text('reason').notNull().default(''), externalId: text('external_id'),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }), repliedAt: timestamp('replied_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({ target: uniqueIndex('crm_campaign_recipient_target').on(table.campaignId, table.targetKey) }));
+export const crmCampaignReceipts = pgTable('crm_campaign_receipts', {
+  id: text('id').primaryKey(), tenantKey: text('tenant_key').notNull(), instanceKey: text('instance_key').notNull(), externalId: text('external_id').notNull(),
+  status: text('status').notNull(), occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({ receipt: uniqueIndex('crm_campaign_receipt_identity').on(table.tenantKey, table.instanceKey, table.externalId) }));
+export const crmOutboundLanes = pgTable('crm_outbound_lanes', {
+  instanceKey: text('instance_key').primaryKey(), tenantKey: text('tenant_key').notNull(), ownerKey: text('owner_key'), leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  nextAllowedAt: timestamp('next_allowed_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const crmOutboundContacts = pgTable('crm_outbound_contacts', {
+  id: text('id').primaryKey(), tenantKey: text('tenant_key').notNull(), phone: text('phone').notNull(), ownerKey: text('owner_key'), leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  attemptedAt: timestamp('attempted_at', { withTimezone: true }), campaignAt: timestamp('campaign_at', { withTimezone: true }), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({ phone: uniqueIndex('crm_outbound_contact_identity').on(table.tenantKey, table.phone) }));

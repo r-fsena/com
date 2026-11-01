@@ -1,3 +1,5 @@
+import { recordCampaignStop } from '@/lib/campaigns';
+import { recordCampaignReceipt, recordCampaignReply } from '@/lib/campaign-service';
 import { enqueueAutomationEvent, runInternalJobs } from '@/lib/automations';
 import { automationEnvironment } from '@/lib/automation-service';
 import { webhookToken } from '@/lib/zapi-webhook-auth';
@@ -50,13 +52,16 @@ export async function processZapiWebhookRequest(
 
     if (isStatusCallback) {
       const statusRaw = String(body.status || '').toUpperCase();
-      let crmStatus: 'SENT' | 'DELIVERED' | 'READ' = 'DELIVERED';
+      if (!['SENT', 'RECEIVED', 'READ', 'READ_BY_ME', 'PLAYED', 'ERROR', 'FAILED'].includes(statusRaw)) return NextResponse.json({ received: true, ignored: true, reason: 'Status de mensagem não reconhecido.' });
+      let crmStatus: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' = 'DELIVERED';
       if (statusRaw === 'SENT') {
         crmStatus = 'SENT';
       } else if (statusRaw === 'RECEIVED') {
         crmStatus = 'DELIVERED';
       } else if (statusRaw === 'READ' || statusRaw === 'READ_BY_ME' || statusRaw === 'PLAYED') {
         crmStatus = 'READ';
+      } else if (['ERROR', 'FAILED'].includes(statusRaw)) {
+        crmStatus = 'FAILED';
       }
 
       const rawIds = Array.isArray(body.ids) ? body.ids : (body.id ? [body.id] : []);
@@ -65,11 +70,15 @@ export async function processZapiWebhookRequest(
       await mutateCRMState(tenantId, current => {
         const updates = current.messages.filter(m => rawIds.includes(m.externalId || m.id)
           && current.conversations.some(c => c.id === m.conversationId && c.instanceId === instanceId)
-          && rank[crmStatus] > rank[m.status]).map(m => ({ ...m, status: crmStatus }));
+          && (statusRaw !== 'READ_BY_ME' || m.senderType === 'CONTACT')
+          && !(m.status === 'FAILED' && crmStatus === 'SENT')
+          && (crmStatus === 'FAILED' ? ['PENDING', 'SENT'].includes(m.status) : rank[crmStatus] > rank[m.status])).map(m => ({ ...m, status: crmStatus }));
         updatedCount = updates.length;
         return mergeTenantState(tenantId, current, { messages: updates });
       });
 
+      const campaignStatus = statusRaw === 'RECEIVED' ? 'DELIVERED' : statusRaw === 'READ' ? 'READ' : ['ERROR', 'FAILED'].includes(statusRaw) ? 'FAILED' : statusRaw === 'SENT' ? 'ACCEPTED' : '';
+      if (campaignStatus) await recordCampaignReceipt(tenantId, instanceId, rawIds, campaignStatus);
       return NextResponse.json({
         received: true,
         type: 'MessageStatusCallback',
@@ -487,7 +496,7 @@ export async function processZapiWebhookRequest(
             tags: ['Novo Lead WhatsApp'],
             targetRegions: [],
             notesCount: 0,
-            consentGiven: true,
+            consentGiven: false,
             hasOptedOut: false,
             isPersonal: false,
             lastClientInteractionAt: fromMe ? undefined : messageTimestampIso,
@@ -533,6 +542,7 @@ export async function processZapiWebhookRequest(
             timestamp: messageTimestampIso,
           }],
         });
+        next = recordCampaignStop(next, cleanPhone, content, fromMe, messageTimestampIso);
         if (!fromMe) {
           const event = { id: `message:${messageId}`, trigger: 'MESSAGE_RECEIVED' as const, contactId: targetContactId,
             occurredAt: messageTimestampIso, origin: 'WEBHOOK' as const };
@@ -541,6 +551,10 @@ export async function processZapiWebhookRequest(
         }
         return automationEnv ? runInternalJobs(next, automationEnv.company, automationEnv.members.map(member => member.id)) : next;
       });
+      if (!fromMe && process.env.CAMPAIGNS_ENABLED === 'true') {
+        const saved = (await readCRMState(tenantId)).messages.find(message => (message.externalId || message.id) === messageId);
+        if (saved?.senderType === 'CONTACT') await recordCampaignReply(tenantId, instanceId, cleanPhone, saved.timestamp);
+      }
     }
 
     return NextResponse.json({

@@ -295,6 +295,7 @@ export interface Attachment {
 }
 
 export interface Message {
+  campaignId?: string;
   receivedAt?: number;
   id: string;
   tenantId: string;

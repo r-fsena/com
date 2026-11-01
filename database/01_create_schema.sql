@@ -156,8 +156,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     presented_properties JSONB DEFAULT '[]'::jsonb, -- Empreendimentos e unidades apresentadas
     
     -- LGPD & Auditoria
-    consent_given BOOLEAN NOT NULL DEFAULT TRUE,
-    consent_date TIMESTAMPTZ DEFAULT NOW(),
+    consent_given BOOLEAN NOT NULL DEFAULT FALSE,
+    consent_date TIMESTAMPTZ,
     has_opted_out BOOLEAN NOT NULL DEFAULT FALSE,
     last_client_interaction_at TIMESTAMPTZ DEFAULT NOW(),
     last_team_interaction_at TIMESTAMPTZ DEFAULT NOW(),

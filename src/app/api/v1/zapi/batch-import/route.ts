@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
           lastSyncedAt: new Date().toISOString(),
           targetRegions: [],
           notesCount: 0,
-          consentGiven: true,
+          consentGiven: false,
           consentDate: lastMsgAt,
           hasOptedOut: false,
           isPersonal: false,

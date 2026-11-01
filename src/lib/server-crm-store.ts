@@ -9,6 +9,9 @@ export interface ServerCRMState {
   automation?: import('@/lib/automations').AutomationState;
   tasks?: import('@/types/crm').Task[];
   commercial?: import('@/lib/commercial-config').CommercialConfig;
+  marketingPermissions?: Record<string, import('@/lib/campaigns').MarketingPermission>;
+  marketingPermissionAudit?: (import('@/lib/campaigns').MarketingPermission & { phone: string })[];
+  outboundNext?: 'CAMPAIGN' | 'AUTOMATION';
   contacts: Contact[];
   deals: Deal[];
   conversations: Conversation[];

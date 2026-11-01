@@ -29,6 +29,7 @@ async function fixture() {
       async getStatus() { return { success: true, data: { connected } }; }
       async sendText(phone, text) { return send('TEXT', phone, text); }
       async sendImage(phone, url, text) { return send('IMAGE', phone, text, url); }
+      async sendVideo(phone, url, text) { return send('VIDEO', phone, text, url); }
       async sendDocument(phone, url, fileName, text) { return send('DOCUMENT', phone, text, url, fileName); }
     } },
     '@/lib/db/zapi-credentials-service': { ZapiCredentialsService: {
@@ -426,4 +427,58 @@ test('alterar uma parte ou o timer exige nova simulação; revogação entre par
     await releaseSequenceTimer(f,(await f.recipients(c.id)).find(row=>row.payload.partIndex===0)); await f.worker.runCampaignWorker('tenant-a');
     assert.equal(f.sends.length,1); assert.equal((await f.recipients(c.id)).find(row=>row.payload.partIndex===1).status,'SKIPPED');
   }finally{await f.client.close();}
+});
+
+test('vídeos MP4 têm limite próprio, nome coerente e legenda validada', () => {
+  const engine=harness().load('src/lib/campaigns.ts');
+  assert.equal(engine.campaignConfigSchema.safeParse(sequenceConfig(2,{parts:[]})).success,false);
+  const video={key:'tenants/tenant-a/attachments/tour.mp4',fileName:'tour.mp4',mimeType:'video/mp4',size:25*1024*1024};
+  assert.equal(engine.campaignAttachmentSchema.safeParse(video).success,true);
+  assert.equal(engine.campaignAttachmentSchema.safeParse({...video,size:video.size+1}).success,false);
+  assert.equal(engine.campaignAttachmentSchema.safeParse({...video,mimeType:'image/jpeg',fileName:'image.jpg'}).success,false);
+  assert.equal(engine.campaignAttachmentSchema.safeParse({...video,mimeType:'application/pdf',fileName:'file.pdf'}).success,false);
+  assert.equal(engine.campaignAttachmentSchema.safeParse({...video,fileName:'tour.mov'}).success,false);
+  assert.equal(engine.campaignAttachmentSchema.safeParse({...video,mimeType:'video/webm',fileName:'tour.webm'}).success,false);
+  const cfg=sequenceConfig(2);cfg.parts[1]={message:'Legenda',attachment:video};
+  assert.equal(engine.campaignConfigSchema.safeParse(cfg).success,true);
+  cfg.parts[1].message='';assert.equal(engine.campaignConfigSchema.safeParse(cfg).success,true);
+  assert.equal(engine.campaignConfigSchema.safeParse(config({message:'',attachment:video})).success,true);
+  cfg.parts[1].message='A'.repeat(1025);assert.equal(engine.campaignConfigSchema.safeParse(cfg).success,false);
+});
+
+test('cliente envia vídeo na rota oficial com legenda e aceite assíncrono, sem confundir aceite e entrega', async () => {
+  let captured;const h=harness({fetch:async(url,options)=>{captured={url,body:JSON.parse(options.body)};return {ok:true,json:async()=>({messageId:'video-test'})};}});
+  const client=new(h.load('src/lib/zapi-client.ts').ZApiClient)({instanceId:'test',instanceToken:'test',securityToken:'test'});
+  const result=await client.sendVideo('+55 (11) 99876-5432','https://example.invalid/tour.mp4','Conheça o imóvel');
+  assert.equal(result.externalMessageId,'video-test');assert.ok(captured.url.endsWith('/send-video'));
+  assert.deepEqual(captured.body,{phone:'5511998765432',video:'https://example.invalid/tour.mp4',caption:'Conheça o imóvel',viewOnce:false,async:true});
+});
+
+test('vídeo integra a sequência, respeita o timer e é salvo como VIDEO no histórico', async () => {
+  const f=await fixture();
+  try {
+    await f.consent(contact('one'));const cfg=sequenceConfig(2);
+    cfg.parts[1].attachment={key:'tenants/tenant-a/attachments/tour.mp4',fileName:'tour.mp4',mimeType:'video/mp4',size:20*1024*1024};
+    cfg.parts[1].message='';
+    const c=await f.start(await f.create(cfg));await f.worker.runCampaignWorker('tenant-a');assert.equal(f.sends.length,1);
+    await f.ready();await f.worker.runCampaignWorker('tenant-a');assert.equal(f.sends.length,1);
+    await releaseSequenceTimer(f,(await f.recipients(c.id))[0]);await f.worker.runCampaignWorker('tenant-a');
+    assert.deepEqual(f.sends.map(send=>send.kind),['TEXT','VIDEO']);assert.equal(f.sends[1].text,'');
+    const message=(await f.repo.readCRMState('tenant-a')).messages.find(message=>message.messageType==='VIDEO');
+    assert.equal(message.campaignId,c.id);assert.equal(message.status,'SENT');assert.equal(message.attachments[0].mimeType,'video/mp4');
+    const row=(await f.recipients(c.id)).find(row=>row.payload.partIndex===1);assert.equal(row.status,'ACCEPTED');
+    await f.service.recordCampaignReceipt('tenant-a','instance-a',[row.externalId],'DELIVERED');assert.equal((await f.recipients(c.id)).find(row=>row.payload.partIndex===1).status,'DELIVERED');
+  }finally{await f.client.close();}
+});
+
+test('validação de armazenamento confere tamanho, MIME e versão de vídeos antes de gerar o envio', async () => {
+  const sdk=require('@aws-sdk/client-s3');let metadata={ETag:'video-version',ContentLength:20*1024*1024,ContentType:'video/mp4'};
+  class S3Client extends sdk.S3Client {constructor(options){super({...options,credentials:{accessKeyId:'test',secretAccessKey:'test'}});}async send(){return metadata;}}
+  const media=harness({'@aws-sdk/client-s3':{...sdk,S3Client}},{AWS_S3_BUCKET_NAME:'isolated-test-bucket'}).load('src/lib/campaign-media.ts');
+  const attachment={key:'tenants/tenant-a/attachments/tour.mp4',fileName:'tour.mp4',mimeType:'video/mp4',size:20*1024*1024};
+  assert.equal((await media.verifyCampaignMedia('tenant-a',attachment)).etag,'video-version');
+  metadata={...metadata,ContentType:'application/pdf'};await assert.rejects(media.verifyCampaignMedia('tenant-a',attachment));
+  metadata={...metadata,ContentType:'video/mp4',ContentLength:100};await assert.rejects(media.verifyCampaignMedia('tenant-a',attachment));
+  metadata={...metadata,ContentLength:attachment.size,ETag:'changed'};await assert.rejects(media.verifyCampaignMedia('tenant-a',{...attachment,etag:'video-version'}));
+  await assert.rejects(media.verifyCampaignMedia('tenant-b',attachment));
 });

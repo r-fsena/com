@@ -4,13 +4,16 @@ import { isBusinessTime, ruleConfigSchema } from '@/lib/automations';
 
 const ids = z.array(z.string().min(1).max(200)).max(5000).default([]);
 export const campaignAttachmentSchema = z.object({ key: z.string().min(1).max(500), fileName: z.string().min(1).max(150),
-  mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']), size: z.number().int().positive().max(10 * 1024 * 1024), etag: z.string().max(200).optional() }).strict();
+  mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4']), size: z.number().int().positive().max(25 * 1024 * 1024), etag: z.string().max(200).optional() }).strict()
+  .refine(value => value.mimeType === 'video/mp4' || value.size <= 10 * 1024 * 1024, 'Imagens e PDFs devem ter até 10 MB.')
+  .refine(value => value.mimeType !== 'video/mp4' || /\.mp4$/i.test(value.fileName), 'Escolha um vídeo no formato MP4, com extensão .mp4.');
 export type CampaignAttachment = z.infer<typeof campaignAttachmentSchema>;
-const campaignTextSchema = z.string().trim().min(1, 'Escreva a mensagem.').max(4096).refine(value =>
+const campaignTextSchema = z.string().trim().max(4096).refine(value =>
   !value.replace(/\{\{\s*(nome|primeiro_nome|empresa|corretor_nome)\s*\}\}/g, '').match(/\{\{|\}\}/),
   'Use os botões Nome do cliente, Primeiro nome, Empresa e Corretor responsável.');
 export const campaignPartSchema = z.object({ message: campaignTextSchema, attachment: campaignAttachmentSchema.optional() }).strict()
-  .refine(value => !value.attachment || value.message.length <= 1024, 'Com imagem ou PDF, use uma legenda de até 1.024 caracteres.');
+  .refine(value => !!value.message || !!value.attachment, 'Escreva a mensagem ou adicione um anexo.')
+  .refine(value => !value.attachment || value.message.length <= 1024, 'Com anexo, use uma legenda de até 1.024 caracteres.');
 export type CampaignPart = z.infer<typeof campaignPartSchema>;
 export const campaignConfigSchema = z.object({
   name: z.string().trim().min(1, 'Dê um nome à campanha.').max(120),
@@ -19,15 +22,14 @@ export const campaignConfigSchema = z.object({
     temperatures: z.array(z.enum(['HOT', 'WARM', 'COLD'])).max(3).default([]), sources: ids, stageIds: ids, tags: ids, regions: ids, assignedUserIds: ids,
     minValue: z.number().min(0).optional(), maxValue: z.number().min(0).optional() })
     .refine(value => value.minValue === undefined || value.maxValue === undefined || value.minValue <= value.maxValue, 'O valor máximo deve ser maior que o mínimo.'),
-  message: z.string().trim().min(1, 'Escreva a mensagem.').max(4096).refine(value => {
-    return !value.replace(/\{\{\s*(nome|primeiro_nome|empresa|corretor_nome)\s*\}\}/g, '').match(/\{\{|\}\}/);
-  }, 'Use os botões Nome do cliente, Primeiro nome, Empresa e Corretor responsável.'),
+  message: campaignTextSchema,
   attachment: campaignAttachmentSchema.optional(),
   parts: z.array(campaignPartSchema).min(1).max(5, 'Use até cinco mensagens por campanha.').optional(),
   intervalSeconds: z.number().int().min(15, 'O intervalo mínimo é de 15 segundos.').max(3600, 'O intervalo máximo é de uma hora.').default(30),
   schedule: z.object({ startsAt: z.string().datetime().optional(), hours: ruleConfigSchema.shape.schedule, expiresAfterHours: z.number().int().min(24).max(168).default(48) }),
-}).strict().refine(value => !value.attachment || value.message.length <= 1024, 'Com imagem ou PDF, use uma legenda de até 1.024 caracteres.')
-  .refine(value => !value.parts || (value.message === value.parts[0].message && JSON.stringify(value.attachment) === JSON.stringify(value.parts[0].attachment)), 'Atualize a primeira mensagem da sequência antes de salvar.');
+}).strict().refine(value => !!value.message || !!value.attachment, 'Escreva a mensagem ou adicione um anexo.')
+  .refine(value => !value.attachment || value.message.length <= 1024, 'Com anexo, use uma legenda de até 1.024 caracteres.')
+  .refine(value => !value.parts?.length || (value.message === value.parts[0].message && JSON.stringify(value.attachment) === JSON.stringify(value.parts[0].attachment)), 'Atualize a primeira mensagem da sequência antes de salvar.');
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
 export type RecipientStatus = 'PENDING' | 'PROCESSING' | 'WAITING_CHANNEL' | 'DISPATCHING' | 'ACCEPTED' | 'DELIVERED' | 'READ' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'UNKNOWN';

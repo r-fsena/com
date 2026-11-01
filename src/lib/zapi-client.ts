@@ -117,6 +117,14 @@ export class ZApiClient {
     });
   }
 
+  /** Aceite da fila não confirma entrega; os recibos são conciliados pelo webhook. */
+  async sendVideo(phone: string, videoUrl: string, caption?: string): Promise<ZApiResponse> {
+    return this.request('send-video', {
+      method: 'POST',
+      body: JSON.stringify({ phone: phone.replace(/\D/g, ''), video: videoUrl, caption, viewOnce: false, async: true }),
+    });
+  }
+
   /**
    * Envio de documento (PDF, proposta, contrato)
    */

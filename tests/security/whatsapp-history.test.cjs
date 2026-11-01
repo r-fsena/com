@@ -108,3 +108,22 @@ test('configuração cobre a URL prioritária de recebidas/enviadas e reporta fa
   failPriority = true;
   assert.equal((await client.configureAllWebhooks('https://crm.test/hook')).success, false);
 });
+
+test('webhook preserva vídeo recebido e enviado como VIDEO, com legenda e arquivo, sem duplicar reentrega', async () => {
+  const client=new PGlite();
+  try {
+    await client.exec(fs.readFileSync('database/03_durable_crm_state.sql','utf8'));
+    const h=harness({'@/lib/db/zapi-credentials-service':{ZapiCredentialsService:{resolveWebhookTenant:async()=> 'tenant-a'}}},{DATABASE_URL:'test-only'});
+    h.mocks['@/db'].db=drizzle(client,{schema:h.load('src/db/schema.ts')});
+    const handler=h.load('src/lib/zapi-webhook-handler.ts').processZapiWebhookRequest;
+    const token=h.load('src/lib/zapi-webhook-auth.ts').webhookToken('instance-a');
+    const post=body=>handler(h.request(`/api/webhook?token=${token}`,{instanceId:'instance-a',phone:'5511998765432',momment:Date.parse('2024-01-01T10:10:00Z'),...body}));
+    const video={videoUrl:'https://example.invalid/tour.mp4',caption:'Tour do imóvel',fileName:'tour.mp4',fileSize:1500};
+    for(const fromMe of [true,false]){
+      const body={messageId:`video-${fromMe}`,video,fromMe}; assert.equal((await post(body)).status,200); assert.equal((await post(body)).status,200);
+    }
+    const state=await h.load('src/lib/crm-repository.ts').readCRMState('tenant-a');assert.equal(state.messages.length,2);
+    for(const message of state.messages){assert.equal(message.messageType,'VIDEO');assert.equal(message.content,'Tour do imóvel');assert.equal(message.attachments[0].mimeType,'video/mp4');assert.equal(message.attachments[0].fileName,'tour.mp4');assert.equal(message.attachments[0].fileSize,1500);}
+    assert.equal(state.messages.find(m=>m.id==='video-true').senderType,'USER');assert.equal(state.messages.find(m=>m.id==='video-false').senderType,'CONTACT');
+  }finally{await client.close();}
+});

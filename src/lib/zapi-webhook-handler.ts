@@ -344,7 +344,7 @@ export async function processZapiWebhookRequest(
 
     // 3. Extrai o conteúdo do texto ou mídia
     let content = '';
-    let mediaType: 'text' | 'image' | 'audio' | 'document' = 'text';
+    let mediaType: 'text' | 'image' | 'audio' | 'document' | 'video' = 'text';
     let mediaUrl = '';
 
     if (body.text && body.text.message) {
@@ -376,7 +376,7 @@ export async function processZapiWebhookRequest(
       content = imgObj.caption || (isViewOnce ? '📷 Foto (Visualização Única)' : '📷 Imagem');
     } else if (body.video || body.viewOnceVideo || (body.viewOnceMessage && body.viewOnceMessage.video)) {
       const vidObj = body.video || body.viewOnceVideo || (body.viewOnceMessage && body.viewOnceMessage.video);
-      mediaType = 'document';
+      mediaType = 'video';
       mediaUrl = typeof vidObj === 'string' ? vidObj : (vidObj.videoUrl || vidObj.url || vidObj.link || '');
       content = vidObj.caption || (isViewOnce ? '🎥 Vídeo (Visualização Única)' : '🎥 Vídeo');
     } else if (body.audio || body.voice || body.ptt) {
@@ -528,14 +528,14 @@ export async function processZapiWebhookRequest(
             conversationId: targetConvId,
             senderType: fromMe ? 'USER' : 'CONTACT',
             senderName: fromMe ? (body.senderName || 'Corretor') : (existingContact?.name || senderName),
-            messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : 'TEXT') as any,
+            messageType: (mediaType === 'audio' ? 'AUDIO' : mediaType === 'image' ? 'IMAGE' : mediaType === 'document' ? 'DOCUMENT' : mediaType === 'video' ? 'VIDEO' : 'TEXT') as any,
             content,
             attachments: mediaUrl ? [{
               id: `att-${messageId}`,
               url: mediaUrl,
-              fileName: mediaType === 'audio' ? 'Audio.mp3' : mediaType === 'image' ? 'Foto.jpg' : (content.replace(/^📄\s*/, '') || 'Documento.pdf'),
-              fileSize: 1024,
-              mimeType: mediaType === 'audio' ? 'audio/mpeg' : mediaType === 'image' ? 'image/jpeg' : 'application/pdf',
+              fileName: mediaType === 'audio' ? 'Audio.mp3' : mediaType === 'image' ? 'Foto.jpg' : mediaType === 'video' ? (body.video?.fileName || 'Video.mp4') : (content.replace(/^📄\s*/, '') || 'Documento.pdf'),
+              fileSize: mediaType === 'video' ? (Number(body.video?.fileSize) || 0) : 1024,
+              mimeType: mediaType === 'audio' ? 'audio/mpeg' : mediaType === 'image' ? 'image/jpeg' : mediaType === 'video' ? 'video/mp4' : 'application/pdf',
             }] : undefined,
             status: 'DELIVERED',
             isInternalNote: false,

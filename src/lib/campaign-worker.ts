@@ -140,6 +140,7 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
                 attempted = true;
                 const sent = claimed.payload.attachment ? claimed.payload.attachment.mimeType === 'application/pdf'
                   ? await client.sendDocument(claimed.phone, mediaUrl!, claimed.payload.attachment.fileName, claimed.payload.message)
+                  : claimed.payload.attachment.mimeType === 'video/mp4' ? await client.sendVideo(claimed.phone, mediaUrl!, claimed.payload.message)
                   : await client.sendImage(claimed.phone, mediaUrl!, claimed.payload.message)
                   : await client.sendText(claimed.phone, claimed.payload.message);
                 if (sent.success && sent.externalMessageId) { externalId = sent.externalMessageId; result = 'ACCEPTED'; reason = 'Aceito pelo provedor. Aguardando confirmação de entrega.'; }
@@ -186,9 +187,9 @@ export async function runCampaignWorker(tenantId: string, deadline = Date.now() 
           lastTeamInteractionAt: Date.parse(contact.lastTeamInteractionAt || '') > Date.parse(at) ? contact.lastTeamInteractionAt : at, updatedAt: updated.updatedAt.toISOString() }],
           conversations: [{ ...existing, id: conversationId, tenantId, instanceId: claimed.payload.instanceId, contactId: contact.id, assignedUserId: contact.assignedUserId,
             status: newerSummary ? existing.status : 'PENDING_CLIENT', unreadCount: existing?.unreadCount || 0,
-            lastMessagePreview: newerSummary ? existing.lastMessagePreview : claimed.payload.message.slice(0, 100), lastMessageAt: newerSummary ? existing.lastMessageAt : at, slaBreached: newerSummary ? existing.slaBreached : false }],
+            lastMessagePreview: newerSummary ? existing.lastMessagePreview : (claimed.payload.message || (claimed.payload.attachment?.mimeType === 'video/mp4' ? '🎥 Vídeo' : claimed.payload.attachment?.mimeType === 'application/pdf' ? `📄 ${claimed.payload.attachment.fileName}` : '📷 Imagem')).slice(0, 100), lastMessageAt: newerSummary ? existing.lastMessageAt : at, slaBreached: newerSummary ? existing.slaBreached : false }],
           messages: [{ id: existingMessage?.id || externalId!, externalId, tenantId, conversationId: existingMessage?.conversationId || conversationId,
-            campaignId: claimed.campaignId, senderType: 'SYSTEM', senderName: 'Campanha', messageType: claimed.payload.attachment ? claimed.payload.attachment.mimeType === 'application/pdf' ? 'DOCUMENT' : 'IMAGE' : 'TEXT',
+            campaignId: claimed.campaignId, senderType: 'SYSTEM', senderName: 'Campanha', messageType: claimed.payload.attachment ? claimed.payload.attachment.mimeType === 'application/pdf' ? 'DOCUMENT' : claimed.payload.attachment.mimeType === 'video/mp4' ? 'VIDEO' : 'IMAGE' : 'TEXT',
             content: claimed.payload.message, status: existingMessage?.status === 'READ' || updated.status === 'READ' ? 'READ' : existingMessage?.status === 'DELIVERED' || updated.status === 'DELIVERED' ? 'DELIVERED' : updated.status === 'FAILED' ? 'FAILED' : 'SENT',
             isInternalNote: false, timestamp: existingMessage?.timestamp || at, attachments: claimed.payload.attachment ? [{ id: `campaign-${claimed.id}`, url: `/api/v1/campaigns/media?tenantId=${encodeURIComponent(tenantId)}&key=${encodeURIComponent(claimed.payload.attachment.key)}`,
               fileName: claimed.payload.attachment.fileName, fileSize: claimed.payload.attachment.size, mimeType: claimed.payload.attachment.mimeType }] : undefined }] });

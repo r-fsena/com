@@ -1,5 +1,6 @@
 'use client';
 
+import { VideoAttachmentPreview } from '@/components/ui/VideoAttachmentPreview';
 import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { historyForConversation } from '@/lib/crm-history';
@@ -2316,8 +2317,10 @@ export function WhatsAppInbox() {
                         </div>
                       )}
 
+                      {msg.attachments?.[0]?.url && (msg.messageType === 'VIDEO' || msg.attachments[0].mimeType?.startsWith('video/')) && <div className="mb-2 max-w-sm"><VideoAttachmentPreview url={msg.attachments[0].url} label={msg.attachments[0].fileName || 'Vídeo da conversa'} preload="none" /></div>}
+
                       {/* Documento / PDF / Proposta Anexa */}
-                      {(msg.messageType === 'DOCUMENT' || (msg.attachments?.[0] && !msg.attachments[0].mimeType?.startsWith('image') && !msg.attachments[0].mimeType?.startsWith('audio'))) && (() => {
+                      {(msg.messageType === 'DOCUMENT' || (msg.attachments?.[0] && !msg.attachments[0].mimeType?.startsWith('image') && !msg.attachments[0].mimeType?.startsWith('audio') && !msg.attachments[0].mimeType?.startsWith('video/'))) && (() => {
                         const docUrl = msg.attachments?.[0]?.url;
                         const hasDownloadUrl = Boolean(docUrl && docUrl.startsWith('http') && docUrl !== '#' && !docUrl.startsWith('blob:'));
                         const docName = msg.attachments?.[0]?.fileName || (msg.content.startsWith('📄') ? msg.content.replace(/^📄\s*/, '') : msg.content) || 'Documento.pdf';

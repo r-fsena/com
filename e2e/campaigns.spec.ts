@@ -3,6 +3,7 @@ const tenantId = 'tenant-campaign-ux';
 const user = { id: '00000000-0000-4000-8000-000000000001', name: 'Gestora de exemplo' };
 const tenant = { id: tenantId, slug: 'campaign-ux', name: 'Imobiliária de exemplo', documentCnpj: '', primaryColor: '#6366f1', timezone: 'America/Sao_Paulo', status: 'ACTIVE', plan: 'PROFESSIONAL', maxBrokers: 5, maxInstances: 1,
   monthlyFee: 0, featureFlags: { campaigns: true }, businessHours: { start: '08:00', end: '18:00', workDays: [1, 2, 3, 4, 5] }, settings: { slaFirstResponseMinutes: 15, slaInactivityHours: 24, autoAssignRule: 'UNASSIGNED_QUEUE', aiCopilotEnabled: false, requireHumanApprovalForAI: true } };
+const expandMessage = async (page: import('@playwright/test').Page, index: number) => { const expand = page.getByRole('button', { name: `Expandir mensagem ${index}`, exact: true }); if (await expand.count()) await expand.click(); };
 const audience = { total: 2, eligible: 1, excluded: 1, rows: [{ id: 'one', name: 'Marina Exemplo', phone: '5511998765432', eligible: true, reason: '' }, { id: 'two', name: 'Contato pessoal de exemplo', phone: '5511998765000', eligible: false, reason: 'Contato pessoal' }] };
 test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,7 +18,7 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
           if (new URL(request.url()).searchParams.has('id')) return json({ success: true, tenantId, campaign: campaigns[0], recipients: [], total: 0, offset: 0, nextOffset: null });
           return json({ success: true, tenantId, campaigns, contacts: [{ id: 'one', name: 'Marina Exemplo', phone: '+5511998765432', tags: ['Interessado'], targetRegions: ['Centro'] }, { id: 'two', name: 'Contato pessoal de exemplo', phone: '+5511998765000', isPersonal: true }],
             connections: [{ id: 'instance-one', name: 'Linha Comercial', phone: '+5511912345678' }], members: [user], ownPhone: '5511987654321', permissions: {}, pipelines: [], nextOffset: null,
-            capabilities: { workerReady: true, outboundEnabled: true, storageReady: false } });
+            capabilities: { workerReady: true, outboundEnabled: true, storageReady: true } });
         }
         const body = request.postDataJSON();
         if (body.operation === 'permission') return json({ success: true, tenantId });
@@ -111,14 +112,18 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
     }
     await expect(page.getByRole('button', { name: 'Adicionar mensagem', exact: true })).toBeDisabled();
     await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).fill('60');
+    await expandMessage(page, 3);
     await page.getByRole('button', { name: 'Mover mensagem 3 para cima', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toHaveValue('Parte 3');
+    await expect(page.getByRole('button', { name: 'Recolher mensagem 2', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expandMessage(page, 3);
     await expect(page.getByRole('textbox', { name: 'Mensagem 3', exact: true })).toHaveValue('Parte 2');
     await page.getByRole('button', { name: 'Salvar rascunho', exact: true }).click();
     await expect(page.getByText('Rascunho salvo no servidor. Nenhum disparo foi iniciado.', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Voltar à lista', exact: true }).click();
     await page.getByRole('button', { name: 'Editar', exact: true }).click();
     await page.getByRole('button', { name: '3. Mensagem', exact: true }).click();
+    await expandMessage(page, 2);
     await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toHaveValue('Parte 3');
     await expect(page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true })).toHaveValue('60');
     await page.getByRole('button', { name: '5. Conferir e enviar', exact: true }).click();
@@ -143,9 +148,51 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
     await page.mouse.wheel(0, 200);
     await expect(page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true })).toHaveValue('30');
     await page.screenshot({ path: '/tmp/brokiva-sequencia-mobile.png', fullPage: true });
+    await expandMessage(page, 1);
     await page.getByRole('button', { name: 'Remover mensagem 1', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Mensagem 1', exact: true })).toHaveValue('Posso enviar os detalhes?');
     await expect(page.getByRole('button', { name: 'Remover mensagem 1', exact: true })).toBeDisabled();
+  });
+
+  test('adicionar recolhe a anterior, abre e foca a nova; alternar blocos preserva os textos', async ({ page }) => {
+    await page.getByRole('button', { name: 'Criar campanha', exact: true }).click();
+    await page.getByRole('button', { name: '3. Mensagem', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Mensagem 1', exact: true }).fill('Primeiro texto preservado');
+    await page.getByRole('button', { name: 'Adicionar mensagem', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Mensagem 1', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Expandir mensagem 1', exact: true })).toHaveAttribute('aria-expanded','false');
+    await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toBeFocused();
+    await page.getByRole('textbox', { name: 'Mensagem 2', exact: true }).fill('Segundo texto preservado');
+    await expandMessage(page,1);
+    await expect(page.getByRole('textbox', { name: 'Mensagem 1', exact: true })).toHaveValue('Primeiro texto preservado');
+    await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Recolher mensagem 1', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: /^Mensagem [1-5]$/ })).toHaveCount(0);
+    await expandMessage(page,2);
+    await expect(page.getByRole('textbox', { name: 'Mensagem 2', exact: true })).toHaveValue('Segundo texto preservado');
+    await page.screenshot({path:'/tmp/brokiva-campanhas-blocos.png',fullPage:true});
+  });
+  test('anexa MP4, preserva ao recolher e oferece prévia com controles e erro de reprodução claro', async ({ page }) => {
+    await page.route('**/api/v1/uploads/presigned-url', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({data:{uploadUrl:'https://campaign-upload.invalid/tour.mp4',fileKey:`tenants/${tenantId}/attachments/tour.mp4`,headers:{'Content-Type':'video/mp4'}}}) }));
+    await page.route('https://campaign-upload.invalid/**', route => route.fulfill({status:200,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'PUT,OPTIONS','Access-Control-Allow-Headers':'content-type'},body:''}));
+    await page.route('**/api/v1/campaigns/media?*', route => route.fulfill({status:404,body:''}));
+    await page.getByRole('button', { name:'Criar campanha',exact:true }).click();
+    await page.getByRole('textbox',{name:'Nome da campanha',exact:true}).fill('Vídeo de demonstração');
+    await page.getByRole('button',{name:'3. Mensagem',exact:true}).click();
+    await page.getByLabel('Imagem, vídeo ou PDF da mensagem 1 (opcional)',{exact:true}).setInputFiles({name:'tour.mp4',mimeType:'video/mp4',buffer:Buffer.from('isolated-test-upload-not-a-playable-video')});
+    await expect(page.getByText('tour.mp4',{exact:false}).first()).toBeVisible();
+    await expect(page.locator('video[aria-label="Vídeo da mensagem 1"]')).toHaveAttribute('controls','');
+    await expect(page.getByText('Não foi possível reproduzir a prévia.',{exact:false})).toBeVisible();
+    await page.getByRole('button',{name:'Recolher mensagem 1',exact:true}).click();
+    await expect(page.locator('video')).toHaveCount(0);
+    await expandMessage(page,1);
+    await expect(page.locator('video[aria-label="Vídeo da mensagem 1"]')).toBeVisible();
+    await page.getByRole('textbox',{name:'Mensagem 1',exact:true}).fill('');
+    const saved=page.waitForRequest(request=>request.url().endsWith('/api/v1/campaigns')&&request.method()==='POST'&&request.postDataJSON().operation==='save');
+    await page.getByRole('button',{name:'Salvar rascunho',exact:true}).click();
+    expect((await saved).postDataJSON().config.parts[0].attachment.mimeType).toBe('video/mp4');
+    await page.getByRole('button',{name:'Remover anexo da mensagem 1',exact:true}).click();
+    await expect(page.locator('video')).toHaveCount(0);
   });
 
 });

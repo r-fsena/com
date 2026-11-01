@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, ArrowLeft, Send, RefreshCw, Copy, Pencil, Pause, Play, X, ShieldCheck } from 'lucide-react';
 import { useCRM } from '@/lib/crm-context';
-import { campaignConfigSchema, campaignPhone, campaignParts, renderCampaignMessage, type CampaignPart, recipientLabels, type CampaignConfig, type CampaignAttachment, type MarketingPermission } from '@/lib/campaigns';
+import { campaignConfigSchema, campaignAttachmentSchema, campaignPhone, campaignParts, renderCampaignMessage, type CampaignPart, recipientLabels, type CampaignConfig, type CampaignAttachment, type MarketingPermission } from '@/lib/campaigns';
 import { CampaignSequenceEditor, CampaignSequencePreview, sequenceIntervalLabel, sequenceSizeLabel } from './CampaignSequenceEditor';
 import { valueLabels } from '@/lib/automations';
 
@@ -122,7 +122,9 @@ function CampaignWorkspace() {
   }
   async function upload(index: number, file?: File) {
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('Escolha uma imagem JPG, PNG, WebP ou um PDF de até 10 MB.'); return; }
+    if (!campaignAttachmentSchema.safeParse({ key: 'pending-upload', fileName: file.name, mimeType: file.type, size: file.size }).success) {
+      setError('Escolha uma imagem JPG, PNG, WebP ou PDF de até 10 MB, ou um vídeo MP4 de até 25 MB.'); return;
+    }
     setBusy(true); setError(''); try {
       const response = await fetch('/api/v1/uploads/presigned-url', { method: 'POST', credentials: 'include', headers, body: JSON.stringify({ tenantId: currentTenant.id, fileName: file.name, fileType: file.type, fileSizeBytes: file.size }) });
       const value = await response.json(); if (!response.ok || !value.data?.uploadUrl) throw new Error(value.error || 'Não foi possível preparar o upload.');

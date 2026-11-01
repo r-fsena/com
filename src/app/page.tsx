@@ -306,7 +306,7 @@ export default function CRMApp() {
                 {/* 12. Configurações da Imobiliária */}
                 <div className={`h-full w-full min-w-0 flex-1 ${currentTab === 'settings' ? 'flex flex-col' : 'hidden'}`}>
                   {visitedTabs.has('settings') && (
-                    <SettingsManager onOpenQrCodeModal={() => setCurrentTab('whatsapp-connection')} />
+                    <SettingsManager onOpenQrCodeModal={() => setCurrentTab('whatsapp-connection')} onOpenAutomations={() => setCurrentTab('automations')} />
                   )}
                 </div>
 

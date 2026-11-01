@@ -29,6 +29,7 @@ import { PipelineStage, LossReason, LeadSource, LeadSourceGroup } from '@/types/
 export function CommercialProcessesSettings() {
   const {
     pipelines,
+    currentUser,
     currentPipeline,
     setCurrentPipelineById,
     createPipeline,
@@ -48,6 +49,14 @@ export function CommercialProcessesSettings() {
     updateLeadSource,
     deleteLeadSource,
   } = useCRM();
+
+  const [saving, setSaving] = useState(false);
+  const [configError, setConfigError] = useState('');
+  const canManage = ['SUPERADMIN', 'ADMIN', 'MANAGER'].includes(currentUser.role);
+  const runChange = async (operation: () => Promise<unknown>) => {
+    setSaving(true); setConfigError('');
+    try { await operation(); } catch (error: any) { setConfigError(error.message); } finally { setSaving(false); }
+  };
 
   // Sub-abas principais: ORIGINS, LOSS_REASONS, PIPELINES
   const [activeSection, setActiveSection] = useState<'ORIGINS' | 'LOSS_REASONS' | 'PIPELINES'>('ORIGINS');
@@ -113,19 +122,22 @@ export function CommercialProcessesSettings() {
     setIsSourceModalOpen(true);
   };
 
-  const handleSaveSource = (e: React.FormEvent) => {
+  const handleSaveSource = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sourceFormName.trim()) return;
 
+    if (saving || !canManage) return;
+    setSaving(true); setConfigError('');
+    try {
     if (editingSource) {
-      updateLeadSource(editingSource.id, {
+      await updateLeadSource(editingSource.id, {
         name: sourceFormName.trim(),
         description: sourceFormDesc.trim() || undefined,
         groupId: sourceFormGroupId || undefined,
         isActive: sourceFormActive,
       });
     } else {
-      createLeadSource({
+      await createLeadSource({
         name: sourceFormName.trim(),
         description: sourceFormDesc.trim() || undefined,
         groupId: sourceFormGroupId || undefined,
@@ -133,10 +145,11 @@ export function CommercialProcessesSettings() {
       });
     }
     setIsSourceModalOpen(false);
+    } catch (error: any) { setConfigError(error.message); } finally { setSaving(false); }
   };
 
   const handleToggleSourceStatus = (source: LeadSource) => {
-    updateLeadSource(source.id, { isActive: !source.isActive });
+    void runChange(() => updateLeadSource(source.id, { isActive: !source.isActive }));
   };
 
   // -------------------------------------------------------------
@@ -158,28 +171,32 @@ export function CommercialProcessesSettings() {
     setIsGroupModalOpen(true);
   };
 
-  const handleSaveGroup = (e: React.FormEvent) => {
+  const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!groupFormName.trim()) return;
 
+    if (saving || !canManage) return;
+    setSaving(true); setConfigError('');
+    try {
     if (editingGroup) {
-      updateLeadSourceGroup(editingGroup.id, {
+      await updateLeadSourceGroup(editingGroup.id, {
         name: groupFormName.trim(),
         description: groupFormDesc.trim() || undefined,
         isActive: groupFormActive,
       });
     } else {
-      createLeadSourceGroup({
+      await createLeadSourceGroup({
         name: groupFormName.trim(),
         description: groupFormDesc.trim() || undefined,
         isActive: groupFormActive,
       });
     }
     setIsGroupModalOpen(false);
+    } catch (error: any) { setConfigError(error.message); } finally { setSaving(false); }
   };
 
   const handleToggleGroupStatus = (group: LeadSourceGroup) => {
-    updateLeadSourceGroup(group.id, { isActive: !group.isActive });
+    void runChange(() => updateLeadSourceGroup(group.id, { isActive: !group.isActive }));
   };
 
   // -------------------------------------------------------------
@@ -206,21 +223,24 @@ export function CommercialProcessesSettings() {
     setIsLossModalOpen(true);
   };
 
-  const handleSaveLossReason = (e: React.FormEvent) => {
+  const handleSaveLossReason = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lossFormName.trim()) return;
 
     const pipelineIdsPayload = lossFormAllPipelines ? [] : lossFormPipelineIds;
 
+    if (saving || !canManage) return;
+    setSaving(true); setConfigError('');
+    try {
     if (editingLossReason) {
-      updateLossReason(editingLossReason.id, {
+      await updateLossReason(editingLossReason.id, {
         name: lossFormName.trim(),
         description: lossFormDesc.trim() || undefined,
         isActive: lossFormActive,
         pipelineIds: pipelineIdsPayload,
       });
     } else {
-      createLossReason({
+      await createLossReason({
         name: lossFormName.trim(),
         description: lossFormDesc.trim() || undefined,
         isActive: lossFormActive,
@@ -228,10 +248,11 @@ export function CommercialProcessesSettings() {
       });
     }
     setIsLossModalOpen(false);
+    } catch (error: any) { setConfigError(error.message); } finally { setSaving(false); }
   };
 
   const handleToggleLossReasonStatus = (reason: LossReason) => {
-    updateLossReason(reason.id, { isActive: !reason.isActive });
+    void runChange(() => updateLossReason(reason.id, { isActive: !reason.isActive }));
   };
 
   // -------------------------------------------------------------
@@ -260,22 +281,26 @@ export function CommercialProcessesSettings() {
     setIsPipelineModalOpen(true);
   };
 
-  const handleSavePipeline = (e: React.FormEvent) => {
+  const handleSavePipeline = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pipelineFormName.trim()) return;
 
+    if (saving || !canManage) return;
+    setSaving(true); setConfigError('');
+    try {
     if (editingPipelineId) {
-      updatePipeline(editingPipelineId, {
+      await updatePipeline(editingPipelineId, {
         name: pipelineFormName.trim(),
         stages: pipelineStagesList,
       });
     } else {
-      createPipeline({
+      await createPipeline({
         name: pipelineFormName.trim(),
         stages: pipelineStagesList,
       });
     }
     setIsPipelineModalOpen(false);
+    } catch (error: any) { setConfigError(error.message); } finally { setSaving(false); }
   };
 
   // -------------------------------------------------------------
@@ -313,7 +338,10 @@ export function CommercialProcessesSettings() {
   }, [lossReasons, lossSearchQuery, lossFilterPipelineId]);
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={saving || !canManage} className="space-y-6 min-w-0">
+      {configError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{configError}</p>}
+      {saving && <p role="status" className="text-sm text-slate-600">Salvando no servidor…</p>}
+      {!canManage && <p className="text-sm text-slate-600">Administradores e gestores podem alterar estas configurações.</p>}
       {/* Navegação de Abas do Módulo Processos Comerciais */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-3">
         <div className="flex items-center gap-3">
@@ -521,7 +549,7 @@ export function CommercialProcessesSettings() {
                               type="button"
                               onClick={() => {
                                 if (confirm(`Deseja excluir a origem "${source.name}"?`)) {
-                                  deleteLeadSource(source.id);
+                                  void runChange(() => deleteLeadSource(source.id));
                                 }
                               }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
@@ -635,7 +663,7 @@ export function CommercialProcessesSettings() {
                               type="button"
                               onClick={() => {
                                 if (confirm(`Deseja excluir o grupo "${group.name}"?`)) {
-                                  deleteLeadSourceGroup(group.id);
+                                  void runChange(() => deleteLeadSourceGroup(group.id));
                                 }
                               }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
@@ -779,7 +807,7 @@ export function CommercialProcessesSettings() {
                             type="button"
                             onClick={() => {
                               if (confirm(`Deseja excluir o motivo de perda "${reason.name}"?`)) {
-                                deleteLossReason(reason.id);
+                                void runChange(() => deleteLossReason(reason.id));
                               }
                             }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
@@ -874,7 +902,7 @@ export function CommercialProcessesSettings() {
                               return;
                             }
                             if (confirm(`Deseja realmente remover o funil "${pipeline.name}"?`)) {
-                              deletePipeline(pipeline.id);
+                              void runChange(() => deletePipeline(pipeline.id));
                             }
                           }}
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
@@ -1418,6 +1446,6 @@ export function CommercialProcessesSettings() {
           </div>
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }

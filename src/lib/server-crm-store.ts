@@ -6,6 +6,9 @@ import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, 
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export interface ServerCRMState {
+  automation?: import('@/lib/automations').AutomationState;
+  tasks?: import('@/types/crm').Task[];
+  commercial?: import('@/lib/commercial-config').CommercialConfig;
   contacts: Contact[];
   deals: Deal[];
   conversations: Conversation[];

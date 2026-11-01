@@ -1,0 +1,32 @@
+name: Processar automações do CRM
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+permissions: {}
+concurrency:
+  group: crm-automations-worker
+  cancel-in-progress: false
+jobs:
+  process:
+    if: vars.CRM_AUTOMATIONS_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Executar fila persistida
+        env:
+          CRM_URL: ${{ vars.CRM_AUTOMATIONS_URL }}
+          CRON_SECRET: ${{ secrets.CRM_AUTOMATIONS_CRON_SECRET }}
+        shell: bash
+        run: |
+          if [[ -z "$CRM_URL" || -z "$CRON_SECRET" ]]; then
+            echo "Agendador não configurado: defina CRM_AUTOMATIONS_URL e CRM_AUTOMATIONS_CRON_SECRET."
+            exit 1
+          fi
+          if [[ "$CRM_URL" != https://* ]]; then
+            echo "CRM_AUTOMATIONS_URL deve usar HTTPS."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 65 \
+            --request POST --header "Authorization: Bearer $CRON_SECRET" \
+            "$CRM_URL/api/internal/automations/run"

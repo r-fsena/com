@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 import { readCRMState, writeCRMState, mutateCRMState } from '@/lib/crm-repository';
+import { writeInteractiveCRMState } from '@/lib/automation-service';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
@@ -17,13 +19,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const tenantId = authorizedTenant(session!, body.tenantId || req.headers.get('x-tenant-id'));
-    const allowed = ['contacts', 'conversations', 'messages', 'deals', 'quickReplies', 'aiInsights'];
-    if (Object.keys(body).some(key => !allowed.includes(key) && key !== 'tenantId')) return NextResponse.json({ success: false, error: 'Use as APIs administrativas para alterar usuários ou configurações.' }, { status: 400 });
+    const allowed = ['contacts', 'conversations', 'messages', 'deals', 'aiInsights'];
+    if (Object.keys(body).some(key => !allowed.includes(key) && !['tenantId', 'automationEvent'].includes(key))) return NextResponse.json({ success: false, error: 'Use as APIs administrativas para alterar usuários ou configurações.' }, { status: 400 });
+    const intent = body.automationEvent === undefined ? undefined : z.object({ trigger: z.enum(['LEAD_CREATED', 'STAGE_CHANGED']), entityId: z.string().min(1).max(200) }).strict().safeParse(body.automationEvent);
+    if (intent && (!intent.success || session!.source === 'CHROME_EXTENSION')) return NextResponse.json({ error: 'Evento comercial inválido.' }, { status: 400 });
     const patch = Object.fromEntries(allowed.filter(key => body[key] !== undefined).map(key => [key, body[key]]));
     for (const key of allowed.filter(key => key !== 'aiInsights')) {
       if (patch[key] !== undefined && (!Array.isArray(patch[key]) || patch[key].some((item: any) => item.tenantId !== tenantId))) return NextResponse.json({ success: false, error: 'Registro de outra imobiliária ou inválido.' }, { status: 403 });
     }
-    const state = await writeCRMState(tenantId, patch);
+    const state = intent?.success ? await writeInteractiveCRMState(tenantId, patch, intent.data) : await writeCRMState(tenantId, patch);
     return NextResponse.json({ success: true, tenantId, ...state });
   } catch { return NextResponse.json({ success: false, error: 'Alteração não confirmada. Verifique a imobiliária, o banco e as migrações.' }, { status: 503 }); }
 }

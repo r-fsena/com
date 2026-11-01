@@ -21,6 +21,9 @@ export function mergeTenantState(tenantId: string, previous: PersistedCRMState, 
     for (const item of incoming || []) {
       if (!item || typeof item.id !== 'string' || !item.id || item.tenantId !== tenantId) throw new Error('Registro de outra imobiliária ou sem identificação.');
       const existing = map.get(item.id);
+      // Full browser snapshots can be older than a server-side commercial action.
+      // An unchanged stale contact must not undo that action during reconciliation.
+      if (key === 'contacts' && existing?.updatedAt && 'updatedAt' in item && item.updatedAt && Date.parse(existing.updatedAt) > Date.parse(item.updatedAt)) continue;
       if (key === 'messages') {
         // O navegador não define o cursor e reenviar o mesmo histórico não cria eventos novos.
         const { receivedAt: ignored, ...incomingMessage } = item as any;

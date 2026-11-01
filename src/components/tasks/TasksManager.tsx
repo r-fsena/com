@@ -79,6 +79,7 @@ export function TasksManager() {
 
   // Form State
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [contactId, setContactId] = useState(contacts[0]?.id || '');
   const [taskType, setTaskType] = useState<'VISIT' | 'WHATSAPP' | 'CALL' | 'PROPOSAL'>('VISIT');
   const [priority, setPriority] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('HIGH');
@@ -98,6 +99,7 @@ export function TasksManager() {
   const handleOpenNewTaskModal = (initialDate?: Date) => {
     setEditingTask(null);
     setTitle('');
+    setDescription('');
     setContactId(contacts[0]?.id || '');
     setTaskType('VISIT');
     setPriority('HIGH');
@@ -128,6 +130,7 @@ export function TasksManager() {
   const handleOpenEditTaskModal = (task: Task) => {
     setEditingTask(task);
     setTitle(task.title);
+    setDescription(task.description || '');
     setContactId(task.contactId);
     setTaskType(task.taskType as any);
     setPriority(task.priority);
@@ -208,10 +211,12 @@ export function TasksManager() {
       }
     }
 
+    try {
     if (editingTask) {
       // Atualizar tarefa existente
-      updateTask(editingTask.id, {
+      await updateTask(editingTask.id, {
         title: title.trim(),
+        description,
         contactId,
         taskType: taskType as any,
         priority,
@@ -226,8 +231,9 @@ export function TasksManager() {
       showToast('✅ Compromisso atualizado com sucesso!');
     } else {
       // Criar nova tarefa
-      createTask({
+      await createTask({
         title: title.trim(),
+        description,
         contactId,
         taskType: taskType as any,
         priority,
@@ -242,16 +248,14 @@ export function TasksManager() {
       showToast('✅ Novo agendamento criado com sucesso!');
     }
 
-    setIsSubmitting(false);
     setShowTaskModal(false);
+    } catch (error: any) { showToast(error.message || 'Não foi possível salvar a tarefa.'); } finally { setIsSubmitting(false); }
   };
 
   // Excluir Tarefa
-  const handleDeleteTask = (taskId: string) => {
+  const handleDeleteTask = async (taskId: string) => {
     if (confirm('Tem certeza que deseja excluir esta tarefa/visita?')) {
-      deleteTask(taskId);
-      setShowTaskModal(false);
-      showToast('🗑️ Tarefa removida com sucesso.');
+      try { await deleteTask(taskId); setShowTaskModal(false); showToast('Tarefa removida.'); } catch (error: any) { showToast(error.message); }
     }
   };
 
@@ -687,7 +691,7 @@ export function TasksManager() {
                 >
                   <div className="flex items-start gap-3.5 min-w-0 flex-1">
                     <button
-                      onClick={() => toggleTask(task.id)}
+                      onClick={() => void toggleTask(task.id).catch(error => showToast(error.message))}
                       className={`mt-0.5 w-5 h-5 rounded-lg border flex items-center justify-center transition flex-shrink-0 cursor-pointer ${
                         task.isCompleted
                           ? 'bg-emerald-600 border-emerald-600 text-white'
@@ -705,6 +709,7 @@ export function TasksManager() {
                         <h3 className={`text-xs font-bold ${task.isCompleted ? 'line-through text-slate-400' : 'text-slate-900'}`}>
                           {task.title}
                         </h3>
+                          {task.description && <details className="mt-2 text-sm text-slate-700"><summary className="cursor-pointer font-semibold">Ver detalhes e mensagem preparada</summary><p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-3">{task.description}</p></details>}
 
                         {/* Botão de Editar Tarefa */}
                         <button
@@ -828,7 +833,7 @@ export function TasksManager() {
       {/* ---------------------------------------------------- */}
       {showTaskModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="p-4 bg-slate-900 text-white font-bold text-sm flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-emerald-400" />
@@ -855,6 +860,10 @@ export function TasksManager() {
                 />
               </div>
 
+              <label className="block text-xs font-semibold text-slate-700">Detalhes ou mensagem para revisão
+                <textarea value={description} onChange={event => setDescription(event.target.value)} rows={4} maxLength={5000} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" />
+              </label>
+              {editingTask?.taskType === 'WHATSAPP' && description && <button type="button" className="text-sm font-semibold text-indigo-700" onClick={() => { void navigator.clipboard.writeText(description).then(() => showToast('Mensagem copiada para revisão.')).catch(() => showToast('Selecione o texto e copie manualmente.')); }}>Copiar mensagem preparada</button>}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Lead Vinculado</label>

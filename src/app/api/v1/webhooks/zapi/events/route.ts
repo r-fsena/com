@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const conversations = state.conversations.filter(c => conversationIds.has(c.id));
     const contactIds = new Set(conversations.map(c => c.contactId));
     const contacts = state.contacts.filter(c => contactIds.has(c.id));
-    return NextResponse.json({ success: true, tenantId, count: messages.length, messages, contacts, conversations, serverTime: crmEventCursor(state) }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ success: true, tenantId, count: messages.length, messages, contacts, conversations, tasks: state.tasks || [], serverTime: crmEventCursor(state) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch { return NextResponse.json({ success: false, error: 'Histórico indisponível. Tente novamente.' }, { status: 503 }); }
 }
 

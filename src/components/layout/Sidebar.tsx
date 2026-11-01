@@ -182,6 +182,7 @@ export function Sidebar({
     return (
       <button
         key={item.id}
+        aria-label={item.label}
         onClick={() => {
           setHoveredTooltip(null);
           setCurrentTab(item.id);

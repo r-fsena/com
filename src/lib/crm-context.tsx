@@ -77,6 +77,7 @@ import {
 } from '@/lib/whatsapp-filter';
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 import { reconcileIdentities, reconcileMessageHistory, reconcileConversationHistory, tenantSnapshotRecords } from '@/lib/crm-history';
+import type { CommercialConfig } from '@/lib/commercial-config';
 import { crmEventCursor, mergeSyncedRecords } from '@/lib/crm-event-cursor';
 import { reconcileTenantCatalog, catalogTenantForSelection, tenantForAuthenticatedSession, TenantCatalogEntry } from '@/lib/tenant-catalog';
 
@@ -94,6 +95,7 @@ interface CRMContextType {
   refreshTenantCatalog: () => void;
   currentTenant: Tenant;
   setCurrentTenant: (tenant: Tenant) => void;
+  saveCommercialService: (data: Pick<Tenant, 'timezone' | 'businessHours' | 'settings'>) => Promise<void>;
   updateTenant: (updates: Partial<Tenant>) => void;
   updateTenantById: (tenantId: string, updates: Partial<Tenant>) => void;
   createTenant: (tenantData: Partial<Tenant>) => Tenant;
@@ -127,33 +129,33 @@ interface CRMContextType {
   currentPipeline: Pipeline;
   setCurrentPipeline: (pipeline: Pipeline) => void;
   setCurrentPipelineById: (id: string) => void;
-  createPipeline: (data: { name: string; stages?: Partial<PipelineStage>[] }) => Pipeline;
-  updatePipeline: (id: string, updates: Partial<Pipeline>) => void;
-  deletePipeline: (id: string) => void;
+  createPipeline: (data: { name: string; stages?: Partial<PipelineStage>[] }) => Promise<Pipeline>;
+  updatePipeline: (id: string, updates: Partial<Pipeline>) => Promise<void>;
+  deletePipeline: (id: string) => Promise<void>;
   moveDealToPipeline: (dealId: string, targetPipelineId: string, targetStageId: string) => void;
   deals: Deal[];
   moveDealStage: (dealId: string, targetStageId: string) => void;
   createDeal: (deal: Partial<Deal>) => Deal;
   updateDeal: (id: string, updates: Partial<Deal>) => void;
   deleteDeal: (id: string) => void;
-  updatePipelineStages: (stages: PipelineStage[]) => void;
+  updatePipelineStages: (stages: PipelineStage[]) => Promise<void>;
 
   // Motivos de Perda
   lossReasons: LossReason[];
-  createLossReason: (data: Omit<LossReason, 'id' | 'tenantId' | 'createdAt'>) => LossReason;
-  updateLossReason: (id: string, updates: Partial<LossReason>) => void;
-  deleteLossReason: (id: string) => void;
+  createLossReason: (data: Omit<LossReason, 'id' | 'tenantId' | 'createdAt'>) => Promise<LossReason>;
+  updateLossReason: (id: string, updates: Partial<LossReason>) => Promise<void>;
+  deleteLossReason: (id: string) => Promise<void>;
 
   // Origens & Grupos de Origens de Leads
   leadSourceGroups: LeadSourceGroup[];
-  createLeadSourceGroup: (data: Omit<LeadSourceGroup, 'id' | 'tenantId' | 'createdAt'>) => LeadSourceGroup;
-  updateLeadSourceGroup: (id: string, updates: Partial<LeadSourceGroup>) => void;
-  deleteLeadSourceGroup: (id: string) => void;
+  createLeadSourceGroup: (data: Omit<LeadSourceGroup, 'id' | 'tenantId' | 'createdAt'>) => Promise<LeadSourceGroup>;
+  updateLeadSourceGroup: (id: string, updates: Partial<LeadSourceGroup>) => Promise<void>;
+  deleteLeadSourceGroup: (id: string) => Promise<void>;
 
   leadSources: LeadSource[];
-  createLeadSource: (data: Omit<LeadSource, 'id' | 'tenantId' | 'createdAt'>) => LeadSource;
-  updateLeadSource: (id: string, updates: Partial<LeadSource>) => void;
-  deleteLeadSource: (id: string) => void;
+  createLeadSource: (data: Omit<LeadSource, 'id' | 'tenantId' | 'createdAt'>) => Promise<LeadSource>;
+  updateLeadSource: (id: string, updates: Partial<LeadSource>) => Promise<void>;
+  deleteLeadSource: (id: string) => Promise<void>;
 
   // WhatsApp e Mensagens
   instances: WhatsAppInstance[];
@@ -208,10 +210,10 @@ interface CRMContextType {
 
   // Tarefas e Alertas
   tasks: Task[];
-  toggleTask: (taskId: string) => void;
-  createTask: (task: Partial<Task>) => void;
-  updateTask: (taskId: string, updates: Partial<Task>) => void;
-  deleteTask: (taskId: string) => void;
+  toggleTask: (taskId: string) => Promise<void>;
+  createTask: (task: Partial<Task>) => Promise<void>;
+  updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
   alerts: SLAAlert[];
   dismissAlert: (alertId: string) => void;
 
@@ -219,10 +221,10 @@ interface CRMContextType {
   campaigns: Campaign[];
   createCampaign: (campaign: Partial<Campaign>) => void;
   quickReplies: QuickReplyTemplate[];
-  createQuickReply: (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>) => QuickReplyTemplate;
-  updateQuickReply: (id: string, updates: Partial<QuickReplyTemplate>) => void;
-  toggleQuickReplyActive: (id: string) => void;
-  deleteQuickReply: (id: string) => void;
+  createQuickReply: (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>) => Promise<QuickReplyTemplate>;
+  updateQuickReply: (id: string, updates: Partial<QuickReplyTemplate>, expected?: { updatedAt?: string }) => Promise<void>;
+  toggleQuickReplyActive: (id: string) => Promise<void>;
+  deleteQuickReply: (id: string) => Promise<void>;
 
   // Propostas Comerciais & Aceite Digital
   proposals: Proposal[];
@@ -429,7 +431,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                     proposals: false,
                     asaasBilling: false,
                     campaigns: false,
-                    automations: false,
                   },
                 });
               } else {
@@ -561,7 +562,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
                 proposals: false,
                 asaasBilling: false,
                 campaigns: false,
-                automations: false,
               };
               try { localStorage.setItem('vanguard_crm_current_tenant', JSON.stringify(parsed)); } catch {}
             }
@@ -588,7 +588,6 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         proposals: false,
         asaasBilling: false,
         campaigns: false,
-        automations: false,
       } : {
         ...DEFAULT_FEATURE_FLAGS,
         ...(foundInList?.featureFlags || raw.featureFlags || {}),
@@ -647,20 +646,40 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return scopedPipelines[0];
   }, [currentPipeline, scopedPipelines, currentTenant.id]);
 
-  const scopedLossReasons = useMemo(() => {
-    const list = lossReasons.filter(r => !r.tenantId || r.tenantId === currentTenant.id || r.tenantId === 'tenant-amabile-barbarotti');
-    return list.length > 0 ? list : MOCK_LOSS_REASONS;
-  }, [lossReasons, currentTenant.id]);
-
-  const scopedLeadSourceGroups = useMemo(() => {
-    const list = leadSourceGroups.filter(g => !g.tenantId || g.tenantId === currentTenant.id || g.tenantId === 'tenant-amabile-barbarotti');
-    return list.length > 0 ? list : MOCK_LEAD_SOURCE_GROUPS;
-  }, [leadSourceGroups, currentTenant.id]);
-
-  const scopedLeadSources = useMemo(() => {
-    const list = leadSources.filter(s => !s.tenantId || s.tenantId === currentTenant.id || s.tenantId === 'tenant-amabile-barbarotti');
-    return list.length > 0 ? list : MOCK_LEAD_SOURCES;
-  }, [leadSources, currentTenant.id]);
+  const scopedLossReasons = useMemo(() => lossReasons.filter(item => item.tenantId === currentTenant.id), [lossReasons, currentTenant.id]);
+  const scopedLeadSourceGroups = useMemo(() => leadSourceGroups.filter(item => item.tenantId === currentTenant.id), [leadSourceGroups, currentTenant.id]);
+  const scopedLeadSources = useMemo(() => leadSources.filter(item => item.tenantId === currentTenant.id), [leadSources, currentTenant.id]);
+  const commercialRevisions = useRef<Record<string, number>>({});
+  const applyCommercialConfig = (tenantId: string, config: CommercialConfig, confirmedWrite = false) => {
+    // Keep the editing baseline stable. A remote edit must produce a conflict,
+    // not silently refresh the revision underneath an open configuration form.
+    if (!confirmedWrite && commercialRevisions.current[tenantId] !== undefined) return;
+    if (config.revision < (commercialRevisions.current[tenantId] || 0)) return;
+    commercialRevisions.current[tenantId] = config.revision;
+    setPipelines(previous => [...previous.filter(item => item.tenantId !== tenantId), ...config.pipelines]);
+    setLossReasons(previous => [...previous.filter(item => item.tenantId !== tenantId), ...config.lossReasons]);
+    setLeadSources(previous => [...previous.filter(item => item.tenantId !== tenantId), ...config.leadSources]);
+    setLeadSourceGroups(previous => [...previous.filter(item => item.tenantId !== tenantId), ...config.leadSourceGroups]);
+    setCurrentPipeline(previous => previous.tenantId === tenantId ? config.pipelines.find(item => item.id === previous.id) || config.pipelines[0] || previous : previous);
+    if (config.service) {
+      setCurrentTenantState(previous => previous.id === tenantId ? { ...previous, ...config.service } : previous);
+      setTenants(previous => previous.map(item => item.id === tenantId ? { ...item, ...config.service } : item));
+    }
+  };
+  const saveCommercialCommand = async (command: any) => {
+    const tenantId = currentTenant.id;
+    const revision = commercialRevisions.current[tenantId] || 0;
+    const response = await fetch('/api/v1/commercial', { method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+      body: JSON.stringify({ ...command, revision, ...(revision === 0 ? { seed: { pipelines: scopedPipelines, lossReasons: scopedLossReasons, leadSources: scopedLeadSources, leadSourceGroups: scopedLeadSourceGroups } } : {}) }) });
+    const data = await response.json();
+    if (!response.ok || !data.success || data.tenantId !== tenantId) throw new Error(data.error || 'A configuração não foi salva.');
+    applyCommercialConfig(tenantId, data.commercial, true);
+    return data.commercial as CommercialConfig;
+  };
+  const saveCommercialService = async (data: Pick<Tenant, 'timezone' | 'businessHours' | 'settings'>) => {
+    await saveCommercialCommand({ collection: 'service', operation: 'save', data });
+  };
 
   const updateTenant = (updates: Partial<Tenant>) => {
     setCurrentTenant(prev => {
@@ -1786,19 +1805,12 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         setAiInsights(finalInsights);
         saveToStorageDebounced('vanguard_crm_ai_insights', finalInsights, 1200);
 
-        // 8.1 Modelos de Respostas Rápidas
-        const savedQRs = localStorage.getItem('vanguard_crm_quick_replies');
-        const parsedLocalQRs = savedQRs ? JSON.parse(savedQRs) : null;
-        const serverQRs = Array.isArray(serverData?.quickReplies) ? serverData.quickReplies : [];
-        const qrMap = new Map<string, QuickReplyTemplate>();
-        MOCK_QUICK_REPLIES.forEach(q => qrMap.set(q.id, q));
-        if (Array.isArray(parsedLocalQRs)) {
-          parsedLocalQRs.forEach(q => qrMap.set(q.id, q));
+        // 8.1 Models come from the acknowledged tenant snapshot. A deleted model
+        // must not return from mocks or the cache on the next page load.
+        if (serverData?.success && serverData.tenantId === currentTenant.id && Array.isArray(serverData.quickReplies)) {
+          const confirmed = serverData.quickReplies.filter((template: QuickReplyTemplate) => template.tenantId === currentTenant.id);
+          setQuickReplies(previous => [...previous.filter(template => template.tenantId !== currentTenant.id), ...confirmed]);
         }
-        serverQRs.forEach((q: QuickReplyTemplate) => qrMap.set(q.id, q));
-        const finalQRs = Array.from(qrMap.values());
-        setQuickReplies(finalQRs);
-        try { localStorage.setItem('vanguard_crm_quick_replies', JSON.stringify(finalQRs)); } catch {}
 
         // Dados legados do navegador não são republicados automaticamente sobre o snapshot confirmado.
 
@@ -1927,94 +1939,37 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       if (Object.keys(aiInsights).length > 0) localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(aiInsights));
     } catch {}
   }, [aiInsights]);
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('vanguard_crm_tasks');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
-    }
-    return MOCK_TASKS;
-  });
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [alerts, setAlerts] = useState<SLAAlert[]>(MOCK_ALERTS);
   const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
-  const [quickReplies, setQuickReplies] = useState<QuickReplyTemplate[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('vanguard_crm_quick_replies');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
-    }
-    return MOCK_QUICK_REPLIES;
-  });
+  const [quickReplies, setQuickReplies] = useState<QuickReplyTemplate[]>([]);
 
-  const saveQuickRepliesState = (updated: QuickReplyTemplate[]) => {
-    setQuickReplies(updated);
-    try {
-      localStorage.setItem('vanguard_crm_quick_replies', JSON.stringify(updated));
-      fetchCRMState('/api/v1/crm/state', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-tenant-id': currentTenant.id,
-          'x-user-id': currentUser.id,
-          'x-user-email': currentUser.email,
-        },
-        body: JSON.stringify({ quickReplies: updated }),
-      }).catch(() => {});
-    } catch {}
+  const saveTemplateCommand = async (command: any) => {
+    const tenantId = currentTenant.id;
+    const response = await fetch('/api/v1/message-templates', { method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, body: JSON.stringify(command) });
+    const data = await response.json();
+    if (!response.ok || !data.success || data.tenantId !== tenantId) throw new Error(data.error || 'Modelo não salvo. Tente novamente.');
+    setQuickReplies(previous => [...previous.filter(item => item.tenantId !== tenantId), ...data.quickReplies]);
+    return data.quickReplies as QuickReplyTemplate[];
   };
-
-  const createQuickReply = (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>): QuickReplyTemplate => {
-    const newId = `qr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const formattedShortcut = template.shortcut.startsWith('/') ? template.shortcut : `/${template.shortcut}`;
-    const newQR: QuickReplyTemplate = {
-      ...template,
-      id: newId,
-      tenantId: currentTenant.id,
-      shortcut: formattedShortcut,
-      isActive: template.isActive !== undefined ? template.isActive : true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [newQR, ...quickReplies];
-    saveQuickRepliesState(updated);
-    return newQR;
+  const createQuickReply = async (template: Omit<QuickReplyTemplate, 'id' | 'tenantId' | 'createdAt'>) => {
+    const shortcut = template.shortcut.startsWith('/') ? template.shortcut : `/${template.shortcut}`;
+    const saved = await saveTemplateCommand({ operation: 'save', data: { ...template, shortcut } });
+    return saved.find(item => item.shortcut === shortcut)!;
   };
-
-  const updateQuickReply = (id: string, updates: Partial<QuickReplyTemplate>) => {
-    const updated = quickReplies.map(q => {
-      if (q.id === id) {
-        return {
-          ...q,
-          ...updates,
-          shortcut: updates.shortcut 
-            ? (updates.shortcut.startsWith('/') ? updates.shortcut : `/${updates.shortcut}`)
-            : q.shortcut,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return q;
-    });
-    saveQuickRepliesState(updated);
+  const updateQuickReply = async (id: string, updates: Partial<QuickReplyTemplate>, expected?: { updatedAt?: string }) => {
+    const previous = quickReplies.find(item => item.id === id && item.tenantId === currentTenant.id);
+    if (!previous) throw new Error('Modelo não encontrado. Atualize a página.');
+    await saveTemplateCommand({ operation: 'save', id, updatedAt: expected ? expected.updatedAt : previous.updatedAt, data: updates });
   };
-
-  const toggleQuickReplyActive = (id: string) => {
-    const target = quickReplies.find(q => q.id === id);
-    if (!target) return;
-    updateQuickReply(id, { isActive: target.isActive === false ? true : false });
+  const toggleQuickReplyActive = async (id: string) => {
+    const previous = quickReplies.find(item => item.id === id && item.tenantId === currentTenant.id);
+    if (previous) await updateQuickReply(id, { isActive: previous.isActive === false });
   };
-
-  const deleteQuickReply = (id: string) => {
-    const updated = quickReplies.filter(q => q.id !== id);
-    saveQuickRepliesState(updated);
+  const deleteQuickReply = async (id: string) => {
+    const previous = quickReplies.find(item => item.id === id && item.tenantId === currentTenant.id);
+    await saveTemplateCommand({ operation: 'delete', id, updatedAt: previous?.updatedAt });
   };
 
   // Manipulação de Contatos
@@ -2113,7 +2068,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             'x-user-id': currentUser.id,
             'x-user-email': currentUser.email,
           },
-          body: JSON.stringify({ contacts: updated }),
+          body: JSON.stringify({ contacts: updated, automationEvent: { trigger: 'LEAD_CREATED', entityId: resultContact.id } }),
         }).catch(() => {});
       } catch {}
       return updated;
@@ -2635,7 +2590,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             'x-user-id': currentUser.id,
             'x-user-email': currentUser.email,
           },
-          body: JSON.stringify({ deals: updated }),
+          body: JSON.stringify({ deals: updated, automationEvent: { trigger: 'STAGE_CHANGED', entityId: dealId } }),
         }).catch(() => {});
       } catch {}
       return updated;
@@ -2717,7 +2672,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             'x-user-id': currentUser.id,
             'x-user-email': currentUser.email,
           },
-          body: JSON.stringify({ deals: updated }),
+          body: JSON.stringify({ deals: updated, ...(updates.stageId ? { automationEvent: { trigger: 'STAGE_CHANGED', entityId: id } } : {}) }),
         }).catch(() => {});
       } catch {}
       return updated;
@@ -2732,17 +2687,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const updatePipelineStages = (newStages: PipelineStage[]) => {
-    const ordered = newStages.map((s, idx) => ({ ...s, order: idx + 1 }));
-    const updatedPipeline: Pipeline = {
-      ...effectiveCurrentPipeline,
-      stages: ordered,
-    };
-    setCurrentPipeline(updatedPipeline);
-    setPipelines(prev => prev.map(p => p.id === updatedPipeline.id ? updatedPipeline : p));
-    try {
-      localStorage.setItem('vanguard_crm_current_pipeline', JSON.stringify(updatedPipeline));
-    } catch {}
+  const updatePipelineStages = async (stages: PipelineStage[]) => {
+    await saveCommercialCommand({ collection: 'pipelines', operation: 'save', id: effectiveCurrentPipeline.id,
+      data: { stages: stages.map((stage, index) => ({ ...stage, order: index + 1 })) } });
   };
 
   const setCurrentPipelineById = (id: string) => {
@@ -2755,66 +2702,16 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const createPipeline = (data: { name: string; stages?: Partial<PipelineStage>[] }) => {
-    const newId = `pipe-${Date.now()}`;
-    const defaultStages: PipelineStage[] = (data.stages && data.stages.length > 0)
-      ? data.stages.map((s, idx) => ({
-          id: s.id || `stage-${Date.now()}-${idx}`,
-          pipelineId: newId,
-          name: s.name || `Etapa ${idx + 1}`,
-          order: idx + 1,
-          slaHours: s.slaHours || 24,
-          colorHex: s.colorHex || '#3b82f6',
-          isWon: s.isWon,
-          isLost: s.isLost,
-        }))
-      : [
-          { id: `${newId}-s1`, pipelineId: newId, name: '1. Novo Lead', order: 1, slaHours: 2, colorHex: '#3b82f6' },
-          { id: `${newId}-s2`, pipelineId: newId, name: '2. Em Atendimento', order: 2, slaHours: 24, colorHex: '#8b5cf6' },
-          { id: `${newId}-s3`, pipelineId: newId, name: '3. Negociação', order: 3, slaHours: 48, colorHex: '#f59e0b' },
-          { id: `${newId}-s4`, pipelineId: newId, name: '4. Concluído', order: 4, slaHours: 0, colorHex: '#10b981', isWon: true },
-          { id: `${newId}-s5`, pipelineId: newId, name: 'Perdido', order: 5, slaHours: 0, colorHex: '#ef4444', isLost: true },
-        ];
-
-    const newPipe: Pipeline = {
-      id: newId,
-      tenantId: currentTenant.id,
-      name: data.name.trim(),
-      isDefault: false,
-      stages: defaultStages,
-    };
-
-    setPipelines(prev => {
-      const updated = [...prev, newPipe];
-      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-
-    return newPipe;
+  const createPipeline = async (data: { name: string; stages?: Partial<PipelineStage>[] }) => {
+    const stageNames = ['Novo interessado', 'Em atendimento', 'Negociação', 'Concluído', 'Perdido'];
+    const stages = (data.stages?.length ? data.stages : stageNames.map((name, index) => ({ name, isWon: index === 3, isLost: index === 4 })))
+      .map((stage: Partial<PipelineStage>, index) => ({ id: stage.id || `stage-${crypto.randomUUID()}`, pipelineId: '', name: stage.name || `Etapa ${index + 1}`,
+        order: index + 1, slaHours: stage.slaHours ?? 24, colorHex: stage.colorHex || '#6366f1', isWon: stage.isWon, isLost: stage.isLost }));
+    const config = await saveCommercialCommand({ collection: 'pipelines', operation: 'save', data: { name: data.name.trim(), isDefault: false, stages } });
+    return config.pipelines[config.pipelines.length - 1];
   };
-
-  const updatePipeline = (id: string, updates: Partial<Pipeline>) => {
-    setPipelines(prev => {
-      const updated = prev.map(p => p.id === id ? { ...p, ...updates } : p);
-      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-    if (currentPipeline.id === id) {
-      setCurrentPipeline(prev => ({ ...prev, ...updates }));
-    }
-  };
-
-  const deletePipeline = (id: string) => {
-    setPipelines(prev => {
-      const remaining = prev.filter(p => p.id !== id);
-      try { localStorage.setItem('vanguard_crm_pipelines', JSON.stringify(remaining)); } catch {}
-      return remaining;
-    });
-    if (currentPipeline.id === id) {
-      const fallback = scopedPipelines.find(p => p.id !== id) || scopedPipelines[0];
-      if (fallback) setCurrentPipeline(fallback);
-    }
-  };
+  const updatePipeline = async (id: string, data: Partial<Pipeline>) => { await saveCommercialCommand({ collection: 'pipelines', operation: 'save', id, data }); };
+  const deletePipeline = async (id: string) => { await saveCommercialCommand({ collection: 'pipelines', operation: 'delete', id }); };
 
   const moveDealToPipeline = (dealId: string, targetPipelineId: string, targetStageId: string) => {
     setDeals(prev => {
@@ -2830,111 +2727,31 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
         return d;
       });
       try { localStorage.setItem('vanguard_crm_deals', JSON.stringify(updated)); } catch {}
+      void fetchCRMState('/api/v1/crm/state', { method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': currentTenant.id },
+        body: JSON.stringify({ deals: updated, automationEvent: { trigger: 'STAGE_CHANGED', entityId: dealId } }) }).catch(() => {});
       return updated;
     });
   };
 
-  const createLossReason = (data: Omit<LossReason, 'id' | 'tenantId' | 'createdAt'>) => {
-    const newReason: LossReason = {
-      id: `lr-${Date.now()}`,
-      tenantId: currentTenant.id,
-      name: data.name.trim(),
-      isActive: data.isActive ?? true,
-      pipelineIds: data.pipelineIds || [],
-      createdAt: new Date().toISOString(),
-    };
-    setLossReasons(prev => {
-      const updated = [...prev, newReason];
-      try { localStorage.setItem('vanguard_crm_loss_reasons', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-    return newReason;
+  const createLossReason = async (data: Omit<LossReason, 'id' | 'tenantId' | 'createdAt'>) => {
+    const config = await saveCommercialCommand({ collection: 'lossReasons', operation: 'save', data });
+    return config.lossReasons[config.lossReasons.length - 1];
   };
-
-  const updateLossReason = (id: string, updates: Partial<LossReason>) => {
-    setLossReasons(prev => {
-      const updated = prev.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r);
-      try { localStorage.setItem('vanguard_crm_loss_reasons', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  const updateLossReason = async (id: string, data: Partial<LossReason>) => { await saveCommercialCommand({ collection: 'lossReasons', operation: 'save', id, data }); };
+  const deleteLossReason = async (id: string) => { await saveCommercialCommand({ collection: 'lossReasons', operation: 'delete', id }); };
+  const createLeadSourceGroup = async (data: Omit<LeadSourceGroup, 'id' | 'tenantId' | 'createdAt'>) => {
+    const config = await saveCommercialCommand({ collection: 'leadSourceGroups', operation: 'save', data });
+    return config.leadSourceGroups[config.leadSourceGroups.length - 1];
   };
-
-  const deleteLossReason = (id: string) => {
-    setLossReasons(prev => {
-      const updated = prev.filter(r => r.id !== id);
-      try { localStorage.setItem('vanguard_crm_loss_reasons', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  const updateLeadSourceGroup = async (id: string, data: Partial<LeadSourceGroup>) => { await saveCommercialCommand({ collection: 'leadSourceGroups', operation: 'save', id, data }); };
+  const deleteLeadSourceGroup = async (id: string) => { await saveCommercialCommand({ collection: 'leadSourceGroups', operation: 'delete', id }); };
+  const createLeadSource = async (data: Omit<LeadSource, 'id' | 'tenantId' | 'createdAt'>) => {
+    const config = await saveCommercialCommand({ collection: 'leadSources', operation: 'save', data });
+    return config.leadSources[config.leadSources.length - 1];
   };
-
-  const createLeadSourceGroup = (data: Omit<LeadSourceGroup, 'id' | 'tenantId' | 'createdAt'>) => {
-    const newGroup: LeadSourceGroup = {
-      id: `group-${Date.now()}`,
-      tenantId: currentTenant.id,
-      name: data.name.trim(),
-      description: data.description?.trim(),
-      isActive: data.isActive ?? true,
-      order: (leadSourceGroups.length + 1),
-      createdAt: new Date().toISOString(),
-    };
-    setLeadSourceGroups(prev => {
-      const updated = [...prev, newGroup];
-      try { localStorage.setItem('vanguard_crm_lead_source_groups', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-    return newGroup;
-  };
-
-  const updateLeadSourceGroup = (id: string, updates: Partial<LeadSourceGroup>) => {
-    setLeadSourceGroups(prev => {
-      const updated = prev.map(g => g.id === id ? { ...g, ...updates } : g);
-      try { localStorage.setItem('vanguard_crm_lead_source_groups', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  };
-
-  const deleteLeadSourceGroup = (id: string) => {
-    setLeadSourceGroups(prev => {
-      const updated = prev.filter(g => g.id !== id);
-      try { localStorage.setItem('vanguard_crm_lead_source_groups', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  };
-
-  const createLeadSource = (data: Omit<LeadSource, 'id' | 'tenantId' | 'createdAt'>) => {
-    const newSource: LeadSource = {
-      id: `src-${Date.now()}`,
-      tenantId: currentTenant.id,
-      name: data.name.trim(),
-      description: data.description?.trim(),
-      groupId: data.groupId,
-      isActive: data.isActive ?? true,
-      order: (leadSources.length + 1),
-      createdAt: new Date().toISOString(),
-    };
-    setLeadSources(prev => {
-      const updated = [...prev, newSource];
-      try { localStorage.setItem('vanguard_crm_lead_sources', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-    return newSource;
-  };
-
-  const updateLeadSource = (id: string, updates: Partial<LeadSource>) => {
-    setLeadSources(prev => {
-      const updated = prev.map(s => s.id === id ? { ...s, ...updates } : s);
-      try { localStorage.setItem('vanguard_crm_lead_sources', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  };
-
-  const deleteLeadSource = (id: string) => {
-    setLeadSources(prev => {
-      const updated = prev.filter(s => s.id !== id);
-      try { localStorage.setItem('vanguard_crm_lead_sources', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  };
+  const updateLeadSource = async (id: string, data: Partial<LeadSource>) => { await saveCommercialCommand({ collection: 'leadSources', operation: 'save', id, data }); };
+  const deleteLeadSource = async (id: string) => { await saveCommercialCommand({ collection: 'leadSources', operation: 'delete', id }); };
 
   // Envio de Mensagem WhatsApp / Nota Interna
   const sendMessage = (
@@ -3732,53 +3549,26 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Tarefas e Alertas
-  const toggleTask = (taskId: string) => {
-    setTasks(prev => {
-      const updated = prev.map(t => t.id === taskId ? {
-        ...t,
-        isCompleted: !t.isCompleted,
-        completedAt: !t.isCompleted ? new Date().toISOString() : undefined
-      } : t);
-      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  const saveTaskCommand = async (command: any) => {
+    const tenantId = currentTenant.id;
+    const response = await fetch('/api/v1/tasks', { method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, body: JSON.stringify(command) });
+    const data = await response.json();
+    if (!response.ok || !data.success || data.tenantId !== tenantId) throw new Error(data.error || 'Tarefa não salva.');
+    setTasks(previous => [...previous.filter(task => task.tenantId !== tenantId), ...data.tasks]);
   };
-
-  const createTask = (data: Partial<Task>) => {
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
-      tenantId: currentTenant.id,
-      contactId: data.contactId || contacts[0]?.id || 'contact-01',
-      assignedUserId: data.assignedUserId || currentUser.id,
-      title: data.title || 'Nova Tarefa',
-      taskType: data.taskType || 'FOLLOW_UP',
-      dueDate: data.dueDate || new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
-      priority: data.priority || 'MEDIUM',
-      isCompleted: false,
-      ...data,
-    };
-    setTasks(prev => {
-      const updated = [newTask, ...prev];
-      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  const toggleTask = async (taskId: string) => {
+    const task = tasks.find(item => item.id === taskId && item.tenantId === currentTenant.id);
+    if (task) await saveTaskCommand({ operation: 'update', id: taskId, data: { isCompleted: !task.isCompleted } });
   };
-
-  const updateTask = (taskId: string, updates: Partial<Task>) => {
-    setTasks(prev => {
-      const updated = prev.map(t => t.id === taskId ? { ...t, ...updates } : t);
-      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  const createTask = async (data: Partial<Task>) => {
+    await saveTaskCommand({ operation: 'create', data: { assignedUserId: currentUser.id, title: 'Nova tarefa',
+      taskType: 'FOLLOW_UP', dueDate: new Date(Date.now() + 86400000).toISOString(), priority: 'MEDIUM', ...data } });
   };
-
-  const deleteTask = (taskId: string) => {
-    setTasks(prev => {
-      const updated = prev.filter(t => t.id !== taskId);
-      try { localStorage.setItem('vanguard_crm_tasks', JSON.stringify(updated)); } catch {}
-      return updated;
-    });
+  const updateTask = async (taskId: string, updates: Partial<Task>) => {
+    await saveTaskCommand({ operation: 'update', id: taskId, data: updates });
   };
+  const deleteTask = async (taskId: string) => { await saveTaskCommand({ operation: 'delete', id: taskId }); };
 
   const dismissAlert = (alertId: string) => {
     setAlerts(prev => prev.filter(a => a.id !== alertId));
@@ -4455,6 +4245,9 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       setConversations(prev => mergeSyncedRecords(prev, incomingConversations, tenantId));
       setMessages(prev => mergeSyncedRecords(prev, incomingMessages, tenantId));
       if (Array.isArray(data.deals)) setDeals(prev => mergeSyncedRecords(prev, data.deals, tenantId));
+      if (data.commercial) applyCommercialConfig(tenantId, data.commercial);
+      if (Array.isArray(data.tasks)) setTasks(prev => [...prev.filter(task => task.tenantId !== tenantId), ...data.tasks.filter((task: Task) => task.tenantId === tenantId)]);
+      if (Array.isArray(data.quickReplies)) setQuickReplies(prev => [...prev.filter(item => item.tenantId !== tenantId), ...data.quickReplies.filter((item: QuickReplyTemplate) => item.tenantId === tenantId)]);
     };
 
     const refresh = async (full = false) => {
@@ -5370,6 +5163,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       currentTenant,
       setCurrentTenant,
       updateTenant,
+      saveCommercialService,
       updateTenantById,
       createTenant,
       updateTenantStatus,

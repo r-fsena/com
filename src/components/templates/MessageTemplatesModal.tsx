@@ -70,6 +70,9 @@ export function MessageTemplatesModal({
   const [formContent, setFormContent] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formIsActive, setFormIsActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const canEdit = ['SUPERADMIN', 'ADMIN', 'MANAGER'].includes(currentUser.role);
   const [imageError, setImageError] = useState(false);
   const [copiedShortcut, setCopiedShortcut] = useState<string | null>(null);
 
@@ -164,7 +167,7 @@ export function MessageTemplatesModal({
   };
 
   // Salvar criação ou edição
-  const handleSaveForm = (e: React.FormEvent) => {
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const cleanTitle = formTitle.trim();
@@ -179,17 +182,20 @@ export function MessageTemplatesModal({
       return;
     }
 
+    if (saving || !canEdit) return;
+    setSaving(true); setSaveError('');
+    try {
     if (editingTemplate) {
-      updateQuickReply(editingTemplate.id, {
+      await updateQuickReply(editingTemplate.id, {
         title: cleanTitle,
         shortcut: cleanShortcut,
         category: formCategory,
         content: cleanContent,
         imageUrl: formImageUrl.trim() || undefined,
         isActive: formIsActive,
-      });
+      }, { updatedAt: editingTemplate.updatedAt });
     } else {
-      createQuickReply({
+      await createQuickReply({
         title: cleanTitle,
         shortcut: cleanShortcut,
         category: formCategory,
@@ -201,6 +207,7 @@ export function MessageTemplatesModal({
 
     setIsCreatingNew(false);
     setEditingTemplate(null);
+    } catch (error: any) { setSaveError(error.message); } finally { setSaving(false); }
   };
 
   // Lista filtrada
@@ -272,7 +279,7 @@ export function MessageTemplatesModal({
           /* ======================================================== */
           /* FORMULÁRIO DE CRIAÇÃO / EDIÇÃO COM LAYOUT 2 COLUNAS      */
           /* ======================================================== */
-          <form onSubmit={handleSaveForm} className="w-full bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
+          <>{saveError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{saveError}</p>}<form onSubmit={handleSaveForm} className="w-full bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2.5">
                 <button
@@ -524,10 +531,11 @@ export function MessageTemplatesModal({
                   </button>
                   <button
                     type="submit"
+                    disabled={saving || !canEdit}
                     className="px-6 py-2.5 bg-[#3742AC] hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold transition shadow-md cursor-pointer flex items-center gap-1.5 active:scale-95"
                   >
                     <Check className="w-4 h-4" />
-                    <span>Salvar Modelo</span>
+                    <span>{saving ? 'Salvando…' : 'Salvar modelo'}</span>
                   </button>
                 </div>
               </div>
@@ -578,7 +586,7 @@ export function MessageTemplatesModal({
                 </div>
               </div>
             </div>
-          </form>
+          </form></>
         ) : (
           /* ======================================================== */
           /* LISTA E GERENCIAMENTO DOS MODELOS EXISTENTES             */
@@ -695,7 +703,8 @@ export function MessageTemplatesModal({
                           {/* Toggle Ativar/Desativar */}
                           <button
                             type="button"
-                            onClick={() => toggleQuickReplyActive(template.id)}
+                            disabled={!canEdit || saving}
+                            onClick={async () => { try { setSaving(true); await toggleQuickReplyActive(template.id); } catch (error: any) { alert(error.message); } finally { setSaving(false); } }}
                             className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition cursor-pointer ${
                               isActive
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
@@ -752,6 +761,7 @@ export function MessageTemplatesModal({
 
                           <button
                             type="button"
+                            disabled={!canEdit || saving}
                             onClick={() => handleStartEdit(template)}
                             className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition cursor-pointer"
                             title="Editar modelo"
@@ -764,9 +774,9 @@ export function MessageTemplatesModal({
                               <span className="text-[10px] text-rose-700 font-bold">Excluir?</span>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  deleteQuickReply(template.id);
-                                  setDeleteConfirmId(null);
+                                disabled={!canEdit || saving}
+                                onClick={async () => {
+                                  try { setSaving(true); await deleteQuickReply(template.id); setDeleteConfirmId(null); } catch (error: any) { alert(error.message); } finally { setSaving(false); }
                                 }}
                                 className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
                               >

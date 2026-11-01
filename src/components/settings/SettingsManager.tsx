@@ -55,12 +55,14 @@ import { CommercialProcessesSettings } from '@/components/settings/CommercialPro
 
 interface SettingsManagerProps {
   onOpenQrCodeModal?: () => void;
+  onOpenAutomations?: () => void;
 }
 
-export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
+export function SettingsManager({ onOpenQrCodeModal, onOpenAutomations }: SettingsManagerProps) {
   const { 
     currentTenant, 
-    updateTenant, 
+    updateTenant,
+    saveCommercialService,
     instances, 
     syncZapiInstance, 
     users, 
@@ -122,6 +124,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
   const [workEnd, setWorkEnd] = useState(currentTenant.businessHours?.end || '19:00');
   const [workDays, setWorkDays] = useState<number[]>(currentTenant.businessHours?.workDays || [1, 2, 3, 4, 5, 6]);
   const [saveSlaSuccess, setSaveSlaSuccess] = useState(false);
+  const [savingSla, setSavingSla] = useState(false);
+  const [slaError, setSlaError] = useState('');
 
   // Estados de Modal de Novo Usuário & Notificações
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState(false);
@@ -246,9 +250,13 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     setTimeout(() => setSaveTenantSuccess(false), 3000);
   };
 
-  const handleSaveSla = (e: React.FormEvent) => {
+  const handleSaveSla = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateTenant({
+    if (savingSla) return;
+    setSavingSla(true); setSlaError(''); setSaveSlaSuccess(false);
+    try {
+    await saveCommercialService({
+      timezone: currentTenant.timezone,
       settings: {
         ...currentTenant.settings,
         slaFirstResponseMinutes: Number(slaFirstResponse),
@@ -263,6 +271,7 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
     });
     setSaveSlaSuccess(true);
     setTimeout(() => setSaveSlaSuccess(false), 3000);
+    } catch (error: any) { setSlaError(error.message); } finally { setSavingSla(false); }
   };
 
   const handleCreateNewUser = (e: React.FormEvent) => {
@@ -1268,6 +1277,8 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
         {/* ========================================================================= */}
         {activeTab === 'SLA' && (
           <form onSubmit={handleSaveSla} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
+            {slaError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{slaError}</p>}
+            <p className="text-sm text-slate-600">Prazos e horários são salvos para esta imobiliária. As automações publicadas mantêm o horário escolhido em cada regra; edite e teste a regra para alterá-lo.</p>
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -1281,10 +1292,11 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
 
               <button
                 type="submit"
+                disabled={savingSla}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-4 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-98"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>{saveSlaSuccess ? 'Salvo com Sucesso! ✨' : 'Salvar SLAs'}</span>
+                <span>{savingSla ? 'Salvando…' : saveSlaSuccess ? 'Salvo no servidor' : 'Salvar prazos e horários'}</span>
               </button>
             </div>
 
@@ -1325,20 +1337,10 @@ export function SettingsManager({ onOpenQrCodeModal }: SettingsManagerProps) {
               </div>
             </div>
 
-            {/* Regra de Distribuição Automática */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">
-                Regra de Distribuição Automática de Leads (Roleta)
-              </label>
-              <select
-                value={autoAssignRule}
-                onChange={(e) => setAutoAssignRule(e.target.value as any)}
-                className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-2 cursor-pointer"
-              >
-                <option value="ROUND_ROBIN">🔄 Round-Robin (Roleta Equitativa entre Corretores Ativos)</option>
-                <option value="UNASSIGNED_QUEUE">📥 Fila de Espera Não Atribuída (Puxar por Demanda)</option>
-                <option value="BY_REGION">📍 Distribuição por Especialidade / Região de Atuação</option>
-              </select>
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-800">Distribuição de novos contatos</p>
+              <p className="text-sm text-slate-600">Em Automações, escolha quem participa da distribuição, defina os critérios e teste antes de ativar.</p>
+              {onOpenAutomations && <button type="button" onClick={onOpenAutomations} disabled={!isFeatureEnabled('automations')} className="text-sm font-semibold text-indigo-700 disabled:opacity-50">Configurar distribuição em Automações</button>}
             </div>
 
             {/* Horário Comercial e Dias de Funcionamento */}

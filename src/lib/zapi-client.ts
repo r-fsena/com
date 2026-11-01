@@ -8,6 +8,7 @@ export interface ZApiConfig {
   instanceToken: string;
   securityToken?: string;
   baseUrl?: string;
+  requestTimeoutMs?: number;
 }
 
 export interface ZApiResponse<T = any> {
@@ -22,12 +23,14 @@ export class ZApiClient {
   private instanceToken: string;
   private securityToken?: string;
   private baseUrl: string;
+  private requestTimeoutMs: number;
 
   constructor(config: ZApiConfig) {
     this.instanceId = config.instanceId;
     this.instanceToken = config.instanceToken;
     this.securityToken = config.securityToken;
     this.baseUrl = config.baseUrl || 'https://api.z-api.io/instances';
+    this.requestTimeoutMs = config.requestTimeoutMs || 15000;
   }
 
   private getEndpoint(path: string): string {
@@ -46,6 +49,7 @@ export class ZApiClient {
       const response = await fetch(url, {
         ...options,
         headers,
+        signal: options.signal || AbortSignal.timeout(this.requestTimeoutMs),
       });
 
       if (!response.ok) {

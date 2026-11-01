@@ -1,3 +1,5 @@
+import { enqueueAutomationEvent, runInternalJobs } from '@/lib/automations';
+import { automationEnvironment } from '@/lib/automation-service';
 import { webhookToken } from '@/lib/zapi-webhook-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
@@ -418,6 +420,10 @@ export async function processZapiWebhookRequest(
 
     // Confirma somente depois do commit. O recebimento não depende de abas abertas.
     if (cleanPhone && cleanPhone !== '0') {
+      const currentAutomation = (await readCRMState(tenantId)).automation;
+      // A temporary membership/configuration failure must not break message ingestion.
+      // The event remains queued in the same committed snapshot for the worker.
+      const automationEnv = currentAutomation?.rules.some(rule => rule.status === 'ACTIVE') ? await automationEnvironment(tenantId).catch(() => null) : null;
       await mutateCRMState(tenantId, serverState => {
         // Reentregas do provedor não incrementam não lidas nem alteram o resumo da conversa.
         if (serverState.messages.some(m => (m.externalId || m.id) === messageId)) return serverState;
@@ -461,7 +467,7 @@ export async function processZapiWebhookRequest(
         }
 
         const isLatest = !existingConv || Date.parse(messageTimestampIso) >= (Date.parse(existingConv.lastMessageAt) || 0);
-        return mergeTenantState(tenantId, serverState, {
+        let next = mergeTenantState(tenantId, serverState, {
           contacts: existingContact ? [{
             ...existingContact,
             lastClientInteractionAt: !fromMe && Date.parse(messageTimestampIso) > (Date.parse(existingContact.lastClientInteractionAt || '') || 0)
@@ -527,6 +533,13 @@ export async function processZapiWebhookRequest(
             timestamp: messageTimestampIso,
           }],
         });
+        if (!fromMe) {
+          const event = { id: `message:${messageId}`, trigger: 'MESSAGE_RECEIVED' as const, contactId: targetContactId,
+            occurredAt: messageTimestampIso, origin: 'WEBHOOK' as const };
+          next = enqueueAutomationEvent(next, event);
+          if (!existingContact) next = enqueueAutomationEvent(next, { ...event, id: `created:${targetContactId}`, trigger: 'LEAD_CREATED' });
+        }
+        return automationEnv ? runInternalJobs(next, automationEnv.company, automationEnv.members.map(member => member.id)) : next;
       });
     }
 

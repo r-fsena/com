@@ -99,3 +99,32 @@ python3 scripts/package-extension.py
 ```
 
 A API de download usa uma única versão declarada em `public/downloads/brokiva-extension-release.json` e verifica o SHA-256 do pacote. Ela não distribui versões anteriores como fallback.
+
+## Automações e regras comerciais
+
+A tela **Automações & Regras** consulta `/api/v1/automations`; não carrega regras ou execuções de demonstração. Administradores e gestores podem criar, editar, duplicar, testar, publicar, pausar e arquivar. Corretores e leitores apenas acompanham. A flag `automations` do ambiente controla a exibição no menu; a API aplica as permissões independentemente do menu.
+
+O assistente tem cinco passos: objetivo, critérios, ações, horários e conferência. Os modelos iniciais são sugestões editáveis e começam como rascunho. O teste salva o rascunho e executa a avaliação em uma cópia isolada dos dados, sem envio, tarefas reais ou alteração de contatos. Para publicar, é necessário testar a revisão atual. Editar uma regra ativa preserva a versão publicada até nova ativação. Texto copiado de um modelo fica congelado na regra; alterações posteriores no modelo não mudam envios já configurados. Este fluxo suporta texto; anexos não são enviados pelas automações.
+
+Regras, versões publicadas, rascunhos, trilha de alterações e ações pendentes ficam no campo `automation` da linha de cada imobiliária em `crm_tenant_state`. Tarefas ficam em `tasks` e processos em `commercial`, na mesma linha. Não há tabela adicional a migrar quando `database/03_durable_crm_state.sql` já está aplicada. Mudanças de regra e execuções internas usam transação/bloqueio de linha. A revisão enviada pelo cliente impede sobrescrever edições concorrentes. O histórico registra as configurações de cada gravação/publicação.
+
+As ações implementadas são: criar tarefa com prazo e responsável, preparar mensagem na agenda para revisão, adicionar etiqueta, distribuir contatos entre responsáveis ativos selecionados e enviar texto por uma conexão Z-API operacional. A preparação não envia WhatsApp: abra a tarefa, confira o texto e copie para o atendimento. Os modelos e tarefas agora usam APIs próprias e só confirmam gravação depois do banco. Configurações comerciais preservam os dados locais da própria imobiliária na primeira gravação explícita e passam a ser recuperadas do servidor; dados locais não são republicados automaticamente.
+
+Eventos de cadastro manual e mudança de etapa são registrados na mesma transação dos dados. Recebimentos novos por webhook autenticado também podem acionar regras sem navegador. Reentregas são deduplicadas por regra, versão, evento e ação. Importação da extensão, importação em lote, reconciliação de snapshots, mensagens enviadas pelo próprio número e mensagens de webhook com data superior a cinco minutos no passado não disparam regras. Isso prioriza evitar abordagens comerciais retroativas; eventos atrasados continuam no histórico, mas não recebem disparo automático.
+
+Contatos pessoais e pedidos de interrupção são excluídos. Mensagens exigem autorização registrada. Antes de executar, conferem-se novamente o contato, a versão ativa, o horário, os critérios e novas interações. Uma resposta ou atendimento posterior cancela a mensagem pendente. Publicar uma nova versão, pausar ou arquivar cancela ações ainda não iniciadas. Um envio já despachado pode concluir. Ativar não percorre a lista antiga de contatos. Inatividade acompanha apenas contatos que tiveram um acontecimento novo após a ativação da versão; cada período de inatividade executa uma vez.
+
+### Processamento agendado
+
+Tarefas, etiquetas, distribuição e preparação sem restrição de horário executam no próprio evento, sem cron. Inatividade, espera por horário comercial e envios externos exigem o processador periódico:
+
+1. Configure no servidor `AUTOMATIONS_CRON_SECRET` com um segredo exclusivo de pelo menos 32 caracteres. Não reutilize `SESSION_SECRET`.
+2. Agende um **POST HTTPS** em `/api/internal/automations/run`, com `Authorization: Bearer <segredo>`, a cada um a cinco minutos. Não exponha o segredo no navegador nem em parâmetros de URL. O workflow `.github/workflows/automations-worker.yml` é uma opção: configure a variável de repositório `CRM_AUTOMATIONS_URL` com a origem do CRM e o segredo `CRM_AUTOMATIONS_CRON_SECRET` com o mesmo valor do servidor. Sem a variável, o job não executa. Agendamentos do GitHub podem atrasar; para prazos operacionais estritos, use um agendador dedicado.
+3. Execute uma vez e confira **Histórico real**. A tela só libera publicação de regras agendadas quando há confirmação do processador nos últimos dez minutos.
+4. Para liberar envios automáticos, valide uma conexão Z-API real e configure `AUTOMATIONS_OUTBOUND_ENABLED=true`. O padrão é `false`; preparação para revisão continua disponível. A extensão sozinha não é um canal de envio do servidor. Esta implementação não renova assinaturas nem envia mensagens de teste automaticamente.
+
+O processador tem orçamento de tempo e percorre primeiro os ambientes há mais tempo sem verificação. A cadência depende da frequência e capacidade desse agendador. Pendências expiram após 24 horas. Uma conexão indisponível mantém a ação aguardando para nova verificação. Antes do envio, a ação é marcada como iniciada; após confirmação, registra-se **aceito pelo provedor** e uma mensagem `SENT`. Entrega/leitura são atualizadas pelos callbacks. Timeout após início, interrupção da execução ou confirmação ausente produzem **precisa de conferência**, sem reenvio automático, evitando duplicação. Confira no WhatsApp antes de qualquer reenvio manual.
+
+Funis/etapas em uso por oportunidades ou automações não podem ser removidos; motivos de perda utilizados devem ser desativados. Alterar o horário geral não muda o horário de regras publicadas: edite, teste e publique cada regra afetada. Configurações legadas de distribuição não substituem uma regra publicada de distribuição; o executor utiliza os responsáveis ativos selecionados na regra.
+
+Validação: `npm test` inclui testes de regras, edição concorrente, persistência após reinício, simulação sem efeitos, isolamento, eventos reais, bloqueio de importações históricas, duplicação, pausa, inatividade, indisponibilidade do canal, timeout incerto e referências comerciais em uso. Todos usam dados fictícios e provedores controlados, sem envio real.

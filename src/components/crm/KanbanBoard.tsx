@@ -303,13 +303,15 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     );
   }, [lossReasons, currentPipeline.id]);
 
-  const handleCreateNewPipeline = (e: React.FormEvent) => {
+  const handleCreateNewPipeline = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPipelineName.trim()) return;
-    const created = createPipeline({ name: newPipelineName.trim() });
+    try {
+    const created = await createPipeline({ name: newPipelineName.trim() });
     setCurrentPipelineById(created.id);
     setNewPipelineName('');
     setIsCreatePipelineModalOpen(false);
+    } catch (error: any) { alert(error.message); }
   };
 
   const handleOpenMigrationModal = (deal: Deal) => {
@@ -565,14 +567,13 @@ export function KanbanBoard({ onOpenLeadModal, onOpenChat }: KanbanBoardProps) {
     }
   };
 
-  const handleSavePipelineConfig = (e: React.FormEvent) => {
+  const handleSavePipelineConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingStages.length === 0) {
       alert('O funil deve conter pelo menos uma etapa.');
       return;
     }
-    updatePipelineStages(editingStages);
-    setIsConfigModalOpen(false);
+    try { await updatePipelineStages(editingStages); setIsConfigModalOpen(false); } catch (error: any) { alert(error.message); }
   };
 
   // Helper para dados do hover

@@ -1,371 +1,206 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, Zap, Pencil, Copy, Pause, Archive, ArrowLeft, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { useCRM } from '@/lib/crm-context';
-import { 
-  Zap, 
-  Plus, 
-  Play, 
-  Pause, 
-  Sparkles, 
-  CheckCircle2, 
-  Clock, 
-  Users, 
-  Tag, 
-  ArrowRight, 
-  FileText, 
-  Activity, 
-  AlertTriangle,
-  Bot
-} from 'lucide-react';
-import { AutomationRule, AutomationTriggerType, AutomationActionType } from '@/types/crm';
-import { MOCK_AUTOMATIONS, MOCK_AUTOMATION_LOGS } from '@/lib/mock-data';
-import { safeFormatDate } from '@/lib/date-utils';
+import { ruleConfigSchema, triggerLabels, fieldLabels, valueLabels, renderAutomationMessage, type RuleConfig, type RuleAction, type StoredRule, type AutomationJob, type AutomationAudit } from '@/lib/automations';
+import { MessageTemplatesModal } from '@/components/templates/MessageTemplatesModal';
 
+const actionLabels: Record<RuleAction['type'], string> = {
+  CREATE_TASK: 'Criar lembrete na agenda', PREPARE_MESSAGE: 'Preparar mensagem para revisão',
+  SEND_WHATSAPP_MESSAGE: 'Enviar mensagem automaticamente', ADD_TAG: 'Adicionar etiqueta ao contato', ASSIGN_BROKER: 'Distribuir entre responsáveis',
+};
+const statusLabels = { DRAFT: 'Rascunho', ACTIVE: 'Ativa', PAUSED: 'Pausada', ARCHIVED: 'Arquivada' };
+const jobLabels: Record<AutomationJob['status'], string> = { QUEUED: 'Aguardando', WAITING_CHANNEL: 'Aguardando conexão', DISPATCHING: 'Envio em andamento', ACCEPTED: 'Aceito pelo provedor', DONE: 'Concluído', SKIPPED: 'Ignorado', UNKNOWN: 'Precisa de conferência' };
+const operationLabels: Record<string, string> = { save: 'Rascunho salvo', simulate: 'Teste sem envio', publish: 'Versão ativada', pause: 'Regra pausada', archive: 'Regra arquivada' };
+const inputClass = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+const buttonClass = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed';
+const primaryClass = 'rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed';
+const dateLabel = (value: string) => new Date(value).toLocaleString('pt-BR');
+function newAction(type: RuleAction['type']): RuleAction {
+  switch (type) {
+    case 'CREATE_TASK': return { type, title: 'Fazer o primeiro atendimento', dueHours: 2, assignee: 'OWNER' };
+    case 'PREPARE_MESSAGE': return { type, message: 'Olá {{primeiro_nome}}! Recebemos seu contato na {{empresa}}. Como podemos ajudar?', assignee: 'OWNER' };
+    case 'SEND_WHATSAPP_MESSAGE': return { type, message: 'Olá {{primeiro_nome}}! Recebemos seu contato na {{empresa}}. Como podemos ajudar?' };
+    case 'ADD_TAG': return { type, tag: 'Novo interessado' };
+    case 'ASSIGN_BROKER': return { type, userIds: [] };
+  }
+}
 export function AutomationManager() {
   const { currentTenant } = useCRM();
-  const [automations, setAutomations] = useState<AutomationRule[]>(MOCK_AUTOMATIONS as any);
-  const [logs] = useState(MOCK_AUTOMATION_LOGS);
-  const [activeTab, setActiveTab] = useState<'RULES' | 'LOGS'>('RULES');
-  const [showBuilder, setShowBuilder] = useState(false);
-
-  // Form State do Workflow Builder
-  const [ruleName, setRuleName] = useState('');
-  const [ruleDescription, setRuleDescription] = useState('');
-  const [triggerType, setTriggerType] = useState<AutomationTriggerType>('LEAD_CREATED');
-  const [conditionField, setConditionField] = useState('temperature');
-  const [conditionValue, setConditionValue] = useState('HOT');
-  const [actionType, setActionType] = useState<AutomationActionType>('ASSIGN_BROKER_ROUND_ROBIN');
-
-  const toggleRule = (id: string) => {
-    setAutomations(prev => prev.map(a => a.id === id ? { ...a, isActive: !a.isActive } : a));
-  };
-
-  const handleCreateRule = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ruleName.trim()) return;
-
-    const newRule: AutomationRule = {
-      id: `auto-${Date.now()}`,
-      tenantId: currentTenant?.id || 'tenant-amabile-barbarotti',
-      name: ruleName.trim(),
-      description: ruleDescription.trim() || 'Regra de automação customizada',
-      triggerType,
-      isActive: true,
-      conditions: [
-        { field: conditionField, operator: 'EQUALS', value: conditionValue }
-      ],
-      actions: [
-        { actionType, config: {} }
-      ],
-      executionCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    setAutomations(prev => [newRule, ...prev]);
-    setRuleName('');
-    setRuleDescription('');
-    setShowBuilder(false);
-  };
-
-  const getTriggerLabel = (type: string) => {
-    switch (type) {
-      case 'LEAD_CREATED': return '⚡ Novo Lead Criado (WhatsApp/Manual)';
-      case 'STAGE_CHANGED': return '🔄 Mudança de Etapa no Kanban';
-      case 'LEAD_INACTIVE': return '⏳ Inatividade de Lead > SLA';
-      case 'MESSAGE_RECEIVED': return '💬 Nova Mensagem Recebida';
-      default: return type;
-    }
-  };
-
-  const getActionLabel = (type: string) => {
-    switch (type) {
-      case 'ASSIGN_BROKER_ROUND_ROBIN': return '👤 Atribuir Corretor por Rodízio';
-      case 'CREATE_TASK': return '📋 Criar Tarefa com SLA';
-      case 'ADD_TAG': return '🏷️ Aplicar Tag no Lead';
-      case 'NOTIFY_TEAM': return '🔔 Notificar Gestão Comercial';
-      default: return type;
-    }
-  };
-
-  return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-slate-900">Motor de Automações & Regras Comerciais</h1>
-            <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-              {automations.filter(a => a.isActive).length} ativas
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Automatize distribuição de leads, criação de tarefas, alertas de inatividade e cadências de WhatsApp
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Tab Pill */}
-          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
-            <button
-              onClick={() => setActiveTab('RULES')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeTab === 'RULES' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Regras do Fluxo
-            </button>
-            <button
-              onClick={() => setActiveTab('LOGS')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeTab === 'LOGS' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Logs de Execução ({logs.length})</span>
-            </button>
-          </div>
-
-          <button
-            onClick={() => setShowBuilder(true)}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Criar Automação</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto p-6 max-w-5xl w-full mx-auto space-y-4">
-        {activeTab === 'RULES' ? (
-          automations.map((rule) => (
-            <div
-              key={rule.id}
-              className={`bg-white rounded-2xl p-5 border transition duration-150 shadow-xs ${
-                rule.isActive ? 'border-slate-200 hover:border-emerald-500' : 'border-slate-200 opacity-60 bg-slate-50/60'
-              }`}
-            >
-              {/* Header do Card */}
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    rule.isActive ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-400'
-                  }`}>
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">{rule.name}</h3>
-                    <p className="text-xs text-slate-500">{rule.description}</p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => toggleRule(rule.id)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
-                    rule.isActive
-                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                      : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                  }`}
-                >
-                  {rule.isActive ? <Play className="w-3 h-3 fill-emerald-800" /> : <Pause className="w-3 h-3" />}
-                  <span>{rule.isActive ? 'Ativa' : 'Pausada'}</span>
-                </button>
-              </div>
-
-              {/* Workflow Pipeline Visualization */}
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/80 flex flex-wrap items-center gap-2 text-xs font-medium">
-                {/* Trigger */}
-                <div className="bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs text-slate-800 font-semibold">
-                  {getTriggerLabel(rule.triggerType)}
-                </div>
-
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-
-                {/* Conditions */}
-                {rule.conditions && rule.conditions.length > 0 ? (
-                  rule.conditions.map((cond, idx) => (
-                    <div key={idx} className="bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1.5 rounded-lg font-mono text-[11px]">
-                      Se {cond.field} == '{cond.value}'
-                    </div>
-                  ))
-                ) : (
-                  <span className="text-[11px] text-slate-400 italic">Sem condições extras</span>
-                )}
-
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-
-                {/* Actions */}
-                <div className="flex flex-wrap gap-1.5">
-                  {rule.actions.map((act, idx) => (
-                    <div key={idx} className="bg-emerald-50 text-emerald-900 border border-emerald-300/80 px-2.5 py-1.5 rounded-lg font-semibold text-[11px]">
-                      {getActionLabel(act.actionType)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Footer com Contador de Execuções */}
-              <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <span className="font-semibold text-slate-700 font-mono">
-                  {rule.executionCount} execuções registradas
-                </span>
-                {rule.lastExecutedAt && (
-                  <span className="text-[11px] font-mono">
-                    Última execução: {safeFormatDate(rule.lastExecutedAt, 'dd/MM/yyyy HH:mm')}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          /* TAB DE LOGS */
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100 overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Trilha de Auditoria e Execuções das Automações
-            </div>
-            {logs.map((log) => (
-              <div key={log.id} className="p-4 flex items-start justify-between gap-4 text-xs">
-                <div className="flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-bold text-slate-900">{log.ruleName}</span>
-                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded">
-                        {log.status}
-                      </span>
-                    </div>
-                    <p className="text-slate-600">{log.reason}</p>
-                    <p className="text-[11px] text-slate-400 mt-1">Lead afetado: <strong>{log.contactName}</strong></p>
-                  </div>
-                </div>
-
-                <span className="text-[11px] text-slate-400 font-mono flex-shrink-0">
-                  {safeFormatDate(log.executedAt, 'HH:mm • dd/MM')}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Modal Workflow Builder */}
-      {showBuilder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="p-5 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Zap className="w-5 h-5 text-emerald-400" />
-                <h2 className="text-sm font-bold">Criar Nova Regra de Automação</h2>
-              </div>
-            </div>
-
-            <form onSubmit={handleCreateRule} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nome da Automação *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Atribuição Imediata de Leads da Campanha Jardins"
-                  value={ruleName}
-                  onChange={(e) => setRuleName(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Descrição do Objetivo</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Dispara rodízio e agenda follow-up em 15 minutos"
-                  value={ruleDescription}
-                  onChange={(e) => setRuleDescription(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
-                />
-              </div>
-
-              {/* Gatilho */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
-                  <span className="w-4 h-4 rounded-full bg-slate-900 text-white text-[10px] flex items-center justify-center">1</span>
-                  Quando acontecer este Gatilho (Trigger):
-                </label>
-                <select
-                  value={triggerType}
-                  onChange={(e) => setTriggerType(e.target.value as any)}
-                  className="w-full text-xs bg-white border border-slate-200 rounded-xl px-3 py-2 focus:outline-none font-medium"
-                >
-                  <option value="LEAD_CREATED">Novo Lead Criado via WhatsApp ou Cadastro</option>
-                  <option value="STAGE_CHANGED">Negócio Movido de Etapa no Funil Kanban</option>
-                  <option value="LEAD_INACTIVE">Lead Inativo sem Interação há mais de X Horas</option>
-                  <option value="MESSAGE_RECEIVED">Nova Mensagem Recebida do Cliente</option>
-                </select>
-              </div>
-
-              {/* Condições */}
-              <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200">
-                <label className="block text-xs font-bold text-amber-900 mb-1.5 flex items-center gap-1.5">
-                  <span className="w-4 h-4 rounded-full bg-amber-600 text-white text-[10px] flex items-center justify-center">2</span>
-                  Apenas se atender à Condição (Filtro):
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={conditionField}
-                    onChange={(e) => setConditionField(e.target.value)}
-                    className="text-xs bg-white border border-amber-200 rounded-xl px-3 py-2 focus:outline-none"
-                  >
-                    <option value="temperature">Temperatura do Lead</option>
-                    <option value="source">Origem do Contato</option>
-                    <option value="preferredPropertyType">Tipo de Imóvel</option>
-                  </select>
-
-                  <input
-                    type="text"
-                    value={conditionValue}
-                    onChange={(e) => setConditionValue(e.target.value)}
-                    placeholder="Valor esperado (Ex: HOT)"
-                    className="text-xs bg-white border border-amber-200 rounded-xl px-3 py-2 focus:outline-none font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Ações */}
-              <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200">
-                <label className="block text-xs font-bold text-emerald-900 mb-1.5 flex items-center gap-1.5">
-                  <span className="w-4 h-4 rounded-full bg-emerald-700 text-white text-[10px] flex items-center justify-center">3</span>
-                  Executar as seguintes Ações Automáticas:
-                </label>
-                <select
-                  value={actionType}
-                  onChange={(e) => setActionType(e.target.value as any)}
-                  className="w-full text-xs bg-white border border-emerald-200 rounded-xl px-3 py-2 focus:outline-none font-medium"
-                >
-                  <option value="ASSIGN_BROKER_ROUND_ROBIN">Atribuir Corretor via Rodízio Circular</option>
-                  <option value="CREATE_TASK">Criar Tarefa de 1º Atendimento com SLA</option>
-                  <option value="ADD_TAG">Adicionar Tag Comercial ao Perfil</option>
-                  <option value="NOTIFY_TEAM">Notificar Gestão Comercial</option>
-                </select>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowBuilder(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2 rounded-xl shadow-md"
-                >
-                  Salvar e Ativar Automação
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <AutomationWorkspace key={currentTenant.id} />;
+}
+function AutomationWorkspace() {
+  const { currentTenant, currentUser, contacts, pipelines, quickReplies } = useCRM();
+  const [rules, setRules] = useState<StoredRule[]>([]);
+  const [jobs, setJobs] = useState<AutomationJob[]>([]);
+  const [audit, setAudit] = useState<AutomationAudit[]>([]);
+  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const [capabilities, setCapabilities] = useState({ workerReady: false, outboundEnabled: false });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<'RULES' | 'HISTORY'>('RULES');
+  const [showArchived, setShowArchived] = useState(false);
+  const [editor, setEditor] = useState(false);
+  const [step, setStep] = useState(0);
+  const [editing, setEditing] = useState<StoredRule | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [simulation, setSimulation] = useState<any>(null);
+  const [sampleId, setSampleId] = useState('');
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const canManage = ['SUPERADMIN', 'ADMIN', 'MANAGER'].includes(currentUser.role);
+  const emptyConfig = (): RuleConfig => ({ name: '', description: '', trigger: 'LEAD_CREATED', inactivityHours: 24, match: 'ALL', conditions: [],
+    actions: [newAction('CREATE_TASK')], schedule: { onlyBusinessHours: false, timezone: currentTenant.timezone || 'America/Sao_Paulo',
+      start: currentTenant.businessHours?.start || '08:30', end: currentTenant.businessHours?.end || '19:00', workDays: currentTenant.businessHours?.workDays || [1, 2, 3, 4, 5] } });
+  const [config, setConfig] = useState<RuleConfig>(emptyConfig);
+  const stages = pipelines.flatMap(pipeline => pipeline.stages.map(stage => ({ id: stage.id, name: `${pipeline.name} — ${stage.name}` })));
+  const headers = { 'Content-Type': 'application/json', 'x-tenant-id': currentTenant.id };
+  async function request(body?: any, signal?: AbortSignal) {
+    const response = await fetch('/api/v1/automations', { method: body ? 'POST' : 'GET', headers, credentials: 'include', cache: 'no-store', signal, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const data = await response.json();
+    if (!response.ok || !data.success || data.tenantId !== currentTenant.id) throw new Error(data.error || 'A operação não foi confirmada. Tente novamente.');
+    return data;
+  }
+  async function refresh(signal?: AbortSignal) {
+    const data = await request(undefined, signal);
+    setRules(data.rules); setJobs(data.jobs); setAudit(data.audit); setMembers(data.members); setCapabilities(data.capabilities);
+  }
+  useEffect(() => {
+    const controller = new AbortController();
+    refresh(controller.signal).catch(error => { if (!controller.signal.aborted) setError(error.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  // Tenant changes remount this workspace and cancel requests from the old tenant.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!editor || !dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [editor, dirty]);
+  useEffect(() => { if (editor) headingRef.current?.focus(); }, [step, editor]);
+  function change(patch: Partial<RuleConfig>) { setConfig(previous => ({ ...previous, ...patch })); setDirty(true); setSimulation(null); setError(''); }
+  function changeAction(index: number, action: RuleAction) { change({ actions: config.actions.map((item, i) => i === index ? action : item) }); }
+  function open(rule?: StoredRule, duplicate = false) {
+    setEditing(duplicate ? null : rule || null); setConfig(rule ? JSON.parse(JSON.stringify({ ...rule.draft, ...(duplicate ? { name: `${rule.draft.name} (cópia)` } : {}) })) : emptyConfig());
+    setDirty(duplicate); setStep(0); setSimulation(null); setError(''); setNotice(''); setSampleId(''); setEditor(true);
+  }
+  function close() {
+    if (dirty && !window.confirm('Há alterações sem salvar. Deseja sair e descartá-las?')) return;
+    setEditor(false); setError('');
+  }
+  async function saveDraft() {
+    const parsed = ruleConfigSchema.safeParse(config);
+    if (!parsed.success) throw new Error(parsed.error.issues.map(issue => issue.message).join(' '));
+    if (editing && !dirty) return editing;
+    const data = await request({ operation: 'save', id: editing?.id, revision: editing?.revision, config: parsed.data });
+    setEditing(data.rule); setDirty(false); setRules(previous => [data.rule, ...previous.filter(rule => rule.id !== data.rule.id)]);
+    return data.rule as StoredRule;
+  }
+  async function act(operation: 'save' | 'simulate' | 'publish') {
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const saved = await saveDraft();
+      if (operation === 'save') setNotice('Rascunho salvo no servidor. A versão ativa, quando existir, continua em uso.');
+      else {
+        const data = await request({ operation, id: saved.id, revision: saved.revision, ...(operation === 'simulate' && sampleId ? { contactId: sampleId } : {}) });
+        setEditing(data.rule);
+        if (operation === 'simulate') { setSimulation(data.simulation); setNotice('Teste concluído sem enviar mensagens ou alterar contatos.'); }
+        else { setNotice('Regra ativada para novos acontecimentos. Contatos e mensagens antigos não serão processados.'); setEditor(false); }
+      }
+      await refresh();
+    } catch (error: any) { setError(error.message); }
+    finally { setBusy(false); }
+  }
+  async function control(rule: StoredRule, operation: 'pause' | 'archive') {
+    if (operation === 'archive' && !window.confirm(`Arquivar “${rule.draft.name}”? As ações que ainda não começaram serão canceladas.`)) return;
+    setBusy(true); setError(''); setNotice('');
+    try { await request({ operation, id: rule.id, revision: rule.revision }); await refresh(); setNotice(operation === 'pause' ? 'Regra pausada. Ações ainda não iniciadas foram canceladas. Um envio já iniciado pode ser concluído.' : 'Regra arquivada.'); }
+    catch (error: any) { setError(error.message); } finally { setBusy(false); }
+  }
+  function labelValue(field: string, value: string) { return valueLabels[value] || (field === 'stageId' ? stages.find(stage => stage.id === value)?.name : field === 'assignedUserId' ? members.find(member => member.id === value)?.name : '') || value; }
+  function summary(rule: RuleConfig) {
+    return <div className="space-y-2 text-sm text-slate-700"><p><strong>Quando:</strong> {triggerLabels[rule.trigger]}{rule.trigger === 'LEAD_INACTIVE' ? ` por ${rule.inactivityHours} hora(s)` : ''}.</p>
+      <p><strong>Para quem:</strong> {rule.conditions.length ? rule.conditions.map(condition => `${fieldLabels[condition.field]} ${condition.operator === 'IS_EMPTY' ? 'não preenchido' : `${condition.operator === 'NOT_EQUALS' ? 'diferente de' : 'igual a'} ${labelValue(condition.field, condition.value)}`}`).join(rule.match === 'ALL' ? ' e ' : ' ou ') : 'contatos comerciais, sem pedido de interrupção'}.</p>
+      <p><strong>O que fazer:</strong> {rule.actions.map(action => actionLabels[action.type]).join('; ')}.</p>
+      <p><strong>Horário:</strong> {rule.schedule.onlyBusinessHours ? `${rule.schedule.start} às ${rule.schedule.end}, nos dias escolhidos (${rule.schedule.timezone})` : 'assim que o acontecimento chegar ao servidor'}.</p>
+    </div>;
+  }
+  return <div className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-6"><div className="mx-auto max-w-5xl space-y-5">
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-bold text-slate-900">Automações e regras comerciais</h1><p className="mt-1 text-sm text-slate-600">Organize o atendimento com regras que você pode entender, testar e alterar.</p></div>
+      {!editor && <div className="flex flex-wrap gap-2"><button className={buttonClass} onClick={() => setTemplatesOpen(true)}>Modelos de mensagem</button><button className={primaryClass} disabled={!canManage || loading || busy || !!error} onClick={() => open()}><Plus className="mr-1 inline h-4 w-4" />Criar automação</button></div>}
+    </header>
+    {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}<button className="ml-3 underline" disabled={busy} onClick={async () => { setError(''); setLoading(true); try { await refresh(); } catch (error: any) { setError(error.message); } finally { setLoading(false); } }}>Atualizar lista</button></div>}
+    {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div>}
+    {!canManage && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Você pode acompanhar as regras. Administradores e gestores podem editar e ativar.</p>}
+    {loading ? <p role="status">Carregando as regras salvas…</p> : editor ? <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-6">
+      <div className="flex items-center justify-between gap-3"><button className={buttonClass} disabled={busy} onClick={close}><ArrowLeft className="mr-1 inline h-4 w-4" />Voltar à lista</button><span className="text-sm text-slate-500">Etapa {step + 1} de 5</span></div>
+      {editing?.status === 'ACTIVE' && <p className="mt-4 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-900">Você está editando um rascunho. A versão publicada continua ativa até você testar e ativar a alteração.</p>}
+      <nav aria-label="Etapas da configuração" className="my-5 flex flex-wrap gap-2">{['Objetivo', 'Critérios', 'Ações', 'Horários', 'Conferir e testar'].map((label, index) => <button key={label} aria-current={step === index ? 'step' : undefined} className={`rounded-full px-3 py-1 text-sm ${step === index ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'}`} disabled={busy} onClick={() => setStep(index)}>{index + 1}. {label}</button>)}</nav>
+      <h2 ref={headingRef} tabIndex={-1} className="mb-4 text-lg font-bold text-slate-900 outline-none">{['Qual é o objetivo?', 'Só para quem atender aos critérios', 'O que deve acontecer?', 'Quando as ações podem acontecer?', 'Confira antes de ativar'][step]}</h2>
+      <fieldset disabled={busy || !canManage} className="space-y-4">
+      {step === 0 && <>
+        {!editing && <div className="grid gap-2 sm:grid-cols-3">{[{ name: 'Receber novos interessados', type: 'PREPARE_MESSAGE' }, { name: 'Lembrar primeiro atendimento', type: 'CREATE_TASK' }, { name: 'Organizar novos contatos', type: 'ADD_TAG' }].map(preset => <button key={preset.name} className={`${buttonClass} text-left`} onClick={() => change({ name: preset.name, actions: [newAction(preset.type as RuleAction['type'])] })}><Zap className="mb-2 h-5 w-5 text-indigo-600" />{preset.name}</button>)}</div>}
+        <label className="block text-sm font-semibold">Nome da regra<input maxLength={120} className={`${inputClass} mt-1`} value={config.name} onChange={event => change({ name: event.target.value })} /></label>
+        <label className="block text-sm font-semibold">Descrição (opcional)<input maxLength={500} className={`${inputClass} mt-1`} value={config.description} onChange={event => change({ description: event.target.value })} /></label>
+        <label className="block text-sm font-semibold">Quando acontecer…<select className={`${inputClass} mt-1`} value={config.trigger} onChange={event => change({ trigger: event.target.value as RuleConfig['trigger'] })}>{Object.entries(triggerLabels).map(([value, label]) => <option key={value} value={value} disabled={value === 'LEAD_INACTIVE' && !capabilities.workerReady}>{label}{value === 'LEAD_INACTIVE' && !capabilities.workerReady ? ' (agendamento indisponível)' : ''}</option>)}</select></label>
+        {config.trigger === 'LEAD_INACTIVE' && <label className="block text-sm font-semibold">Sem interação há quantas horas?<input className={`${inputClass} mt-1`} type="number" min={1} max={8760} value={config.inactivityHours} onChange={event => change({ inactivityHours: Number(event.target.value) })} /><span className="mt-1 block font-normal text-slate-600">Conta a última interação do cliente ou da equipe. Vale somente para contatos com novos acontecimentos após a configuração.</span></label>}
+      </>}
+      {step === 1 && <><p className="text-sm text-slate-600">Sem filtros adicionais, a regra vale para contatos comerciais. Contatos pessoais e pedidos de interrupção ficam de fora.</p>
+        {config.conditions.length > 1 && <label className="block text-sm font-semibold">Combinar os critérios<select className={`${inputClass} mt-1`} value={config.match} onChange={event => change({ match: event.target.value as 'ALL' | 'ANY' })}><option value="ALL">Atender a todos</option><option value="ANY">Atender a pelo menos um</option></select></label>}
+        {config.conditions.map((condition, index) => <div key={index} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-4">
+          <label className="text-sm">Critério<select className={inputClass} value={condition.field} onChange={event => change({ conditions: config.conditions.map((item, i) => i === index ? { field: event.target.value as typeof condition.field, operator: 'EQUALS', value: '' } : item) })}>{Object.entries(fieldLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="text-sm">Comparação<select className={inputClass} value={condition.operator} onChange={event => change({ conditions: config.conditions.map((item, i) => i === index ? { ...item, operator: event.target.value as typeof condition.operator } : item) })}><option value="EQUALS">É igual a</option><option value="NOT_EQUALS">É diferente de</option><option value="IS_EMPTY">Não preenchido</option></select></label>
+          {condition.operator !== 'IS_EMPTY' && <label className="text-sm">Valor{condition.field === 'tags' ? <input className={inputClass} value={condition.value} onChange={event => change({ conditions: config.conditions.map((item, i) => i === index ? { ...item, value: event.target.value } : item) })} /> : <select className={inputClass} value={condition.value} onChange={event => change({ conditions: config.conditions.map((item, i) => i === index ? { ...item, value: event.target.value } : item) })}><option value="">Escolha…</option>{(condition.field === 'temperature' ? ['HOT', 'WARM', 'COLD'].map(id => ({ id, name: valueLabels[id] })) : condition.field === 'source' ? Object.entries(valueLabels).filter(([id]) => !['HOT', 'WARM', 'COLD'].includes(id)).map(([id, name]) => ({ id, name })) : condition.field === 'stageId' ? stages : members).map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select>}</label>}
+          <button className={`${buttonClass} self-end`} onClick={() => change({ conditions: config.conditions.filter((_, i) => i !== index) })}>Remover critério {index + 1}</button>
+        </div>)}<button className={buttonClass} disabled={config.conditions.length >= 8} onClick={() => change({ conditions: [...config.conditions, { field: 'source', operator: 'EQUALS', value: 'WHATSAPP' }] })}>Adicionar critério</button>
+      </>}
+      {step === 2 && <>{config.actions.map((action, index) => <div key={index} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-end gap-2"><label className="flex-1 text-sm font-semibold">Ação {index + 1}<select className={`${inputClass} mt-1`} value={action.type} onChange={event => changeAction(index, newAction(event.target.value as RuleAction['type']))}>{Object.entries(actionLabels).map(([value, label]) => <option key={value} value={value} disabled={value === 'SEND_WHATSAPP_MESSAGE' && !capabilities.outboundEnabled}>{label}{value === 'SEND_WHATSAPP_MESSAGE' && !capabilities.outboundEnabled ? ' (indisponível)' : ''}</option>)}</select></label><button aria-label={`Remover ação ${index + 1}`} className={buttonClass} disabled={config.actions.length <= 1} onClick={() => change({ actions: config.actions.filter((_, i) => i !== index) })}><X className="h-4 w-4" /></button></div>
+        {'assignee' in action && <label className="block text-sm font-semibold">Responsável pela tarefa<select className={`${inputClass} mt-1`} value={action.assignee} onChange={event => changeAction(index, { ...action, assignee: event.target.value })}><option value="OWNER">Responsável atual do contato</option>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>}
+        {action.type === 'CREATE_TASK' && <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold">O que lembrar?<input className={`${inputClass} mt-1`} value={action.title} maxLength={200} onChange={event => changeAction(index, { ...action, title: event.target.value })} /></label><label className="text-sm font-semibold">Prazo em horas após a criação<input type="number" min={0} max={8760} step={0.25} className={`${inputClass} mt-1`} value={action.dueHours} onChange={event => changeAction(index, { ...action, dueHours: Number(event.target.value) })} /></label></div>}
+        {'message' in action && <>
+          <label className="block text-sm font-semibold">Começar com um modelo (opcional)<select className={`${inputClass} mt-1`} value="" onChange={event => { const template = quickReplies.find(template => template.id === event.target.value); if (template) changeAction(index, { ...action, message: template.content }); }}><option value="">Escolher modelo…</option>{quickReplies.filter(template => template.isActive !== false).map(template => <option key={template.id} value={template.id}>{template.title}{template.imageUrl ? ' (somente texto)' : ''}</option>)}</select></label>
+          <p className="text-xs text-slate-600">O texto é copiado para esta regra. Alterar o modelo depois não muda uma automação já publicada. Anexos não são enviados por este fluxo.</p>
+          <label className="block text-sm font-semibold">Mensagem<textarea rows={5} maxLength={4000} className={`${inputClass} mt-1`} value={action.message} onChange={event => changeAction(index, { ...action, message: event.target.value })} /></label>
+          <div className="flex flex-wrap gap-2">{[{ label: 'Nome do cliente', value: '{{nome}}' }, { label: 'Primeiro nome', value: '{{primeiro_nome}}' }, { label: 'Nome da empresa', value: '{{empresa}}' }].map(variable => <button key={variable.value} className={buttonClass} onClick={() => changeAction(index, { ...action, message: `${action.message}${variable.value}` })}>Inserir {variable.label.toLowerCase()}</button>)}</div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><p className="mb-1 text-xs font-bold text-emerald-900">Prévia com dados fictícios</p><p className="whitespace-pre-wrap text-sm">{renderAutomationMessage(action.message, 'Marina Exemplo', currentTenant.name)}</p></div>
+          <p className={`text-sm ${action.type === 'SEND_WHATSAPP_MESSAGE' ? 'font-semibold text-amber-800' : 'text-slate-600'}`}>{action.type === 'SEND_WHATSAPP_MESSAGE' ? 'Ao ativar, esta ação enviará mensagens reais pelo WhatsApp conectado. Se o envio ficar sem confirmação, será necessária conferência antes de reenviar.' : 'Cria uma tarefa na agenda com o texto para o corretor revisar. Nenhuma mensagem é enviada automaticamente.'}</p>
+        </>}
+        {action.type === 'ADD_TAG' && <label className="block text-sm font-semibold">Nome da etiqueta<input className={`${inputClass} mt-1`} value={action.tag} maxLength={80} onChange={event => changeAction(index, { ...action, tag: event.target.value })} /></label>}
+        {action.type === 'ASSIGN_BROKER' && <div><p className="mb-2 text-sm text-slate-600">Escolha quem participará da distribuição. Cada novo contato vai para o próximo responsável da lista.</p>{members.map(member => <label key={member.id} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={action.userIds.includes(member.id)} onChange={event => changeAction(index, { ...action, userIds: event.target.checked ? [...action.userIds, member.id] : action.userIds.filter(id => id !== member.id) })} />{member.name}</label>)}</div>}
+      </div>)}<button className={buttonClass} disabled={config.actions.length >= 8} onClick={() => change({ actions: [...config.actions, newAction('CREATE_TASK')] })}>Adicionar ação</button><p className="text-sm text-slate-500">As ações internas são realizadas na ordem exibida. Enviar automaticamente depende do processamento do servidor.</p></>}
+      {step === 3 && <><label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" checked={config.schedule.onlyBusinessHours} disabled={!capabilities.workerReady} onChange={event => change({ schedule: { ...config.schedule, onlyBusinessHours: event.target.checked } })} />Executar somente no horário de atendimento</label>
+        {!capabilities.workerReady && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">O agendamento do servidor ainda não está operacional. As regras imediatas continuam disponíveis. Horários, inatividade e envios automáticos exigem esse serviço.</p>}
+        {config.schedule.onlyBusinessHours && <><div className="grid gap-3 sm:grid-cols-3"><label className="text-sm">Início<input className={inputClass} type="time" value={config.schedule.start} onChange={event => change({ schedule: { ...config.schedule, start: event.target.value } })} /></label><label className="text-sm">Fim<input className={inputClass} type="time" value={config.schedule.end} onChange={event => change({ schedule: { ...config.schedule, end: event.target.value } })} /></label><label className="text-sm">Fuso horário<select className={inputClass} value={config.schedule.timezone} onChange={event => change({ schedule: { ...config.schedule, timezone: event.target.value } })}>{Array.from(new Set([config.schedule.timezone, 'America/Sao_Paulo', 'America/Manaus', 'America/Belem', 'America/Rio_Branco', 'America/Noronha'])).map(timezone => <option key={timezone} value={timezone}>{timezone}</option>)}</select></label></div><div className="flex flex-wrap gap-3">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, index) => <label key={day} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={config.schedule.workDays.includes(index)} onChange={event => change({ schedule: { ...config.schedule, workDays: event.target.checked ? [...config.schedule.workDays, index] : config.schedule.workDays.filter(day => day !== index) } })} />{day}</label>)}</div><p className="text-sm text-slate-600">Fora desse horário, as ações aguardam. Pendências expiram após 24 horas para evitar contatos atrasados.</p></>}
+        <p className="text-sm text-slate-600">Prazos dos lembretes são contados em horas corridas. A importação da extensão não aciona estas regras. Para mensagens recebidas acionarem regras sem o navegador, é necessária uma conexão de servidor operacional.</p>
+      </>}
+      {step === 4 && <><div className="rounded-xl bg-slate-50 p-4"><h3 className="mb-3 font-bold">{config.name || 'Dê um nome à regra'}</h3>{summary(config)}</div>
+        <label className="block text-sm font-semibold">Testar com<select className={`${inputClass} mt-1`} value={sampleId} onChange={event => { setSampleId(event.target.value); setSimulation(null); }}><option value="">Contato fictício de exemplo</option>{contacts.map(contact => <option key={contact.id} value={contact.id}>{contact.name}{contact.isPersonal ? ' (pessoal)' : ''}</option>)}</select></label>
+        <button className={buttonClass} onClick={() => void act('simulate')}>Testar sem enviar</button><p className="text-sm text-slate-600">O teste salva o rascunho e mostra as ações previstas. Não altera contatos, não cria tarefas e não envia mensagens.</p>
+        {simulation && <div role="status" className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm"><strong>Resultado para {simulation.contactName}</strong><p>{simulation.reason}</p>{simulation.outsideBusinessHours && <p>A execução aguardaria o próximo horário de atendimento.</p>}{simulation.matches && simulation.actions.map((action: any, index: number) => <div key={index} className="rounded-lg bg-white p-3"><p className="font-semibold">{actionLabels[action.type as RuleAction['type']]}</p><p className="whitespace-pre-wrap">{action.text}</p>{action.warning && <p className="mt-1 text-amber-800">{action.warning}</p>}</div>)}<p>{simulation.warning}</p></div>}
+        {config.actions.some(action => action.type === 'SEND_WHATSAPP_MESSAGE') && <p className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">Ativar esta regra autoriza envios reais para novos acontecimentos que atendam aos critérios acima.</p>}
+      </>}
+      </fieldset>
+      <footer className="mt-6 flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4"><button className={buttonClass} disabled={busy || !canManage} onClick={() => void act('save')}>{busy ? 'Aguarde…' : 'Salvar rascunho'}</button><div className="flex gap-2">{step > 0 && <button className={buttonClass} disabled={busy} onClick={() => setStep(step - 1)}>Anterior</button>}{step < 4 ? <button className={primaryClass} disabled={busy} onClick={() => setStep(step + 1)}>Próximo<ArrowRight className="ml-1 inline h-4 w-4" /></button> : <button className={primaryClass} disabled={busy || !canManage || !simulation || dirty || (editing?.status === 'ACTIVE' && editing.publishedRevision === editing.revision)} onClick={() => void act('publish')}>Ativar esta versão</button>}</div></footer>
+    </div> : <>
+      <nav className="flex flex-wrap items-center gap-2" aria-label="Conteúdo de automações"><button className={tab === 'RULES' ? primaryClass : buttonClass} onClick={() => setTab('RULES')}>Regras ({rules.filter(rule => rule.status !== 'ARCHIVED').length})</button><button className={tab === 'HISTORY' ? primaryClass : buttonClass} onClick={() => setTab('HISTORY')}>Histórico real</button><button aria-label="Atualizar regras e histórico" className={buttonClass} disabled={busy} onClick={async () => { setBusy(true); try { await refresh(); setError(''); } catch (error: any) { setError(error.message); } finally { setBusy(false); } }}><RefreshCw className="h-4 w-4" /></button></nav>
+      {tab === 'RULES' ? <><label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} />Mostrar arquivadas</label>
+        {!rules.length && !error && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><Zap className="mx-auto mb-3 h-8 w-8 text-indigo-600" /><h2 className="font-bold">Crie sua primeira automação</h2><p className="mt-2 text-sm text-slate-600">Comece com um lembrete ou uma mensagem para revisão. Você poderá testar antes de ativar.</p></div>}
+        {rules.filter(rule => showArchived || rule.status !== 'ARCHIVED').map(rule => <article key={rule.id} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="font-bold text-slate-900">{rule.published?.name || rule.draft.name}</h2><p className="text-sm text-slate-500">{rule.published?.description || rule.draft.description}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${rule.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-100 text-slate-700'}`}>{statusLabels[rule.status]}</span></div>
+          {summary(rule.published || rule.draft)}
+          {rule.published && rule.revision !== rule.publishedRevision && rule.status === 'ACTIVE' && <p className="text-sm font-semibold text-indigo-700">Há um rascunho para revisar. A versão anterior continua ativa.</p>}
+          <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3"><button className={buttonClass} disabled={!canManage || busy || rule.status === 'ARCHIVED'} onClick={() => open(rule)}><Pencil className="mr-1 inline h-4 w-4" />{rule.status === 'PAUSED' || rule.status === 'DRAFT' ? 'Editar e testar' : 'Editar'}</button><button className={buttonClass} disabled={!canManage || busy} onClick={() => open(rule, true)}><Copy className="mr-1 inline h-4 w-4" />Duplicar</button>{rule.status === 'ACTIVE' && <button className={buttonClass} disabled={!canManage || busy} onClick={() => void control(rule, 'pause')}><Pause className="mr-1 inline h-4 w-4" />Pausar</button>}{rule.status !== 'ARCHIVED' && <button className={buttonClass} disabled={!canManage || busy} onClick={() => void control(rule, 'archive')}><Archive className="mr-1 inline h-4 w-4" />Arquivar</button>}</div>
+        </article>)}
+      </> : <><div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">{capabilities.workerReady ? 'Agendador do servidor operacional.' : 'Agendador sem confirmação recente. Regras imediatas não dependem dele.'} Abaixo estão as últimas 300 ações. Aceito pelo provedor significa que o envio foi aceito; confira a entrega na conversa.</div>
+        {!jobs.length && <p className="rounded-xl bg-white p-5 text-sm text-slate-600">Ainda não há execuções. Simulações aparecem no registro de alterações, sem gerar ações reais.</p>}
+        {jobs.map(job => <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{rules.find(rule => rule.id === job.ruleId)?.published?.name || 'Regra arquivada'} · {actionLabels[job.action.type]}</strong><span className={job.status === 'UNKNOWN' ? 'font-bold text-amber-800' : 'text-slate-600'}>{jobLabels[job.status]}</span></div><p className="mt-2">{job.reason}</p><p className="mt-1 text-xs text-slate-500">{contacts.find(contact => contact.id === job.event.contactId)?.name || 'Contato removido'} · versão {job.revision} · {dateLabel(job.updatedAt)}</p></article>)}
+        <h2 className="pt-3 font-bold">Registro de alterações e testes</h2>{audit.map(entry => <div key={entry.id} className="rounded-xl bg-white p-3 text-sm">{operationLabels[entry.action] || entry.action} · {rules.find(rule => rule.id === entry.ruleId)?.draft.name || 'Regra'} · {members.find(member => member.id === entry.userId)?.name || 'Administrador'} · {dateLabel(entry.at)}{entry.config && <details className="mt-2"><summary className="cursor-pointer font-semibold">Ver configuração desta versão</summary><div className="mt-2">{summary(entry.config)}</div></details>}</div>)}
+      </>}
+    </>}
+    <MessageTemplatesModal isOpen={templatesOpen} onClose={() => setTemplatesOpen(false)} />
+  </div></div>;
 }

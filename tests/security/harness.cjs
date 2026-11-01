@@ -28,7 +28,7 @@ function harness(overrides = {}, environment = {}) {
       if (id.startsWith('.')) return load(path.resolve(path.dirname(absolute), `${id}.ts`));
       return require(id);
     };
-    vm.runInNewContext(source, { exports: result, require: localRequire, process: { env }, Buffer, console: { ...console, error: () => {} }, URL, Headers, Response, AbortSignal, fetch: mocks.fetch || (() => { throw new Error('Network disabled in tests'); }), setTimeout, clearTimeout }, { filename: absolute });
+    vm.runInNewContext(source, { exports: result, require: localRequire, process: { env }, Buffer, structuredClone, console: { ...console, error: () => {} }, URL, Headers, Response, AbortSignal, fetch: mocks.fetch || (() => { throw new Error('Network disabled in tests'); }), setTimeout, clearTimeout }, { filename: absolute });
     return result;
   }
   function request(url, body, headers = {}, method) {

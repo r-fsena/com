@@ -1,8 +1,10 @@
 import { readCRMState, writeCRMState } from '@/lib/crm-repository';
+import { writeInteractiveCRMState } from '@/lib/automation-service';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { MOCK_CONTACTS } from '@/lib/mock-data';
-import { validateApiSession } from '@/lib/api-auth';
+import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
+import crypto from 'crypto';
 
 const CreateContactSchema = z.object({
   name: z.string().min(2, 'Nome muito curto'),
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
     requiredRoles: ['SUPERADMIN', 'ADMIN', 'MANAGER', 'BROKER'],
   });
   if (errorResponse) return errorResponse;
+  if (session!.source === 'CHROME_EXTENSION') return NextResponse.json({ error: 'Use a importação de histórico da extensão.' }, { status: 403 });
 
   try {
     const body = await request.json();
@@ -73,8 +76,8 @@ export async function POST(request: NextRequest) {
 
     const data = validated.data;
     const newContact = {
-      id: `contact-${Date.now()}`,
-      tenantId: session?.tenantId || 'tenant-amabile-barbarotti',
+      id: `contact-${crypto.randomUUID()}`,
+      tenantId: authorizedTenant(session!, request.headers.get('x-tenant-id')),
       ...data,
       isPersonal: false,
       aiPriorityScore: 75,
@@ -85,7 +88,7 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    await writeCRMState(newContact.tenantId, { contacts: [newContact as any] });
+    await writeInteractiveCRMState(newContact.tenantId, { contacts: [newContact as any] }, { trigger: 'LEAD_CREATED', entityId: newContact.id });
     return NextResponse.json({ data: newContact }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: 'Erro ao criar contato', message: err.message }, { status: 500 });

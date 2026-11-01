@@ -52,7 +52,7 @@ export function CampaignSequenceEditor({ config, onChange, onIntervalChange, upl
     <p className="text-xs text-slate-600">Anexos: JPG, PNG, WebP ou PDF até 10 MB por mensagem. O texto acompanha o arquivo como legenda.</p>
     {!storageReady && <p className="text-sm text-amber-800">O armazenamento de anexos ainda precisa ser configurado.</p>}
     {parts.length > 1 && <div className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-      <label className="block text-sm font-semibold">Intervalo entre mensagens (segundos)<input className={input} type="number" min={15} max={3600} step={1} value={interval} onChange={event => onIntervalChange(Number(event.target.value))} /></label>
+      <label className="block text-sm font-semibold">Intervalo entre mensagens (segundos)<input className={input} type="number" min={15} max={3600} step={1} value={interval} onWheel={event => event.currentTarget.blur()} onChange={event => onIntervalChange(Number(event.target.value))} /></label>
       <p className="text-sm">Padrão: 30 segundos. Escolha entre 15 segundos e uma hora. A contagem começa quando o provedor confirma a mensagem anterior.</p>
       <p className="text-xs text-slate-600">Este é um tempo mínimo, não um horário exato. A fila, a frequência do processador, pausas e o horário de atendimento podem aumentar a espera. Fechar esta tela não cancela o timer.</p>
     </div>}

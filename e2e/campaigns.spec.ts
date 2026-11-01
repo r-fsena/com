@@ -141,6 +141,7 @@ test.describe('Campanhas guiadas com dados fictícios e APIs isoladas', () => {
     await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).fill('30');
     await page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true }).click();
     await page.mouse.wheel(0, 200);
+    await expect(page.getByRole('spinbutton', { name: 'Intervalo entre mensagens (segundos)', exact: true })).toHaveValue('30');
     await page.screenshot({ path: '/tmp/brokiva-sequencia-mobile.png', fullPage: true });
     await page.getByRole('button', { name: 'Remover mensagem 1', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Mensagem 1', exact: true })).toHaveValue('Posso enviar os detalhes?');

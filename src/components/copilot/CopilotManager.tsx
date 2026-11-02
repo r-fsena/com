@@ -390,16 +390,16 @@ export function CopilotManager() {
                   <div className="flex items-center justify-between p-2.5 bg-blue-50/70 border border-blue-200/90 rounded-xl">
                     <div className="flex items-center gap-2.5">
                       <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px] shadow-2xs">
-                        GE
+                        CR
                       </div>
                       <div>
                         <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                          <span>Google Gemini 1.5 Flash</span>
+                          <span>Leitura assistida do CRM</span>
                           <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-md">
                             Padrão CRM
                           </span>
                         </div>
-                        <p className="text-[10px] text-slate-500">1M Contexto • Fornecimento Padrão Entregue pelo CRM</p>
+                        <p className="text-[10px] text-slate-500">O modo de processamento é definido no servidor</p>
                       </div>
                     </div>
                     <span title="Motor oficial gerenciado pelo CRM">
@@ -543,11 +543,11 @@ export function CopilotManager() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Análise em Tempo Real pelo Google Gemini (Tom: {tone}):</span>
+                      <span>Resultado da análise disponível:</span>
                     </span>
                     <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 font-bold">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                      Google Gemini 1.5 Flash (Nativo)
+                      {simulationAnalysis.analysisSource === 'LOCAL_RULES' ? 'Regras locais, sem IA externa' : 'Análise do servidor'}
                     </span>
                   </div>
 
@@ -643,23 +643,23 @@ export function CopilotManager() {
                 <div className="p-5 bg-gradient-to-r from-blue-50/60 to-indigo-50/50 border border-blue-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-3.5">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-base shadow-sm">
-                      GE
+                      CR
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-slate-900">Google Gemini 1.5 Flash</h4>
+                        <h4 className="text-sm font-bold text-slate-900">Leitura assistida do CRM</h4>
                         <span className="text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full">
-                          Motor Padrão Oficial do CRM
+                          Modo definido no servidor
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 mt-1">
-                        Janela ultra-ampla de 1.000.000 de tokens de contexto • Leitura sem cortes do histórico do WhatsApp
+                        O histórico disponível é processado em blocos, com registro da origem das informações e revisão de divergências.
                       </p>
                     </div>
                   </div>
                   <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 self-start sm:self-center shadow-2xs">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    CONECTADO & ATIVO
+                    CONFIGURAÇÃO CENTRALIZADA
                   </span>
                 </div>
 
@@ -676,19 +676,19 @@ export function CopilotManager() {
                   <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
                     <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Ultra Baixa Latência</span>
+                      <span>Progresso acompanhado</span>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Respostas comerciais inteligentes e síntese de negociações em menos de 1 segundo.
+                      O processamento depende do histórico disponível. Acompanhe o progresso e as pendências na conversa.
                     </p>
                   </div>
                   <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
                     <div className="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>4 Pilares do Lead</span>
+                      <span>Campos comerciais</span>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Extração e qualificação automática de Orçamento, Urgência, Perfil Familiar e Objeções.
+                      Identificação de orçamento, entrada, renda, região e tipo de imóvel quando declarados explicitamente.
                     </p>
                   </div>
                 </div>

@@ -287,7 +287,7 @@ export function SaaSApiSettings() {
                     className="w-full bg-slate-50 border border-slate-200/90 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 cursor-pointer focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#3742AC]"
                   >
                     <option value="gemini-1.5-flash">
-                      ⚡ Google Gemini 1.5 Flash (Oficial • Custo Mínimo & Contexto de 1M)
+                      Google Gemini (somente com ativação explícita do servidor)
                     </option>
                     <option value="anthropic.claude-3-5-sonnet-20241022-v2:0">
                       🎩 Anthropic Claude 3.5 Sonnet (Alta Precisão Comercial)

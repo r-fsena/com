@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       }
       return state;
     });
-    const next = input.operation === 'run' ? await runQualificationWorker(tenantId, { conversationIds: ids, deadline: Date.now() + 35000 }) : await readCRMState(tenantId);
+    const next = input.operation === 'run' ? await runQualificationWorker(tenantId, { conversationIds: ids, deadline: Date.now() + 24000 }) : await readCRMState(tenantId);
     return NextResponse.json({ success: true, tenantId, contacts: next.contacts, aiInsights: next.aiInsights, jobs: next.qualification?.jobs || {} });
   } catch { return NextResponse.json({ error: 'A análise não foi concluída. Os dados existentes foram preservados.' }, { status: 503 }); }
 }

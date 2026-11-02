@@ -38,12 +38,15 @@ export function qualificationInsight(tenantId: string, conversationId: string, c
     qualificationStatus: job.status, qualificationConflicts: job.conflicts, analysisSource: job.source, degraded: job.degraded, createdAt: new Date().toISOString() };
 }
 /** Each claim and completion is committed under the tenant row lock. No detached serverless work. */
-export async function runQualificationWorker(tenantId: string, options: { conversationIds?: string[]; deadline?: number; maxChunks?: number; scheduled?: boolean } = {}) {
+export async function runQualificationWorker(tenantId: string, options: { conversationIds?: string[]; deadline?: number; maxChunks?: number; scheduled?: boolean; minAnalysisWindowMs?: number } = {}) {
   const config = await qualificationConfig(tenantId);
   const remoteConfigured = !!(config.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.OPENAI_API_KEY || process.env.AWS_BEDROCK_MODEL_ID);
-  const deadline = options.deadline || Date.now() + 35_000;
+  const deadline = options.deadline || Date.now() + 24_000;
   const maxChunks = options.maxChunks ?? 30;
   for (let index = 0; index < maxChunks && Date.now() < deadline - 1000; index++) {
+    // Amplify's HTTP gateway closes long requests. Leave unfinished chunks queued
+    // rather than starting a contextual call with too little time to finish.
+    if (remoteConfigured && deadline - Date.now() < (options.minAnalysisWindowMs ?? 16000)) break;
     let claim: { id: string; contactId: string; job: QualificationJob; messages: ReturnType<typeof qualificationMessages>; lease: string } | undefined;
     await mutateCRMState(tenantId, state => {
       enqueueQualifications(state);
@@ -157,5 +160,5 @@ export async function runQualificationWorker(tenantId: string, options: { conver
 }
 export async function kickQualification(tenantId: string) {
   // Imports remain successful if the AI provider fails; the persisted queue owns the retry.
-  try { await runQualificationWorker(tenantId, { deadline: Date.now() + 8000, maxChunks: 3 }); } catch { /* Worker/scheduled invocation retries the durable queue. */ }
+  try { await runQualificationWorker(tenantId, { deadline: Date.now() + 8000, maxChunks: 3, minAnalysisWindowMs: 1000 }); } catch { /* Worker/scheduled invocation retries the durable queue. */ }
 }

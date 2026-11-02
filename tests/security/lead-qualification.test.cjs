@@ -92,6 +92,8 @@ test('reservas impedem processamento duplicado e resultado antigo não vence men
   f.setAnalyzer(async params=>{entered();await gate;return f.h.load('src/lib/ai-provider-service.ts').UniversalCopilotService.analyzeConversation(params);});
   const first=f.service.runQualificationWorker(f.tenantId,{maxChunks:1});await started;
   await f.service.runQualificationWorker(f.tenantId,{maxChunks:1});assert.equal(f.calls(),1);
+  f.h.env.QUALIFICATION_CRON_SECRET='qualification-only-secret-over-thirty-two-characters';
+  const continuation=await f.h.load('src/app/api/internal/qualification/run/route.ts').POST(f.h.request('/api/internal/qualification/run',{}, {authorization:`Bearer ${f.h.env.QUALIFICATION_CRON_SECRET}`}));assert.equal(continuation.status,200);assert.equal((await continuation.json()).hasPending,true);assert.equal(f.calls(),1);
   await f.repo.writeCRMState(f.tenantId,{messages:[f.message('lead','Quero comprar apartamento. Minha renda mensal é 9000.')]});unlock();await first;
   let state=await f.repo.readCRMState(f.tenantId);assert.equal(state.contacts[0].monthlyIncome,undefined);assert.equal(state.qualification.jobs[f.conversation.id].cursor,0);
   f.setAnalyzer(null);state=await f.service.runQualificationWorker(f.tenantId);assert.equal(state.contacts[0].monthlyIncome,9000);
@@ -105,7 +107,7 @@ test('agendador exclusivo exige segredo próprio e conclui sem browser, com curs
   assert.equal((await route.POST(f.h.request('/api/internal/qualification/run',{},f.headers))).status,401);
   await f.repo.writeCRMState(f.tenantId,{messages:[f.message('lead','Quero comprar apartamento. Minha renda mensal é 5000.')]});
   const before=await f.repo.readCRMState(f.tenantId);const previousCursor=before.eventCursor;
-  const result=await route.POST(f.h.request('/api/internal/qualification/run',{}, {authorization:`Bearer ${f.h.env.QUALIFICATION_CRON_SECRET}`}));assert.equal(result.status,200);
+  const result=await route.POST(f.h.request('/api/internal/qualification/run',{}, {authorization:`Bearer ${f.h.env.QUALIFICATION_CRON_SECRET}`}));assert.equal(result.status,200);assert.equal((await result.json()).hasPending,false);
   const state=await f.repo.readCRMState(f.tenantId);assert.equal(state.contacts[0].monthlyIncome,5000);assert.ok(state.qualification.lastScheduledAt);assert.ok(state.eventCursor>previousCursor);
   const events=f.h.load('src/app/api/v1/webhooks/zapi/events/route.ts');
   const response=await events.GET(f.h.request(`/api/v1/webhooks/zapi/events?since=${previousCursor}`,undefined,f.headers));const data=await response.json();assert.equal(data.messages.length,0);assert.equal(data.contacts[0].monthlyIncome,5000);assert.ok(data.aiInsights[f.conversation.id]);
@@ -178,4 +180,12 @@ test('provedor compartilha o limite de tempo entre tentativas e preserva conting
  const started=Date.now();const pending=h.load('src/lib/ai-provider-service.ts').UniversalCopilotService.analyzeConversation({chatHistory:[{sender:'CLIENT',text:'Quero comprar apartamento. Minha renda é 5000.'}],timeoutMs:1000});
  const keepAlive=setTimeout(()=>{},2000);
  try{const analysis=await pending;assert.equal(analysis.analysisSource,'LOCAL_HEURISTICS');assert.equal(analysis.extractedData.monthlyIncome,5000);assert.ok(Date.now()-started<2500);assert.ok(attempts.length>=1);assert.ok(attempts.every(signal=>signal===attempts[0]));}finally{clearTimeout(keepAlive);}
+});
+test('execução curta não reserva outro bloco de IA sem tempo para concluir; fila permanece retomável',async()=>{
+ const f=await createQualificationJourney();try{
+  f.h.env.GEMINI_API_KEY='synthetic-only-key';
+  await f.repo.writeCRMState(f.tenantId,{messages:[f.message('lead','Quero comprar apartamento. Minha renda mensal é 5000.')]});
+  const state=await f.service.runQualificationWorker(f.tenantId,{deadline:Date.now()+7000});
+  assert.equal(f.calls(),0);assert.equal(state.qualification.jobs[f.conversation.id].status,'QUEUED');assert.equal(state.qualification.jobs[f.conversation.id].cursor,0);assert.equal(state.qualification.jobs[f.conversation.id].lease,undefined);
+ }finally{await f.close();}
 });

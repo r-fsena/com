@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const tenantId = authorizedTenant(session!, req.headers.get('x-tenant-id'));
     const state = await readCRMState(tenantId);
     if (body.data.items.some(item => !state.conversations.some(c => c.id === item.conversationId && c.contactId === item.contactId))) return NextResponse.json({ error: 'Conversa não encontrada nesta imobiliária.' }, { status: 404 });
-    const next = await runQualificationWorker(tenantId, { conversationIds: body.data.items.map(i => i.conversationId), deadline: Date.now() + 35000 });
+    const next = await runQualificationWorker(tenantId, { conversationIds: body.data.items.map(i => i.conversationId), deadline: Date.now() + 24000 });
     const results = body.data.items.map(item => ({ ...next.aiInsights[item.conversationId], conversationId: item.conversationId, contactId: item.contactId, status: next.qualification?.jobs[item.conversationId]?.status || 'QUEUED' }));
     return NextResponse.json({ success: true, results, totalProcessed: results.filter(r => ['UPDATED','REVIEW'].includes(r.status)).length,
       pendingCount: results.filter(r => !['UPDATED','REVIEW','DISABLED'].includes(r.status)).length,

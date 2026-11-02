@@ -1,3 +1,4 @@
+import { kickQualification } from '@/lib/lead-qualification-service';
 import { mutateCRMState, mergeTenantState } from '@/lib/crm-repository';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
@@ -228,6 +229,7 @@ export async function POST(req: NextRequest) {
       });
       return mergeTenantState(tenantId, state, { contacts: mergedContacts, conversations, messages });
     });
+    await kickQualification(tenantId);
     const importedIds = new Set(contacts.map(contact => contact.id));
     const confirmedContacts = committed.contacts.filter(contact => importedIds.has(contact.id));
 

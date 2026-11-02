@@ -23,6 +23,10 @@ export interface AIResponseOption {
 }
 
 export interface AICopilotAnalysis {
+  analysisSource?: string;
+  degraded?: boolean;
+  fieldEvidence?: unknown;
+  classificationEvidence?: unknown;
   summary: string;
   conversationType?: 'REAL_ESTATE_LEAD' | 'PERSONAL_OR_OTHER' | 'OPERATIONAL_OR_VENDOR';
   extractedData: LeadExtractionResult;

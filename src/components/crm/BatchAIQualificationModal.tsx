@@ -49,6 +49,8 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
   const [personalFound, setPersonalFound] = useState(0);
 
   const abortRef = useRef(false);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  React.useEffect(() => () => { abortRef.current = true; requestAbortRef.current?.abort(); }, []);
 
   // Mapeamento rápido de contatos por ID
   const contactMap = useMemo(() => {
@@ -68,7 +70,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
         const hasInsight = Boolean(aiInsights[conv.id]);
         const isClassified = contact.isPersonal !== undefined && contact.isPersonal !== null;
         // Elegível se ainda não tiver insight ou não tiver sido classificado
-        return !hasInsight || !isClassified;
+        return !hasInsight || !isClassified || !aiInsights[conv.id]?.qualificationStatus || ['QUEUED','PROCESSING','ERROR','REVIEW'].includes(aiInsights[conv.id]?.qualificationStatus || '');
       }
       return true;
     });
@@ -83,6 +85,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
     setIsCompleted(false);
     setErrorMsg(null);
     abortRef.current = false;
+    requestAbortRef.current = new AbortController();
 
     const total = eligibleConversations.length;
     setTotalCount(total);
@@ -99,36 +102,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
       if (abortRef.current) break;
 
       const chunk = eligibleConversations.slice(i, i + CHUNK_SIZE);
-      const itemsPayload = chunk.map(conv => {
-        const contact = contactMap.get(conv.contactId);
-        const convMsgs = messages
-          .filter(m => m.conversationId === conv.id && !m.isInternalNote && m.content)
-          .map(m => ({
-            sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
-            text: m.content,
-          }));
-
-        const chatHistory = convMsgs.length > 0 
-          ? convMsgs 
-          : [{ sender: 'CLIENT' as const, text: conv.lastMessagePreview || 'Olá' }];
-
-        return {
-          conversationId: conv.id,
-          contactId: conv.contactId,
-          contactName: contact?.name || 'Cliente',
-          chatHistory,
-          contactContext: {
-            name: contact?.name,
-            tags: contact?.tags,
-            whatsappLabels: contact?.whatsappLabels,
-            monthlyIncome: contact?.monthlyIncome,
-            downPaymentAvailable: contact?.downPaymentAvailable,
-            maxPropertyValue: contact?.maxPropertyValue,
-            preferredPropertyType: contact?.preferredPropertyType,
-            targetRegions: contact?.targetRegions,
-          }
-        };
-      });
+      const itemsPayload = chunk.map(conv => ({ conversationId: conv.id, contactId: conv.contactId }));
 
       if (chunk[0]) {
         const firstContact = contactMap.get(chunk[0].contactId);
@@ -137,12 +111,12 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
 
       try {
         const res = await fetch('/api/v1/ai/batch-qualify', {
+          signal: requestAbortRef.current.signal,
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': currentTenant.id },
           body: JSON.stringify({
             items: itemsPayload,
-            brokerName: currentUser?.name || 'Corretor',
-            aiConfig: currentTenant?.aiConfig,
+
           }),
         });
 
@@ -154,12 +128,15 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
         const data = await res.json();
         if (data.results && Array.isArray(data.results)) {
           allResults.push(...data.results);
+          applyBatchAIQualifications([]);
+          if (data.pendingCount) setErrorMsg('Parte das conversas continua na fila do servidor. Acompanhe o estado de cada conversa no Inbox.');
           accumulatedLeads += (data.leadsCount || 0);
           accumulatedPersonal += (data.personalCount || 0);
           setLeadsFound(accumulatedLeads);
           setPersonalFound(accumulatedPersonal);
         }
       } catch (err: any) {
+        if (abortRef.current) break;
         console.error('[BatchAIQualification] Erro no chunk:', err);
         setErrorMsg(`Aviso: Falha ao processar parte das conversas (${err.message}). Prosseguindo com as demais...`);
       }
@@ -177,11 +154,13 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
     }
 
     setIsRunning(false);
-    setIsCompleted(true);
+    setIsCompleted(!abortRef.current);
   };
 
   const handleCancel = () => {
     abortRef.current = true;
+    requestAbortRef.current?.abort();
+    setErrorMsg('Novos lotes não serão solicitados. As análises já registradas continuam na fila do servidor.');
     setIsRunning(false);
   };
 
@@ -210,7 +189,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
                 </span>
               </h3>
               <p className="text-[11px] text-slate-500">
-                Classifique toda a sua base de conversas do WhatsApp em segundos
+                Analise as conversas e acompanhe o progresso salvo no servidor
               </p>
             </div>
           </div>
@@ -235,7 +214,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
                 <div className="space-y-2 text-xs text-slate-600">
                   <div className="flex items-start gap-2">
                     <UserMinus className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                    <span><strong>Separar Contatos Pessoais:</strong> Conversas com familiares, amigos e rotina são marcadas como <em>Não-Lead</em> (score 0%, sem poluir o funil).</span>
+                    <span><strong>Separar Contatos Pessoais:</strong> Identifica conversas pessoais e operacionais, preservando os dados e as decisões da equipe.</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <Building2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -243,7 +222,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
                   </div>
                   <div className="flex items-start gap-2">
                     <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                    <span><strong>Gerar Resumo do Perfil 360º:</strong> Cria síntese tática imediata de cada cliente no CRM.</span>
+                    <span><strong>Gerar Resumo do Perfil 360º:</strong> Registra o contexto disponível e a origem das informações de cada cliente.</span>
                   </div>
                 </div>
               </div>
@@ -348,10 +327,10 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-slate-900">
-                  Qualificação em Massa Concluída!
+                  Solicitação de qualificação concluída
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Todas as conversas selecionadas foram analisadas pelo motor semântico Brok.ia.
+                  Os resultados confirmados foram salvos no servidor. Pendências e novas tentativas aparecem na conversa.
                 </p>
               </div>
 
@@ -360,12 +339,12 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
                   <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">🏢 Leads Imobiliários</span>
                   <span className="text-2xl font-black text-emerald-700">{leadsFound}</span>
-                  <span className="text-[10px] text-emerald-600 block mt-0.5">Prontos no Funil</span>
+                  <span className="text-[10px] text-emerald-600 block mt-0.5">Interesse identificado</span>
                 </div>
                 <div className="p-3 bg-slate-100 border border-slate-200 rounded-2xl text-center">
                   <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">👤 Contatos Pessoais</span>
                   <span className="text-2xl font-black text-slate-700">{personalFound}</span>
-                  <span className="text-[10px] text-slate-500 block mt-0.5">Separados da Rotina</span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">Contexto identificado</span>
                 </div>
               </div>
             </div>
@@ -408,7 +387,7 @@ export const BatchAIQualificationModal: React.FC<BatchAIQualificationModalProps>
               onClick={handleCancel}
               className="px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition cursor-pointer"
             >
-              Interromper Análise
+              Parar solicitação de novos lotes
             </button>
           )}
 

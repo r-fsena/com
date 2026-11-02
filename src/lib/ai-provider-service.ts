@@ -1,6 +1,8 @@
 import { AICopilotAnalysis, BedrockCopilotClient } from './bedrock-client';
 import { LocalSemanticCopilotClient } from './local-semantic-client';
 import { TenantAIConfig } from '@/types/crm';
+import { explicitQualification } from '@/lib/lead-qualification';
+import { z } from 'zod';
 
 export interface CopilotChatHistoryItem {
   sender: 'CLIENT' | 'BROKER';
@@ -42,6 +44,7 @@ export class UniversalCopilotService {
         for (const candidate of candidateModels) {
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${apiKey}`, {
             method: 'POST',
+      signal: AbortSignal.timeout(8000),
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ parts: [{ text: 'Ping' }] }],
@@ -62,6 +65,7 @@ export class UniversalCopilotService {
         const model = config.model || 'gpt-4o-mini';
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
+      signal: AbortSignal.timeout(8000),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
@@ -84,6 +88,7 @@ export class UniversalCopilotService {
         const model = config.model || 'claude-3-5-sonnet-20241022';
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
+      signal: AbortSignal.timeout(8000),
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
@@ -121,7 +126,9 @@ export class UniversalCopilotService {
     priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis> {
     const { chatHistory, brokerName = 'Corretor', contactContext, aiConfig, priorContext } = params;
+    if (aiConfig?.enabled === false) throw new Error('A análise está desativada para esta imobiliária.');
 
+    const analysisSignal = AbortSignal.timeout(7000);
     const provider = aiConfig?.provider || 'PLATFORM_DEFAULT';
     const apiKey = (aiConfig?.apiKey || '').trim();
     const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
@@ -136,6 +143,7 @@ export class UniversalCopilotService {
         try {
           const result = await this.executeGemini({
             history: activeWindowHistory,
+          signal: analysisSignal,
             brokerName,
             contactContext,
             priorContext,
@@ -146,7 +154,7 @@ export class UniversalCopilotService {
             } as TenantAIConfig,
             apiKey: activeGeminiKey,
           });
-          if (result) return result;
+          if (result) return this.checkedAnalysis(result, 'GEMINI');
         } catch (err) {
           console.error('[Copilot] Erro no motor Google Gemini, acionando fallback secundário:', err);
         }
@@ -158,13 +166,14 @@ export class UniversalCopilotService {
       try {
         const result = await this.executeOpenAI({
           history: activeWindowHistory,
+          signal: analysisSignal,
           brokerName,
           contactContext,
           priorContext,
           aiConfig: aiConfig!,
           apiKey,
         });
-        if (result) return result;
+        if (result) return this.checkedAnalysis(result, 'OPENAI');
       } catch (err) {
         console.error('[Copilot] Erro na chamada OpenAI BYOK, ativando fallback:', err);
       }
@@ -175,13 +184,14 @@ export class UniversalCopilotService {
       try {
         const result = await this.executeAnthropic({
           history: activeWindowHistory,
+          signal: analysisSignal,
           brokerName,
           contactContext,
           priorContext,
           aiConfig: aiConfig!,
           apiKey,
         });
-        if (result) return result;
+        if (result) return this.checkedAnalysis(result, 'ANTHROPIC');
       } catch (err) {
         console.error('[Copilot] Erro na chamada Anthropic BYOK, ativando fallback:', err);
       }
@@ -193,10 +203,12 @@ export class UniversalCopilotService {
       try {
         const result = await this.executeOpenAI({
           history: activeWindowHistory,
+          signal: analysisSignal,
           brokerName,
           contactContext,
           priorContext,
           aiConfig: {
+            ...aiConfig,
             provider: 'OPENAI',
             tone: aiConfig?.tone || 'CONSULTATIVE',
             objective: aiConfig?.objective || 'EQUILIBRADO',
@@ -205,7 +217,7 @@ export class UniversalCopilotService {
           },
           apiKey: platformOpenAIKey,
         });
-        if (result) return result;
+        if (result) return this.checkedAnalysis(result, 'OPENAI');
       } catch (err) {
         console.error('[Copilot] Erro na OpenAI da plataforma, acionando motor semântico:', err);
       }
@@ -213,11 +225,36 @@ export class UniversalCopilotService {
 
     // 5. Fallback de alta precisão sem custos de API (Motor Semântico Local)
     if (provider === 'PLATFORM_DEFAULT' && process.env.AWS_BEDROCK_MODEL_ID) {
-      try { return await new BedrockCopilotClient().analyzeConversation(chatHistory, brokerName, contactContext); }
+      try { return this.checkedAnalysis(await new BedrockCopilotClient().analyzeConversation(chatHistory, brokerName, contactContext, analysisSignal), 'BEDROCK'); }
       catch (error) { console.warn('[Copilot] Bedrock indisponível; usando análise heurística local.'); }
     }
     const fallbackEngine = new LocalSemanticCopilotClient();
-    return fallbackEngine.analyzeConversation(chatHistory, brokerName, contactContext);
+    const local = await fallbackEngine.analyzeConversation(chatHistory.filter(m => m.sender === 'CLIENT'), brokerName, contactContext);
+    const safe = explicitQualification(chatHistory.map((m, index) => ({ id: String(index), senderType: m.sender === 'CLIENT' ? 'CONTACT' as const : 'USER' as const, content: m.text, timestamp: new Date(index * 1000).toISOString() })));
+    const f = safe.facts;
+    const summary = safe.classification === 'REAL_ESTATE_LEAD'
+      ? `Interesse imobiliário identificado na fala do cliente.${f.targetRegions ? ` Região: ${(f.targetRegions.value as string[]).join(', ')}.` : ''}${f.monthlyIncome ? ` Renda mensal informada: R$ ${f.monthlyIncome.value}.` : ''}${f.downPaymentAvailable ? ` Entrada informada: R$ ${f.downPaymentAvailable.value}.` : ''}${f.maxPropertyValue ? ` Orçamento informado: R$ ${f.maxPropertyValue.value}.` : ''}`
+      : safe.classification === 'OPERATIONAL_OR_VENDOR' ? 'Conversa operacional ou com fornecedor; não há intenção de compra confirmada.'
+      : safe.classification === 'PERSONAL_OR_OTHER' ? 'Conversa pessoal ou cotidiana; dados comerciais preservados.'
+      : 'Informações insuficientes para confirmar interesse imobiliário. Dados comerciais preservados.';
+    return { ...local, summary, ...(safe.classification !== 'REAL_ESTATE_LEAD' ? { responseOptions: [], suggestedResponse: '', intent: 'DUVIDA_GERAL' as const } : {}), conversationType: safe.classification === 'INSUFFICIENT_DATA' ? undefined : safe.classification,
+      extractedData: { monthlyIncome: f.monthlyIncome?.value as number | undefined, downPayment: f.downPaymentAvailable?.value as number | undefined,
+        maxBudget: f.maxPropertyValue?.value as number | undefined, propertyType: f.preferredPropertyType?.value as string | undefined,
+        preferredRegion: (f.targetRegions?.value as string[] | undefined)?.join(', '), email: f.email?.value as string | undefined,
+        urgencyLevel: 'NAO_IDENTIFICADA', detectedObjections: [] },
+      confidenceScore: 60, analysisSource: 'LOCAL_HEURISTICS', degraded: true };
+
+  }
+
+  private static checkedAnalysis(raw: unknown, source: string): AICopilotAnalysis {
+    const parsed = z.object({
+      summary: z.string().max(10000), conversationType: z.enum(['REAL_ESTATE_LEAD', 'PERSONAL_OR_OTHER', 'OPERATIONAL_OR_VENDOR']),
+      extractedData: z.object({ monthlyIncome: z.number().finite().min(0).max(1e9).nullish(), downPayment: z.number().finite().min(0).max(1e9).nullish(), maxBudget: z.number().finite().min(0).max(1e9).nullish(), preferredRegion: z.string().max(200).nullish(), propertyType: z.string().max(150).nullish(), email: z.string().max(200).nullish(), urgencyLevel: z.enum(['ALTA','MEDIA','BAIXA','NAO_IDENTIFICADA']).optional(), detectedObjections: z.array(z.string()).default([]) }),
+      detectedObjections: z.array(z.string()).default([]), responseOptions: z.array(z.object({ id: z.string(), category: z.enum(['OBJECTION','VISIT','FINANCE','MATERIAL']), label: z.string(), badge: z.string(), text: z.string() })).max(5).default([]),
+      sentiment: z.enum(['POSITIVE','NEUTRAL','NEGATIVE']), intent: z.enum(['AGENDAR_VISITA','SIMULAR_FINANCIAMENTO','PEDIR_FOTOS','NEGOCIAR_VALOR','DUVIDA_GERAL','DESINTERESSE']),
+      suggestedResponse: z.string().max(10000), confidenceScore: z.number().finite().min(0).max(100), fieldEvidence: z.unknown().optional(), classificationEvidence: z.unknown().optional(),
+    }).parse(raw);
+    return { ...parsed, extractedData: { ...Object.fromEntries(Object.entries(parsed.extractedData).filter(([, value]) => value != null)), detectedObjections: parsed.extractedData.detectedObjections }, confidenceScore: parsed.confidenceScore <= 1 ? parsed.confidenceScore * 100 : parsed.confidenceScore, analysisSource: source, degraded: false } as AICopilotAnalysis;
   }
 
   /**
@@ -339,6 +376,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     contactContext: any;
     aiConfig: TenantAIConfig;
     apiKey: string;
+    signal?: AbortSignal;
     priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis | null> {
     const model = params.aiConfig.model || 'gpt-4o-mini';
@@ -355,6 +393,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
+      signal: params.signal || AbortSignal.timeout(7000),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${params.apiKey}`,
@@ -389,6 +428,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     contactContext: any;
     aiConfig: TenantAIConfig;
     apiKey: string;
+    signal?: AbortSignal;
     priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis | null> {
     const model = params.aiConfig.model || 'claude-3-5-haiku-20241022';
@@ -404,6 +444,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: params.signal || AbortSignal.timeout(7000),
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': params.apiKey,
@@ -443,6 +484,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     contactContext: any;
     aiConfig: TenantAIConfig;
     apiKey: string;
+    signal?: AbortSignal;
     priorContext?: CopilotPriorContext;
   }): Promise<AICopilotAnalysis | null> {
     const candidateModels = ['gemini-flash-latest', 'gemini-3.6-flash'];
@@ -460,10 +502,11 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     let data: any = null;
     let lastError: Error | null = null;
 
-    for (const model of candidateModels) {
+    for (const model of candidateModels.slice(0, 2)) {
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`, {
           method: 'POST',
+      signal: params.signal || AbortSignal.timeout(7000),
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
@@ -520,8 +563,9 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
     
     // Normalização defensiva para garantir que arrays e campos essenciais estejam presentes
     return {
+      fieldEvidence: parsed.fieldEvidence, classificationEvidence: parsed.classificationEvidence,
       summary: parsed.summary || 'Resumo do contato não identificado.',
-      conversationType: parsed.conversationType || 'REAL_ESTATE_LEAD',
+      conversationType: parsed.conversationType,
       extractedData: {
         email: parsed.extractedData?.email || undefined,
         monthlyIncome: typeof parsed.extractedData?.monthlyIncome === 'number' ? parsed.extractedData.monthlyIncome : undefined,
@@ -547,7 +591,7 @@ RETORNE ESTRITAMENTE UM OBJETO JSON VÁLIDO no seguinte formato (sem formataçã
       sentiment: parsed.sentiment || 'NEUTRAL',
       intent: parsed.intent || 'DUVIDA_GERAL',
       suggestedResponse: parsed.suggestedResponse || (parsed.responseOptions?.[0]?.text ?? ''),
-      confidenceScore: parsed.confidenceScore || 96,
+      confidenceScore: parsed.confidenceScore ?? 0,
     };
   }
 }

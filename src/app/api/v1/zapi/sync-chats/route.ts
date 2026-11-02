@@ -1,3 +1,4 @@
+import { kickQualification } from '@/lib/lead-qualification-service';
 import { resolveWhatsAppLabels } from '@/lib/contact-labels';
 import { writeCRMState, readCRMState } from '@/lib/crm-repository';
 import { NextRequest, NextResponse } from 'next/server';
@@ -559,6 +560,7 @@ async function handleSyncChats(req: NextRequest) {
       conversations,
       messages: finalMessages,
     });
+    await kickQualification(tenantId);
 
     return NextResponse.json({
       success: true,

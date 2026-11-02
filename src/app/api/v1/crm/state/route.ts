@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
-import { readCRMState, writeCRMState, mutateCRMState } from '@/lib/crm-repository';
+import { readCRMState, mutateCRMState, mergeTenantState } from '@/lib/crm-repository';
+import { qualificationFields } from '@/lib/lead-qualification';
+import { kickQualification } from '@/lib/lead-qualification-service';
 import { writeInteractiveCRMState } from '@/lib/automation-service';
 import { z } from 'zod';
 
@@ -20,14 +22,43 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const tenantId = authorizedTenant(session!, body.tenantId || req.headers.get('x-tenant-id'));
     const allowed = ['contacts', 'conversations', 'messages', 'deals', 'aiInsights'];
-    if (Object.keys(body).some(key => !allowed.includes(key) && !['tenantId', 'automationEvent'].includes(key))) return NextResponse.json({ success: false, error: 'Use as APIs administrativas para alterar usuários ou configurações.' }, { status: 400 });
+    if (Object.keys(body).some(key => !allowed.includes(key) && !['tenantId', 'automationEvent', 'qualificationEdits'].includes(key))) return NextResponse.json({ success: false, error: 'Use as APIs administrativas para alterar usuários ou configurações.' }, { status: 400 });
+    const edits = z.object({ contactId: z.string(), values: z.object({ monthlyIncome: z.number().finite().min(0).max(1e9).nullable().optional(), downPaymentAvailable: z.number().finite().min(0).max(1e9).nullable().optional(), maxPropertyValue: z.number().finite().min(0).max(1e9).nullable().optional(), preferredPropertyType: z.enum(['APARTMENT','HOUSE','STUDIO','LAND','COMMERCIAL','PENTHOUSE']).nullable().optional(), targetRegions: z.array(z.string().max(100)).max(20).nullable().optional(), email: z.string().max(200).nullable().optional() }).strict() }).safeParse(body.qualificationEdits);
+    if (body.qualificationEdits !== undefined && (!edits.success || session!.source === 'CHROME_EXTENSION')) return NextResponse.json({ error: 'Edição de qualificação inválida.' }, { status: 400 });
     const intent = body.automationEvent === undefined ? undefined : z.object({ trigger: z.enum(['LEAD_CREATED', 'STAGE_CHANGED']), entityId: z.string().min(1).max(200) }).strict().safeParse(body.automationEvent);
     if (intent && (!intent.success || session!.source === 'CHROME_EXTENSION')) return NextResponse.json({ error: 'Evento comercial inválido.' }, { status: 400 });
     const patch = Object.fromEntries(allowed.filter(key => body[key] !== undefined).map(key => [key, body[key]]));
     for (const key of allowed.filter(key => key !== 'aiInsights')) {
       if (patch[key] !== undefined && (!Array.isArray(patch[key]) || patch[key].some((item: any) => item.tenantId !== tenantId))) return NextResponse.json({ success: false, error: 'Registro de outra imobiliária ou inválido.' }, { status: 403 });
     }
-    const state = intent?.success ? await writeInteractiveCRMState(tenantId, patch, intent.data) : await writeCRMState(tenantId, patch);
+    // Browser snapshots cannot forge AI provenance or overwrite server-owned analysis.
+    delete patch.aiInsights;
+    if (intent?.success && Array.isArray(patch.contacts)) patch.contacts = patch.contacts.map(({ qualificationFields: ignored, qualificationClassificationSource: ignoredSource, ...contact }: any) => contact);
+    const state = intent?.success ? await writeInteractiveCRMState(tenantId, patch, intent.data) : await mutateCRMState(tenantId, previous => {
+      if (Array.isArray(patch.contacts)) patch.contacts = patch.contacts.map((contact: any) => {
+        const existing = previous.contacts.find(c => c.id === contact.id);
+        const provenance = { ...existing?.qualificationFields };
+        for (const field of qualificationFields) {
+          // Unrelated full snapshots cannot turn an old cached AI value into a human decision.
+          // Explicit field edits below are the only browser command that changes existing qualification.
+          if (existing) contact[field] = existing[field];
+        }
+        if (existing && session!.source === 'CHROME_EXTENSION') contact.isPersonal = existing.isPersonal;
+        return { ...contact, qualificationFields: provenance, qualificationClassificationSource: existing && typeof contact.isPersonal === 'boolean' && contact.isPersonal !== existing.isPersonal ? 'HUMAN' : existing?.qualificationClassificationSource };
+      });
+      const next = mergeTenantState(tenantId, previous, patch);
+      if (edits.success) {
+        const contact = next.contacts.find(c => c.id === edits.data.contactId);
+        if (!contact) throw new Error('Contato não encontrado.');
+        for (const [field, value] of Object.entries(edits.data.values)) {
+          (contact as any)[field] = value === null ? undefined : value;
+          contact.qualificationFields = { ...contact.qualificationFields, [field]: { source: 'HUMAN', value: value ?? '', messageId: '', quote: '', at: new Date().toISOString(), confidence: 1 } };
+        }
+        contact.updatedAt = new Date().toISOString();
+      }
+      return next;
+    });
+    if (Array.isArray(patch.messages) && patch.messages.length) await kickQualification(tenantId);
     return NextResponse.json({ success: true, tenantId, ...state });
   } catch { return NextResponse.json({ success: false, error: 'Alteração não confirmada. Verifique a imobiliária, o banco e as migrações.' }, { status: 503 }); }
 }

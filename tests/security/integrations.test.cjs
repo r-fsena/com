@@ -16,13 +16,14 @@ test('S3 gera assinatura real vinculada a tenant, tamanho e tipo do arquivo', as
 });
 test('Bedrock chama Converse e valida resposta, sem gerar resultado fictício', async () => {
   const calls = [];
-  const analysis = { summary: 'Synthetic', extractedData: { detectedObjections: [] }, detectedObjections: [], responseOptions: [], sentiment: 'NEUTRAL', intent: 'DUVIDA_GERAL', suggestedResponse: 'Synthetic', confidenceScore: 0.8 };
+  const analysis = { conversationType: 'REAL_ESTATE_LEAD', summary: 'Synthetic', extractedData: { detectedObjections: [] }, detectedObjections: [], responseOptions: [], sentiment: 'NEUTRAL', intent: 'DUVIDA_GERAL', suggestedResponse: 'Synthetic', confidenceScore: 0.8 };
   const h = harness({ '@aws-sdk/client-bedrock-runtime': {
     ConverseCommand: class { constructor(input) { this.input = input; } },
     BedrockRuntimeClient: class { async send(command) { calls.push(command.input); return { output: { message: { content: [{ text: JSON.stringify(analysis) }] } } }; } },
   } }, { AWS_BEDROCK_MODEL_ID: 'test-model' });
   const client = new (h.load('src/lib/bedrock-client.ts').BedrockCopilotClient)();
   assert.equal((await client.analyzeConversation([{ sender: 'CLIENT', text: 'Synthetic' }])).summary, 'Synthetic');
+  assert.equal((await client.analyzeConversation([{ sender: 'CLIENT', text: 'Synthetic' }])).conversationType, 'REAL_ESTATE_LEAD');
   assert.equal(calls[0].modelId, 'test-model'); assert.equal(calls[0].messages[0].role, 'user');
 });
 test('Asaas usa cliente/cobrança/QR Code retornados pelo provedor', async () => {

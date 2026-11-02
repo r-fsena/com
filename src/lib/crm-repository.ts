@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { serverCRMStore, ServerCRMState } from '@/lib/server-crm-store';
 import { crmEventCursor } from '@/lib/crm-event-cursor';
 import { campaignPhone } from '@/lib/campaigns';
+import { enqueueQualifications } from '@/lib/lead-qualification';
 
 export type PersistedCRMState = ServerCRMState & { deletedKeys?: string[]; eventCursor?: number };
 const collections = ['contacts', 'conversations', 'messages', 'deals', 'quickReplies'] as const;
@@ -54,6 +55,18 @@ export function mergeTenantState(tenantId: string, previous: PersistedCRMState, 
 function requireStorage() {
   if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) throw new Error('DATABASE_URL é obrigatória em produção.');
 }
+function applyMutation(previous: PersistedCRMState, transform: (state: PersistedCRMState) => PersistedCRMState) {
+  const cursor = crmEventCursor(previous);
+  const insights = new Map(Object.entries(previous.aiInsights || {}).map(([id, insight]) => [id, JSON.stringify(insight)]));
+  const next = enqueueQualifications(transform(previous));
+  const changed = Object.entries(next.aiInsights || {}).filter(([id, insight]) => insights.get(id) !== JSON.stringify(insight));
+  if (changed.length) {
+    next.eventCursor = Math.max(Date.now(), cursor + 1);
+    // A qualification update is a CRM event even when no new WhatsApp message arrived.
+    for (const [, insight] of changed) insight.createdAt = new Date(next.eventCursor).toISOString();
+  }
+  return next;
+}
 export async function readCRMState(tenantId: string): Promise<PersistedCRMState> {
   requireStorage();
   if (!tenantId || tenantId === 'all') throw new Error('Imobiliária obrigatória.');
@@ -66,7 +79,7 @@ export async function mutateCRMState(tenantId: string, transform: (previous: Per
   requireStorage();
   if (!tenantId || tenantId === 'all') throw new Error('Imobiliária obrigatória.');
   if (!process.env.DATABASE_URL) {
-    const next = transform(serverCRMStore.getScopedState(tenantId));
+    const next = applyMutation(serverCRMStore.getScopedState(tenantId), transform);
     serverCRMStore.resetTenantState(tenantId);
     serverCRMStore.updateState(next);
     return next;
@@ -74,7 +87,7 @@ export async function mutateCRMState(tenantId: string, transform: (previous: Per
   return db.transaction(async tx => {
     await tx.insert(crmTenantState).values({ tenantKey: tenantId, state: emptyCRMState() }).onConflictDoNothing();
     const [row] = await tx.select().from(crmTenantState).where(eq(crmTenantState.tenantKey, tenantId)).for('update');
-    const next = transform(row.state as PersistedCRMState);
+    const next = applyMutation(row.state as PersistedCRMState, transform);
     await tx.update(crmTenantState).set({ state: next, updatedAt: new Date() }).where(eq(crmTenantState.tenantKey, tenantId));
     return next;
   });

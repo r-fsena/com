@@ -2145,6 +2145,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
           updatedAt: new Date().toISOString(),
         };
 
+        for (const field of ['monthlyIncome', 'downPaymentAvailable', 'maxPropertyValue', 'preferredPropertyType', 'targetRegions', 'email']) {
+          if (!Object.prototype.hasOwnProperty.call(updates, field)) continue;
+          (mergedContact as any)[field] = (updates as any)[field];
+          mergedContact.qualificationFields = { ...mergedContact.qualificationFields, [field]: { source: 'HUMAN', value: (updates as any)[field] ?? '', messageId: '', quote: '', at: new Date().toISOString(), confidence: 1 } };
+        }
         const copy = [...prev];
         copy[existingIdx] = mergedContact;
         updatedList = deduplicateContactList(copy);
@@ -2191,7 +2196,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
             'x-user-id': currentUser.id,
             'x-user-email': currentUser.email,
           },
-          body: JSON.stringify({ contacts: updatedList }),
+          body: JSON.stringify({ contacts: updatedList, qualificationEdits: { contactId: matchedCanonicalId,
+              values: Object.fromEntries(['monthlyIncome', 'downPaymentAvailable', 'maxPropertyValue', 'preferredPropertyType', 'targetRegions', 'email'].filter(field => Object.prototype.hasOwnProperty.call(updates, field)).map(field => [field, (updates as any)[field] ?? null])) } }),
         }).catch(err => console.warn('[CRM] Aviso ao persistir contatos:', err));
       } catch {}
 
@@ -3304,192 +3310,19 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     return '';
   };
 
-  // Salvar Extrações de IA no Perfil do Lead
-  const applyAIExtractionToContact = (conversationId: string, contactId: string) => {
-    const insight = aiInsights[conversationId];
-    if (!insight) return;
-
-    const isPersonal = insight.conversationType === 'PERSONAL_OR_OTHER';
-    const updates: Partial<Contact> = {};
-
-    if (isPersonal) {
-      updates.isPersonal = true;
-      updates.preferredPropertyType = undefined;
-      updates.monthlyIncome = undefined;
-      updates.downPaymentAvailable = undefined;
-      updates.maxPropertyValue = undefined;
-      updates.targetRegions = [];
-      updates.temperature = 'COLD';
-      updates.aiPriorityScore = 0;
-    } else {
-      if (insight.extractedData.urgencyLevel === 'ALTA') {
-        updates.temperature = 'HOT';
-        updates.aiPriorityScore = 95;
-      }
-      if (insight.extractedData.monthlyIncome) updates.monthlyIncome = insight.extractedData.monthlyIncome;
-      if (insight.extractedData.downPayment) updates.downPaymentAvailable = insight.extractedData.downPayment;
-      if (insight.extractedData.maxBudget) updates.maxPropertyValue = insight.extractedData.maxBudget;
-      if (insight.extractedData.propertyType) updates.preferredPropertyType = (insight.extractedData.propertyType as any);
-      if (insight.extractedData.preferredRegion && !insight.extractedData.preferredRegion.includes('Central / Metropolitana')) {
-        updates.targetRegions = insight.extractedData.preferredRegion.split(',').map((r: string) => r.trim());
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      updateContact(contactId, updates);
-    }
-
-    setAiInsights(prev => {
-      const next: Record<string, AIInsight> = {
-        ...prev,
-        [conversationId]: {
-          ...prev[conversationId],
-          userFeedback: 'ACCEPTED' as const
-        }
-      };
-      try { localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(next)); } catch {}
-      return next;
-    });
+  // Qualification is applied atomically on the server. The browser only reconciles acknowledged state.
+  const refreshQualificationState = async () => {
+    const tenantId = currentTenant.id;
+    const response = await fetchCRMState('/api/v1/crm/state', { credentials: 'include', cache: 'no-store', headers: { 'x-tenant-id': tenantId } });
+    if (!response.ok || currentTenantRef.current.id !== tenantId) return;
+    const state = await response.json();
+    if (!state.success || state.tenantId !== tenantId || currentTenantRef.current.id !== tenantId) return;
+    setContacts(previous => mergeSyncedRecords(previous, state.contacts || [], tenantId));
+    setConversations(previous => mergeSyncedRecords(previous, state.conversations || [], tenantId));
+    setAiInsights(previous => ({ ...Object.fromEntries(Object.entries(previous).filter(([, insight]) => insight.tenantId !== tenantId)), ...(state.aiInsights || {}) }));
   };
-
-  // Salvar Lote de Qualificações de IA em Massa (Batch AI Lead Qualification)
-  const applyBatchAIQualifications = (qualifications: Array<{
-    conversationId: string;
-    contactId: string;
-    isPersonal: boolean;
-    conversationType: 'REAL_ESTATE_LEAD' | 'PERSONAL_OR_OTHER' | 'OPERATIONAL_OR_VENDOR';
-    summary: string;
-    extractedData: any;
-    detectedObjections?: string[];
-    responseOptions?: any[];
-    sentiment?: any;
-    intent?: any;
-    suggestedResponse?: string;
-    confidenceScore?: number;
-  }>) => {
-    if (!qualifications || qualifications.length === 0) return;
-
-    const qualMapByContactId = new Map<string, typeof qualifications[0]>();
-    const qualMapByConvId = new Map<string, typeof qualifications[0]>();
-    qualifications.forEach(q => {
-      qualMapByContactId.set(q.contactId, q);
-      qualMapByConvId.set(q.conversationId, q);
-    });
-
-    const propTypeMapper = (type?: string): PropertyType => {
-      if (!type) return 'APARTMENT';
-      const lower = type.toLowerCase();
-      if (lower.includes('cobertura') || lower.includes('penthouse')) return 'PENTHOUSE';
-      if (lower.includes('casa') || lower.includes('condomínio')) return 'HOUSE';
-      if (lower.includes('studio') || lower.includes('loft')) return 'STUDIO';
-      if (lower.includes('terreno') || lower.includes('lote')) return 'LAND';
-      if (lower.includes('comercial') || lower.includes('sala')) return 'COMMERCIAL';
-      return 'APARTMENT';
-    };
-
-    // 1. Atualiza Contatos em Bloco
-    setContacts(prev => {
-      const updated = prev.map(c => {
-        const q = qualMapByContactId.get(c.id);
-        if (!q) return c;
-
-        if (q.isPersonal) {
-          return {
-            ...c,
-            isPersonal: true,
-            preferredPropertyType: undefined,
-            monthlyIncome: undefined,
-            downPaymentAvailable: undefined,
-            maxPropertyValue: undefined,
-            targetRegions: [],
-            temperature: 'COLD' as const,
-            aiPriorityScore: 0,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-
-        const propType = q.extractedData?.propertyType ? propTypeMapper(q.extractedData.propertyType) : c.preferredPropertyType;
-        const monthly = q.extractedData?.monthlyIncome || c.monthlyIncome;
-        const down = q.extractedData?.downPayment || c.downPaymentAvailable;
-        const maxBudget = q.extractedData?.maxBudget || c.maxPropertyValue;
-        const region = q.extractedData?.preferredRegion && !q.extractedData.preferredRegion.includes('Central / Metropolitana')
-          ? [q.extractedData.preferredRegion]
-          : c.targetRegions;
-        const isHot = q.extractedData?.urgencyLevel === 'ALTA';
-
-        return {
-          ...c,
-          isPersonal: false,
-          preferredPropertyType: propType,
-          monthlyIncome: monthly,
-          downPaymentAvailable: down,
-          maxPropertyValue: maxBudget,
-          targetRegions: region,
-          temperature: isHot ? ('HOT' as const) : (c.temperature || 'WARM'),
-          aiPriorityScore: isHot ? 95 : (c.aiPriorityScore || 80),
-          updatedAt: new Date().toISOString(),
-        };
-      });
-
-      try {
-        localStorage.setItem('vanguard_crm_contacts', JSON.stringify(updated));
-        fetchCRMState('/api/v1/crm/state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contacts: updated }),
-        }).catch(() => {});
-      } catch {}
-
-      return updated;
-    });
-
-    // 2. Atualiza Conversas em Bloco
-    setConversations(prev => {
-      const updated = prev.map(conv => {
-        const q = qualMapByConvId.get(conv.id) || qualMapByContactId.get(conv.contactId);
-        if (!q) return conv;
-        return {
-          ...conv,
-          isPersonal: q.isPersonal,
-        };
-      });
-
-      try {
-        localStorage.setItem('vanguard_crm_conversations', JSON.stringify(updated));
-      } catch {}
-
-      return updated;
-    });
-
-    // 3. Atualiza Insights de IA em Bloco
-    setAiInsights(prev => {
-      const updated = { ...prev };
-      qualifications.forEach(q => {
-        updated[q.conversationId] = {
-          id: prev[q.conversationId]?.id || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          tenantId: currentTenant.id,
-          contactId: q.contactId,
-          conversationId: q.conversationId,
-          summary: q.summary,
-          conversationType: q.conversationType,
-          extractedData: q.extractedData,
-          detectedObjections: q.detectedObjections || [],
-          responseOptions: q.responseOptions || [],
-          sentiment: q.sentiment || 'POSITIVE',
-          intent: q.intent || 'DUVIDA_GERAL',
-          suggestedResponse: q.suggestedResponse || '',
-          confidenceScore: q.confidenceScore || 96,
-          createdAt: new Date().toISOString(),
-        };
-      });
-
-      try {
-        localStorage.setItem('vanguard_crm_ai_insights', JSON.stringify(updated));
-      } catch {}
-
-      return updated;
-    });
-  };
+  const applyAIExtractionToContact = (_conversationId: string, _contactId: string) => { void refreshQualificationState().catch(() => {}); };
+  const applyBatchAIQualifications = (_qualifications: any[]) => { void refreshQualificationState().catch(() => {}); };
 
   const updateAIInsight = (conversationId: string, insight: Partial<AIInsight>) => {
     setAiInsights(prev => {
@@ -4215,6 +4048,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
       setConversations(prev => mergeSyncedRecords(prev, incomingConversations, tenantId));
       setMessages(prev => mergeSyncedRecords(prev, incomingMessages, tenantId));
       if (Array.isArray(data.deals)) setDeals(prev => mergeSyncedRecords(prev, data.deals, tenantId));
+      if (data.aiInsights) setAiInsights(previous => ({ ...Object.fromEntries(Object.entries(previous).filter(([, insight]) => insight.tenantId !== tenantId)), ...data.aiInsights }));
       if (data.commercial) applyCommercialConfig(tenantId, data.commercial);
       if (Array.isArray(data.tasks)) setTasks(prev => [...prev.filter(task => task.tenantId !== tenantId), ...data.tasks.filter((task: Task) => task.tenantId === tenantId)]);
       if (Array.isArray(data.quickReplies)) setQuickReplies(prev => [...prev.filter(item => item.tenantId !== tenantId), ...data.quickReplies.filter((item: QuickReplyTemplate) => item.tenantId === tenantId)]);

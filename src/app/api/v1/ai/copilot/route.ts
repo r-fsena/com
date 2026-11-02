@@ -5,12 +5,15 @@ import { validateApiSession } from '@/lib/api-auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { TenantAIConfig } from '@/types/crm';
 import { serverCRMStore } from '@/lib/server-crm-store';
+import { authorizedTenant } from '@/lib/api-auth';
+import { qualificationConfig, runQualificationWorker } from '@/lib/lead-qualification-service';
+import { readCRMState } from '@/lib/crm-repository';
 
 const AnalyzeConversationSchema = z.object({
   chatHistory: z.array(z.object({
     sender: z.enum(['CLIENT', 'BROKER']),
-    text: z.string(),
-  })).min(1, 'Histórico de mensagens é obrigatório'),
+    text: z.string().max(12000),
+  })).min(1, 'Histórico de mensagens é obrigatório').max(60),
   brokerName: z.string().default('Corretor'),
   contactContext: z.object({
     name: z.string().optional(),
@@ -58,6 +61,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const tenantId = authorizedTenant(session!, request.headers.get('x-tenant-id'));
+    if (body.conversationId) {
+      const state = await readCRMState(tenantId);
+      if (!state.conversations.some(c => c.id === body.conversationId)) return NextResponse.json({ error: 'Conversa não encontrada.' }, { status: 404 });
+      const next = await runQualificationWorker(tenantId, { conversationIds: [body.conversationId] });
+      return NextResponse.json({ data: next.aiInsights[body.conversationId] || null });
+    }
+    const serverConfig = await qualificationConfig(tenantId);
+    if (serverConfig.enabled === false) return NextResponse.json({ error: 'A análise está desativada nesta imobiliária.' }, { status: 409 });
     const validated = AnalyzeConversationSchema.safeParse(body);
 
     if (!validated.success) {
@@ -76,14 +88,6 @@ export async function POST(request: NextRequest) {
       (session?.userEmail && u.email && u.email.toLowerCase() === session.userEmail.toLowerCase())
     );
 
-    if (!matchedUser && brokerName && brokerName !== 'Corretor') {
-      const normBroker = brokerName.toLowerCase().trim();
-      matchedUser = allUsers.find(u => 
-        u.name.toLowerCase().trim() === normBroker ||
-        u.name.toLowerCase().includes(normBroker) ||
-        normBroker.includes(u.name.toLowerCase())
-      );
-    }
 
     // Monta o bloco de instruções comportamentais e regras de fechamento da persona
     const customInstructionsParts: string[] = [];
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest) {
       chatHistory,
       brokerName: matchedUser?.name || brokerName,
       contactContext,
-      aiConfig: effectiveAiConfig,
+      aiConfig: { ...effectiveAiConfig, ...serverConfig, apiKey: serverConfig.apiKey },
       priorContext,
     });
 

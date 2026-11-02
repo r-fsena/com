@@ -1,3 +1,4 @@
+import { kickQualification } from '@/lib/lead-qualification-service';
 import { writeCRMState, readCRMState } from '@/lib/crm-repository';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
 import { NextRequest, NextResponse } from 'next/server';
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
     }
 
     await writeCRMState(tenantId, { messages: formattedMessages });
+    await kickQualification(tenantId);
     return NextResponse.json({
       success: true,
       count: formattedMessages.length,

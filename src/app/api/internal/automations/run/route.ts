@@ -1,3 +1,4 @@
+import { qualificationTenantIds, runQualificationWorker } from '@/lib/lead-qualification-service';
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { automationTenantIds, runAutomationWorker } from '@/lib/automation-service';
@@ -14,10 +15,11 @@ export async function POST(req: NextRequest) {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   let completed = 0; let failed = 0;
   const deadline = Date.now() + 50000;
-  const tenantIds = Array.from(new Set([...await automationTenantIds(), ...await campaignWorkerTenants()]));
+  const tenantIds = Array.from(new Set([...await automationTenantIds(), ...await campaignWorkerTenants(), ...await qualificationTenantIds()]));
   for (const tenantId of tenantIds) {
     if (Date.now() >= deadline - 17000) break;
     try {
+      await runQualificationWorker(tenantId, { deadline: Math.min(deadline - 17000, Date.now() + 8000), maxChunks: 3, scheduled: true });
       const campaignFirst = process.env.CAMPAIGNS_ENABLED === 'true' && await nextOutboundTurn(tenantId) === 'CAMPAIGN';
       if (campaignFirst) await runCampaignWorker(tenantId, deadline);
       await runAutomationWorker(tenantId, deadline);

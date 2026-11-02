@@ -1,3 +1,4 @@
+import { kickQualification } from '@/lib/lead-qualification-service';
 import { recordCampaignStop } from '@/lib/campaigns';
 import { recordCampaignReceipt, recordCampaignReply } from '@/lib/campaign-service';
 import { enqueueAutomationEvent, runInternalJobs } from '@/lib/automations';
@@ -557,6 +558,7 @@ export async function processZapiWebhookRequest(
       }
     }
 
+    await kickQualification(tenantId);
     return NextResponse.json({
       received: true,
       messageId,

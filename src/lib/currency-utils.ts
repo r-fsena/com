@@ -62,8 +62,8 @@ export function parseBRLInputToNumber(text: string | number | undefined | null):
  * Ex: "1800000" -> "1.800.000"
  */
 export function maskCurrencyInput(raw: string | number | undefined | null): string {
-  if (raw === undefined || raw === null) return '';
+  if (raw === undefined || raw === null || raw === '') return '';
   const num = parseBRLInputToNumber(raw);
-  if (num === 0) return '';
+  if (num === 0) return /\d/.test(String(raw)) ? '0' : '';
   return num.toLocaleString('pt-BR');
 }

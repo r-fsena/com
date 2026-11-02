@@ -1,3 +1,4 @@
+import { kickQualification } from '@/lib/lead-qualification-service';
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
       }
       return state;
     });
+    await kickQualification(tenantId);
     return json({ success: true, tenantId, contactsCount: resultContacts.length, messagesCount: messageIds.length,
       receipt: { protocol: 2, batchId: input.batchId || null, messageIds }, resultContacts, resultConversations, resultMessages });
   } catch (error: any) {

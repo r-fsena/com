@@ -11,6 +11,7 @@
     "test": "node --test tests/security/*.test.cjs",
     "db:migrate:state": "node scripts/migrate-crm-state.js",
     "db:migrate:campaigns": "node scripts/migrate-campaigns.js",
+    "worker:qualification": "node scripts/run-qualification-worker.js",
     "worker:messages": "node scripts/run-message-worker.js"
   },
   "dependencies": {

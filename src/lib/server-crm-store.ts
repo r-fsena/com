@@ -6,6 +6,7 @@ import { isWhatsAppSystemMessage, isLidIdentifier, cleanLid, canonicalPhoneKey, 
 import { parseWhatsAppTimestamp } from '@/lib/date-utils';
 
 export interface ServerCRMState {
+  qualification?: import('@/lib/lead-qualification').QualificationState;
   automation?: import('@/lib/automations').AutomationState;
   tasks?: import('@/types/crm').Task[];
   commercial?: import('@/lib/commercial-config').CommercialConfig;
@@ -178,6 +179,7 @@ export function loadStateFromDisk(): boolean {
             deals: rawDeals,
             conversations: rawConvs,
             messages: rawMsgs,
+            qualification: parsed.state.qualification,
             aiInsights: parsed.state.aiInsights || {},
             users: mergeUserLists(MOCK_USERS, rawUsers),
             quickReplies: parsed.state.quickReplies || [],
@@ -567,6 +569,7 @@ export const serverCRMStore = {
     const scopedConversations = rawState.conversations.filter(c => c.tenantId === tenantId);
     const ids = new Set([...scopedContacts, ...scopedConversations].map(c => c.id));
     return {
+      qualification: rawState.qualification ? { ...rawState.qualification, jobs: Object.fromEntries(Object.entries(rawState.qualification.jobs).filter(([id]) => ids.has(id))) } : undefined,
       contacts: scopedContacts,
       conversations: scopedConversations,
       messages: rawState.messages.filter(m => m.tenantId === tenantId),
@@ -657,6 +660,7 @@ export const serverCRMStore = {
     }
 
     const next: ServerCRMState = {
+      qualification: current.qualification ? { ...current.qualification, jobs: Object.fromEntries(Object.entries(current.qualification.jobs).filter(([id]) => !removedConvIds.has(id))) } : undefined,
       contacts: remainingContacts,
       deals: remainingDeals,
       conversations: remainingConvs,
@@ -716,6 +720,7 @@ export const serverCRMStore = {
       : (current.quickReplies || []);
 
     const next: ServerCRMState = {
+      qualification: partial.qualification ? { ...partial.qualification, jobs: { ...current.qualification?.jobs, ...partial.qualification.jobs } } : current.qualification,
       contacts: mergedContacts,
       deals: cleanDeals,
       conversations: cleanConvs,

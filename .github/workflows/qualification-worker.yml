@@ -1,0 +1,28 @@
+name: Processar qualificacao de leads
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: qualification-worker
+  cancel-in-progress: false
+jobs:
+  qualification:
+    if: ${{ vars.CRM_QUALIFICATION_URL != '' || vars.CRM_AUTOMATIONS_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Avancar fila sem disparar mensagens
+        env:
+          CRM_WORKER_URL: ${{ vars.CRM_QUALIFICATION_URL || vars.CRM_AUTOMATIONS_URL }}
+          QUALIFICATION_CRON_SECRET: ${{ secrets.CRM_QUALIFICATION_CRON_SECRET || secrets.CRM_AUTOMATIONS_CRON_SECRET }}
+        run: |
+          node --input-type=module <<'JS'
+          const secret = process.env.QUALIFICATION_CRON_SECRET || '';
+          const target = new URL('/api/internal/qualification/run', process.env.CRM_WORKER_URL);
+          if (secret.length < 32 || target.protocol !== 'https:') throw new Error('Configure origem HTTPS e segredo do processador.');
+          const response = await fetch(target, { method: 'POST', headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(65000), redirect: 'error' });
+          if (!response.ok) throw new Error(`Processamento não confirmado (${response.status}).`);
+          console.log('Solicitação de qualificação confirmada.');
+          JS

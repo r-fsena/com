@@ -1,5 +1,6 @@
 'use client';
 
+import { LeadQualificationStatus } from '@/components/crm/LeadQualificationStatus';
 import { VideoAttachmentPreview } from '@/components/ui/VideoAttachmentPreview';
 import React, { useState, useEffect, useRef } from 'react';
 import { useCRM } from '@/lib/crm-context';
@@ -170,6 +171,7 @@ export function WhatsAppInbox() {
     aiInsights,
     updateAIInsight,
     applyAIExtractionToContact,
+    applyBatchAIQualifications,
     recordAIFeedback,
     deals,
     createDeal,
@@ -614,9 +616,9 @@ export function WhatsAppInbox() {
       lastLoadedContactIdRef.current = activeContact.id;
       lastIsPersonalRef.current = activeContact.isPersonal;
 
-      setEditedMonthlyIncome(activeContact.monthlyIncome ? maskCurrencyInput(activeContact.monthlyIncome) : '');
-      setEditedDownPayment(activeContact.downPaymentAvailable ? maskCurrencyInput(activeContact.downPaymentAvailable) : '');
-      setEditedMaxBudget(activeContact.maxPropertyValue ? maskCurrencyInput(activeContact.maxPropertyValue) : '');
+      setEditedMonthlyIncome(activeContact.monthlyIncome != null ? maskCurrencyInput(activeContact.monthlyIncome) : '');
+      setEditedDownPayment(activeContact.downPaymentAvailable != null ? maskCurrencyInput(activeContact.downPaymentAvailable) : '');
+      setEditedMaxBudget(activeContact.maxPropertyValue != null ? maskCurrencyInput(activeContact.maxPropertyValue) : '');
       setEditedBedrooms(activeContact.targetBedrooms !== undefined && activeContact.targetBedrooms !== null ? String(activeContact.targetBedrooms) : '');
       setEditedPropertyType(activeContact.preferredPropertyType || '');
       setEditedPurchasePurpose(activeContact.purchasePurpose || '');
@@ -628,6 +630,21 @@ export function WhatsAppInbox() {
     }
   }, [activeContact?.id, activeContact?.isPersonal]);
 
+  // Reconcile server auto-fill without replacing edits still being typed in the form.
+  const previousQualificationContact = useRef<Contact | null>(null);
+  React.useEffect(() => {
+    if (!activeContact) return;
+    const previous = previousQualificationContact.current;
+    const changedContact = previous?.id !== activeContact.id;
+    const currency = (value?: number) => value != null ? maskCurrencyInput(value) : '';
+    setEditedMonthlyIncome(value => changedContact || value === currency(previous?.monthlyIncome) ? currency(activeContact.monthlyIncome) : value);
+    setEditedDownPayment(value => changedContact || value === currency(previous?.downPaymentAvailable) ? currency(activeContact.downPaymentAvailable) : value);
+    setEditedMaxBudget(value => changedContact || value === currency(previous?.maxPropertyValue) ? currency(activeContact.maxPropertyValue) : value);
+    setEditedPropertyType(value => changedContact || value === (previous?.preferredPropertyType || '') ? activeContact.preferredPropertyType || '' : value);
+    setEditedEmail(value => changedContact || value === (previous?.email || '') ? activeContact.email || '' : value);
+    previousQualificationContact.current = activeContact;
+  }, [activeContact?.id, activeContact?.monthlyIncome, activeContact?.downPaymentAvailable, activeContact?.maxPropertyValue, activeContact?.preferredPropertyType, activeContact?.email]);
+
   // Salva todos os dados de qualificação de uma vez de forma persistente
   const handleSaveQualification = () => {
     if (!activeContact) return;
@@ -636,9 +653,9 @@ export function WhatsAppInbox() {
     const cleanMaxBudget = parseBRLInputToNumber(editedMaxBudget);
 
     const updates: Partial<Contact> = {
-      monthlyIncome: cleanMonthly > 0 ? cleanMonthly : undefined,
-      downPaymentAvailable: cleanDown > 0 ? cleanDown : undefined,
-      maxPropertyValue: cleanMaxBudget > 0 ? cleanMaxBudget : undefined,
+      monthlyIncome: editedMonthlyIncome.trim() ? cleanMonthly : undefined,
+      downPaymentAvailable: editedDownPayment.trim() ? cleanDown : undefined,
+      maxPropertyValue: editedMaxBudget.trim() ? cleanMaxBudget : undefined,
       targetBedrooms: editedBedrooms && !isNaN(Number(editedBedrooms)) ? Number(editedBedrooms) : undefined,
       preferredPropertyType: (editedPropertyType || undefined) as PropertyType | undefined,
       purchasePurpose: (editedPurchasePurpose || undefined) as any,
@@ -779,340 +796,30 @@ export function WhatsAppInbox() {
     }
   }, [activeConversation?.id, activeContact?.phone]);
 
-  // Opção 1: Auto-Análise e Auto-Save Contínuo por IA (Com 5 Camadas de Resguardo de Mercado)
-  React.useEffect(() => {
+  const [qualificationError, setQualificationError] = useState<string | null>(null);
+  const requestQualification = async (force = false, signal?: AbortSignal) => {
     if (!activeConversation || !activeContact) return;
-
-    if (currentTenant?.aiConfig && currentTenant.aiConfig.enabled === false) {
-      setIsAnalyzingAI(false);
-      return;
-    }
-
-    const substantiveMessages = activeMessages.filter(m => !m.isInternalNote && m.content && m.content.trim().length > 0);
-    if (substantiveMessages.length === 0 && !activeConversation.lastMessagePreview) return;
-
-    const lastMsg = substantiveMessages[substantiveMessages.length - 1];
-    const existingInsight = aiInsights[activeConversation.id];
-
-    // CAMADA 5: Deduplicação & Fingerprint Cache (Zero Tokens se a conversa não mudou)
-    if (existingInsight?.lastAnalyzedMessageId && lastMsg && existingInsight.lastAnalyzedMessageId === lastMsg.id) {
-      return;
-    }
-
-    // CAMADA 3: Actor Gating (Se o corretor foi o último a enviar mensagem e já temos qualificação, a IA descansa)
-    if (lastMsg && lastMsg.senderType === 'USER' && existingInsight) {
-      return;
-    }
-
-    // CAMADA 1: Heurística Local Anti-Ruído (Mensagens monossilábicas/emojis em chats já qualificados não acionam IA)
-    if (existingInsight && lastMsg && isTrivialAcknowledgment(lastMsg.content)) {
-      return;
-    }
-
-    // CAMADA 2: Debounce de Rajada (8 segundos para aguardar término de pensamentos picados do cliente)
-    const timer = setTimeout(async () => {
-      try {
-        setIsAnalyzingAI(true);
-
-        // CAMADA 4: Janela Deslizante de 15 mensagens recentes
-        let chatHistory = substantiveMessages.slice(-15).map(m => ({
-          sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
-          text: m.content,
-        }));
-
-        if (chatHistory.length === 0 && activeConversation.lastMessagePreview) {
-          chatHistory = [{
-            sender: 'CLIENT',
-            text: activeConversation.lastMessagePreview,
-          }];
-        }
-
-        if (chatHistory.length === 0) {
-          setIsAnalyzingAI(false);
-          return;
-        }
-
-        const brokerPersonaParts: string[] = [];
-        if (currentUser.aiPersonaPrompt) {
-          brokerPersonaParts.push(`INSTRUÇÃO COMPORTAMENTAL:\n${currentUser.aiPersonaPrompt}`);
-        }
-        if (currentUser.aiDirectives && currentUser.aiDirectives.length > 0) {
-          brokerPersonaParts.push(`REGRAS COMERCIAIS & DIRETRIZES DE FECHAMENTO:\n${currentUser.aiDirectives.map(d => `- ${d}`).join('\n')}`);
-        }
-        if (currentTenant?.aiConfig?.customInstructions) {
-          brokerPersonaParts.push(`DIRETRIZES GERAIS DA IMOBILIÁRIA:\n${currentTenant.aiConfig.customInstructions}`);
-        }
-
-        const res = await fetch('/api/v1/ai/copilot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chatHistory,
-            brokerName: currentUser.name || 'Corretor',
-            contactContext: {
-              name: activeContact.name,
-              tags: activeContact.tags,
-              monthlyIncome: activeContact.monthlyIncome,
-              downPaymentAvailable: activeContact.downPaymentAvailable,
-              maxPropertyValue: activeContact.maxPropertyValue,
-              preferredPropertyType: activeContact.preferredPropertyType,
-              targetRegions: activeContact.targetRegions,
-            },
-            priorContext: existingInsight ? {
-              priorSummary: existingInsight.summary,
-              priorExtractedData: existingInsight.extractedData,
-            } : undefined,
-            aiConfig: {
-              provider: 'PLATFORM_DEFAULT',
-              model: 'gemini-flash-latest',
-              tone: currentUser.aiTone || currentTenant?.aiConfig?.tone || 'CONSULTATIVE',
-              objective: currentTenant?.aiConfig?.objective || 'EQUILIBRADO',
-              customInstructions: brokerPersonaParts.length > 0 ? brokerPersonaParts.join('\n\n') : undefined,
-              enabled: true,
-            },
-          }),
-        });
-
-        const resData = await res.json();
-        if (resData.data) {
-          const analysis = resData.data;
-
-          // 1. Atualiza Card do Copiloto no CRM Context registrando o lastAnalyzedMessageId
-          updateAIInsight(activeConversation.id, {
-            contactId: activeContact.id,
-            summary: analysis.summary,
-            conversationType: analysis.conversationType,
-            extractedData: analysis.extractedData,
-            detectedObjections: analysis.detectedObjections,
-            responseOptions: analysis.responseOptions,
-            sentiment: analysis.sentiment,
-            intent: analysis.intent,
-            suggestedResponse: analysis.suggestedResponse,
-            confidenceScore: analysis.confidenceScore || 96,
-            lastAnalyzedMessageId: lastMsg?.id,
-          });
-
-          // 2. Auto-preenchimento e atualização inteligente do Contato (SOMENTE se for lead imobiliário real)
-          const isRealEstate = analysis.conversationType === 'REAL_ESTATE_LEAD';
-          const updates: any = {};
-          if (analysis.extractedData?.email && (!activeContact.email || activeContact.email === '')) {
-            updates.email = analysis.extractedData.email;
-            setEditedEmail(analysis.extractedData.email);
-          }
-
-          if (isRealEstate) {
-            if (analysis.extractedData?.monthlyIncome && (!activeContact.monthlyIncome || activeContact.monthlyIncome === 0)) {
-              updates.monthlyIncome = analysis.extractedData.monthlyIncome;
-              setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
-            }
-            if (analysis.extractedData?.downPayment && (!activeContact.downPaymentAvailable || activeContact.downPaymentAvailable === 0)) {
-              updates.downPaymentAvailable = analysis.extractedData.downPayment;
-              setEditedDownPayment(String(analysis.extractedData.downPayment));
-            }
-            if (analysis.extractedData?.maxBudget && (!activeContact.maxPropertyValue || activeContact.maxPropertyValue === 0)) {
-              updates.maxPropertyValue = analysis.extractedData.maxBudget;
-              setEditedMaxBudget(String(analysis.extractedData.maxBudget));
-            }
-            if (analysis.extractedData?.propertyType && (!activeContact.preferredPropertyType || activeContact.preferredPropertyType === 'APARTMENT')) {
-              updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
-            }
-            if (analysis.extractedData?.preferredRegion && (!activeContact.targetRegions || activeContact.targetRegions.length === 0 || activeContact.targetRegions.includes('Geral') || activeContact.targetRegions.includes('Região Central / Metropolitana'))) {
-              updates.targetRegions = [analysis.extractedData.preferredRegion];
-            }
-            if (analysis.extractedData?.urgencyLevel === 'ALTA') {
-              updates.temperature = 'HOT';
-              updates.aiPriorityScore = Math.max(activeContact.aiPriorityScore || 80, 95);
-            }
-          } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
-            updates.isPersonal = true;
-            // Preserva integralmente qualquer dado de renda, entrada, orçamento ou imóvel preenchido pelo usuário
-            if (!activeContact.monthlyIncome && !activeContact.preferredPropertyType) {
-              updates.temperature = 'COLD';
-              updates.aiPriorityScore = 0;
-            }
-          }
-
-          if (Object.keys(updates).length > 0) {
-            updateContact(activeContact.id, updates);
-          }
-        }
-      } catch (err) {
-        console.error('Auto-análise IA:', err);
-      } finally {
-        setIsAnalyzingAI(false);
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [activeConversation?.id, activeMessages.length]);
-
-  // Forçar Análise Manual por IA sob Demanda
-  const handleForceAIAnalysis = async () => {
-    if (!activeConversation || !activeContact) return;
+    setIsAnalyzingAI(true); setQualificationError(null);
     try {
-      setIsAnalyzingAI(true);
-      if (!isLeadPersonal) {
-        setShowLeadDrawer(true);
-      }
-
-      const substantiveMessages = activeMessages.filter(m => !m.isInternalNote && m.content && m.content.trim().length > 0);
-      const lastMsg = substantiveMessages[substantiveMessages.length - 1];
-      const existingInsight = aiInsights[activeConversation.id];
-
-      let chatHistory = substantiveMessages.slice(-15).map(m => ({
-        sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
-        text: m.content,
-      }));
-
-      // 1. Busca mensagens históricas adicionais diretamente na Z-API se necessário
-      try {
-        const histRes = await fetch('/api/v1/zapi/sync-chat-history', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: activeContact.phone,
-            conversationId: activeConversation.id,
-            tenantId: activeConversation.tenantId,
-          }),
-        });
-        const histData = await histRes.json();
-        if (histData.messages && histData.messages.length > 0) {
-          const zapiMsgs = histData.messages
-            .filter((m: any) => !m.isInternalNote && m.content)
-            .slice(-15)
-            .map((m: any) => ({
-              sender: m.senderType === 'USER' ? ('BROKER' as const) : ('CLIENT' as const),
-              text: m.content,
-            }));
-          if (zapiMsgs.length > 0) {
-            chatHistory = zapiMsgs;
-          }
-        }
-      } catch (e) {
-        console.warn('Erro ao sincronizar histórico completo:', e);
-      }
-
-      if (chatHistory.length === 0 && activeConversation.lastMessagePreview) {
-        chatHistory = [{
-          sender: 'CLIENT',
-          text: activeConversation.lastMessagePreview,
-        }];
-      }
-
-      if (chatHistory.length === 0) {
-        setIsAnalyzingAI(false);
-        return;
-      }
-
-      const brokerPersonaParts: string[] = [];
-      if (currentUser.aiPersonaPrompt) {
-        brokerPersonaParts.push(`INSTRUÇÃO COMPORTAMENTAL:\n${currentUser.aiPersonaPrompt}`);
-      }
-      if (currentUser.aiDirectives && currentUser.aiDirectives.length > 0) {
-        brokerPersonaParts.push(`REGRAS COMERCIAIS & DIRETRIZES DE FECHAMENTO:\n${currentUser.aiDirectives.map(d => `- ${d}`).join('\n')}`);
-      }
-      if (currentTenant?.aiConfig?.customInstructions) {
-        brokerPersonaParts.push(`DIRETRIZES GERAIS DA IMOBILIÁRIA:\n${currentTenant.aiConfig.customInstructions}`);
-      }
-
-      const res = await fetch('/api/v1/ai/copilot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chatHistory,
-          brokerName: currentUser.name || 'Corretor',
-          contactContext: {
-            name: activeContact.name,
-            tags: activeContact.tags,
-            monthlyIncome: activeContact.monthlyIncome,
-            downPaymentAvailable: activeContact.downPaymentAvailable,
-            maxPropertyValue: activeContact.maxPropertyValue,
-            preferredPropertyType: activeContact.preferredPropertyType,
-            targetRegions: activeContact.targetRegions,
-          },
-          priorContext: existingInsight ? {
-            priorSummary: existingInsight.summary,
-            priorExtractedData: existingInsight.extractedData,
-          } : undefined,
-          aiConfig: {
-            provider: 'PLATFORM_DEFAULT',
-            model: 'gemini-flash-latest',
-            tone: currentUser.aiTone || currentTenant?.aiConfig?.tone || 'CONSULTATIVE',
-            objective: currentTenant?.aiConfig?.objective || 'EQUILIBRADO',
-            customInstructions: brokerPersonaParts.length > 0 ? brokerPersonaParts.join('\n\n') : undefined,
-            enabled: true,
-          },
-        }),
+      const response = await fetch('/api/v1/ai/qualification', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-id': currentTenant.id }, signal,
+        body: JSON.stringify({ operation: 'run', conversationIds: [activeConversation.id], force }),
       });
-
-      const resData = await res.json();
-      if (resData.data) {
-        const analysis = resData.data;
-
-        // 1. Atualiza Card do Copiloto no CRM Context registrando o lastAnalyzedMessageId
-        updateAIInsight(activeConversation.id, {
-          contactId: activeContact.id,
-          summary: analysis.summary,
-          conversationType: analysis.conversationType,
-          extractedData: analysis.extractedData,
-          detectedObjections: analysis.detectedObjections,
-          responseOptions: analysis.responseOptions,
-          sentiment: analysis.sentiment,
-          intent: analysis.intent,
-          suggestedResponse: analysis.suggestedResponse,
-          confidenceScore: analysis.confidenceScore || 96,
-          lastAnalyzedMessageId: lastMsg?.id,
-        });
-
-        // 2. Atualiza campos do Perfil 360 (Apenas se for lead imobiliário real)
-        const isRealEstate = analysis.conversationType === 'REAL_ESTATE_LEAD';
-        const updates: any = {};
-        if (analysis.extractedData?.email) {
-          updates.email = analysis.extractedData.email;
-          setEditedEmail(analysis.extractedData.email);
-        }
-        if (isRealEstate) {
-          if (analysis.extractedData?.monthlyIncome) {
-            updates.monthlyIncome = analysis.extractedData.monthlyIncome;
-            setEditedMonthlyIncome(String(analysis.extractedData.monthlyIncome));
-          }
-          if (analysis.extractedData?.downPayment) {
-            updates.downPaymentAvailable = analysis.extractedData.downPayment;
-            setEditedDownPayment(String(analysis.extractedData.downPayment));
-          }
-          if (analysis.extractedData?.maxBudget) {
-            updates.maxPropertyValue = analysis.extractedData.maxBudget;
-            setEditedMaxBudget(String(analysis.extractedData.maxBudget));
-          }
-          if (analysis.extractedData?.propertyType) {
-            updates.preferredPropertyType = mapToPropertyType(analysis.extractedData.propertyType);
-          }
-          if (analysis.extractedData?.preferredRegion && !analysis.extractedData.preferredRegion.includes('Central / Metropolitana')) {
-            updates.targetRegions = [analysis.extractedData.preferredRegion];
-          }
-          if (analysis.extractedData?.urgencyLevel === 'ALTA') {
-            updates.temperature = 'HOT';
-            updates.aiPriorityScore = 95;
-          }
-        } else if (analysis.conversationType === 'PERSONAL_OR_OTHER') {
-          updates.isPersonal = true;
-          // Preserva integralmente qualquer dado de renda, entrada, orçamento ou imóvel preenchido pelo usuário
-          if (!activeContact.monthlyIncome && !activeContact.preferredPropertyType) {
-            updates.temperature = 'COLD';
-            updates.aiPriorityScore = 0;
-          }
-        }
-
-        if (Object.keys(updates).length > 0) {
-          updateContact(activeContact.id, updates);
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao forçar análise por IA:', err);
-    } finally {
-      setIsAnalyzingAI(false);
-    }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a análise.');
+      if (!signal?.aborted) applyBatchAIQualifications([]);
+    } catch (error: any) {
+      if (error.name !== 'AbortError') setQualificationError(error.message || 'Análise pendente para nova tentativa.');
+    } finally { if (!signal?.aborted) setIsAnalyzingAI(false); }
   };
+  const qualificationHistoryKey = JSON.stringify(activeMessages.map(message => [message.id, message.senderType, message.timestamp, message.content]));
+  React.useEffect(() => {
+    if (!activeConversation || !activeContact || currentTenant.aiConfig?.enabled === false || activeConversation.aiEnabled === false) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => { void requestQualification(false, controller.signal); }, 1200);
+    return () => { clearTimeout(timer); controller.abort(); setIsAnalyzingAI(false); };
+  }, [activeConversation?.id, currentTenant.id, qualificationHistoryKey, currentTenant.aiConfig?.enabled, activeConversation?.aiEnabled]);
+  const handleForceAIAnalysis = async () => { await requestQualification(true); };
 
   // Remove notificação de mensagens pendentes quando a conversa está aberta na tela
   React.useEffect(() => {
@@ -1985,22 +1692,17 @@ export function WhatsAppInbox() {
                 {/* 3. Botão Qualificação do Lead */}
                 <button
                   type="button"
-                  disabled={isLeadPersonal}
-                  onClick={() => {
-                    if (!isLeadPersonal) {
-                      setShowLeadDrawer(!showLeadDrawer);
-                    }
-                  }}
+                  onClick={() => setShowLeadDrawer(!showLeadDrawer)}
                   className={`px-3.5 py-1.5 rounded-full border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs ${
                     isLeadPersonal
-                      ? 'bg-slate-100 text-slate-400 border-slate-200/80 cursor-not-allowed opacity-60 select-none'
+                      ? 'bg-slate-100 text-slate-600 border-slate-200/80 hover:bg-slate-200 cursor-pointer'
                       : showLeadDrawer
                       ? 'bg-[#3742AC] text-white border-[#3742AC] cursor-pointer'
                       : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 cursor-pointer'
                   }`}
                   title={
                     isLeadPersonal
-                      ? "Qualificação desativada para Contato Pessoal. Clique em 'Tornar Lead' para habilitar."
+                      ? "Acompanhar o contexto e a qualificação desta conversa."
                       : "Abrir / Ocultar Qualificação do Lead"
                   }
                 >
@@ -2590,7 +2292,7 @@ export function WhatsAppInbox() {
                           Brok.ia • Inteligência Comercial
                         </span>
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono">
-                          Confiança: {activeInsight.confidenceScore || 96}%
+                          {activeInsight.degraded ? 'Leitura básica de informações explícitas' : 'Análise contextual com evidências'}
                         </span>
                       </div>
 
@@ -3322,6 +3024,8 @@ export function WhatsAppInbox() {
                 </>
               )}
 
+              <LeadQualificationStatus conversationId={activeConversation.id} contact={activeContact} onChange={() => applyBatchAIQualifications([])} />
+              {qualificationError && <p role="alert" className="text-xs text-amber-800">{qualificationError}</p>}
               {/* Resumo da IA */}
               <div className={`rounded-xl p-2.5 border ${isLeadPersonal ? 'bg-slate-100/70 border-slate-200' : 'bg-emerald-50/60 border-emerald-200/80'}`}>
                 <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold mb-1">
@@ -3958,11 +3662,13 @@ export function WhatsAppInbox() {
                       type="text"
                       inputMode="numeric"
                       placeholder="0"
+                      aria-label="Renda mensal"
                       value={editedMonthlyIncome}
                       onChange={(e) => setEditedMonthlyIncome(maskCurrencyInput(e.target.value))}
                       onBlur={() => {
                         const val = parseBRLInputToNumber(editedMonthlyIncome);
-                        updateContact(activeContact.id, { monthlyIncome: val || undefined, phone: activeContact.phone, name: activeContact.name });
+                        const nextValue = editedMonthlyIncome.trim() ? val : undefined;
+                        if (nextValue !== activeContact.monthlyIncome) updateContact(activeContact.id, { monthlyIncome: nextValue, phone: activeContact.phone, name: activeContact.name });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -3989,11 +3695,13 @@ export function WhatsAppInbox() {
                       type="text"
                       inputMode="numeric"
                       placeholder="0"
+                      aria-label="Entrada disponível"
                       value={editedDownPayment}
                       onChange={(e) => setEditedDownPayment(maskCurrencyInput(e.target.value))}
                       onBlur={() => {
                         const val = parseBRLInputToNumber(editedDownPayment);
-                        updateContact(activeContact.id, { downPaymentAvailable: val || undefined, phone: activeContact.phone, name: activeContact.name });
+                        const nextValue = editedDownPayment.trim() ? val : undefined;
+                        if (nextValue !== activeContact.downPaymentAvailable) updateContact(activeContact.id, { downPaymentAvailable: nextValue, phone: activeContact.phone, name: activeContact.name });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -4020,11 +3728,13 @@ export function WhatsAppInbox() {
                       type="text"
                       inputMode="numeric"
                       placeholder="0"
+                      aria-label="Orçamento máximo"
                       value={editedMaxBudget}
                       onChange={(e) => setEditedMaxBudget(maskCurrencyInput(e.target.value))}
                       onBlur={() => {
                         const val = parseBRLInputToNumber(editedMaxBudget);
-                        updateContact(activeContact.id, { maxPropertyValue: val || undefined, phone: activeContact.phone, name: activeContact.name });
+                        const nextValue = editedMaxBudget.trim() ? val : undefined;
+                        if (nextValue !== activeContact.maxPropertyValue) updateContact(activeContact.id, { maxPropertyValue: nextValue, phone: activeContact.phone, name: activeContact.name });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {

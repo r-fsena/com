@@ -156,6 +156,8 @@ export interface BrokerNote {
 }
 
 export interface Contact {
+  qualificationFields?: import('@/lib/lead-qualification').QualificationFacts;
+  qualificationClassificationSource?: 'AI' | 'HUMAN';
   id: string;
   tenantId: string;
   name: string;
@@ -347,6 +349,10 @@ export interface AIResponseOption {
 }
 
 export interface AIInsight {
+  qualificationStatus?: import('@/lib/lead-qualification').QualificationJob['status'];
+  qualificationConflicts?: import('@/lib/lead-qualification').QualificationField[];
+  analysisSource?: string;
+  degraded?: boolean;
   id: string;
   tenantId: string;
   conversationId: string;

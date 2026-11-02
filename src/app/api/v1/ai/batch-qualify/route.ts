@@ -1,143 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { UniversalCopilotService } from '@/lib/ai-provider-service';
-import { validateApiSession } from '@/lib/api-auth';
+import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
+import { readCRMState } from '@/lib/crm-repository';
+import { runQualificationWorker } from '@/lib/lead-qualification-service';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
-import { TenantAIConfig } from '@/types/crm';
-
 export const dynamic = 'force-dynamic';
-
-const BatchQualifyItemSchema = z.object({
-  conversationId: z.string(),
-  contactId: z.string(),
-  contactName: z.string().optional(),
-  chatHistory: z.array(z.object({
-    sender: z.enum(['CLIENT', 'BROKER']),
-    text: z.string(),
-  })).min(1),
-  contactContext: z.object({
-    name: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    whatsappLabels: z.array(z.string()).optional(),
-    monthlyIncome: z.number().optional(),
-    downPaymentAvailable: z.number().optional(),
-    maxPropertyValue: z.number().optional(),
-    preferredPropertyType: z.string().optional(),
-    targetRegions: z.array(z.string()).optional(),
-  }).optional(),
-});
-
-const BatchQualifySchema = z.object({
-  items: z.array(BatchQualifyItemSchema).min(1).max(50),
-  brokerName: z.string().default('Corretor'),
-  aiConfig: z.object({
-    provider: z.enum(['OPENAI', 'ANTHROPIC', 'GEMINI', 'PLATFORM_DEFAULT']).optional(),
-    apiKey: z.string().optional(),
-    model: z.string().optional(),
-    tone: z.enum(['CONSULTATIVE', 'CLOSER', 'ELEGANT', 'FRIENDLY']).optional(),
-    objective: z.enum(['AGENDAR_VISITA', 'SIMULAR_FINANCIAMENTO', 'QUALIFICAR', 'EQUILIBRADO']).optional(),
-    customInstructions: z.string().optional(),
-    enabled: z.boolean().default(true),
-  }).optional(),
-});
-
-export async function POST(request: NextRequest) {
-  // 1. Rate Limiting (Máx 60 requisições em lote por minuto)
-  const clientIp = getClientIp(request.headers);
-  const rateCheck = checkRateLimit(`batch-qualify:${clientIp}`, 60, 60);
-  if (!rateCheck.allowed) {
-    return NextResponse.json({
-      error: 'Limite de requisições de análise em massa atingido',
-      message: `Aguarde ${rateCheck.resetInSeconds} segundos para continuar o lote.`,
-    }, { status: 429 });
-  }
-
-  // 2. Validação Estrita de Sessão & RBAC
-  const { session, errorResponse } = validateApiSession(request, {
-    requiredRoles: ['BROKER', 'MANAGER', 'ADMIN', 'SUPERADMIN'],
-  });
-  if (errorResponse) return errorResponse;
-
+export const maxDuration = 60;
+export async function POST(req: NextRequest) {
+  const { session, errorResponse } = validateApiSession(req, { requiredRoles: ['BROKER', 'MANAGER', 'ADMIN'] }); if (errorResponse) return errorResponse;
+  if (session!.source === 'CHROME_EXTENSION') return NextResponse.json({ error: 'Use o CRM para solicitar a análise.' }, { status: 403 });
+  if (!checkRateLimit(`batch-qualify:${session!.userId}:${getClientIp(req.headers)}`, 30, 60).allowed) return NextResponse.json({ error: 'Aguarde antes de analisar outro lote.' }, { status: 429 });
+  const body = z.object({ items: z.array(z.object({ conversationId: z.string().min(1), contactId: z.string().min(1) })).min(1).max(50) }).safeParse(await req.json().catch(() => null));
+  if (!body.success) return NextResponse.json({ error: 'Selecione conversas para analisar.' }, { status: 400 });
   try {
-    const body = await request.json();
-    const validated = BatchQualifySchema.safeParse(body);
-
-    if (!validated.success) {
-      return NextResponse.json(
-        { error: 'Dados inválidos para análise em massa', details: validated.error.format() },
-        { status: 400 }
-      );
-    }
-
-    const { items, brokerName, aiConfig } = validated.data;
-
-    let leadsCount = 0;
-    let personalCount = 0;
-
-    const results = await Promise.all(
-      items.map(async (item) => {
-        try {
-          const analysis = await UniversalCopilotService.analyzeConversation({
-            chatHistory: item.chatHistory,
-            brokerName,
-            contactContext: item.contactContext || { name: item.contactName },
-            aiConfig: aiConfig as TenantAIConfig | undefined,
-          });
-
-          const isPersonal = analysis.conversationType === 'PERSONAL_OR_OTHER';
-          if (isPersonal) {
-            personalCount++;
-          } else {
-            leadsCount++;
-          }
-
-          return {
-            conversationId: item.conversationId,
-            contactId: item.contactId,
-            contactName: item.contactName,
-            isPersonal,
-            conversationType: analysis.conversationType,
-            summary: analysis.summary,
-            extractedData: analysis.extractedData,
-            detectedObjections: analysis.detectedObjections,
-            responseOptions: analysis.responseOptions,
-            sentiment: analysis.sentiment,
-            intent: analysis.intent,
-            suggestedResponse: analysis.suggestedResponse,
-            confidenceScore: analysis.confidenceScore || 96,
-          };
-        } catch (err: any) {
-          console.error(`[BatchQualify] Erro no item ${item.conversationId}:`, err);
-          return {
-            conversationId: item.conversationId,
-            contactId: item.contactId,
-            contactName: item.contactName,
-            isPersonal: false,
-            conversationType: 'REAL_ESTATE_LEAD' as const,
-            summary: 'Conversa pendente de análise individual.',
-            extractedData: {},
-            detectedObjections: [],
-            responseOptions: [],
-            sentiment: 'NEUTRAL' as const,
-            intent: 'DUVIDA_GERAL' as const,
-            suggestedResponse: 'Olá, como posso te ajudar?',
-            confidenceScore: 50,
-          };
-        }
-      })
-    );
-
-    return NextResponse.json({
-      results,
-      totalProcessed: results.length,
-      leadsCount,
-      personalCount,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: 'Falha na execução do lote de IA', message: err.message },
-      { status: 500 }
-    );
-  }
+    const tenantId = authorizedTenant(session!, req.headers.get('x-tenant-id'));
+    const state = await readCRMState(tenantId);
+    if (body.data.items.some(item => !state.conversations.some(c => c.id === item.conversationId && c.contactId === item.contactId))) return NextResponse.json({ error: 'Conversa não encontrada nesta imobiliária.' }, { status: 404 });
+    const next = await runQualificationWorker(tenantId, { conversationIds: body.data.items.map(i => i.conversationId), deadline: Date.now() + 35000 });
+    const results = body.data.items.map(item => ({ ...next.aiInsights[item.conversationId], conversationId: item.conversationId, contactId: item.contactId, status: next.qualification?.jobs[item.conversationId]?.status || 'QUEUED' }));
+    return NextResponse.json({ success: true, results, totalProcessed: results.filter(r => ['UPDATED','REVIEW'].includes(r.status)).length,
+      pendingCount: results.filter(r => !['UPDATED','REVIEW','DISABLED'].includes(r.status)).length,
+      leadsCount: results.filter(r => r.conversationType === 'REAL_ESTATE_LEAD').length, personalCount: results.filter(r => r.conversationType === 'PERSONAL_OR_OTHER').length });
+  } catch { return NextResponse.json({ error: 'O lote permanece pendente para nova tentativa; os dados existentes foram preservados.' }, { status: 503 }); }
 }

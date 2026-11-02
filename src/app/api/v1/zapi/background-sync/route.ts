@@ -1,3 +1,4 @@
+import { kickQualification } from '@/lib/lead-qualification-service';
 import { resolveWhatsAppLabels } from '@/lib/contact-labels';
 import { writeCRMState, readCRMState } from '@/lib/crm-repository';
 import { ZapiCredentialsService } from '@/lib/db/zapi-credentials-service';
@@ -321,6 +322,7 @@ async function runBackgroundSyncWorker(params: {
       conversations: newConversations,
       messages: newMessages,
     });
+    await kickQualification(tenantId);
 
     await syncJobStore.updateJob(jobId, {
       status: keepPaging ? 'RUNNING' : 'COMPLETED',

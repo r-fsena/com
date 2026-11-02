@@ -30,7 +30,7 @@ const AnalyzeConversationSchema = z.object({
     priorExtractedData: z.any().optional(),
   }).optional(),
   aiConfig: z.object({
-    provider: z.enum(['OPENAI', 'ANTHROPIC', 'GEMINI', 'PLATFORM_DEFAULT']),
+    provider: z.enum(['LOCAL_ONLY', 'OPENAI', 'ANTHROPIC', 'GEMINI', 'PLATFORM_DEFAULT']),
     apiKey: z.string().optional(),
     model: z.string().optional(),
     tone: z.enum(['CONSULTATIVE', 'CLOSER', 'PERSUASIVE', 'ELEGANT', 'FRIENDLY', 'TECHNICAL']).default('CONSULTATIVE'),

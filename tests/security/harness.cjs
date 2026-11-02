@@ -6,7 +6,7 @@ const { NextRequest, NextResponse } = require('next/server');
 const empty = () => ({ contacts: [], conversations: [], messages: [], deals: [], aiInsights: {}, quickReplies: [] });
 function harness(overrides = {}, environment = {}) {
   const cache = new Map();
-  const env = { NODE_ENV: 'production', SESSION_SECRET: 'test-only-secret-with-more-than-32-characters', ZAPI_WEBHOOK_SECRET: 'test-webhook-secret', ...environment };
+  const env = { NODE_ENV: 'production', SESSION_SECRET: 'test-only-secret-with-more-than-32-characters', ZAPI_WEBHOOK_SECRET: 'test-webhook-secret', AI_EXTERNAL_ENABLED: 'true', GEMINI_ENABLED: 'true', ...environment };
   const mocks = {
     'next/server': { NextRequest, NextResponse },
     '@/db': { db: {} },

@@ -4,6 +4,7 @@ test('qualificação: evidência, proteção humana, revisão e persistência co
   test.setTimeout(90000);
   const journey=await createQualificationJourney();
   try {
+    journey.h.env.AI_EXTERNAL_ENABLED='false';
     await journey.repo.writeCRMState(journey.tenantId,{contacts:[{...journey.contact,monthlyIncome:12000}],messages:[journey.message('client-financial','Quero comprar apartamento em Palhoça. Minha renda mensal é 5000. Entrada de 50 mil.') ]});
     await journey.service.runQualificationWorker(journey.tenantId);
     const tenant={id:journey.tenantId,name:'Qualificação fictícia',slug:'qualification',status:'ACTIVE',primaryColor:'#059669',timezone:'America/Sao_Paulo',featureFlags:{aiCopilot:true},aiConfig:{enabled:true},businessHours:{start:'08:00',end:'18:00',workDays:[1,2,3,4,5]},settings:{slaFirstResponseMinutes:15,slaInactivityHours:24,autoAssignRule:'UNASSIGNED_QUEUE',aiCopilotEnabled:true}};
@@ -28,6 +29,7 @@ test('qualificação: evidência, proteção humana, revisão e persistência co
     };
     await open();
     const panel=page.getByRole('region',{name:'Qualificação automática'});
+    await expect(panel.getByText('Leitura por regras, sem provedor de IA externo. Apenas informações explícitas reconhecidas podem preencher os campos.',{exact:true})).toBeVisible();
     await expect(panel.getByText('Os dados já preenchidos foram preservados. Revise somente estas diferenças:',{exact:true})).toBeVisible();
     await expect(panel.getByText('Atual: R$ 12.000,00',{exact:true})).toBeVisible();
     await expect(panel.getByText('Identificado: R$ 5.000,00',{exact:true})).toBeVisible();

@@ -57,7 +57,7 @@ export interface TenantFeatureFlags {
   lgpdCompliance: boolean;             // Gestão de consentimento e opt-out LGPD
 }
 
-export type AIProvider = 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'PLATFORM_DEFAULT';
+export type AIProvider = 'LOCAL_ONLY' | 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'PLATFORM_DEFAULT';
 export type AITone = 'CONSULTATIVE' | 'CLOSER' | 'PERSUASIVE' | 'ELEGANT' | 'FRIENDLY' | 'TECHNICAL';
 export type AIObjective = 'AGENDAR_VISITA' | 'SIMULAR_FINANCIAMENTO' | 'QUALIFICAR' | 'EQUILIBRADO';
 

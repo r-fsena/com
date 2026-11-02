@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { validateApiSession, authorizedTenant } from '@/lib/api-auth';
 import { readCRMState, mutateCRMState } from '@/lib/crm-repository';
 import { enqueueQualifications, qualificationFields } from '@/lib/lead-qualification';
-import { runQualificationWorker, qualificationInsight } from '@/lib/lead-qualification-service';
+import { runQualificationWorker, qualificationInsight, qualificationConfig } from '@/lib/lead-qualification-service';
+import { externalAIAllowed } from '@/lib/ai-execution-policy';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -15,11 +16,13 @@ export async function GET(req: NextRequest) {
   const { session, errorResponse } = validateApiSession(req); if (errorResponse) return errorResponse;
   try {
     const tenantId = authorizedTenant(session!, req.headers.get('x-tenant-id'));
+    const analysisMode = externalAIAllowed(await qualificationConfig(tenantId)) ? 'REMOTE_ALLOWED' : 'LOCAL_ONLY';
+    if (req.nextUrl.searchParams.get('modeOnly') === '1') return NextResponse.json({ success: true, analysisMode }, { headers: { 'Cache-Control': 'no-store' } });
     const state = await readCRMState(tenantId);
     const conversationId = req.nextUrl.searchParams.get('conversationId');
     if (conversationId && !state.conversations.some(c => c.id === conversationId)) return NextResponse.json({ error: 'Conversa não encontrada.' }, { status: 404 });
     const jobs = conversationId ? Object.fromEntries(Object.entries(state.qualification?.jobs || {}).filter(([id]) => id === conversationId)) : state.qualification?.jobs || {};
-    return NextResponse.json({ success: true, jobs, lastWorkerAt: state.qualification?.lastScheduledAt || null,
+    return NextResponse.json({ success: true, jobs, analysisMode, lastWorkerAt: state.qualification?.lastScheduledAt || null,
       schedulerConfigured: !!(process.env.QUALIFICATION_CRON_SECRET || process.env.AUTOMATIONS_CRON_SECRET) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch { return NextResponse.json({ error: 'Não foi possível consultar a qualificação.' }, { status: 503 }); }
 }

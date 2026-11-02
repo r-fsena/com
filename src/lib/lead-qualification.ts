@@ -11,6 +11,7 @@ export type QualificationType = 'REAL_ESTATE_LEAD' | 'PERSONAL_OR_OTHER' | 'OPER
 export type QualificationJob = {
   fingerprint: string; status: 'QUEUED' | 'PROCESSING' | 'UPDATED' | 'REVIEW' | 'ERROR' | 'DISABLED';
   processedFingerprint?: string;
+  engineMode?: 'LOCAL_ONLY' | 'REMOTE_ALLOWED';
   cursor: number; total: number; facts: QualificationFacts; classification: QualificationType; summary: string;
   attempts: number; updatedAt: string; lease?: string; leaseUntil?: number; retryAt?: number; error?: string;
   contextAttempts?: number;

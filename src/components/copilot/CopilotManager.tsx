@@ -190,7 +190,7 @@ export function CopilotManager() {
       }
     } catch (err: any) {
       console.error('[Copilot Simulator Error]', err);
-      setSimulationError(err.message || 'Falha ao conectar com o motor de IA Google Gemini.');
+      setSimulationError(err.message || 'Não foi possível concluir a análise disponível.');
     } finally {
       setIsSimulating(false);
     }

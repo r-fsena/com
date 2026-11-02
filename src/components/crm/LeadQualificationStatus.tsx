@@ -9,6 +9,7 @@ const format = (value: unknown) => value === undefined || value === null || valu
 export function LeadQualificationStatus({ conversationId, contact, onChange }: { conversationId: string; contact: Contact; onChange: () => void }) {
   const { currentTenant } = useCRM();
   const [job, setJob] = React.useState<QualificationJob>();
+  const [analysisMode, setAnalysisMode] = React.useState<string>();
   const [scheduler, setScheduler] = React.useState<boolean | null>(null);
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -20,7 +21,7 @@ export function LeadQualificationStatus({ conversationId, contact, onChange }: {
         const response = await fetch(`/api/v1/ai/qualification?conversationId=${encodeURIComponent(conversationId)}`, { headers: { 'x-tenant-id': currentTenant.id }, cache: 'no-store', signal: abort.signal });
         if (!response.ok) throw Error('Não foi possível consultar a análise.');
         const data = await response.json(); if (abort.signal.aborted) return;
-        setJob(data.jobs?.[conversationId]);
+        setJob(data.jobs?.[conversationId]); setAnalysisMode(data.analysisMode);
         const healthy = data.schedulerConfigured && data.lastWorkerAt && Date.now() - Date.parse(data.lastWorkerAt) < 10 * 60_000;
         setScheduler(!!healthy);
       } catch (e: any) { if (!abort.signal.aborted) setError(e.message); }
@@ -39,7 +40,8 @@ export function LeadQualificationStatus({ conversationId, contact, onChange }: {
   return <section aria-label="Qualificação automática" className="rounded-xl border border-emerald-200 bg-white p-3 text-xs space-y-2">
     <p role="status" className="font-semibold text-emerald-900">{job ? job.status === 'ERROR' && job.attempts >= 5 ? 'Análise pendente — tente novamente para retomar' : states[job.status] : 'Qualificação aguardando mensagens do cliente'}</p>
     {job && ['QUEUED', 'PROCESSING'].includes(job.status) && <p className="text-slate-600">{job.cursor} de {job.total} mensagens disponíveis analisadas. O progresso é salvo no servidor.</p>}
-    {job?.degraded && <p className="text-amber-800">Leitura básica de informações explícitas. A análise contextual por IA não confirmou esta leitura.</p>}
+    {(analysisMode === 'LOCAL_ONLY' || job?.source === 'LOCAL_RULES') && <p className="text-slate-600">Leitura por regras, sem provedor de IA externo. Apenas informações explícitas reconhecidas podem preencher os campos.</p>}
+    {analysisMode !== 'LOCAL_ONLY' && job?.degraded && <p className="text-amber-800">Leitura básica de informações explícitas. A análise contextual por IA não confirmou esta leitura.</p>}
     {scheduler === false && <p className="text-amber-800">A análise automática em segundo plano ainda precisa ser confirmada pelo administrador. Novas importações e o botão de análise continuam disponíveis.</p>}
     {job?.error && <p className="text-amber-800">{job.error}</p>}
     {job?.humanClassificationPreserved && <p className="text-slate-600">A equipe marcou este contato como pessoal. Essa escolha e os dados comerciais foram preservados.</p>}

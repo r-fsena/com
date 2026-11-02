@@ -7,7 +7,7 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 export const dynamic = 'force-dynamic';
 
 const TestConnectionSchema = z.object({
-  provider: z.enum(['OPENAI', 'ANTHROPIC', 'GEMINI', 'PLATFORM_DEFAULT']),
+  provider: z.enum(['LOCAL_ONLY', 'OPENAI', 'ANTHROPIC', 'GEMINI', 'PLATFORM_DEFAULT']),
   apiKey: z.string().optional(),
   model: z.string().optional(),
 });

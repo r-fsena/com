@@ -2,6 +2,7 @@ import { AICopilotAnalysis, BedrockCopilotClient } from './bedrock-client';
 import { LocalSemanticCopilotClient } from './local-semantic-client';
 import { TenantAIConfig } from '@/types/crm';
 import { explicitQualification } from '@/lib/lead-qualification';
+import { externalAIAllowed } from '@/lib/ai-execution-policy';
 import { z } from 'zod';
 
 export interface CopilotChatHistoryItem {
@@ -19,6 +20,7 @@ export class UniversalCopilotService {
    * Testa a conectividade com o provedor e valida a API Key fornecida pelo Tenant
    */
   static async testConnection(config: TenantAIConfig): Promise<{ success: boolean; message: string; model?: string }> {
+    if (!externalAIAllowed(config)) return { success: true, message: 'Leitura básica por regras ativa. Nenhuma chamada é feita a provedores de IA.', model: 'LOCAL_RULES' };
     const provider = config.provider || 'PLATFORM_DEFAULT';
     const apiKey = (config.apiKey || '').trim();
 
@@ -128,6 +130,7 @@ export class UniversalCopilotService {
   }): Promise<AICopilotAnalysis> {
     const { chatHistory, brokerName = 'Corretor', contactContext, aiConfig, priorContext } = params;
     if (aiConfig?.enabled === false) throw new Error('A análise está desativada para esta imobiliária.');
+    if (!externalAIAllowed(aiConfig)) return this.analyzeLocally(chatHistory, brokerName, contactContext, true);
 
     const analysisSignal = AbortSignal.timeout(Math.max(1000, Math.min(20000, params.timeoutMs ?? 20000)));
     const provider = aiConfig?.provider || 'PLATFORM_DEFAULT';
@@ -229,8 +232,13 @@ export class UniversalCopilotService {
       try { return this.checkedAnalysis(await new BedrockCopilotClient().analyzeConversation(chatHistory, brokerName, contactContext, analysisSignal), 'BEDROCK'); }
       catch (error) { console.warn('[Copilot] Bedrock indisponível; usando análise heurística local.'); }
     }
-    const fallbackEngine = new LocalSemanticCopilotClient();
-    const local = await fallbackEngine.analyzeConversation(chatHistory.filter(m => m.sender === 'CLIENT'), brokerName, contactContext);
+    return this.analyzeLocally(chatHistory, brokerName, contactContext);
+  }
+
+  private static async analyzeLocally(chatHistory: CopilotChatHistoryItem[], brokerName: string, contactContext?: any, intentional = false): Promise<AICopilotAnalysis> {
+    const local = intentional
+      ? { responseOptions: [], suggestedResponse: '', sentiment: 'NEUTRAL' as const, intent: 'DUVIDA_GERAL' as const, detectedObjections: [] }
+      : await new LocalSemanticCopilotClient().analyzeConversation(chatHistory.filter(m => m.sender === 'CLIENT'), brokerName, contactContext);
     const safe = explicitQualification(chatHistory.map((m, index) => ({ id: String(index), senderType: m.sender === 'CLIENT' ? 'CONTACT' as const : 'USER' as const, content: m.text, timestamp: new Date(index * 1000).toISOString() })));
     const f = safe.facts;
     const summary = safe.classification === 'REAL_ESTATE_LEAD'
@@ -243,7 +251,7 @@ export class UniversalCopilotService {
         maxBudget: f.maxPropertyValue?.value as number | undefined, propertyType: f.preferredPropertyType?.value as string | undefined,
         preferredRegion: (f.targetRegions?.value as string[] | undefined)?.join(', '), email: f.email?.value as string | undefined,
         urgencyLevel: 'NAO_IDENTIFICADA', detectedObjections: [] },
-      confidenceScore: 60, analysisSource: 'LOCAL_HEURISTICS', degraded: true };
+      confidenceScore: intentional ? 0 : 60, analysisSource: intentional ? 'LOCAL_RULES' : 'LOCAL_HEURISTICS', degraded: !intentional };
 
   }
 

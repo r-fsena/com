@@ -82,11 +82,11 @@ export function SettingsManager({ onOpenQrCodeModal, onOpenAutomations }: Settin
   const [resetDataSuccess, setResetDataSuccess] = useState(false);
   const [showConfirmResetDataModal, setShowConfirmResetDataModal] = useState(false);
 
-  // Estados de IA (Copiloto Oficial Nativo com Google Gemini 1.5 Flash fornecido pelo CRM)
+  // Leitura por regras; provedores externos dependem de ativação explícita no servidor.
   const [aiConfigState, setAiConfigState] = useState<TenantAIConfig>({
-    provider: 'PLATFORM_DEFAULT',
+    provider: 'LOCAL_ONLY',
     apiKey: '',
-    model: 'gemini-1.5-flash',
+    model: undefined,
     tone: currentTenant.aiConfig?.tone || 'CONSULTATIVE',
     objective: currentTenant.aiConfig?.objective || 'EQUILIBRADO',
     customInstructions: currentTenant.aiConfig?.customInstructions || '',
@@ -99,8 +99,8 @@ export function SettingsManager({ onOpenQrCodeModal, onOpenAutomations }: Settin
     updateTenant({
       aiConfig: {
         ...aiConfigState,
-        provider: 'PLATFORM_DEFAULT',
-        model: 'gemini-1.5-flash',
+        provider: 'LOCAL_ONLY',
+        model: undefined,
         apiKey: '',
       },
     });
@@ -1637,7 +1637,7 @@ export function SettingsManager({ onOpenQrCodeModal, onOpenAutomations }: Settin
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
-                  O CRM entrega nativamente o motor de inteligência artificial de alta velocidade <strong>Google Gemini 1.5 Flash</strong> (com contexto de 1 Milhão de tokens). Ajuste abaixo as diretrizes comerciais, tom de voz e estratégias de vendas da sua equipe de corretores.
+                  A leitura básica identifica informações explícitas nas mensagens e preserva os dados confirmados pela equipe. A interpretação contextual por IA externa depende de ativação pelo administrador.
                 </p>
               </div>
 
@@ -1661,9 +1661,9 @@ export function SettingsManager({ onOpenQrCodeModal, onOpenAutomations }: Settin
             {/* Status do Módulo */}
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
               <div className="space-y-0.5">
-                <h4 className="text-xs font-bold text-slate-900">Ativar Copiloto de IA no Inbox</h4>
+                <h4 className="text-xs font-bold text-slate-900">Ativar preenchimento assistido no Inbox</h4>
                 <p className="text-[11px] text-slate-500">
-                  Quando ativo, sugere respostas de vendas e qualifica os 4 pilares do lead em tempo real.
+                  Quando ativo, processa o histórico disponível e identifica dados para o perfil do contato.
                 </p>
               </div>
               <button
@@ -1681,57 +1681,10 @@ export function SettingsManager({ onOpenQrCodeModal, onOpenAutomations }: Settin
               </button>
             </div>
 
-            {/* Provedor de IA Nativo (Google Gemini 1.5 Flash) - Fixo & Entregue pelo CRM */}
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-900 block">
-                1. Motor de Inteligência Artificial Integrado:
-              </label>
-
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-slate-50 border border-blue-200/90 shadow-2xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-500/20">
-                      GE
-                    </div>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm font-bold text-slate-900">
-                          Google Gemini 1.5 Flash
-                        </h4>
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3 text-blue-600" />
-                          Fornecimento Padrão Entregue pelo CRM
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 mt-1">
-                        Motor de inferência nativo de altíssima velocidade e janela estendida de <strong>1 Milhão de tokens de contexto</strong> para ler e qualificar todo o histórico de conversas do WhatsApp.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="shrink-0">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl shadow-2xs">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Incluso & Operacional
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3 border-t border-blue-100/90 text-xs text-slate-600">
-                  <div className="flex items-center gap-2 bg-white/70 px-3 py-2 rounded-xl border border-blue-100">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Incluso na plataforma (sem BYOK)</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/70 px-3 py-2 rounded-xl border border-blue-100">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Sem custos extras de tokens</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/70 px-3 py-2 rounded-xl border border-blue-100">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Análise integral e 4 pilares do lead</span>
-                  </div>
-                </div>
-              </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-2">
+              <h4 className="text-sm font-bold text-slate-900">Leitura básica por regras</h4>
+              <p className="text-xs text-slate-600">Reconhece afirmações explícitas sobre renda, entrada, orçamento, imóvel e região. Informações ambíguas precisam de revisão da equipe.</p>
+              <p className="text-xs text-slate-600">Este modo não utiliza Gemini nem outro modelo generativo. As preferências de tom e estratégia abaixo ficam guardadas para uma futura ativação de IA contextual.</p>
             </div>
 
             {/* Persona & Estratégia Comercial da Imobiliária */}

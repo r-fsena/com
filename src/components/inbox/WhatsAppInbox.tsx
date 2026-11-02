@@ -2292,7 +2292,7 @@ export function WhatsAppInbox() {
                           Brok.ia • Inteligência Comercial
                         </span>
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono">
-                          {activeInsight.degraded ? 'Leitura básica de informações explícitas' : 'Análise contextual com evidências'}
+                          {activeInsight.analysisSource === 'LOCAL_RULES' ? 'Leitura por regras, sem IA externa' : activeInsight.degraded ? 'Leitura básica de informações explícitas' : 'Análise contextual com evidências'}
                         </span>
                       </div>
 

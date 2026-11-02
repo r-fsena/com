@@ -189,3 +189,39 @@ test('execução curta não reserva outro bloco de IA sem tempo para concluir; f
   assert.equal(f.calls(),0);assert.equal(state.qualification.jobs[f.conversation.id].status,'QUEUED');assert.equal(state.qualification.jobs[f.conversation.id].cursor,0);assert.equal(state.qualification.jobs[f.conversation.id].lease,undefined);
  }finally{await f.close();}
 });
+test('IA externa desativada bloqueia Gemini explícito, teste de conexão e qualquer fallback mesmo com chaves presentes',async()=>{
+ let requests=0;
+ const h=harness({fetch:async()=>{requests++;throw Error('External request forbidden');}},{AI_EXTERNAL_ENABLED:'false',GEMINI_ENABLED:'true',GEMINI_API_KEY:'fake-gemini',OPENAI_API_KEY:'fake-openai',AWS_BEDROCK_MODEL_ID:'fake-bedrock'});
+ const service=h.load('src/lib/ai-provider-service.ts').UniversalCopilotService;
+ const config={provider:'GEMINI',apiKey:'explicit-fake-key',enabled:true,tone:'CONSULTATIVE',objective:'QUALIFICAR'};
+ const result=await service.analyzeConversation({chatHistory:[{sender:'CLIENT',text:'Quero comprar apartamento. Minha renda é 5000.'}],aiConfig:config});
+ assert.equal(result.analysisSource,'LOCAL_RULES');assert.equal(result.degraded,false);assert.equal(result.extractedData.monthlyIncome,5000);assert.equal(result.responseOptions.length,0);assert.equal(result.confidenceScore,0);
+ assert.equal((await service.testConnection(config)).model,'LOCAL_RULES');assert.equal(requests,0);
+});
+test('chaves armazenadas não ativam IA sem opt-in e bloqueio específico de Gemini não escolhe outro provedor',async()=>{
+ for(const environment of [{AI_EXTERNAL_ENABLED:undefined,GEMINI_ENABLED:'true'},{AI_EXTERNAL_ENABLED:'true',GEMINI_ENABLED:undefined},{AI_EXTERNAL_ENABLED:'true',GEMINI_ENABLED:'false'}]){
+  let calls=0;const h=harness({fetch:async()=>{calls++;throw Error('forbidden');}},{...environment,GEMINI_API_KEY:'fake',OPENAI_API_KEY:'fake'});
+  const result=await h.load('src/lib/ai-provider-service.ts').UniversalCopilotService.analyzeConversation({chatHistory:[{sender:'CLIENT',text:'Quero comprar apartamento.'}],aiConfig:{provider:'PLATFORM_DEFAULT',enabled:true}});
+  assert.equal(result.analysisSource,'LOCAL_RULES');assert.equal(calls,0);
+ }
+});
+test('mudança para leitura local reprocessa memória sem requisição externa nem espera reservada para modelo',async()=>{
+ const f=await createQualificationJourney();try{
+  f.h.env.GEMINI_API_KEY='fake';f.h.env.AI_EXTERNAL_ENABLED='false';let requests=0;
+  f.h.mocks.fetch=async()=>{requests++;throw Error('forbidden');};
+  await f.repo.writeCRMState(f.tenantId,{messages:[f.message('lead','Quero comprar apartamento. Minha renda mensal é 5000.'),...Array.from({length:20},(_,i)=>f.message(`local-${i}`,'Pode enviar mais informações?','CONTACT',i+1))]});
+  await f.repo.mutateCRMState(f.tenantId,state=>{const job=state.qualification.jobs[f.conversation.id];Object.assign(job,{engineMode:'REMOTE_ALLOWED',cursor:18,source:'GEMINI',facts:{},status:'QUEUED'});return state;});
+  const state=await f.service.runQualificationWorker(f.tenantId,{deadline:Date.now()+7000});const job=state.qualification.jobs[f.conversation.id];
+  assert.equal(job.engineMode,'LOCAL_ONLY');assert.equal(job.source,'LOCAL_RULES');assert.equal(job.cursor,21);assert.equal(job.status,'UPDATED');assert.equal(state.contacts[0].monthlyIncome,5000);assert.equal(requests,0);
+ }finally{await f.close();}
+});
+test('desativação de IA externa durante uma análise impede aplicar o resultado antigo',async()=>{
+ const f=await createQualificationJourney();try{
+  await f.repo.writeCRMState(f.tenantId,{messages:[f.message('lead','Quero comprar apartamento. Minha renda é 5000.')]});
+  let entered,unlock;const started=new Promise(r=>entered=r),gate=new Promise(r=>unlock=r);
+  f.setAnalyzer(async()=>{entered();await gate;return {analysisSource:'GEMINI',conversationType:'REAL_ESTATE_LEAD',summary:'Synthetic',extractedData:{},degraded:false};});
+  const processing=f.service.runQualificationWorker(f.tenantId);await started;f.h.env.AI_EXTERNAL_ENABLED='false';unlock();
+  let state=await processing;assert.equal(state.contacts[0].monthlyIncome,undefined);assert.equal(state.qualification.jobs[f.conversation.id].status,'QUEUED');
+  f.setAnalyzer(null);state=await f.service.runQualificationWorker(f.tenantId);assert.equal(state.contacts[0].monthlyIncome,5000);assert.equal(state.qualification.jobs[f.conversation.id].source,'LOCAL_RULES');
+ }finally{await f.close();}
+});

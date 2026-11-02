@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { tenants, crmTenantState } from '@/db/schema';
 import { mutateCRMState, readCRMState } from '@/lib/crm-repository';
 import { UniversalCopilotService } from '@/lib/ai-provider-service';
+import { externalAIAllowed, remoteAIConfigured as hasRemoteAI } from '@/lib/ai-execution-policy';
 import { applyQualification, enqueueQualifications, explicitQualification, qualificationFingerprint, qualificationMessages, validatedModelFacts, validatedClassification, type QualificationJob, type QualificationFacts } from '@/lib/lead-qualification';
 import type { TenantAIConfig, AIInsight } from '@/types/crm';
 
@@ -34,13 +35,14 @@ export function qualificationInsight(tenantId: string, conversationId: string, c
     summary: job.summary || (job.classification === 'INSUFFICIENT_DATA' ? 'Ainda não há informações suficientes para qualificar este contato.' : job.classification === 'REAL_ESTATE_LEAD' ? 'Interesse imobiliário identificado nas mensagens do cliente.' : 'Conversa pessoal ou operacional; dados comerciais preservados.'),
     conversationType: job.classification === 'INSUFFICIENT_DATA' ? undefined : job.classification, extractedData: extracted(job.facts),
     sentiment: previous?.sentiment || 'NEUTRAL', intent: previous?.intent || 'DUVIDA_GERAL', suggestedResponse: previous?.suggestedResponse || '',
-    responseOptions: previous?.responseOptions || [], detectedObjections: previous?.detectedObjections || [], confidenceScore: job.degraded ? 60 : 90,
+    responseOptions: previous?.responseOptions || [], detectedObjections: previous?.detectedObjections || [], confidenceScore: job.source === 'LOCAL_RULES' ? 0 : job.degraded ? 60 : 90,
     qualificationStatus: job.status, qualificationConflicts: job.conflicts, analysisSource: job.source, degraded: job.degraded, createdAt: new Date().toISOString() };
 }
 /** Each claim and completion is committed under the tenant row lock. No detached serverless work. */
 export async function runQualificationWorker(tenantId: string, options: { conversationIds?: string[]; deadline?: number; maxChunks?: number; scheduled?: boolean; minAnalysisWindowMs?: number } = {}) {
   const config = await qualificationConfig(tenantId);
-  const remoteConfigured = !!(config.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.OPENAI_API_KEY || process.env.AWS_BEDROCK_MODEL_ID);
+  const remoteConfigured = hasRemoteAI(config);
+  const engineMode = externalAIAllowed(config) ? 'REMOTE_ALLOWED' : 'LOCAL_ONLY';
   const deadline = options.deadline || Date.now() + 24_000;
   const maxChunks = options.maxChunks ?? 30;
   for (let index = 0; index < maxChunks && Date.now() < deadline - 1000; index++) {
@@ -55,6 +57,10 @@ export async function runQualificationWorker(tenantId: string, options: { conver
       const now = Date.now();
       for (const [id, job] of Object.entries(state.qualification!.jobs).sort((a, b) => a[1].updatedAt.localeCompare(b[1].updatedAt))) {
         if (options.conversationIds && !options.conversationIds.includes(id)) continue;
+        if (job.engineMode !== engineMode) {
+          Object.assign(job, { engineMode, status: 'QUEUED', cursor: 0, facts: {}, summary: '', classification: 'INSUFFICIENT_DATA',
+            attempts: 0, contextAttempts: 0, degraded: false, conflicts: [], lease: undefined, leaseUntil: undefined, retryAt: undefined, error: undefined });
+        }
         if (config.enabled === false || state.conversations.find(c => c.id === id)?.aiEnabled === false) {
           if (job.status !== 'DISABLED') {
             job.status = 'DISABLED';
@@ -100,6 +106,10 @@ export async function runQualificationWorker(tenantId: string, options: { conver
       await mutateCRMState(tenantId, state => {
         const job = state.qualification?.jobs[current.id];
         if (!job || job.lease !== current.lease || job.fingerprint !== current.job.fingerprint || qualificationFingerprint(qualificationMessages(state, current.id)) !== job.fingerprint) return state;
+        if ((externalAIAllowed(latestConfig) ? 'REMOTE_ALLOWED' : 'LOCAL_ONLY') !== engineMode) {
+          paused = true; job.status = 'QUEUED'; job.lease = undefined; job.leaseUntil = undefined;
+          return state;
+        }
         if (latestConfig.enabled === false || state.conversations.find(c => c.id === current.id)?.aiEnabled === false) {
           paused = true; job.status = 'DISABLED'; job.lease = undefined; job.leaseUntil = undefined;
           state.aiInsights[current.id] = qualificationInsight(tenantId, current.id, current.contactId, job, state.aiInsights[current.id]);

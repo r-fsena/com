@@ -195,6 +195,8 @@ A consulta de campanhas inclui as etiquetas nativas do WhatsApp. A importação 
 
 ### Qualificação automática de leads
 
+**Modo atual: leitura básica por regras, sem Gemini e sem outro provedor externo.** `AI_EXTERNAL_ENABLED` e `GEMINI_ENABLED` exigem o valor explícito `true` no servidor para permitir chamadas; ausentes ou com `false`, nenhuma chave armazenada reativa o provedor. `LOCAL_ONLY` também impede chamadas externas na configuração de um ambiente. Esse modo reconhece fatos explícitos e não oferece interpretação contextual generativa.
+
 A importação e os webhooks registram uma fila durável por conversa no documento PostgreSQL `crm_tenant_state`; nenhuma migração adicional é necessária. Uma primeira passagem é aguardada pela importação. O processador continua o histórico disponível em blocos, com memória cumulativa, comparação do conteúdo (incluindo mensagens antigas importadas depois), reservas com expiração, novas tentativas e gravação atômica do contato e da análise. Mensagens internas, automações, anexos sem texto e falas sem autoria/data verificável não viram fatos do cliente.
 
 O preenchimento exige afirmação explícita do cliente ou evidência validada da IA (mensagem, trecho e valor). Campos anteriores sem origem registrada são preservados. Edições da equipe ficam protegidas, inclusive ao limpar um campo. Novas afirmações podem atualizar campos ainda pertencentes à IA; diferenças com dados humanos aparecem para revisão individual. Classificação pessoal/operacional não apaga renda, entrada, orçamento ou preferências. Falha de análise permanece pendente; leitura heurística é identificada como básica, sem se apresentar como confirmação contextual da IA.
@@ -207,3 +209,9 @@ Para continuar sem CRM/navegador aberto:
 4. Confirme no Inbox o estado da qualificação, o progresso, a origem dos campos e eventuais divergências. A tela informa se não há execução periódica confirmada nos últimos dez minutos. Configurar apenas o segredo não comprova que o agendador está funcionando.
 
 A análise respeita `tenants.ai_config.enabled` e a pausa de IA da conversa no servidor. Sem provedor disponível, a leitura básica preenche somente afirmações explícitas reconhecidas; situações ambíguas continuam visíveis para revisão. O sistema analisa somente o histórico efetivamente importado, não recupera mensagens que o WhatsApp não disponibiliza. A publicação do código e a ativação/verificação do agendamento são etapas distintas.
+
+### Diagnóstico do agendamento — 02/11/2026
+
+O cron `*/5 * * * *` está na branch padrão `main`; o workflow estava ativo e o repositório permitia Actions. No histórico observado, o único disparo automático foi criado em 02/11 às 09:26:15 UTC (06:26:15 em Brasília), começou no mesmo instante e terminou com sucesso às 09:29 UTC. As demais execuções foram manuais. Não há execuções criadas nos intervalos omitidos; portanto, esse intervalo sem processamento ocorreu antes de o CRM receber uma solicitação. A duração do processamento, a fila de runners e a regra de concorrência não explicam as horas sem disparos registrados.
+
+A causa interna dos disparos ausentes não é exposta pela API do GitHub. A documentação oficial informa que `schedule` pode sofrer atrasos ou descarte sob carga: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule. Alterar o minuto do cron pode reduzir disputa, mas não torna a cadência garantida. Para uma frequência operacional confiável, é necessário um agendador dedicado/supervisionado; `worker:qualification` e o endpoint exclusivo já estão preparados. A troca de infraestrutura deve ser configurada e verificada antes de retirar o GitHub desse papel.

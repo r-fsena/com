@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   let completed = 0, failed = 0;
   for (const tenantId of await qualificationTenantIds()) {
     if (Date.now() >= deadline - 10000) break;
-    try { await runQualificationWorker(tenantId, { deadline: Math.min(deadline, Date.now() + 12000), maxChunks: 80, scheduled: true }); completed++; } catch { failed++; }
+    try { await runQualificationWorker(tenantId, { deadline: Math.min(deadline, Date.now() + 30000), maxChunks: 80, scheduled: true }); completed++; } catch { failed++; }
   }
   return NextResponse.json({ success: failed === 0, completed, failed }, { status: failed ? 503 : 200 });
 }

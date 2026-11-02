@@ -124,11 +124,12 @@ export class UniversalCopilotService {
     contactContext?: any;
     aiConfig?: TenantAIConfig;
     priorContext?: CopilotPriorContext;
+    timeoutMs?: number;
   }): Promise<AICopilotAnalysis> {
     const { chatHistory, brokerName = 'Corretor', contactContext, aiConfig, priorContext } = params;
     if (aiConfig?.enabled === false) throw new Error('A análise está desativada para esta imobiliária.');
 
-    const analysisSignal = AbortSignal.timeout(7000);
+    const analysisSignal = AbortSignal.timeout(Math.max(1000, Math.min(20000, params.timeoutMs ?? 20000)));
     const provider = aiConfig?.provider || 'PLATFORM_DEFAULT';
     const apiKey = (aiConfig?.apiKey || '').trim();
     const platformGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;

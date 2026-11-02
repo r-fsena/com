@@ -169,3 +169,13 @@ test('mensagem nova aproveita memória validada sem reler o histórico; alteraç
   state=await f.repo.readCRMState(f.tenantId);assert.equal(state.qualification.jobs[f.conversation.id].cursor,0);
  }finally{await f.close();}
 });
+test('provedor compartilha o limite de tempo entre tentativas e preserva contingência na importação curta',async()=>{
+ const attempts=[];
+ const h=harness({fetch:async(_url,options)=>{attempts.push(options.signal);return new Promise((resolve,reject)=>{
+  if(options.signal.aborted)return reject(options.signal.reason);
+  options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true});
+ });}},{GEMINI_API_KEY:'synthetic-only-key'});
+ const started=Date.now();const pending=h.load('src/lib/ai-provider-service.ts').UniversalCopilotService.analyzeConversation({chatHistory:[{sender:'CLIENT',text:'Quero comprar apartamento. Minha renda é 5000.'}],timeoutMs:1000});
+ const keepAlive=setTimeout(()=>{},2000);
+ try{const analysis=await pending;assert.equal(analysis.analysisSource,'LOCAL_HEURISTICS');assert.equal(analysis.extractedData.monthlyIncome,5000);assert.ok(Date.now()-started<2500);assert.ok(attempts.length>=1);assert.ok(attempts.every(signal=>signal===attempts[0]));}finally{clearTimeout(keepAlive);}
+});

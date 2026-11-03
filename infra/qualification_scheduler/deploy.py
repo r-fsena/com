@@ -120,7 +120,7 @@ def main():
                  'ResourceIdentifier': {'QueueUrl': queue_url}},
                 {'ResourceType': 'AWS::Logs::LogGroup', 'LogicalResourceId': 'LogGroup',
                  'ResourceIdentifier': {'LogGroupName': '/aws/lambda/' + FUNCTION}},
-            ], Tags=[{'Key': 'Project', 'Value': 'Brokiva-Qualification'}, {'Key': 'ManagedBy', 'Value': 'CloudFormation'}])
+            ])
         cf.get_waiter('change_set_create_complete').wait(StackName=STACK, ChangeSetName=name,
             WaiterConfig={'Delay': 3, 'MaxAttempts': 120})
         print(json.dumps({'changeSet': name, 'type': 'IMPORT', 'resources': list(retained), 'deletesData': False}))

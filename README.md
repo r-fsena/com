@@ -1,6 +1,10 @@
 # Brokiva CRM — operação e conexões
 
-CRM imobiliário em Next.js 14, React, TypeScript e PostgreSQL. Há dois caminhos de entrada de mensagens:
+CRM imobiliário em Next.js 14, React, TypeScript e PostgreSQL.
+
+O [guia de módulos, funcionalidades e jornadas](docs/MODULOS_FUNCIONALIDADES_E_JORNADAS.md) apresenta a visão do produto, os fluxos do corretor e do gestor, os diferenciais e o estágio atual de cada área.
+
+Há dois caminhos de entrada de mensagens:
 
 - **Extensão Brokiva:** WhatsApp Web → worker da extensão → `/api/v1/sync/extension-history` → PostgreSQL. A ponte avisa somente as abas com a mesma origem e imobiliária. A extensão não substitui uma conexão Z-API para envio pelo CRM.
 - **Z-API:** instância vinculada à imobiliária no banco → webhook autenticado por token próprio da instância → PostgreSQL → consulta de eventos pelo CRM.
@@ -204,7 +208,7 @@ O preenchimento exige afirmação explícita do cliente ou evidência validada d
 Para continuar sem CRM/navegador aberto:
 
 1. Configure `QUALIFICATION_CRON_SECRET` com pelo menos 32 caracteres no servidor (ou reutilize a configuração operacional de `AUTOMATIONS_CRON_SECRET`, nunca o segredo de sessão).
-2. Agende `POST /api/internal/qualification/run` com `Authorization: Bearer <segredo>`. Esse endpoint somente qualifica, sem enviar mensagens. O workflow `qualification-worker.yml` usa a variável `CRM_QUALIFICATION_URL` e o segredo `CRM_QUALIFICATION_CRON_SECRET` do GitHub, com fallback para as configurações existentes das automações. O intervalo é de cinco minutos e pode sofrer atrasos do GitHub. Quando há histórico pendente, cada execução avança por até quatro minutos em solicitações curtas e confirmadas, respeitando o limite HTTP da hospedagem; o restante continua na próxima execução.
+2. Em produção, o EventBridge Scheduler invoca a Lambda dedicada a cada cinco minutos. Ela chama `POST /api/internal/qualification/run` com `Authorization: Bearer <segredo>`; esse endpoint somente qualifica, sem enviar mensagens. A Lambda confirma até quatro solicitações curtas por ciclo, com limite de 26 segundos por solicitação e orçamento total de dois minutos; o restante continua no próximo ciclo. Consulte `infra/qualification_scheduler/README.md`. O workflow `qualification-worker.yml` permanece somente como contingência manual, usando a variável `CRM_QUALIFICATION_URL` e o segredo `CRM_QUALIFICATION_CRON_SECRET` do GitHub, com fallback para as configurações existentes das automações. A execução manual possui seu próprio orçamento de até quatro minutos.
 3. Para processamento frequente, execute `npm run worker:qualification` em serviço supervisionado, com `CRM_WORKER_URL` e o segredo no ambiente. `--once` limita a uma solicitação; não use tarefas soltas dentro de funções serverless.
 4. Confirme no Inbox o estado da qualificação, o progresso, a origem dos campos e eventuais divergências. A tela informa se não há execução periódica confirmada nos últimos dez minutos. Configurar apenas o segredo não comprova que o agendador está funcionando.
 
@@ -212,10 +216,12 @@ A análise respeita `tenants.ai_config.enabled` e a pausa de IA da conversa no s
 
 ### Diagnóstico do agendamento — 02/11/2026
 
-O cron `*/5 * * * *` está na branch padrão `main`; o workflow estava ativo e o repositório permitia Actions. No histórico observado, o único disparo automático foi criado em 02/11 às 09:26:15 UTC (06:26:15 em Brasília), começou no mesmo instante e terminou com sucesso às 09:29 UTC. As demais execuções foram manuais. Não há execuções criadas nos intervalos omitidos; portanto, esse intervalo sem processamento ocorreu antes de o CRM receber uma solicitação. A duração do processamento, a fila de runners e a regra de concorrência não explicam as horas sem disparos registrados.
+Na revisão anterior à troca, o cron `*/5 * * * *` estava na branch padrão `main`; o workflow estava ativo e o repositório permitia Actions. No histórico observado, o único disparo automático foi criado em 02/11 às 09:26:15 UTC (06:26:15 em Brasília), começou no mesmo instante e terminou com sucesso às 09:29 UTC. As demais execuções foram manuais. Não há execuções criadas nos intervalos omitidos; portanto, esse intervalo sem processamento ocorreu antes de o CRM receber uma solicitação. A duração do processamento, a fila de runners e a regra de concorrência não explicam as horas sem disparos registrados.
 
 A causa interna dos disparos ausentes não é exposta pela API do GitHub. A documentação oficial informa que `schedule` pode sofrer atrasos ou descarte sob carga: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule. Alterar o minuto do cron pode reduzir disputa, mas não torna a cadência garantida. Para uma frequência operacional confiável, é necessário um agendador dedicado/supervisionado; `worker:qualification` e o endpoint exclusivo já estão preparados. A troca de infraestrutura deve ser configurada e verificada antes de retirar o GitHub desse papel.
 
 ### Agendador dedicado AWS
 
 A infraestrutura isolada em [`infra/qualification_scheduler`](infra/qualification_scheduler/README.md) fornece EventBridge Scheduler, Lambda, segredo SSM protegido, tentativas automáticas, fila de falhas e painel/alertas CloudWatch. O agendamento nasce desativado; a ativação exige uma confirmação real do CRM. O aceite exige doze ciclos nativos consecutivos de cinco minutos, sem contar testes manuais. O cron GitHub só deve ser retirado após esse aceite. Consulte o runbook para implantação, monitoramento, destinatários dos alertas e rollback. Essa infraestrutura não ativa Gemini nem outro provedor externo.
+
+**Aceite de 02/11/2026:** a stack `brokiva-qualification-scheduler-v2` confirmou doze ciclos nativos entre 21:25:14 e 22:20:14, no horário de Brasília, separados por 300 segundos, sem falhas ou lacunas. O maior atraso de início observado foi de 40,63 segundos e os quatro alarmes estavam `OK`. A rota também recusou a chamada sem autenticação com HTTP 401. Após esse aceite, o cron da qualificação foi retirado do GitHub; `workflow_dispatch` permanece disponível. A assinatura dos alertas por e-mail ainda aguarda confirmação, portanto a entrega de notificações por esse canal não está validada. Gemini e os demais provedores externos permanecem desativados.

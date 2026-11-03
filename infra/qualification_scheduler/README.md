@@ -3,6 +3,16 @@
 Stack isolada `brokiva-qualification-scheduler-v2`, função `brokiva-qualification-scheduler`, conta `896884286429`, região `us-east-1`.
 Não execute o Terraform geral nem `infra/scripts/deploy-aws.sh` para esta implantação.
 
+## Estado da implantação em 2 de novembro de 2026
+
+Stack `-v2` habilitada e teste manual autenticado concluído. O coletor confirmou
+12 ciclos nativos consecutivos, de 21:25:14 a 22:20:14 em Brasília, com intervalos
+de 300 segundos, zero falhas/lacunas e atraso máximo de início de 40,63 segundos.
+Os quatro alarmes estavam `OK`. O cron GitHub foi retirado após esse aceite;
+o workflow foi preservado para acionamento manual. O canal SNS de e-mail está
+cadastrado, mas sua assinatura ainda aguarda confirmação e a entrega não está
+validada. O modo de qualificação continua local, sem provedor de IA externo.
+
 EventBridge Scheduler invoca uma Lambda a cada cinco minutos, sem janela flexível.
 A Lambda chama apenas `POST https://crm.faithhubs.com/api/internal/qualification/run`.
 Cada ciclo confirma até quatro solicitações de até 26 segundos; histórico restante fica

@@ -1,7 +1,6 @@
 name: Processar qualificacao de leads
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # Cadência principal no EventBridge Scheduler; este workflow é contingência manual.
   workflow_dispatch:
 permissions: {}
 concurrency:

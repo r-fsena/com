@@ -68,8 +68,10 @@ conferência. Novos ciclos regulares continuam a fila durável do CRM.
 Os alarmes publicam em um tópico SNS próprio. **Por padrão não há destinatário de
 e-mail/SMS**: os estados ficam no console. Para aviso por e-mail, informe um endereço
 autorizado via `--alert-email` no plano e confirme a assinatura recebida. Não registre
-endereços ou segredos no repositório. Sem assinatura confirmada, não prometa aviso por
-e-mail. Os alarmes ficam com ações desativadas enquanto o schedule está desativado.
+endereços ou segredos no repositório. Em uma stack já ativa, use
+`deploy.py --configure-alerts --alert-email ENDERECO_AUTORIZADO`; esse modo preserva
+o estado do agendamento. Sem assinatura confirmada, não prometa aviso por e-mail.
+Os alarmes ficam com ações desativadas enquanto o schedule está desativado.
 
 Para interromper com segurança, atualize o parâmetro CloudFormation `ScheduleState`
 para `DISABLED`, preservando os outros parâmetros. A fila e os logs têm `Retain`.

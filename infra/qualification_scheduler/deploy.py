@@ -26,7 +26,7 @@ def clients(region):
     session = boto3.Session(region_name=region)
     if session.client('sts').get_caller_identity()['Account'] != ACCOUNT:
         raise RuntimeError('Wrong AWS account; dedicated scheduler deployment stopped')
-    return {service: session.client(service) for service in ['cloudformation', 'ssm', 'amplify', 'lambda', 'scheduler', 'sqs']}
+    return {service: session.client(service) for service in ['cloudformation', 'ssm', 'amplify', 'lambda', 'scheduler', 'sqs', 'sns']}
 
 
 def synchronize_secret(api):
@@ -55,6 +55,7 @@ def main():
     parser.add_argument('--execute-change-set')
     parser.add_argument('--activate', action='store_true')
     parser.add_argument('--status', action='store_true')
+    parser.add_argument('--configure-alerts', action='store_true')
     parser.add_argument('--region', default=REGION, choices=[REGION])
     parser.add_argument('--alert-email', default='')
     args = parser.parse_args()
@@ -63,7 +64,7 @@ def main():
     if args.render:
         args.render.write_text(body)
         print(json.dumps({'rendered': str(args.render), 'sha256': hashlib.sha256(body.encode()).hexdigest(), 'resourceCount': len(template['Resources'])}))
-    if not any([args.plan, args.plan_import_retained, args.apply, args.activate, args.status, args.execute_change_set]):
+    if not any([args.plan, args.plan_import_retained, args.apply, args.activate, args.status, args.configure_alerts, args.execute_change_set]):
         return
     api = clients(args.region)
     cf = api['cloudformation']
@@ -71,6 +72,25 @@ def main():
         stack = cf.describe_stacks(StackName=STACK)['Stacks'][0]
         outputs = {row['OutputKey']: row['OutputValue'] for row in stack.get('Outputs', [])}
         print(json.dumps({'stackStatus': stack['StackStatus'], 'outputs': outputs}))
+        return
+    if args.configure_alerts:
+        if not args.alert_email:
+            raise RuntimeError('An authorized alert recipient is required')
+        stack = cf.describe_stacks(StackName=STACK)['Stacks'][0]
+        parameters = [{'ParameterKey': p['ParameterKey'], 'UsePreviousValue': True}
+                      for p in stack['Parameters'] if p['ParameterKey'] != 'AlertEmail']
+        parameters.append({'ParameterKey': 'AlertEmail', 'ParameterValue': args.alert_email})
+        try:
+            cf.update_stack(StackName=STACK, UsePreviousTemplate=True, Parameters=parameters, Capabilities=['CAPABILITY_IAM'])
+            cf.get_waiter('stack_update_complete').wait(StackName=STACK, WaiterConfig={'Delay': 5, 'MaxAttempts': 120})
+        except cf.exceptions.ClientError as error:
+            if 'No updates are to be performed' not in error.response['Error']['Message']:
+                raise
+        topic = next(row['OutputValue'] for row in stack['Outputs'] if row['OutputKey'] == 'AlertTopicArn')
+        subscriptions = api['sns'].list_subscriptions_by_topic(TopicArn=topic)['Subscriptions']
+        pending = any(row['Endpoint'] == args.alert_email and row['SubscriptionArn'] == 'PendingConfirmation'
+                      for row in subscriptions)
+        print(json.dumps({'alertsConfigured': True, 'scheduleStatePreserved': True, 'emailConfirmationRequired': pending}))
         return
     if args.activate:
         result = api['lambda'].invoke(FunctionName=FUNCTION, InvocationType='RequestResponse',

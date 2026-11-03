@@ -1,6 +1,6 @@
 # Agendador dedicado da qualificação
 
-Stack isolada `brokiva-qualification-scheduler`, conta `896884286429`, região `us-east-1`.
+Stack isolada `brokiva-qualification-scheduler-v2`, função `brokiva-qualification-scheduler`, conta `896884286429`, região `us-east-1`.
 Não execute o Terraform geral nem `infra/scripts/deploy-aws.sh` para esta implantação.
 
 EventBridge Scheduler invoca uma Lambda a cada cinco minutos, sem janela flexível.
@@ -58,7 +58,10 @@ atômica. Registre os recibos e o commit da troca sem incluir dados de clientes.
 O painel CloudWatch reúne recibos sanitizados e os alarmes: ausência de confirmação
 por dois períodos de cinco minutos, erro da Lambda, descarte pelo Scheduler e fila
 de falhas não vazia. Retries do Scheduler tratam falha de entrega à Lambda; os dois
-retries assíncronos da Lambda tratam falhas do código/HTTP. Concorrência máxima é 1.
+retries assíncronos da Lambda tratam falhas do código/HTTP. Não há reserva de concorrência
+da Lambda: a conta recusou até uma reserva de 1, pois precisa manter dez execuções sem
+reserva. A exclusão de trabalho por conversa continua nas reservas atômicas do CRM;
+uma eventual sobreposição de invocações não deve processar a mesma reserva duas vezes.
 A fila mantém falhas por 14 dias; logs, por 30 dias. Não reenvie a fila inteira sem
 conferência. Novos ciclos regulares continuam a fila durável do CRM.
 
@@ -72,3 +75,12 @@ Para interromper com segurança, atualize o parâmetro CloudFormation `ScheduleS
 para `DISABLED`, preservando os outros parâmetros. A fila e os logs têm `Retain`.
 Não apague o parâmetro SSM durante rollback. Para voltar ao cron GitHub, restaure
 somente seu `on.schedule` após decidir quem será o único agendador principal.
+
+## Recuperação da primeira tentativa
+
+A primeira stack, sem o sufixo `-v2`, reverteu por limite de concorrência da conta.
+Seus logs e fila foram retidos. Preserve esse registro e adote os dois recursos na
+stack nova com `--plan-import-retained`, revise o plano de importação e use
+`--execute-change-set NOME_IMPORT`. Isso não apaga os recursos nem seu conteúdo.
+Depois execute `--plan` e aplique o plano normal. A stack nova mantém as mesmas
+permissões restritas aprovadas; não é necessário aumentar a cota da conta.

@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from template import build_template
 
-STACK = 'brokiva-qualification-scheduler'
+STACK = 'brokiva-qualification-scheduler-v2'
+FUNCTION = 'brokiva-qualification-scheduler'
 PARAMETER = '/brokiva/qualification/cron-secret'
 ACCOUNT = '896884286429'
 REGION = 'us-east-1'
@@ -25,7 +26,7 @@ def clients(region):
     session = boto3.Session(region_name=region)
     if session.client('sts').get_caller_identity()['Account'] != ACCOUNT:
         raise RuntimeError('Wrong AWS account; dedicated scheduler deployment stopped')
-    return {service: session.client(service) for service in ['cloudformation', 'ssm', 'amplify', 'lambda', 'scheduler']}
+    return {service: session.client(service) for service in ['cloudformation', 'ssm', 'amplify', 'lambda', 'scheduler', 'sqs']}
 
 
 def synchronize_secret(api):
@@ -49,6 +50,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--render', type=Path)
     parser.add_argument('--plan', action='store_true')
+    parser.add_argument('--plan-import-retained', action='store_true')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--execute-change-set')
     parser.add_argument('--activate', action='store_true')
@@ -61,7 +63,7 @@ def main():
     if args.render:
         args.render.write_text(body)
         print(json.dumps({'rendered': str(args.render), 'sha256': hashlib.sha256(body.encode()).hexdigest(), 'resourceCount': len(template['Resources'])}))
-    if not any([args.plan, args.apply, args.activate, args.status, args.execute_change_set]):
+    if not any([args.plan, args.plan_import_retained, args.apply, args.activate, args.status, args.execute_change_set]):
         return
     api = clients(args.region)
     cf = api['cloudformation']
@@ -71,7 +73,7 @@ def main():
         print(json.dumps({'stackStatus': stack['StackStatus'], 'outputs': outputs}))
         return
     if args.activate:
-        result = api['lambda'].invoke(FunctionName=STACK, InvocationType='RequestResponse',
+        result = api['lambda'].invoke(FunctionName=FUNCTION, InvocationType='RequestResponse',
             Payload=json.dumps({'source': 'MANUAL_VALIDATION'}).encode())
         receipt = json.loads(result['Payload'].read())
         if result.get('FunctionError') or receipt.get('success') is not True:
@@ -93,11 +95,35 @@ def main():
             raise RuntimeError('The reviewed change set is not executable')
         stack = cf.describe_stacks(StackName=STACK)['Stacks'][0]
         creating = stack['StackStatus'] == 'REVIEW_IN_PROGRESS'
-        synchronize_secret(api)
+        importing = any(row['ResourceChange']['Action'] == 'Import' for row in changes.get('Changes', []))
+        if not importing:
+            synchronize_secret(api)
         cf.execute_change_set(StackName=STACK, ChangeSetName=args.execute_change_set)
-        cf.get_waiter('stack_create_complete' if creating else 'stack_update_complete').wait(
+        waiter = 'stack_import_complete' if importing else ('stack_create_complete' if creating else 'stack_update_complete')
+        cf.get_waiter(waiter).wait(
             StackName=STACK, WaiterConfig={'Delay': 5, 'MaxAttempts': 180})
         print(json.dumps({'stack': STACK, 'deployment': 'complete', 'scheduleState': 'DISABLED'}))
+        return
+    if args.plan_import_retained:
+        # The first attempt rolled back on the account's Lambda reservation quota.
+        # Adopt the retained queue/log group in a new stack; never delete their contents.
+        previous = cf.describe_stacks(StackName=FUNCTION)['Stacks'][0]
+        if previous['StackStatus'] != 'ROLLBACK_COMPLETE':
+            raise RuntimeError('Wait for the original stack rollback before importing retained resources')
+        retained = {key: template['Resources'][key] for key in ['FailureQueue', 'LogGroup']}
+        minimal = {'AWSTemplateFormatVersion': '2010-09-09', 'Resources': retained}
+        queue_url = api['sqs'].get_queue_url(QueueName=FUNCTION + '-failures')['QueueUrl']
+        name = 'qualification-import-' + str(int(time.time()))
+        cf.create_change_set(StackName=STACK, ChangeSetName=name, ChangeSetType='IMPORT',
+            TemplateBody=json.dumps(minimal), ResourcesToImport=[
+                {'ResourceType': 'AWS::SQS::Queue', 'LogicalResourceId': 'FailureQueue',
+                 'ResourceIdentifier': {'QueueUrl': queue_url}},
+                {'ResourceType': 'AWS::Logs::LogGroup', 'LogicalResourceId': 'LogGroup',
+                 'ResourceIdentifier': {'LogGroupName': '/aws/lambda/' + FUNCTION}},
+            ], Tags=[{'Key': 'Project', 'Value': 'Brokiva-Qualification'}, {'Key': 'ManagedBy', 'Value': 'CloudFormation'}])
+        cf.get_waiter('change_set_create_complete').wait(StackName=STACK, ChangeSetName=name,
+            WaiterConfig={'Delay': 3, 'MaxAttempts': 120})
+        print(json.dumps({'changeSet': name, 'type': 'IMPORT', 'resources': list(retained), 'deletesData': False}))
         return
     try:
         stack = cf.describe_stacks(StackName=STACK)['Stacks'][0]

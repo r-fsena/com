@@ -55,7 +55,7 @@ def build_template():
         'Worker': {'Type': 'AWS::Lambda::Function', 'DependsOn': ['LogGroup'], 'Properties': {
             'FunctionName': function_name, 'Description': 'Invokes only CRM qualification; no outbound messaging or AI credentials.',
             'Runtime': 'python3.12', 'Handler': 'index.handler', 'MemorySize': 128, 'Timeout': 150,
-            'ReservedConcurrentExecutions': 1, 'Role': arn('WorkerRole'),
+            'Role': arn('WorkerRole'),
             'Environment': {'Variables': {'CRM_ORIGIN': 'https://crm.faithhubs.com', 'SECRET_PARAMETER': ref('SecretParameterName')}},
             'Code': {'ZipFile': Path(__file__).with_name('worker.py').read_text()},
         }},

@@ -159,7 +159,9 @@ class InfrastructureTests(unittest.TestCase):
         schedule = resources['Schedule']['Properties']
         self.assertEqual(schedule['ScheduleExpression'], 'rate(5 minutes)')
         self.assertEqual(schedule['FlexibleTimeWindow'], {'Mode': 'OFF'})
-        self.assertEqual(resources['Worker']['Properties']['ReservedConcurrentExecutions'], 1)
+        # This account has only the minimum unreserved quota: even a reservation of 1 is rejected.
+        # Work exclusion remains enforced by the CRM's atomic per-conversation leases.
+        self.assertNotIn('ReservedConcurrentExecutions', resources['Worker']['Properties'])
         self.assertEqual(resources['AsyncFailureHandling']['Properties']['MaximumRetryAttempts'], 2)
         self.assertEqual(resources['FailureQueue']['DeletionPolicy'], 'Retain')
         self.assertTrue(resources['FailureQueue']['Properties']['SqsManagedSseEnabled'])

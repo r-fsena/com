@@ -73,6 +73,14 @@ endereços ou segredos no repositório. Em uma stack já ativa, use
 o estado do agendamento. Sem assinatura confirmada, não prometa aviso por e-mail.
 Os alarmes ficam com ações desativadas enquanto o schedule está desativado.
 
+Se o e-mail não chegar, confira spam/quarentena e o remetente `no-reply@sns.amazonaws.com`.
+No tópico SNS, selecione a assinatura pendente e use **Solicitar confirmação** para
+reenviar. O aceite de `Subscribe`/reenvio não comprova entrega à caixa de entrada.
+Confirme no console que o estado mudou para confirmado antes de considerar o canal
+de e-mail operacional. Assinaturas comuns não confirmadas expiram após 48 horas;
+um endereço com devolução pode ficar suprimido por sete dias e exigir suporte AWS.
+Consulte a [documentação oficial do SNS](https://docs.aws.amazon.com/sns/latest/dg/sns-email-notifications.html).
+
 Para interromper com segurança, atualize o parâmetro CloudFormation `ScheduleState`
 para `DISABLED`, preservando os outros parâmetros. A fila e os logs têm `Retain`.
 Não apague o parâmetro SSM durante rollback. Para voltar ao cron GitHub, restaure

@@ -88,9 +88,13 @@ def main():
                 raise
         topic = next(row['OutputValue'] for row in stack['Outputs'] if row['OutputKey'] == 'AlertTopicArn')
         subscriptions = api['sns'].list_subscriptions_by_topic(TopicArn=topic)['Subscriptions']
-        pending = any(row['Endpoint'] == args.alert_email and row['SubscriptionArn'] == 'PendingConfirmation'
-                      for row in subscriptions)
-        print(json.dumps({'alertsConfigured': True, 'scheduleStatePreserved': True, 'emailConfirmationRequired': pending}))
+        matching = [row for row in subscriptions if row['Endpoint'] == args.alert_email]
+        status = ('PENDING_CONFIRMATION' if any(row['SubscriptionArn'] == 'PendingConfirmation' for row in matching)
+                  else 'CONFIRMED' if matching else 'MISSING')
+        print(json.dumps({'alertsConfigured': bool(matching), 'scheduleStatePreserved': True,
+                          'emailSubscriptionStatus': status, 'emailConfirmationRequired': status != 'CONFIRMED'}))
+        if not matching:
+            raise RuntimeError('The alert subscription is absent; reconcile the SNS resource before claiming delivery readiness')
         return
     if args.activate:
         result = api['lambda'].invoke(FunctionName=FUNCTION, InvocationType='RequestResponse',
@@ -105,9 +109,11 @@ def main():
         parameters = [{'ParameterKey': p['ParameterKey'], 'UsePreviousValue': True}
                       for p in stack['Parameters'] if p['ParameterKey'] != 'ScheduleState']
         parameters.append({'ParameterKey': 'ScheduleState', 'ParameterValue': 'ENABLED'})
+        # A native tick may run while CloudFormation is still waiting for update completion.
+        activation_time = dt.datetime.now(dt.timezone.utc).isoformat()
         cf.update_stack(StackName=STACK, UsePreviousTemplate=True, Parameters=parameters, Capabilities=['CAPABILITY_IAM'])
         cf.get_waiter('stack_update_complete').wait(StackName=STACK, WaiterConfig={'Delay': 5, 'MaxAttempts': 120})
-        print(json.dumps({'manualValidation': 'success', 'scheduleState': 'ENABLED', 'activationTime': dt.datetime.now(dt.timezone.utc).isoformat()}))
+        print(json.dumps({'manualValidation': 'success', 'scheduleState': 'ENABLED', 'activationTime': activation_time}))
         return
     if args.execute_change_set:
         changes = cf.describe_change_set(StackName=STACK, ChangeSetName=args.execute_change_set)

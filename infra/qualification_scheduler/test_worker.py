@@ -4,7 +4,7 @@ import io
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from template import build_template
@@ -179,6 +179,44 @@ class InfrastructureTests(unittest.TestCase):
             self.assertNotIn(prohibited, rendered)
         self.assertIn('ScheduleGroup', json.dumps(template['Resources']['SchedulerRole']['Properties']['AssumeRolePolicyDocument']))
         json.loads(template['Resources']['Dashboard']['Properties']['DashboardBody']['Fn::Sub'])
+
+
+class DeploymentTests(unittest.TestCase):
+    def test_configuring_notifications_preserves_active_timer_and_never_confirms_missing_recipient(self):
+        from deploy import main
+        from types import SimpleNamespace
+        import sys
+        recipient = 'operator@example.org'
+        for subscription in [[], [{'Endpoint': 'different@example.org', 'SubscriptionArn': 'confirmed-arn'}],
+                             [{'Endpoint': recipient, 'SubscriptionArn': 'PendingConfirmation'}],
+                             [{'Endpoint': recipient, 'SubscriptionArn': 'confirmed-arn'}]]:
+            cf = MagicMock()
+            cf.exceptions = SimpleNamespace(ClientError=RuntimeError)
+            original = {'ScheduleState': 'ENABLED', 'SecretParameterName': PARAMETER, 'AlertEmail': '****'}
+            cf.describe_stacks.return_value = {'Stacks': [{'Parameters': [
+                {'ParameterKey': key, 'ParameterValue': value} for key, value in original.items()],
+                'Outputs': [{'OutputKey': 'AlertTopicArn', 'OutputValue': 'synthetic-topic'}]}]}
+            sns = MagicMock()
+            sns.list_subscriptions_by_topic.return_value = {'Subscriptions': subscription}
+            output = io.StringIO()
+            matches = bool(subscription) and subscription[0]['Endpoint'] == recipient
+            with patch('deploy.clients', return_value={'cloudformation': cf, 'sns': sns}), \
+                 patch.object(sys, 'argv', ['deploy.py', '--configure-alerts', '--alert-email', recipient]), \
+                 contextlib.redirect_stdout(output):
+                if matches:
+                    main()
+                else:
+                    with self.assertRaises(RuntimeError):
+                        main()
+            # Resolve the proposed CloudFormation parameters as the service would.
+            resolved = {p['ParameterKey']: original[p['ParameterKey']] if p.get('UsePreviousValue') else p['ParameterValue']
+                        for p in cf.update_stack.call_args.kwargs['Parameters']}
+            self.assertEqual(resolved['ScheduleState'], 'ENABLED')
+            self.assertEqual(resolved['SecretParameterName'], PARAMETER)
+            report = json.loads(output.getvalue())
+            self.assertEqual(report['alertsConfigured'], matches)
+            self.assertEqual(report['emailConfirmationRequired'], not (matches and subscription[0]['SubscriptionArn'] != 'PendingConfirmation'))
+            self.assertNotIn(recipient, output.getvalue())
 
 
 class EvidenceTests(unittest.TestCase):
